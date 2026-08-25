@@ -13,6 +13,7 @@ import { ToolCard } from "./ToolCard";
 
 export function ChatPane({
   locale,
+  sessionId,
   messages,
   isRunning,
   pickingElement,
@@ -20,6 +21,7 @@ export function ChatPane({
   modelId,
   showModelPicker,
   onSend,
+  onRevise,
   onCancel,
   onFork,
   onRegenerate,
@@ -29,6 +31,7 @@ export function ChatPane({
   onModel,
 }: {
   locale: Locale;
+  sessionId: string;
   messages: ChatMessage[];
   isRunning: boolean;
   pickingElement: boolean;
@@ -36,6 +39,7 @@ export function ChatPane({
   modelId: string;
   showModelPicker: boolean;
   onSend: (text: string, attachments: AttachmentItem[]) => void;
+  onRevise: (messageId: string, text: string, attachments: AttachmentItem[]) => void;
   onCancel: () => void;
   onFork: (messageId: string) => void;
   onRegenerate: (messageId: string) => void;
@@ -47,6 +51,11 @@ export function ChatPane({
   const [draft, setDraft] = useState("");
   const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
   const [pickingFiles, setPickingFiles] = useState(false);
+  const [editingId, setEditingId] = useState<string>();
+  const [stash, setStash] = useState<{ draft: string; attachments: AttachmentItem[] } | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const editingRef = useRef<string | undefined>(undefined);
+  editingRef.current = editingId;
   const label = (key: Parameters<typeof t>[1]) => t(locale, key);
   const canSend = Boolean(draft.trim() || attachments.length);
   const busy = pickingFiles || pickingElement || isRunning;
@@ -62,10 +71,46 @@ export function ChatPane({
     if (!canSend || isRunning) return;
     const text = draft.trim();
     const files = attachments;
+    const reviseId = editingId;
     setDraft("");
     setAttachments([]);
-    onSend(text, files);
+    setEditingId(undefined);
+    setStash(null);
+    if (reviseId) onRevise(reviseId, text, files);
+    else onSend(text, files);
   };
+
+  const cancelEdit = () => {
+    setDraft(stash?.draft ?? "");
+    setAttachments(stash?.attachments ?? []);
+    setEditingId(undefined);
+    setStash(null);
+  };
+
+  const startEdit = (message: ChatMessage) => {
+    if (isRunning || pickingElement) return;
+    if (!editingId) setStash({ draft, attachments });
+    setEditingId(message.id);
+    setDraft(textOf(message.content));
+    setAttachments(message.attachments ? [...message.attachments] : []);
+    requestAnimationFrame(() => {
+      inputRef.current?.focus();
+      const node = inputRef.current;
+      if (!node) return;
+      node.selectionStart = node.value.length;
+      node.selectionEnd = node.value.length;
+    });
+  };
+
+  useEffect(() => {
+    const wasEditing = editingRef.current;
+    setEditingId(undefined);
+    setStash(null);
+    if (wasEditing) {
+      setDraft("");
+      setAttachments([]);
+    }
+  }, [sessionId]);
 
   const addAttachments = async () => {
     if (busy) return;
@@ -100,8 +145,17 @@ export function ChatPane({
           <div className="space-y-3 py-3">
             {messages.map((message) =>
               message.role === "user" ? (
-                <div key={message.id}>
-                  <div className="ml-auto w-fit max-w-[80%] break-words rounded-2xl rounded-br-sm bg-[var(--user)] px-3 py-2 text-[13.5px] leading-relaxed">
+                <div key={message.id} className="flex justify-end">
+                  <button
+                    type="button"
+                    disabled={isRunning}
+                    onClick={() => startEdit(message)}
+                    className={`ml-auto w-fit max-w-[80%] break-words rounded-2xl rounded-br-sm bg-[var(--user)] px-3 py-2 text-left text-[13.5px] leading-relaxed disabled:cursor-default ${
+                      editingId === message.id
+                        ? "ring-1 ring-[var(--brass)]"
+                        : "cursor-pointer hover:bg-[#2f2b1c]"
+                    }`}
+                  >
                     {textOf(message.content) ? <div>{textOf(message.content)}</div> : null}
                     {message.attachments?.length ? (
                       <AttachmentChips
@@ -109,7 +163,7 @@ export function ChatPane({
                         className={textOf(message.content) ? "mt-2" : ""}
                       />
                     ) : null}
-                  </div>
+                  </button>
                 </div>
               ) : (
                 <MessageFrame
@@ -136,6 +190,19 @@ export function ChatPane({
         <div
           className={`cs-composer rounded-xl bg-[var(--panel)] px-2 py-2 ${isRunning ? "is-running" : ""}`}
         >
+          {editingId ? (
+            <div className="mb-1.5 flex items-start justify-between gap-2 px-1">
+              <p className="min-w-0 flex-1 text-[11px] leading-snug text-[var(--muted)]">
+                {label("editHistoryHint")}
+              </p>
+              <RippleButton
+                onClick={cancelEdit}
+                className="shrink-0 rounded px-1.5 py-0.5 text-[11px] text-[var(--brass)] hover:bg-[var(--brass)]/20"
+              >
+                {label("cancelEdit")}
+              </RippleButton>
+            </div>
+          ) : null}
           {attachments.length > 0 ? (
             <AttachmentChips
               items={attachments}
@@ -146,6 +213,7 @@ export function ChatPane({
             />
           ) : null}
           <textarea
+            ref={inputRef}
             value={draft}
             placeholder={label("placeholder")}
             className="max-h-32 min-h-10 w-full resize-none bg-transparent px-1 py-1.5 text-[13.5px] outline-none placeholder:text-[var(--muted)]"

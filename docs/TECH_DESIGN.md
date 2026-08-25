@@ -218,6 +218,13 @@ chrome.storage.local
 4. 该用户消息之前的记录写成 `pendingForkContext` 同款前文，立刻把同一条用户正文 / 附件再 `prompt`。新会话上重套当前模型（清掉 `appliedModelRef`，等 `models` 再 `model.set`）。
 5. 界面不新增用户气泡，等流式 `update` 长出新的 assistant。
 
+改已发送的用户消息：
+
+1. 点用户气泡（`isRunning` 时忽略）把 `textOf` + `attachments` 填回 composer，并记住 `editingId`。若输入栏里已有未发送草稿，先 stash，取消时还原。
+2. composer 顶部一行：左 muted 提示，右 `RippleButton` 黄铜字「取消修改 / Cancel edit」。
+3. 再发送走同一套 `startReplayTurn`：用新正文/附件替换该 user，截掉其后，`session/new` + 前文再 prompt。不另开本地会话。
+4. 切会话时退出编辑态；进行中不允许进入。
+
 旧的 `session.json` `{ sessionId }` 在侧栏还没有本地目录时，迁成第一条会话。
 
 ## 语言

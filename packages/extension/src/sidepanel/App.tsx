@@ -474,22 +474,8 @@ export function App() {
     boundRef.current = true;
   };
 
-  const regenerateFromMessage = (messageId: string) => {
-    if (isRunning) return;
-    const source = sessionsRef.current.find((item) => item.id === selectedIdRef.current);
-    if (!source) return;
-    const assistantIndex = source.messages.findIndex((message) => message.id === messageId);
-    if (assistantIndex < 0 || source.messages[assistantIndex]?.role !== "assistant") return;
-    let userIndex = -1;
-    for (let index = assistantIndex - 1; index >= 0; index -= 1) {
-      if (source.messages[index].role === "user") {
-        userIndex = index;
-        break;
-      }
-    }
-    if (userIndex < 0) return;
-    const user = source.messages[userIndex];
-    const kept = source.messages.slice(0, userIndex + 1);
+  const startReplayTurn = (source: Session, userIndex: number, user: ChatMessage) => {
+    const kept = [...source.messages.slice(0, userIndex), user];
     const prior = source.messages.slice(0, userIndex);
     pendingRegen.current = {
       localId: source.id,
@@ -503,6 +489,7 @@ export function App() {
       pendingForkContext: undefined,
       messages: kept,
       todos: [],
+      title: session.titleManual ? session.title : titleFromMessages(kept) || session.title,
       updatedAt: new Date().toISOString(),
     }));
     setPermission(undefined);
@@ -522,6 +509,37 @@ export function App() {
     setError(undefined);
     sendRef.current({ type: "session.new" });
     boundRef.current = true;
+  };
+
+  const regenerateFromMessage = (messageId: string) => {
+    if (isRunning) return;
+    const source = sessionsRef.current.find((item) => item.id === selectedIdRef.current);
+    if (!source) return;
+    const assistantIndex = source.messages.findIndex((message) => message.id === messageId);
+    if (assistantIndex < 0 || source.messages[assistantIndex]?.role !== "assistant") return;
+    let userIndex = -1;
+    for (let index = assistantIndex - 1; index >= 0; index -= 1) {
+      if (source.messages[index].role === "user") {
+        userIndex = index;
+        break;
+      }
+    }
+    if (userIndex < 0) return;
+    startReplayTurn(source, userIndex, source.messages[userIndex]);
+  };
+
+  const reviseFromMessage = (messageId: string, text: string, attachments: AttachmentItem[]) => {
+    if (isRunning) return;
+    const source = sessionsRef.current.find((item) => item.id === selectedIdRef.current);
+    if (!source) return;
+    const userIndex = source.messages.findIndex((message) => message.id === messageId);
+    if (userIndex < 0 || source.messages[userIndex]?.role !== "user") return;
+    const previous = source.messages[userIndex];
+    startReplayTurn(source, userIndex, {
+      ...previous,
+      content: [{ type: "text", text }],
+      attachments: attachments.length > 0 ? attachments : undefined,
+    });
   };
 
   if (!hydrated || !selected) {
@@ -565,6 +583,7 @@ export function App() {
           <div className="min-h-0 flex-1">
             <ChatPane
               locale={locale}
+              sessionId={selected.id}
               messages={selected.messages}
               isRunning={isRunning}
               pickingElement={pickingElement}
@@ -572,6 +591,7 @@ export function App() {
               modelId={selectedModelId}
               showModelPicker={status === "ready" && models.length > 0}
               onSend={onSend}
+              onRevise={reviseFromMessage}
               onCancel={onCancel}
               onFork={forkFromMessage}
               onRegenerate={regenerateFromMessage}
