@@ -182,7 +182,7 @@ Host 在 `session/new` 之前写好 `AGENTS.md` 和 `browser/tools.json`，这�
 chrome.storage.local
   locale: "en" | "zh"          # 默认 en
   selectedId: <local session id>
-  selectedModelId?: string     # 与 agent models 的 id 对齐，默认 auto
+  selectedModelId?: string     # 具体模型 id；auto / 空 = 不指定，不调用 set_model
   sessions[]:
     id, acpSessionId?, title, titleManual?, createdAt, updatedAt
     parentId?, forkedFromMessageId?
@@ -200,7 +200,7 @@ chrome.storage.local
 | `prompt` 可带 `sessionId` | 先切到该 ACP 会话再 prompt，避免切换竞态 |
 | `fs.pick` | Host 弹出本机选文件/文件夹对话框，回 `fs.picked`（绝对路径 + kind） |
 | `page.pick` | SW 让当前标签内容脚本拾取元素，回 `page.picked`（CSS selector，kind=element）；不转发 Host |
-| `model.set` | `session/set_config_option`（`category: model`）；失败再试 `session/set_model` |
+| `model.set` | 非 `auto` 时 `session/set_config_option`（`category: model`）；失败再试 `session/set_model` |
 
 从某一轮之后 fork：
 
@@ -245,8 +245,8 @@ on them with page tools using args.selector.
 1. Host 启动时跑 `agent models`（与 `agent --list-models` 相同），解析 `id - name` 行，推 `models` 给侧栏。
 2. `initialize` 带 `_meta.parameterizedModelPicker: true`，以便 Cursor ACP 返回 `configOptions`。
 3. `session/new|load|fork` 若带 `category: "model"` 的选项，用其 `currentValue` 和名称覆盖/补全列表。
-4. 用户改模型：`session/set_config_option`（发现的 `configId`，通常是 `model`）；失败则 `session/set_model`。
-5. 侧栏把 `selectedModelId` 写入 `chrome.storage.local`；会话绑定成功后再 `model.set` 一次，避免新会话回到默认。
+4. 用户改模型：`session/set_config_option`（发现的 `configId`，通常是 `model`）；失败则 `session/set_model`。`auto` 不是合法 ACP 值，Host 和侧栏都跳过 RPC，只更新本地 currentId。
+5. 侧栏把 `selectedModelId` 写入 `chrome.storage.local`；仅当选的是具体模型时，会话绑定后再 `model.set` 一次。
 
 ## 标签切换
 
@@ -344,3 +344,4 @@ pnpm workspace。扩展用 Vite + `@crxjs/vite-plugin` 打包。
 | 点拾取后旧标签没有内容脚本 | SW `scripting.executeScript` 按 manifest 补注入 |
 | ACP 不广告模型列表 | 用 `agent models` 解析账号模型；有 `configOptions` 时合并并用于 set |
 | `session/set_model` 被拒 | 先 `session/set_config_option`；initialize 声明 `parameterizedModelPicker` |
+| ACP 拒绝 `auto` | Auto 只表示不指定；不调用 set_model / set_config_option |

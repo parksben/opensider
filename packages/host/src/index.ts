@@ -3,6 +3,7 @@ import { AcpClient, type SessionOpen } from "./acp.ts";
 import { log } from "./log.ts";
 import {
   catalogFromConfigOptions,
+  isUnsetModel,
   listAgentModels,
   mergeCatalog,
   type ConfigOption,
@@ -69,7 +70,7 @@ async function openAndAnnounce(open: () => Promise<SessionOpen>): Promise<void> 
 }
 
 async function applyPendingModel(): Promise<void> {
-  if (!pendingModelId || !client?.getSessionId()) return;
+  if (!pendingModelId || isUnsetModel(pendingModelId) || !client?.getSessionId()) return;
   try {
     await applyModel(pendingModelId);
   } catch (error) {
@@ -79,6 +80,10 @@ async function applyPendingModel(): Promise<void> {
 
 async function applyModel(modelId: string): Promise<void> {
   if (!client) throw new Error("agent is not ready");
+  if (isUnsetModel(modelId)) {
+    catalog = { ...catalog, currentId: modelId };
+    return;
+  }
   const result = await client.setModel(modelId, catalog.modelConfigId);
   const options = (result as { configOptions?: ConfigOption[] } | undefined)?.configOptions;
   catalog = mergeCatalog(catalog, {
@@ -146,12 +151,16 @@ async function handleExt(msg: ExtToHost): Promise<void> {
     if (msg.type === "model.set") {
       pendingModelId = msg.modelId;
       catalog = { ...catalog, currentId: msg.modelId };
-      if (!client?.getSessionId()) {
+      if (!client?.getSessionId() || isUnsetModel(msg.modelId)) {
         sendModels();
         return;
       }
       if (msg.sessionId) await client.useSession(msg.sessionId);
-      await applyModel(msg.modelId);
+      try {
+        await applyModel(msg.modelId);
+      } catch (error) {
+        log(`apply model skipped: ${String(error)}`);
+      }
       sendModels();
       return;
     }

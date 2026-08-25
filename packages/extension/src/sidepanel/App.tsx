@@ -144,7 +144,13 @@ export function App() {
       setModels(msg.models.length > 0 ? msg.models : [{ id: "auto", name: "Auto" }]);
       const desired = selectedModelRef.current;
       const known = msg.models.some((model) => model.id === desired);
-      if (desired && known && desired !== msg.currentId && desired !== appliedModelRef.current) {
+      if (
+        desired &&
+        desired !== "auto" &&
+        known &&
+        desired !== msg.currentId &&
+        desired !== appliedModelRef.current
+      ) {
         appliedModelRef.current = desired;
         sendRef.current({ type: "model.set", modelId: desired });
       } else if (!desired || !known) {
@@ -338,7 +344,7 @@ export function App() {
   const onModel = (modelId: string) => {
     setSelectedModelId(modelId);
     appliedModelRef.current = modelId;
-    if (statusRef.current === "ready") {
+    if (statusRef.current === "ready" && modelId !== "auto") {
       sendRef.current({ type: "model.set", modelId });
     }
   };

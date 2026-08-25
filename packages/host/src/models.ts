@@ -21,21 +21,31 @@ export type ModelCatalog = {
 
 const MODEL_LINE = /^(\S+)\s+-\s+(.+)$/;
 
+export function isUnsetModel(id: string | undefined): boolean {
+  return !id || id === "auto";
+}
+
 export function parseAgentModels(stdout: string): ModelCatalog {
   const models: AgentModel[] = [];
-  let currentId = "auto";
+  let markedCurrent = "";
+  let markedDefault = "";
   for (const raw of stdout.split(/\r?\n/)) {
     const line = raw.trim();
     const match = MODEL_LINE.exec(line);
     if (!match) continue;
     const id = match[1];
-    let name = match[2];
-    name = name.replace(/\s*\((?:default|current)\)/gi, "").trim() || id;
+    const rawName = match[2];
+    if (/\(current\)/i.test(rawName)) markedCurrent = id;
+    else if (/\(default\)/i.test(rawName)) markedDefault = id;
+    const name = rawName.replace(/\s*\((?:default|current)\)/gi, "").trim() || id;
     models.push({ id, name });
-    if (id === "auto") currentId = "auto";
   }
   if (models.length === 0) models.push({ id: "auto", name: "Auto" });
-  if (!models.some((model) => model.id === currentId)) currentId = models[0].id;
+  const currentId =
+    (markedCurrent && models.some((model) => model.id === markedCurrent) ? markedCurrent : "") ||
+    (markedDefault && models.some((model) => model.id === markedDefault) ? markedDefault : "") ||
+    models.find((model) => !isUnsetModel(model.id))?.id ||
+    models[0].id;
   return { models, currentId, modelConfigId: "model" };
 }
 
