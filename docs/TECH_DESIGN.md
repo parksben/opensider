@@ -18,14 +18,15 @@ Native Host
                browser/results/*.json
                AGENTS.md
 
-Content Script  ←── 当前标签的页面方法
+Content Script  ←── 当前标签的读取 / 操作方法
+Service Worker  ←── navigate / goBack / goForward / reload
 ```
 
 浏览器扩展不能 spawn 本机进程。Cursor CLI 的自定义客户端协议是 ACP（`agent acp`，stdio JSON-RPC）。二者之间只加一层 **Chrome Native Messaging Host**：Chrome 在扩展连接时启动它，断开后退出。用户不必先开一个 Node 服务。
 
 ## 为什么不用 MCP
 
-ACP 的 `session/new` 可以带 `mcpServers`，这是给 Agent 加工具的官方方式。但本项目的页面能力很窄，而且用户明确希望少加一层协议。
+ACP 的 `session/new` 可以带 `mcpServers`，这是给 Agent 加工具的官方方式。页面读写和自动化都走同一套工作区命令文件，不必再加 MCP。
 
 Cursor Agent 在 ACP 模式下仍然自己执行本地工具（读文件、写文件、Shell 等）。Client 的 `fs` / `terminal` capability 只是让 IDE 代管文件，不是 Agent 用工具的前提。因此：
 
@@ -43,7 +44,7 @@ Cursor Agent 在 ACP 模式下仍然自己执行本地工具（读文件、写�
 - assistant-ui + `useExternalStoreRuntime`
 - 自己持有消息列表，把 ACP `session/update` 映射成 assistant-ui 的 text / reasoning / tool-call
 - 发出用户输入、取消、权限决定、提问/计划回答
-- 展示当前页、连接状态、todo、权限条
+- 展示当前页、进行中的页面命令、连接状态、todo、权限条
 
 ### Service Worker
 
@@ -54,7 +55,9 @@ Cursor Agent 在 ACP 模式下仍然自己执行本地工具（读文件、写�
 
 ### Content Script
 
-运行在隔离世界，不往 `window` 挂 API。方法：
+运行在隔离世界，不往 `window` 挂 API，也不执行任意 JS。元素定位：`args.selector`（CSS）和 / 或 `args.text`（可见文本包含），可选 `args.nth`。
+
+读取：
 
 | 方法 | 作用 |
 |---|---|
@@ -63,7 +66,25 @@ Cursor Agent 在 ACP 模式下仍然自己执行本地工具（读文件、写�
 | `getSelection` | 当前选区 |
 | `getLinks` | 同源链接（text + href，截断条数） |
 | `getOutline` | h1–h3 文本 |
-| `queryText` | `document.querySelector` 的 textContent |
+| `queryText` | 匹配节点的 textContent |
+| `queryAll` | 匹配节点摘要列表（tag / text / href） |
+| `getAttribute` | `args.attribute` 对应属性 |
+| `getValue` | input / textarea / select 的当前值 |
+| `exists` | 是否找得到匹配节点 |
+
+操作：
+
+| 方法 | 作用 |
+|---|---|
+| `click` / `dblclick` | 滚入视口、高亮、派发指针事件后点击 |
+| `hover` / `focus` | 悬停或聚焦 |
+| `fill` / `type` / `clear` | 填值 / 追加 / 清空，并派发 input+change |
+| `select` / `check` | 下拉框和 checkbox / radio |
+| `press` | 对焦点或指定元素派发按键（如 Enter） |
+| `scroll` / `scrollIntoView` | 窗口滚动或滚到元素 |
+| `waitFor` | 轮询直到元素出现，默认 8s，最长 20s |
+
+标签级操作由 Service Worker 执行：`navigate`（仅 http(s)）、`goBack`、`goForward`、`reload`。完成后重新抓快照。
 
 ### Native Host
 
@@ -107,8 +128,8 @@ Host 用 Node 24 直接跑 TypeScript（类型擦除）。stdout 只给 Chrome�
 ```json
 {
   "id": "cmd_01",
-  "method": "getReadable",
-  "args": {}
+  "method": "click",
+  "args": { "text": "Sign in", "nth": 0 }
 }
 ```
 
@@ -123,7 +144,7 @@ Host 用 Node 24 直接跑 TypeScript（类型擦除）。stdout 只给 Chrome�
 }
 ```
 
-命令超时 8s，结果带 `ok: false` 和错误信息。单文件和 Native Messaging 都遵守约 200KB 截断，避免 1MB 帧上限。
+命令默认超时 20s（`waitFor` / 导航可能更久）。失败结果带 `ok: false` 和错误信息。单文件和 Native Messaging 都遵守约 200KB 截断，避免 1MB 帧上限。操作类命令成功后刷新 `current.json` / `snapshot.md`。侧栏通过 `browser.command` / `browser.result` 显示当前页面动作。
 
 ## 标签切换
 
@@ -190,4 +211,7 @@ pnpm workspace。扩展用 Vite + `@crxjs/vite-plugin` 打包。
 | `session/load` 不支持或失败 | 新建会话，工作区文件仍在 |
 | 内容脚本无法注入 | `current.json` 只写 url/title，命令返回明确错误 |
 | Chrome 杀 Service Worker | 重连 Native Host；ACP 子进程随 Host 退出，重连后 load/new |
-| 命令文件误触发 | 只认 `browser/commands/*.json` 且含 `id`+`method` |
+| 命令文件误触发 | 只认 `browser/commands/*.json` 且含 `id`+白名单 `method` |
+| 受控输入收不到赋值 | fill/type 用原生 value setter + input/change |
+| 点击找不到可点目标 | 同时支持 selector 与可见文本，失败返回明确错误 |
+| 导航后内容脚本被卸掉 | 标签级导航走 `chrome.tabs.update`，完成后再抓快照 |

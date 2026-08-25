@@ -1,6 +1,6 @@
 # Cursor Sidebar
 
-Chrome 侧栏插件：用 [assistant-ui](https://www.assistant-ui.com/) 连接本机 Cursor CLI Agent（`agent acp`）。同一个工作区、同一条会话，切换标签时 Agent 能感知当前页面。
+Chrome 侧栏插件：用 [assistant-ui](https://www.assistant-ui.com/) 连接本机 Cursor CLI Agent（`agent acp`）。同一个工作区、同一条会话；Agent 能读取当前页，也能点击、填表、导航。
 
 不另起本地 HTTP 服务，不上 MCP。Chrome 通过 Native Messaging 按需拉起 Host，Host 再拉起 Agent。
 
