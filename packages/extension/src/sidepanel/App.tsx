@@ -362,7 +362,6 @@ export function App() {
               locale={locale}
               messages={selected.messages}
               isRunning={isRunning}
-              disabled={status !== "ready"}
               onSend={onSend}
               onCancel={onCancel}
               onFork={forkFromMessage}

@@ -11,7 +11,6 @@ export function ChatPane({
   locale,
   messages,
   isRunning,
-  disabled,
   onSend,
   onCancel,
   onFork,
@@ -19,7 +18,6 @@ export function ChatPane({
   locale: Locale;
   messages: ChatMessage[];
   isRunning: boolean;
-  disabled: boolean;
   onSend: (text: string) => void;
   onCancel: () => void;
   onFork: (messageId: string) => void;
@@ -78,12 +76,12 @@ export function ChatPane({
         ) : null}
       </div>
       <div className="sticky bottom-0 bg-gradient-to-t from-[var(--ink)] via-[var(--ink)] to-transparent px-3 pb-3 pt-2">
-        <div className="flex items-end gap-2 rounded-xl border border-[var(--line)] bg-[var(--panel)] px-2 py-2">
+        <div className="rounded-xl border border-[var(--line)] bg-[var(--panel)] px-2 py-2">
           <textarea
             value={draft}
-            placeholder={disabled ? label("placeholderOffline") : label("placeholder")}
-            className="max-h-32 min-h-10 flex-1 resize-none bg-transparent px-1 py-1.5 text-[13.5px] outline-none placeholder:text-[var(--muted)] disabled:opacity-50"
-            rows={1}
+            placeholder={label("placeholder")}
+            className="max-h-32 min-h-10 w-full resize-none bg-transparent px-1 py-1.5 text-[13.5px] outline-none placeholder:text-[var(--muted)]"
+            rows={2}
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.shiftKey) {
@@ -92,26 +90,28 @@ export function ChatPane({
               }
             }}
           />
-          {isRunning ? (
-            <button
-              type="button"
-              onClick={onCancel}
-              className="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--line)] text-[var(--text)]"
-              aria-label={label("stop")}
-            >
-              <Square size={13} />
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={submit}
-              disabled={!draft.trim()}
-              className="flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--brass)] text-[#1a140b] disabled:opacity-40"
-              aria-label={label("send")}
-            >
-              <ArrowUp size={15} />
-            </button>
-          )}
+          <div className="flex justify-end">
+            {isRunning ? (
+              <button
+                type="button"
+                onClick={onCancel}
+                className="flex h-7 w-7 items-center justify-center rounded-full text-[var(--text)] hover:bg-white/15"
+                aria-label={label("stop")}
+              >
+                <Square size={14} />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={submit}
+                disabled={!draft.trim()}
+                className="flex h-7 w-7 items-center justify-center rounded-full text-[var(--text)] hover:bg-white/15 disabled:opacity-30 disabled:hover:bg-transparent"
+                aria-label={label("send")}
+              >
+                <ArrowUp size={14} />
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>

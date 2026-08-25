@@ -247,7 +247,7 @@ macOS 清单路径：`~/Library/Application Support/Google/Chrome/NativeMessagin
 
 ## UI
 
-- 聊天：`ChatPane` 由当前会话的 `messages` / `isRunning` 驱动；工具卡片 / markdown 仍是现有组件
+- 聊天：`ChatPane` 由当前会话的 `messages` / `isRunning` 驱动；工具卡片 / markdown 仍是现有组件。输入区两行：上方 textarea，下方靠右纯图标发送 / 停止（14px，与顶栏 icon 同大；hover 半透明白圆）
 - 顶栏：左 `PanelLeft` / `PanelLeftClose` + 语言按钮（英显示「中」、中显示「EN」）；正中会话名；右连接状态与 offline「Retry connection / 重连」
 - 会话列表是主区域左侧栏，里头有新建会话
 - 空会话：标题 Talk to Cursor，副题 Agent beside the sidebar
