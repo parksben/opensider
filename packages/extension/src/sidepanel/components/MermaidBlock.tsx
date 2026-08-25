@@ -68,6 +68,7 @@ async function loadMermaid(theme: ResolvedTheme): Promise<typeof mermaidApi> {
     mermaid.initialize({
       startOnLoad: false,
       securityLevel: "strict",
+      suppressErrorRendering: true,
       theme: theme === "light" ? "base" : "dark",
       fontFamily: '"IBM Plex Sans", sans-serif',
       themeVariables: mermaidThemes[theme],
@@ -92,6 +93,17 @@ function useDocumentTheme(): ResolvedTheme {
   return theme;
 }
 
+function sweepMermaidOrphans(renderId?: string) {
+  if (renderId) {
+    document.getElementById(renderId)?.remove();
+    document.getElementById(`d${renderId}`)?.remove();
+  }
+  document.querySelectorAll('svg[aria-roledescription="error"], [id^="dcs-mmd-"]').forEach((node) => {
+    if (node.closest(".cs-mermaid")) return;
+    node.remove();
+  });
+}
+
 export function MermaidBlock({ source }: { source: string }) {
   const reactId = useId().replace(/[^a-zA-Z0-9]/g, "");
   const chart = source.replace(/\n$/, "");
@@ -100,14 +112,23 @@ export function MermaidBlock({ source }: { source: string }) {
 
   useEffect(() => {
     let cancelled = false;
+    let renderId = "";
     const timer = window.setTimeout(() => {
       void (async () => {
         try {
           const api = await loadMermaid(theme);
-          const id = `cs-mmd-${reactId}-${Math.random().toString(36).slice(2, 8)}`;
-          const result = await api.render(id, chart);
+          const parsed = await api.parse(chart, { suppressErrors: true });
+          if (!parsed) {
+            sweepMermaidOrphans();
+            if (!cancelled) setSvg(undefined);
+            return;
+          }
+          renderId = `cs-mmd-${reactId}-${Math.random().toString(36).slice(2, 8)}`;
+          const result = await api.render(renderId, chart);
+          sweepMermaidOrphans(renderId);
           if (!cancelled) setSvg(result.svg);
         } catch {
+          sweepMermaidOrphans(renderId);
           if (!cancelled) setSvg(undefined);
         }
       })();
@@ -115,6 +136,7 @@ export function MermaidBlock({ source }: { source: string }) {
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
+      sweepMermaidOrphans(renderId);
     };
   }, [chart, reactId, theme]);
 

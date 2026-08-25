@@ -60,9 +60,15 @@ body,
 #root {
   height: 100%;
   margin: 0;
+  overflow: hidden;
   background: var(--ink);
   color: var(--text);
   font-family: "IBM Plex Sans", sans-serif;
+}
+
+body > svg[aria-roledescription="error"],
+body > [id^="dcs-mmd-"] {
+  display: none !important;
 }
 
 body {
