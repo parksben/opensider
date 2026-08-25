@@ -282,17 +282,19 @@ export function ChatPane({
       <div className="sticky bottom-0 bg-gradient-to-t from-[var(--ink)] via-[var(--ink)] to-transparent px-3 pb-3 pt-2">
         <div className="relative">
           {awayFromBottom ? (
-            <IconButton
-              side="top"
-              label={label("scrollToBottom")}
-              onClick={() => {
-                stickToBottom(listRef.current, true);
-                setAwayFromBottom(false);
-              }}
-              className="absolute right-0 bottom-full z-20 mb-4 flex h-14 w-14 items-center justify-center rounded-full border border-[var(--line)] bg-[var(--panel)] text-[var(--text)] hover:bg-[var(--hover)]"
-            >
-              <ArrowDown size={22} />
-            </IconButton>
+            <div className="pointer-events-none absolute inset-x-0 bottom-full z-20 mb-4 flex justify-center">
+              <IconButton
+                side="top"
+                label={label("scrollToBottom")}
+                onClick={() => {
+                  stickToBottom(listRef.current, true);
+                  setAwayFromBottom(false);
+                }}
+                className="cs-jump-bottom pointer-events-auto flex h-[39px] w-[39px] items-center justify-center rounded-full border border-[var(--line)] text-[var(--text)]"
+              >
+                <ArrowDown size={15} />
+              </IconButton>
+            </div>
           ) : null}
         <div
           className={`cs-composer rounded-xl bg-[var(--panel)] px-2 py-2 ${isRunning ? "is-running" : ""}`}

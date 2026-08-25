@@ -230,6 +230,15 @@ textarea {
   overflow-anchor: none;
 }
 
+.cs-jump-bottom {
+  background: color-mix(in srgb, var(--panel) 62%, transparent);
+  box-shadow: 0 2px 10px rgb(0 0 0 / 0.22);
+}
+
+.cs-jump-bottom:hover {
+  background: color-mix(in srgb, var(--panel) 90%, transparent) !important;
+}
+
 .cs-mermaid svg {
   display: block;
   max-width: 100%;
