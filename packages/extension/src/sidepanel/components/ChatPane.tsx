@@ -544,10 +544,10 @@ function MessageFrame({
   children: ReactNode;
 }) {
   return (
-    <div className={`group relative ${className}`}>
+    <div className={`group/msg relative ${className}`}>
       {children}
       {hideActions ? null : (
-        <div className="mt-1 flex items-center justify-start opacity-0 transition-opacity group-hover:opacity-100">
+        <div className="mt-1 flex items-center justify-start opacity-0 transition-opacity group-hover/msg:opacity-100">
           {modelLabel ? (
             <span className="min-w-0 truncate text-[11px] text-[var(--muted)]">
               {t(locale, "generatedBy").replace("{name}", modelLabel)}

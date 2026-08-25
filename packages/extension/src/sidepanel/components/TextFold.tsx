@@ -39,7 +39,7 @@ export function TextFold({
         ref={toggleRef}
         type="button"
         onClick={toggle}
-        className="group flex w-full items-center bg-transparent py-0.5 text-left"
+        className="group/fold flex w-full items-center bg-transparent py-0.5 text-left"
       >
         <span className="inline-flex min-w-0 items-center gap-1 text-[12px] text-[var(--muted)]">
           {icon}
@@ -47,7 +47,7 @@ export function TextFold({
           {open ? (
             <ChevronDown size={12} className="shrink-0" />
           ) : (
-            <ChevronRight size={12} className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100" />
+            <ChevronRight size={12} className="shrink-0 opacity-0 transition-opacity group-hover/fold:opacity-100" />
           )}
         </span>
       </button>
