@@ -1,4 +1,4 @@
-import { GitFork, LoaderCircle, Send, Square } from "lucide-react";
+import { GitFork, LoaderCircle, MessageCircle, Send, Square } from "lucide-react";
 import { IconButton } from "./IconButton";
 import { useState, type ReactNode } from "react";
 import type { ChatMessage, ChatPart } from "../chat-types";
@@ -35,17 +35,17 @@ export function ChatPane({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex-1 space-y-3 overflow-y-auto px-3 py-3">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3">
         {messages.length === 0 ? (
-          <div className="px-1 py-8 text-center">
-            <div className="text-[22px] font-medium leading-tight tracking-tight">{label("emptyTitle")}</div>
-            <div className="mt-1.5 text-[12px] tracking-wide text-[var(--brass)]">{label("emptyLead")}</div>
-            <p className="mx-auto mt-2 max-w-[16rem] text-[12.5px] leading-relaxed text-[var(--muted)]">
-              {label("emptyBody")}
+          <div className="flex flex-1 flex-col items-center justify-center px-4">
+            <MessageCircle size={120} strokeWidth={1} className="text-[var(--muted)] opacity-25" />
+            <p className="mt-4 max-w-[16rem] text-center text-[12px] leading-relaxed text-[var(--muted)] opacity-55">
+              {label("emptyHint")}
             </p>
           </div>
         ) : (
-          messages.map((message) =>
+          <div className="space-y-3 py-3">
+          {messages.map((message) =>
             message.role === "user" ? (
               <MessageFrame
                 key={message.id}
@@ -67,14 +67,15 @@ export function ChatPane({
                 <AssistantMessage locale={locale} content={message.content} />
               </MessageFrame>
             ),
-          )
-        )}
-        {isRunning ? (
-          <div className="flex items-center gap-2 text-[12px] text-[var(--brass)]">
-            <LoaderCircle size={14} className="animate-spin" />
-            {label("working")}
+          )}
+            {isRunning ? (
+              <div className="flex items-center gap-2 text-[12px] text-[var(--brass)]">
+                <LoaderCircle size={14} className="animate-spin" />
+                {label("working")}
+              </div>
+            ) : null}
           </div>
-        ) : null}
+        )}
       </div>
       <div className="sticky bottom-0 bg-gradient-to-t from-[var(--ink)] via-[var(--ink)] to-transparent px-3 pb-3 pt-2">
         <div className="rounded-xl border border-[var(--line)] bg-[var(--panel)] px-2 py-2">

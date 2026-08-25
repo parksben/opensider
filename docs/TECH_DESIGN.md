@@ -250,7 +250,7 @@ macOS 清单路径：`~/Library/Application Support/Google/Chrome/NativeMessagin
 - 聊天：`ChatPane` 由当前会话的 `messages` / `isRunning` 驱动；工具卡片 / markdown 仍是现有组件。输入区两行：上方 textarea，下方靠右 Lucide `Send` 小飞机 / 停止（14px，与顶栏 icon 同大；hover 半透明白圆）。纯图标按钮用可见 tooltip，不用只靠浏览器原生 `title`
 - 顶栏：左 `PanelLeft` / `PanelLeftClose` + 语言按钮（英显示「中」、中显示「EN」）；正中会话名；右连接状态与 offline「Retry connection / 重连」
 - 会话列表是主区域左侧栏，里头有新建会话
-- 空会话：标题 Talk to Cursor，副题 Agent beside the sidebar
+- 空会话：消息区垂直居中，Lucide `MessageCircle` 约 120px + 一行淡灰提示，不抢视觉
 - 消息上用 lucide 的 fork / bookmark
 - 视觉：窄侧栏（约 380px）、橄榄黑底、黄铜强调色；图标只用 `lucide-react`
 - 字体：IBM Plex Sans / Mono（中英都不用衬线体）

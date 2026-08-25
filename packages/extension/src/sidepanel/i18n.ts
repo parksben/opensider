@@ -2,10 +2,7 @@ export type Locale = "en" | "zh";
 
 const copy = {
   en: {
-    emptyTitle: "Talk to Cursor",
-    emptyLead: "Agent beside the sidebar",
-    emptyBody:
-      "One workspace, many threads. Start a chat, switch later, or fork from any message. The current page stays in view.",
+    emptyHint: "Send a message to start chatting with Cursor about this page",
     connected: "connected",
     starting: "starting",
     offline: "offline",
@@ -41,9 +38,7 @@ const copy = {
     continue: "Continue",
   },
   zh: {
-    emptyTitle: "Talk to Cursor",
-    emptyLead: "侧栏里的 Agent",
-    emptyBody: "一个工作区，多条会话。可以新建、切换，也可以从任意一条消息分叉。当前页始终可见。",
+    emptyHint: "发送消息，开始与 Cursor 就网页内容聊天",
     connected: "已连接",
     starting: "启动中",
     offline: "离线",
