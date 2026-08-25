@@ -135,7 +135,7 @@ export async function loadState(): Promise<{
   const raw = await chrome.storage.local.get(STATE_KEY);
   const data = raw[STATE_KEY] as PersistedState | undefined;
   if (!data || data.version !== 1 || !Array.isArray(data.sessions)) {
-    return { locale: "en", selectedId: "", selectedModelId: "auto", sessions: [] };
+    return { locale: "en", selectedId: "", selectedModelId: "", sessions: [] };
   }
   const sessions = data.sessions.map(hydrateSession);
   const selectedId = sessions.some((session) => session.id === data.selectedId)
@@ -144,7 +144,7 @@ export async function loadState(): Promise<{
   return {
     locale: data.locale === "zh" ? "zh" : "en",
     selectedId,
-    selectedModelId: data.selectedModelId || "auto",
+    selectedModelId: data.selectedModelId || "",
     sessions,
   };
 }

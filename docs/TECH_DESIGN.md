@@ -242,11 +242,11 @@ on them with page tools using args.selector.
 
 ## 模型选择
 
-1. Host 启动时跑 `agent models`（与 `agent --list-models` 相同），解析 `id - name` 行，推 `models` 给侧栏。
+1. Host 启动时跑 `agent models`（与 `agent --list-models` 相同），解析 `id - name` 行，按 id 去重后推 `models` 给侧栏。目录初始为空，不预置 Auto。
 2. `initialize` 带 `_meta.parameterizedModelPicker: true`，以便 Cursor ACP 返回 `configOptions`。
 3. `session/new|load|fork` 若带 `category: "model"` 的选项，用其 `currentValue` 和名称覆盖/补全列表。
-4. 用户改模型：`session/set_config_option`（发现的 `configId`，通常是 `model`）；失败则 `session/set_model`。`auto` 不是合法 ACP 值，Host 和侧栏都跳过 RPC，只更新本地 currentId。
-5. 侧栏把 `selectedModelId` 写入 `chrome.storage.local`；仅当选的是具体模型时，会话绑定后再 `model.set` 一次。
+4. 用户改模型：`session/set_config_option`（发现的 `configId`，通常是 `model`）；失败则 `session/set_model`。`auto` / 空不是合法 ACP 值，跳过 RPC。
+5. 侧栏只在 `status === ready` 且列表非空时渲染下拉。`selectedModelId` 写入 `chrome.storage.local`；仅当选的是具体模型时再 `model.set`。
 
 ## 标签切换
 
@@ -289,7 +289,7 @@ macOS 清单路径：`~/Library/Application Support/Google/Chrome/NativeMessagin
 
 ## UI
 
-- 聊天：`ChatPane` 由当前会话的 `messages` / `isRunning` 驱动；工具卡片 / markdown 仍是现有组件。输入区：可选附件芯片 → textarea → 第二行左 Lucide `MousePointer2` 拾取 + `Plus`、右模型下拉 + `Send` 小飞机 / 停止（14px，与顶栏 icon 同大；hover 半透明白圆）。拾取时 `App` 全栏模糊遮罩 + 居中提示，完成或 Esc 才收。`IconButton` 的 tooltip 用 `position: fixed` 挂到 `document.body`，按锚点测量后翻边/平移，与视口保持 8px。除顶栏外，按钮统一 `hover:bg-white/15` + CSS 涟漪（`RippleButton` / `IconButton`）。芯片 `title` 用完整路径或 selector，过长按行宽省略。
+- 聊天：`ChatPane` 由当前会话的 `messages` / `isRunning` 驱动；工具卡片 / markdown 仍是现有组件。输入区：可选附件芯片 → textarea → 第二行左 Lucide `MousePointer2` 拾取 + `Plus`、右模型下拉（仅 `ready` 且列表非空）+ `Send` 小飞机 / 停止（14px，与顶栏 icon 同大；hover 半透明白圆）。拾取时 `App` 全栏模糊遮罩 + 居中提示，完成或 Esc 才收。`IconButton` 的 tooltip 用 `position: fixed` 挂到 `document.body`，按锚点测量后翻边/平移，与视口保持 8px。除顶栏外，按钮统一 `hover:bg-white/15` + CSS 涟漪（`RippleButton` / `IconButton`）。芯片 `title` 用完整路径或 selector，过长按行宽省略。
 - 顶栏：左会话开关（收起时 Lucide `MessageSquarePlus` 气泡加号，展开时 `PanelLeftClose`）+ 语言按钮（英显示「中」、中显示「EN」）；正中会话名；右连接状态与 offline「Connection / 重连」（icon 已是重试语义）。顶栏按钮不加涟漪。
 - 会话列表是主区域左侧栏：新建、卡片上 Pencil / Trash2 重命名与删除；`titleManual` 为真时不再用首条消息改标题
 - 空会话：消息区垂直居中，Lucide `MessageCircle` 约 120px + 一行淡灰提示，不抢视觉

@@ -25,6 +25,15 @@ export function isUnsetModel(id: string | undefined): boolean {
   return !id || id === "auto";
 }
 
+export function uniqueModels(models: AgentModel[]): AgentModel[] {
+  const byId = new Map<string, AgentModel>();
+  for (const model of models) {
+    if (!model.id) continue;
+    byId.set(model.id, model);
+  }
+  return [...byId.values()];
+}
+
 export function parseAgentModels(stdout: string): ModelCatalog {
   const models: AgentModel[] = [];
   let markedCurrent = "";
@@ -40,21 +49,24 @@ export function parseAgentModels(stdout: string): ModelCatalog {
     const name = rawName.replace(/\s*\((?:default|current)\)/gi, "").trim() || id;
     models.push({ id, name });
   }
-  if (models.length === 0) models.push({ id: "auto", name: "Auto" });
+  const unique = uniqueModels(models);
   const currentId =
-    (markedCurrent && models.some((model) => model.id === markedCurrent) ? markedCurrent : "") ||
-    (markedDefault && models.some((model) => model.id === markedDefault) ? markedDefault : "") ||
-    models.find((model) => !isUnsetModel(model.id))?.id ||
-    models[0].id;
-  return { models, currentId, modelConfigId: "model" };
+    (markedCurrent && unique.some((model) => model.id === markedCurrent) ? markedCurrent : "") ||
+    (markedDefault && unique.some((model) => model.id === markedDefault) ? markedDefault : "") ||
+    unique.find((model) => !isUnsetModel(model.id))?.id ||
+    unique[0]?.id ||
+    "";
+  return { models: unique, currentId, modelConfigId: "model" };
 }
 
 export function catalogFromConfigOptions(options: ConfigOption[] | undefined): Partial<ModelCatalog> {
   const model = options?.find((option) => option.category === "model" || option.id === "model");
   if (!model) return {};
-  const models = (model.options ?? [])
-    .filter((option) => option.value)
-    .map((option) => ({ id: option.value, name: option.name || option.value }));
+  const models = uniqueModels(
+    (model.options ?? [])
+      .filter((option) => option.value)
+      .map((option) => ({ id: option.value, name: option.name || option.value })),
+  );
   const currentId = typeof model.currentValue === "string" ? model.currentValue : undefined;
   return {
     models: models.length > 0 ? models : undefined,
@@ -66,13 +78,13 @@ export function catalogFromConfigOptions(options: ConfigOption[] | undefined): P
 export function mergeCatalog(base: ModelCatalog, overlay: Partial<ModelCatalog>): ModelCatalog {
   const byId = new Map(base.models.map((model) => [model.id, model]));
   for (const model of overlay.models ?? []) byId.set(model.id, model);
-  const models = [...byId.values()];
+  const models = uniqueModels([...byId.values()]);
   const currentId =
     overlay.currentId && models.some((model) => model.id === overlay.currentId)
       ? overlay.currentId
       : models.some((model) => model.id === base.currentId)
         ? base.currentId
-        : (models[0]?.id ?? "auto");
+        : (models[0]?.id ?? "");
   return {
     models,
     currentId,

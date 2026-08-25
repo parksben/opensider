@@ -34,8 +34,8 @@ export function App() {
   const [locale, setLocale] = useState<Locale>("en");
   const [sessions, setSessions] = useState<Session[]>([]);
   const [selectedId, setSelectedId] = useState("");
-  const [models, setModels] = useState<AgentModel[]>([{ id: "auto", name: "Auto" }]);
-  const [selectedModelId, setSelectedModelId] = useState("auto");
+  const [models, setModels] = useState<AgentModel[]>([]);
+  const [selectedModelId, setSelectedModelId] = useState("");
   const [sessionsOpen, setSessionsOpen] = useState(false);
   const [status, setStatus] = useState<"starting" | "ready" | "error">("starting");
   const [error, setError] = useState<string>();
@@ -141,9 +141,10 @@ export function App() {
       return;
     }
     if (msg.type === "models") {
-      setModels(msg.models.length > 0 ? msg.models : [{ id: "auto", name: "Auto" }]);
+      const incoming = msg.models.filter((model, index, all) => all.findIndex((item) => item.id === model.id) === index);
+      setModels(incoming);
       const desired = selectedModelRef.current;
-      const known = msg.models.some((model) => model.id === desired);
+      const known = incoming.some((model) => model.id === desired);
       if (
         desired &&
         desired !== "auto" &&
@@ -154,7 +155,7 @@ export function App() {
         appliedModelRef.current = desired;
         sendRef.current({ type: "model.set", modelId: desired });
       } else if (!desired || !known) {
-        setSelectedModelId(msg.currentId || "auto");
+        setSelectedModelId(msg.currentId || incoming[0]?.id || "");
       }
       return;
     }
@@ -497,6 +498,7 @@ export function App() {
               pickingElement={pickingElement}
               models={models}
               modelId={selectedModelId}
+              showModelPicker={status === "ready" && models.length > 0}
               onSend={onSend}
               onCancel={onCancel}
               onFork={forkFromMessage}

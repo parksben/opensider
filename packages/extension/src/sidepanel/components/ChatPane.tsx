@@ -18,6 +18,7 @@ export function ChatPane({
   pickingElement,
   models,
   modelId,
+  showModelPicker,
   onSend,
   onCancel,
   onFork,
@@ -32,6 +33,7 @@ export function ChatPane({
   pickingElement: boolean;
   models: AgentModel[];
   modelId: string;
+  showModelPicker: boolean;
   onSend: (text: string, attachments: AttachmentItem[]) => void;
   onCancel: () => void;
   onFork: (messageId: string) => void;
@@ -180,13 +182,9 @@ export function ChatPane({
               </IconButton>
             </div>
             <div className="flex min-w-0 items-center justify-end gap-1.5">
-              <ModelSelect
-                locale={locale}
-                models={models}
-                modelId={modelId}
-                disabled={models.length === 0}
-                onModel={onModel}
-              />
+              {showModelPicker ? (
+                <ModelSelect locale={locale} models={models} modelId={modelId} onModel={onModel} />
+              ) : null}
               {isRunning ? (
                 <IconButton
                   side="top"

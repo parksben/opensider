@@ -22,8 +22,8 @@ const agentPath = defaultAgentPath();
 let client: AcpClient | undefined;
 let promptInFlight = false;
 let catalog: ModelCatalog = {
-  models: [{ id: "auto", name: "Auto" }],
-  currentId: "auto",
+  models: [],
+  currentId: "",
   modelConfigId: "model",
 };
 let pendingModelId: string | undefined;
