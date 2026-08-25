@@ -271,18 +271,23 @@ chrome.runtime.onConnect.addListener((port) => {
 });
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg?.type === "ping") {
+    connectNative();
+    sendResponse({ ok: true, status: lastStatus });
+    return true;
+  }
   if (msg?.type === "reconnect") {
     lastStatus = { type: "status", state: "starting" };
     lastSession = undefined;
     broadcast(lastStatus);
     connectNative(true);
-    sendResponse({ ok: true });
+    sendResponse({ ok: true, status: lastStatus });
     return true;
   }
   return false;
 });
 
-void chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+void chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => undefined);
 connectNative();
 
 chrome.tabs.onActivated.addListener((info) => {

@@ -47,15 +47,15 @@ Cursor Agent 在 ACP 模式下仍然自己执行本地工具（读文件、写�
 - 发出用户输入（可带本机附件路径）、取消、权限决定、提问/计划回答、新建 / 切换 / fork 会话、选模型
 - 展示当前页、进行中的页面命令、连接状态、todo、权限条、输入栏附件芯片与模型下拉
 - 离线发送会立刻报错；Service Worker 断开时显示原因（含扩展 ID / `lastError`）并允许重试
-- 侧栏端口做成引用计数单例，StrictMode 连断连时延迟拆除，避免往已断开的 `Port` 上 `postMessage`
+- 侧栏先 `sendMessage({ type: "ping" })` 唤醒 SW，再 `connect`。React StrictMode 卸载只摘监听器，不拆端口。端口若在 SW 还在加载时空断，自动重连，避免永远停在 Lost connection
 - 不再挂载 assistant-ui runtime；旧的 `ExternalStoreThreadRuntimeCore` 会在端口断开后抛错，把扩展标红
 
 ### Service Worker
 
-- Service Worker 一启动就 `connectNative`，不依赖侧栏先连上
+- Service Worker 一启动就 `connectNative`，不依赖侧栏先连上；`ping` / `onConnect` 也会再拉一次，避免第一次 `connect` 落在 listener 注册之前
 - `chrome.runtime.connectNative` 连接 Host；重试时强制拆掉旧端口再连，避免僵尸 `nativePort` 让 `if (nativePort) return` 直接跳过
 - 往 Native / 侧栏端口发消息一律 try/catch，断开时清掉引用并写出 `chrome.runtime.lastError`
-- 缓存最近一次 `status` / `session` / `page`，侧栏 `onConnect` 时立即回放，避免 Host 已 ready 但面板因 React StrictMode 重挂而一直显示离线
+- 缓存最近一次 `status` / `session` / `page` / `models`，侧栏 `onConnect` 或 `ping` 时立即回放，避免 Host 已 ready 但面板因 React StrictMode 重挂而一直显示离线
 - 在 Side Panel、Content Script、Host 之间转发消息
 - 监听 `tabs.onActivated` / `tabs.onUpdated`，通知内容脚本刷新当前页
 - 点击工具栏图标打开 Side Panel
@@ -308,7 +308,8 @@ pnpm workspace。扩展用 Vite + `@crxjs/vite-plugin` 打包。
 | 内容脚本无法注入 | `current.json` 只写 url/title，命令返回明确错误 |
 | Chrome 杀 Service Worker | 重连 Native Host；ACP 子进程随 Host 退出，重连后 load/new |
 | 侧栏晚于 Host ready 才连上 | SW 回放最近状态 |
-| React StrictMode 拆掉端口后再 postMessage | 端口单例 + 延迟拆除 + try/catch |
+| React StrictMode 拆掉端口后再 postMessage | 页面存活期间不拆端口；卸载只摘监听器 |
+| 侧栏 connect 时 SW 还在加载 crx loader | 先 ping 再 connect；空断后自动重连 |
 | 重试无效 | 强制重连 Native Host；`connect` 唤醒 SW，失败原因写到顶栏 |
 | 发消息无反馈 | 输入和 isRunning 由 App state 驱动，不走 useAuiState |
 | 命令文件误触发 | 只认 `browser/commands/*.json` 且含 `id`+白名单 `method` |

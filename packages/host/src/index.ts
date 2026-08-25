@@ -14,6 +14,7 @@ import { pickLocalPaths } from "./pick.ts";
 import { watchCommands, writeCommandResult } from "./watch.ts";
 import { ensureWorkspace, readSessionId, WORKSPACE_DIR, writeCurrentPage, writeSessionId } from "./workspace.ts";
 
+log("node host starting");
 ensureWorkspace();
 
 const agentPath = defaultAgentPath();

@@ -5,17 +5,21 @@ type Listener = (msg: HostToExt) => void;
 type Shared = {
   port: chrome.runtime.Port | null;
   listeners: Set<Listener>;
-  refs: number;
+  alive: boolean;
   closedByUs: boolean;
-  teardownTimer: ReturnType<typeof setTimeout> | undefined;
+  attaching: boolean;
+  reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+  attempts: number;
 };
 
 const shared: Shared = {
   port: null,
   listeners: new Set(),
-  refs: 0,
+  alive: false,
   closedByUs: false,
-  teardownTimer: undefined,
+  attaching: false,
+  reconnectTimer: undefined,
+  attempts: 0,
 };
 
 function emit(msg: HostToExt): void {
@@ -38,23 +42,71 @@ function safePost(port: chrome.runtime.Port | null, msg: ExtToHost): boolean {
   }
 }
 
-function attach(): void {
-  if (shared.port) return;
+async function wake(): Promise<HostToExt | undefined> {
+  try {
+    const reply = (await chrome.runtime.sendMessage({ type: "ping" })) as
+      | { ok?: boolean; status?: HostToExt }
+      | undefined;
+    return reply?.status;
+  } catch {
+    return undefined;
+  }
+}
+
+function scheduleReconnect(): void {
+  if (!shared.alive || shared.reconnectTimer || shared.port) return;
+  const delay = Math.min(1500, 80 * 2 ** Math.min(shared.attempts, 5));
+  shared.reconnectTimer = setTimeout(() => {
+    shared.reconnectTimer = undefined;
+    if (shared.alive && !shared.port) void attach();
+  }, delay);
+}
+
+async function attach(): Promise<void> {
+  if (shared.port || !shared.alive || shared.attaching) return;
+  shared.attaching = true;
   shared.closedByUs = false;
-  const port = chrome.runtime.connect({ name: "sidebar" });
-  shared.port = port;
-  port.onMessage.addListener((msg: HostToExt) => emit(msg));
-  port.onDisconnect.addListener(() => {
-    shared.port = null;
-    if (shared.closedByUs) return;
-    const error =
-      chrome.runtime.lastError?.message ?? "Lost connection to the extension service worker.";
-    emit({ type: "status", state: "error", error });
-  });
+  try {
+    const replay = await wake();
+    if (replay) emit(replay);
+    if (shared.port || !shared.alive) return;
+
+    const port = chrome.runtime.connect({ name: "sidebar" });
+    shared.port = port;
+    port.onMessage.addListener((msg: HostToExt) => {
+      shared.attempts = 0;
+      emit(msg);
+    });
+    port.onDisconnect.addListener(() => {
+      const wasCurrent = shared.port === port;
+      if (wasCurrent) shared.port = null;
+      if (!wasCurrent || shared.closedByUs || !shared.alive) return;
+      shared.attempts += 1;
+      const detail = chrome.runtime.lastError?.message;
+      if (shared.attempts >= 8) {
+        emit({
+          type: "status",
+          state: "error",
+          error:
+            detail ??
+            "Lost connection to the extension service worker. Reload the extension, then try Connection.",
+        });
+        return;
+      }
+      emit({ type: "status", state: "starting" });
+      scheduleReconnect();
+    });
+  } finally {
+    shared.attaching = false;
+  }
 }
 
 function teardown(): void {
   shared.closedByUs = true;
+  if (shared.reconnectTimer) {
+    clearTimeout(shared.reconnectTimer);
+    shared.reconnectTimer = undefined;
+  }
   const port = shared.port;
   shared.port = null;
   try {
@@ -80,40 +132,43 @@ function connectNativeHost(): void {
   );
 }
 
+function onPageHide(): void {
+  shared.alive = false;
+  teardown();
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener("pagehide", onPageHide);
+}
+
 export function connectSidebar(onMessage: Listener): {
   send: (msg: ExtToHost) => void;
   reconnect: () => void;
   disconnect: () => void;
 } {
   shared.listeners.add(onMessage);
-  shared.refs += 1;
-  if (shared.teardownTimer) {
-    clearTimeout(shared.teardownTimer);
-    shared.teardownTimer = undefined;
-  }
-  attach();
+  shared.alive = true;
+  shared.attempts = 0;
+  void attach();
 
   return {
     send: (msg) => {
       if (!safePost(shared.port, msg)) {
-        attach();
-        safePost(shared.port, msg);
+        void attach().then(() => {
+          safePost(shared.port, msg);
+        });
       }
     },
     reconnect: () => {
+      shared.alive = true;
+      shared.attempts = 0;
       teardown();
-      attach();
+      shared.closedByUs = false;
+      void attach();
       connectNativeHost();
     },
     disconnect: () => {
       shared.listeners.delete(onMessage);
-      shared.refs = Math.max(0, shared.refs - 1);
-      if (shared.refs > 0) return;
-      if (shared.teardownTimer) clearTimeout(shared.teardownTimer);
-      shared.teardownTimer = setTimeout(() => {
-        shared.teardownTimer = undefined;
-        if (shared.refs === 0) teardown();
-      }, 200);
     },
   };
 }
