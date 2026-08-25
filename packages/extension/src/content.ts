@@ -6,7 +6,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
   if (message?.type === "browser.command" && message.command) {
-    sendResponse(runPageMethod(message.command));
+    void runPageMethod(message.command).then(sendResponse);
     return true;
   }
   return false;

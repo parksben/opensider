@@ -10,9 +10,74 @@ export const PAGE_METHODS = [
   "getLinks",
   "getOutline",
   "queryText",
+  "queryAll",
+  "getAttribute",
+  "getValue",
+  "exists",
+  "click",
+  "dblclick",
+  "hover",
+  "focus",
+  "fill",
+  "type",
+  "clear",
+  "select",
+  "check",
+  "press",
+  "scroll",
+  "scrollIntoView",
+  "waitFor",
+  "navigate",
+  "goBack",
+  "goForward",
+  "reload",
+] as const;
+
+export const TAB_METHODS = ["navigate", "goBack", "goForward", "reload"] as const;
+
+export const ACTION_METHODS = [
+  "click",
+  "dblclick",
+  "hover",
+  "focus",
+  "fill",
+  "type",
+  "clear",
+  "select",
+  "check",
+  "press",
+  "scroll",
+  "scrollIntoView",
+  "navigate",
+  "goBack",
+  "goForward",
+  "reload",
 ] as const;
 
 export type PageMethod = (typeof PAGE_METHODS)[number];
+export type TabMethod = (typeof TAB_METHODS)[number];
+
+export function isTabMethod(method: PageMethod): method is TabMethod {
+  return (TAB_METHODS as readonly string[]).includes(method);
+}
+
+export function isActionMethod(method: PageMethod): boolean {
+  return (ACTION_METHODS as readonly string[]).includes(method);
+}
+
+export type BrowserCommandArgs = {
+  selector?: string;
+  text?: string;
+  value?: string;
+  url?: string;
+  key?: string;
+  attribute?: string;
+  timeoutMs?: number;
+  x?: number;
+  y?: number;
+  nth?: number;
+  checked?: boolean;
+};
 
 export type CurrentPage = {
   tabId: number;
@@ -25,7 +90,7 @@ export type CurrentPage = {
 export type BrowserCommand = {
   id: string;
   method: PageMethod;
-  args?: { selector?: string };
+  args?: BrowserCommandArgs;
 };
 
 export type BrowserResult = {
@@ -70,4 +135,5 @@ export type HostToExt =
   | { type: "cursor"; id?: number; method: string; params: Record<string, unknown> }
   | { type: "turn.end"; stopReason: string }
   | { type: "page"; page: CurrentPage }
-  | { type: "browser.command"; command: BrowserCommand };
+  | { type: "browser.command"; command: BrowserCommand }
+  | { type: "browser.result"; result: BrowserResult };

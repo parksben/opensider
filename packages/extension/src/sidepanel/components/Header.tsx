@@ -1,5 +1,5 @@
-import { Globe, PlugZap, Unplug } from "lucide-react";
-import type { CurrentPage } from "@shared";
+import { Globe, MousePointerClick, PlugZap, Unplug } from "lucide-react";
+import type { BrowserCommand, BrowserResult, CurrentPage } from "@shared";
 import type { TodoItem } from "../chat-types";
 
 export function Header({
@@ -7,11 +7,13 @@ export function Header({
   error,
   page,
   todos,
+  activity,
 }: {
   status: "starting" | "ready" | "error";
   error?: string;
   page?: CurrentPage;
   todos: TodoItem[];
+  activity?: { command: BrowserCommand; result?: BrowserResult };
 }) {
   const host = safeHost(page?.url);
   return (
@@ -44,6 +46,21 @@ export function Header({
         </div>
       </div>
 
+      {activity ? (
+        <div className="mt-2 flex items-center gap-2 text-[11.5px] text-[var(--muted)]">
+          <MousePointerClick size={13} className="shrink-0 text-[var(--brass)]" />
+          <span className="truncate">
+            {activity.command.method}
+            {targetLabel(activity.command)}
+            {activity.result
+              ? activity.result.ok
+                ? " · done"
+                : ` · ${activity.result.error ?? "failed"}`
+              : " · running"}
+          </span>
+        </div>
+      ) : null}
+
       {error && status === "error" ? (
         <p className="mt-2 text-[11.5px] leading-relaxed text-[var(--bad)]">{error}</p>
       ) : null}
@@ -60,6 +77,12 @@ export function Header({
       ) : null}
     </header>
   );
+}
+
+function targetLabel(command: BrowserCommand): string {
+  const args = command.args;
+  const bit = args?.selector || args?.text || args?.url || args?.key;
+  return bit ? ` ${bit}` : "";
 }
 
 function safeHost(url?: string): string {

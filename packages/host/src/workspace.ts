@@ -16,32 +16,53 @@ const AGENTS_MD = `# Browser page tools
 
 You are chatting from a Chrome sidebar. The user keeps ONE session and ONE workspace across every browser tab.
 
+You can both READ the current page and OPERATE it (click, fill, navigate). Prefer these browser methods over guessing from memory.
+
 ## Current page
 
 When the user talks about "this page", "the current tab", or the site they are looking at, read \`browser/current.json\` first. \`browser/snapshot.md\` is the latest readable extract of that page.
 
-The current tab also changes while you work. Re-read those files if the user switches topics or says they changed pages.
+The current tab also changes while you work. Re-read those files after navigation or if the user says they changed pages.
 
 ## Calling page methods
 
-Write a JSON file to \`browser/commands/<id>.json\`:
+Write a JSON file to \`browser/commands/<id>.json\`, then read \`browser/results/<id>.json\`. If the result is not there yet, wait a moment and read again.
 
 \`\`\`json
-{"id":"<id>","method":"getReadable","args":{}}
+{"id":"<id>","method":"click","args":{"text":"Sign in"}}
 \`\`\`
 
-Then read \`browser/results/<id>.json\`. If the file is not there yet, wait a moment and read again.
+Find elements with \`args.selector\` (CSS), \`args.text\` (visible text contains), and optional \`args.nth\` (0-based).
 
-Allowed methods (read-only):
+### Read
 
 - \`getMeta\` — url, title, description
 - \`getReadable\` — main text
-- \`getSelection\` — the user's highlighted text
+- \`getSelection\` — highlighted text
 - \`getLinks\` — same-origin links
-- \`getOutline\` — h1–h3 headings
-- \`queryText\` — \`args.selector\` required, returns that node's text
+- \`getOutline\` — h1–h3
+- \`queryText\` — one node's text
+- \`queryAll\` — matching node summaries
+- \`getAttribute\` — requires \`args.attribute\`
+- \`getValue\` — input/textarea/select value
+- \`exists\` — whether a match exists
 
-Do not invent other methods. Do not try to click or navigate the page.
+### Act
+
+- \`click\` / \`dblclick\` / \`hover\` / \`focus\`
+- \`fill\` — set value (\`args.value\`)
+- \`type\` — append \`args.text\`
+- \`clear\`
+- \`select\` — \`<select>\` + \`args.value\`
+- \`check\` — checkbox/radio, optional \`args.checked\`
+- \`press\` — \`args.key\` such as \`Enter\` or \`Escape\`
+- \`scroll\` — element if selector/text, else window by \`args.x\` / \`args.y\`
+- \`scrollIntoView\`
+- \`waitFor\` — poll until the element exists (\`args.timeoutMs\`, max 20000)
+- \`navigate\` — \`args.url\`, http(s) only
+- \`goBack\` / \`goForward\` / \`reload\`
+
+Do not invent other methods. Do not try to run arbitrary JavaScript. After acting, re-read \`browser/current.json\` if the page may have changed.
 `;
 
 export function ensureWorkspace(): void {

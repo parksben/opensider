@@ -1,6 +1,7 @@
-import type { BrowserCommand, BrowserResult, CurrentPage, PageMethod } from "@shared";
+import type { BrowserCommand, BrowserCommandArgs, BrowserResult, CurrentPage, PageMethod } from "@shared";
 
 const MAX_TEXT = 200_000;
+const SELECTOR_MAX = 300;
 
 function clip(text: string, max = MAX_TEXT): string {
   return text.length > max ? `${text.slice(0, max)}\n\n[truncated]` : text;
@@ -8,6 +9,10 @@ function clip(text: string, max = MAX_TEXT): string {
 
 function cleanText(value: string): string {
   return value.replace(/\u00a0/g, " ").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export function getMeta(): Record<string, string> {
@@ -57,15 +62,6 @@ export function getOutline(): Array<{ level: number; text: string }> {
   return outline;
 }
 
-export function queryText(selector: string): string {
-  if (!selector || selector.length > 200) {
-    throw new Error("selector is required and must be short");
-  }
-  const node = document.querySelector(selector);
-  if (!node) return "";
-  return clip(cleanText((node as HTMLElement).innerText ?? ""));
-}
-
 export function getReadable(): string {
   const root =
     document.querySelector("article") ??
@@ -79,6 +75,124 @@ export function getReadable(): string {
   return clip(cleanText(clone.innerText ?? ""));
 }
 
+function matchesText(el: Element, text?: string): boolean {
+  if (!text) return true;
+  return cleanText((el as HTMLElement).innerText ?? "").toLowerCase().includes(text.toLowerCase());
+}
+
+function collectCandidates(args: BrowserCommandArgs): HTMLElement[] {
+  const selector = args.selector?.trim();
+  if (selector) {
+    if (selector.length > SELECTOR_MAX) throw new Error("selector is too long");
+    return [...document.querySelectorAll(selector)].filter((el) => matchesText(el, args.text)) as HTMLElement[];
+  }
+  if (args.text) {
+    const preferred = document.querySelectorAll(
+      "a, button, [role='button'], input, textarea, select, label, summary, [onclick]",
+    );
+    const hits = [...preferred].filter((el) => matchesText(el, args.text)) as HTMLElement[];
+    if (hits.length > 0) return hits;
+    return [...document.querySelectorAll("h1, h2, h3, h4, p, li, span, div")]
+      .filter((el) => matchesText(el, args.text))
+      .slice(0, 40) as HTMLElement[];
+  }
+  throw new Error("args.selector or args.text is required");
+}
+
+function findElement(args: BrowserCommandArgs): HTMLElement {
+  const list = collectCandidates(args);
+  const index = args.nth ?? 0;
+  const el = list[index];
+  if (!el) {
+    throw new Error(`no matching element (matches=${list.length}, nth=${index})`);
+  }
+  return el;
+}
+
+function describe(el: HTMLElement): Record<string, string | undefined> {
+  const href = el instanceof HTMLAnchorElement ? el.href : el.getAttribute("href") ?? undefined;
+  return {
+    tag: el.tagName.toLowerCase(),
+    text: cleanText(el.innerText ?? "").slice(0, 160),
+    href,
+    name: el.getAttribute("name") ?? undefined,
+    type: el.getAttribute("type") ?? undefined,
+    id: el.id || undefined,
+  };
+}
+
+function highlight(el: HTMLElement): void {
+  const previous = el.style.outline;
+  el.style.outline = "2px solid #d4a054";
+  window.setTimeout(() => {
+    el.style.outline = previous;
+  }, 700);
+}
+
+function mouse(el: HTMLElement, type: string): void {
+  el.dispatchEvent(
+    new MouseEvent(type, {
+      bubbles: true,
+      cancelable: true,
+      view: window,
+      composed: true,
+    }),
+  );
+}
+
+function clickElement(el: HTMLElement): void {
+  el.scrollIntoView({ block: "center", inline: "nearest" });
+  highlight(el);
+  if ("focus" in el) el.focus();
+  mouse(el, "pointerdown");
+  mouse(el, "mousedown");
+  mouse(el, "pointerup");
+  mouse(el, "mouseup");
+  el.click();
+}
+
+function setNativeValue(el: HTMLInputElement | HTMLTextAreaElement, value: string): void {
+  const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+  const desc = Object.getOwnPropertyDescriptor(proto, "value");
+  desc?.set?.call(el, value);
+  el.dispatchEvent(new InputEvent("input", { bubbles: true, composed: true, data: value, inputType: "insertText" }));
+  el.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+function fillElement(el: HTMLElement, value: string, append: boolean): void {
+  el.scrollIntoView({ block: "center", inline: "nearest" });
+  highlight(el);
+  el.focus();
+  if (el instanceof HTMLSelectElement) {
+    el.value = value;
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+    return;
+  }
+  if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+    const next = append ? `${el.value}${value}` : value;
+    setNativeValue(el, next);
+    return;
+  }
+  if (el.isContentEditable) {
+    if (!append) el.textContent = "";
+    el.textContent = `${el.textContent ?? ""}${value}`;
+    el.dispatchEvent(new InputEvent("input", { bubbles: true, composed: true }));
+    return;
+  }
+  throw new Error("element is not fillable");
+}
+
+function pressKey(el: HTMLElement, key: string): void {
+  const opts = { key, bubbles: true, cancelable: true };
+  el.dispatchEvent(new KeyboardEvent("keydown", opts));
+  el.dispatchEvent(new KeyboardEvent("keypress", opts));
+  el.dispatchEvent(new KeyboardEvent("keyup", opts));
+  if (key === "Enter" && el instanceof HTMLFormElement) {
+    el.requestSubmit();
+  }
+}
+
 export function extractSnapshot(tabId: number): CurrentPage {
   const meta = getMeta();
   return {
@@ -90,16 +204,16 @@ export function extractSnapshot(tabId: number): CurrentPage {
   };
 }
 
-export function runPageMethod(command: BrowserCommand): BrowserResult {
+export async function runPageMethod(command: BrowserCommand): Promise<BrowserResult> {
   try {
-    const data = invoke(command.method, command.args?.selector);
+    const data = await invoke(command.method, command.args ?? {});
     return { id: command.id, ok: true, method: command.method, data };
   } catch (error) {
     return { id: command.id, ok: false, method: command.method, error: String(error) };
   }
 }
 
-function invoke(method: PageMethod, selector?: string): unknown {
+async function invoke(method: PageMethod, args: BrowserCommandArgs): Promise<unknown> {
   switch (method) {
     case "getMeta":
       return getMeta();
@@ -112,8 +226,112 @@ function invoke(method: PageMethod, selector?: string): unknown {
     case "getOutline":
       return { outline: getOutline() };
     case "queryText":
-      if (!selector) throw new Error("queryText requires args.selector");
-      return { text: queryText(selector) };
+      return { text: clip(cleanText(findElement(args).innerText ?? "")) };
+    case "queryAll": {
+      const all = collectCandidates(args);
+      return { count: all.length, elements: all.slice(0, 30).map(describe) };
+    }
+    case "getAttribute":
+      if (!args.attribute) throw new Error("getAttribute requires args.attribute");
+      return { value: findElement(args).getAttribute(args.attribute) };
+    case "getValue": {
+      const el = findElement(args);
+      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement) {
+        return { value: el.value };
+      }
+      return { value: cleanText(el.innerText ?? "") };
+    }
+    case "exists": {
+      const all = collectCandidates(args);
+      return { found: all.length > 0, count: all.length };
+    }
+    case "click": {
+      const el = findElement(args);
+      clickElement(el);
+      return { clicked: describe(el) };
+    }
+    case "dblclick": {
+      const el = findElement(args);
+      clickElement(el);
+      el.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true, view: window }));
+      return { clicked: describe(el) };
+    }
+    case "hover": {
+      const el = findElement(args);
+      el.scrollIntoView({ block: "center", inline: "nearest" });
+      highlight(el);
+      mouse(el, "pointerover");
+      mouse(el, "mouseover");
+      mouse(el, "mouseenter");
+      return { hovered: describe(el) };
+    }
+    case "focus": {
+      const el = findElement(args);
+      el.scrollIntoView({ block: "center", inline: "nearest" });
+      el.focus();
+      return { focused: describe(el) };
+    }
+    case "fill":
+      if (args.value == null && args.text == null) throw new Error("fill requires args.value");
+      fillElement(findElement(args), args.value ?? args.text ?? "", false);
+      return { filled: true };
+    case "type":
+      if (args.text == null && args.value == null) throw new Error("type requires args.text");
+      fillElement(findElement(args), args.text ?? args.value ?? "", true);
+      return { typed: true };
+    case "clear":
+      fillElement(findElement(args), "", false);
+      return { cleared: true };
+    case "select": {
+      const el = findElement(args);
+      if (!(el instanceof HTMLSelectElement)) throw new Error("select requires a <select>");
+      if (args.value == null) throw new Error("select requires args.value");
+      fillElement(el, args.value, false);
+      return { selected: el.value };
+    }
+    case "check": {
+      const el = findElement(args);
+      if (!(el instanceof HTMLInputElement) || (el.type !== "checkbox" && el.type !== "radio")) {
+        throw new Error("check requires a checkbox or radio");
+      }
+      const next = args.checked ?? true;
+      if (el.checked !== next) clickElement(el);
+      return { checked: el.checked };
+    }
+    case "press": {
+      const key = args.key;
+      if (!key) throw new Error("press requires args.key");
+      const el = args.selector || args.text ? findElement(args) : (document.activeElement as HTMLElement | null);
+      if (!el) throw new Error("nothing is focused");
+      pressKey(el, key);
+      return { key };
+    }
+    case "scroll":
+      if (args.selector || args.text) {
+        findElement(args).scrollIntoView({ block: "center", inline: "nearest" });
+        return { scrolled: "element" };
+      }
+      window.scrollBy(args.x ?? 0, args.y ?? 600);
+      return { scrolled: "window", x: args.x ?? 0, y: args.y ?? 600 };
+    case "scrollIntoView":
+      findElement(args).scrollIntoView({ block: "center", inline: "nearest" });
+      return { scrolled: "element" };
+    case "waitFor": {
+      const timeout = Math.min(Math.max(args.timeoutMs ?? 8000, 200), 20_000);
+      const start = Date.now();
+      while (Date.now() - start < timeout) {
+        if (collectCandidates(args).length > 0) {
+          return { found: true, elapsedMs: Date.now() - start };
+        }
+        await sleep(150);
+      }
+      throw new Error(`waitFor timed out after ${timeout}ms`);
+    }
+    case "navigate":
+    case "goBack":
+    case "goForward":
+    case "reload":
+      throw new Error(`${method} is handled by the extension service worker`);
     default:
       throw new Error(`unknown method ${method}`);
   }

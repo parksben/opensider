@@ -1,5 +1,5 @@
 import type { BrowserCommand, BrowserResult, CurrentPage, ExtToHost, HostToExt } from "@shared";
-import { HOST_NAME } from "@shared";
+import { HOST_NAME, isActionMethod, isTabMethod } from "@shared";
 
 let nativePort: chrome.runtime.Port | null = null;
 const sidebars = new Set<chrome.runtime.Port>();
@@ -48,31 +48,90 @@ function sendNative(msg: ExtToHost): void {
   nativePort?.postMessage(msg);
 }
 
+function fail(command: BrowserCommand, error: string): BrowserResult {
+  return { id: command.id, ok: false, method: command.method, error };
+}
+
+async function waitTabComplete(tabId: number, timeoutMs: number): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      chrome.tabs.onUpdated.removeListener(onUpdated);
+      reject(new Error("navigation timed out"));
+    }, timeoutMs);
+    const onUpdated = (id: number, change: { status?: string }) => {
+      if (id === tabId && change.status === "complete") {
+        clearTimeout(timer);
+        chrome.tabs.onUpdated.removeListener(onUpdated);
+        resolve();
+      }
+    };
+    chrome.tabs.onUpdated.addListener(onUpdated);
+  });
+}
+
+async function runTabMethod(tabId: number, command: BrowserCommand): Promise<BrowserResult> {
+  const timeout = Math.min(command.args?.timeoutMs ?? 15_000, 20_000);
+  if (command.method === "navigate") {
+    const url = command.args?.url;
+    if (!url) return fail(command, "navigate requires args.url");
+    let parsed: URL;
+    try {
+      parsed = new URL(url, (await chrome.tabs.get(tabId)).url);
+    } catch {
+      return fail(command, "invalid url");
+    }
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return fail(command, "only http(s) navigation is allowed");
+    }
+    await chrome.tabs.update(tabId, { url: parsed.toString() });
+    await waitTabComplete(tabId, timeout);
+    return { id: command.id, ok: true, method: command.method, data: { url: parsed.toString() } };
+  }
+  if (command.method === "goBack") {
+    await chrome.tabs.goBack(tabId);
+    await waitTabComplete(tabId, timeout).catch(() => undefined);
+    return { id: command.id, ok: true, method: command.method, data: { action: "back" } };
+  }
+  if (command.method === "goForward") {
+    await chrome.tabs.goForward(tabId);
+    await waitTabComplete(tabId, timeout).catch(() => undefined);
+    return { id: command.id, ok: true, method: command.method, data: { action: "forward" } };
+  }
+  await chrome.tabs.reload(tabId);
+  await waitTabComplete(tabId, timeout).catch(() => undefined);
+  return { id: command.id, ok: true, method: command.method, data: { action: "reload" } };
+}
+
 async function dispatchCommand(command: BrowserCommand): Promise<void> {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab?.id) {
-    sendNative({
-      type: "browser.result",
-      result: { id: command.id, ok: false, method: command.method, error: "No active tab" },
-    });
+    const result = fail(command, "No active tab");
+    sendNative({ type: "browser.result", result });
+    broadcast({ type: "browser.result", result });
     return;
   }
+
+  let result: BrowserResult;
   try {
-    const result = (await chrome.tabs.sendMessage(tab.id, {
-      type: "browser.command",
-      command,
-    })) as BrowserResult;
-    sendNative({ type: "browser.result", result });
+    result = isTabMethod(command.method)
+      ? await runTabMethod(tab.id, command)
+      : await Promise.race([
+          chrome.tabs.sendMessage(tab.id, { type: "browser.command", command }) as Promise<BrowserResult>,
+          new Promise<BrowserResult>((resolve) => {
+            setTimeout(
+              () => resolve(fail(command, "page command timed out")),
+              Math.min(command.args?.timeoutMs ?? 20_000, 20_000),
+            );
+          }),
+        ]);
   } catch (error) {
-    sendNative({
-      type: "browser.result",
-      result: {
-        id: command.id,
-        ok: false,
-        method: command.method,
-        error: String(error),
-      },
-    });
+    result = fail(command, String(error));
+  }
+
+  sendNative({ type: "browser.result", result });
+  broadcast({ type: "browser.result", result });
+  if (result.ok && isActionMethod(command.method)) {
+    void requestPage(tab.id);
   }
 }
 

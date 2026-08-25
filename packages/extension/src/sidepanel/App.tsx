@@ -1,5 +1,5 @@
 import type { AppendMessage } from "@assistant-ui/react";
-import type { CurrentPage, ExtToHost, HostToExt } from "@shared";
+import type { BrowserCommand, BrowserResult, CurrentPage, ExtToHost, HostToExt } from "@shared";
 import { useEffect, useRef, useState } from "react";
 import { applyAcpUpdate, createUserMessage } from "./acp-messages";
 import { connectSidebar } from "./bridge";
@@ -19,6 +19,7 @@ export function App() {
   const [permission, setPermission] = useState<PermissionRequest>();
   const [question, setQuestion] = useState<QuestionPrompt>();
   const [plan, setPlan] = useState<PlanPrompt>();
+  const [activity, setActivity] = useState<{ command: BrowserCommand; result?: BrowserResult }>();
   const sendRef = useRef<(msg: ExtToHost) => void>(() => undefined);
   const pageRef = useRef<CurrentPage | undefined>(undefined);
   pageRef.current = page;
@@ -45,6 +46,18 @@ export function App() {
     }
     if (msg.type === "page") {
       setPage(msg.page);
+      return;
+    }
+    if (msg.type === "browser.command") {
+      setActivity({ command: msg.command });
+      return;
+    }
+    if (msg.type === "browser.result") {
+      setActivity((current) =>
+        current && current.command.id === msg.result.id
+          ? { command: current.command, result: msg.result }
+          : { command: { id: msg.result.id, method: msg.result.method }, result: msg.result },
+      );
       return;
     }
     if (msg.type === "update") {
@@ -119,7 +132,7 @@ export function App() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <Header status={status} error={error} page={page} todos={todos} />
+      <Header status={status} error={error} page={page} todos={todos} activity={activity} />
       <div className="min-h-0 flex-1">
         <SidebarRuntime
           messages={messages}
