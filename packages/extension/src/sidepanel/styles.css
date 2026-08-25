@@ -174,3 +174,19 @@ textarea {
   font-weight: 600;
   margin: 0.8em 0 0.35em;
 }
+
+.cs-mermaid {
+  margin: 0.6em 0;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #10120c;
+  padding: 10px 8px;
+}
+
+.cs-mermaid svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto;
+}
