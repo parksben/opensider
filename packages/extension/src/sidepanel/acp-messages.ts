@@ -5,17 +5,17 @@ function id(): string {
 }
 
 function lastAssistant(messages: ChatMessage[]): { messages: ChatMessage[]; index: number } {
-  const index = [...messages].reverse().findIndex((item) => item.role === "assistant");
-  if (index === -1) {
-    const created: ChatMessage = {
-      id: id(),
-      role: "assistant",
-      content: [],
-      createdAt: new Date(),
-    };
-    return { messages: [...messages, created], index: messages.length };
+  const last = messages[messages.length - 1];
+  if (last?.role === "assistant") {
+    return { messages: [...messages], index: messages.length - 1 };
   }
-  return { messages: [...messages], index: messages.length - 1 - index };
+  const created: ChatMessage = {
+    id: id(),
+    role: "assistant",
+    content: [],
+    createdAt: new Date(),
+  };
+  return { messages: [...messages, created], index: messages.length };
 }
 
 function replacePart(message: ChatMessage, index: number, part: ChatPart): ChatMessage {
@@ -55,6 +55,7 @@ export function applyAcpUpdate(messages: ChatMessage[], update: Record<string, u
         return [...messages.slice(0, -1), { ...last, content: [{ type: "text", text: part.text + text }] }];
       }
     }
+    if (last?.role === "assistant") return messages;
     return [
       ...messages,
       { id: id(), role: "user", content: [{ type: "text", text }], createdAt: new Date() },
