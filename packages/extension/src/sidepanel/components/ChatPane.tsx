@@ -234,10 +234,10 @@ function AttachmentChips({
           <span
             key={item.path}
             title={item.path}
-            className="inline-flex max-w-full items-center gap-1 rounded-full border border-[var(--line)] bg-[var(--panel-2)] py-0.5 pl-1.5 pr-1 text-[11px] text-[var(--muted)]"
+            className="inline-flex max-w-[200px] items-center gap-1 rounded-full border border-[var(--line)] bg-[var(--panel-2)] py-0.5 pl-1.5 pr-1 text-[11px] text-[var(--muted)]"
           >
             <Icon size={12} className="shrink-0 opacity-80" />
-            <span className="min-w-0 truncate">{item.name}</span>
+            <span className="min-w-0 flex-1 truncate">{item.name}</span>
             {removable && onRemove ? (
               <RippleButton
                 title={removeLabel}
