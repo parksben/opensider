@@ -9,7 +9,7 @@ const copy = {
     noPage: "No page selected",
     switchTab: "Switch to a regular http(s) tab",
     retry: "Connection",
-    expandSessions: "Session",
+    expandSessions: "Sessions",
     collapseSessions: "Collapse list",
     switchLanguage: "Switch language",
     reconnecting: "Reconnecting…",
