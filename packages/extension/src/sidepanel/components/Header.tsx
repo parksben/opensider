@@ -1,4 +1,4 @@
-import { Globe, MousePointerClick, PanelLeft, PanelLeftClose, PlugZap, RotateCw, Unplug } from "lucide-react";
+import { Globe, MessageSquarePlus, MousePointerClick, PanelLeftClose, PlugZap, RotateCw, Unplug } from "lucide-react";
 import type { BrowserCommand, BrowserResult, CurrentPage } from "@shared";
 import type { TodoItem } from "../chat-types";
 import type { Locale } from "../i18n";
@@ -32,7 +32,7 @@ export function Header({
 }) {
   const host = safeHost(page?.url);
   const label = (key: Parameters<typeof t>[1]) => t(locale, key);
-  const ToggleIcon = sessionsOpen ? PanelLeftClose : PanelLeft;
+  const ToggleIcon = sessionsOpen ? PanelLeftClose : MessageSquarePlus;
   return (
     <header className="border-b border-[var(--line)] bg-[color-mix(in_oklab,var(--panel)_88%,transparent)] px-3 py-2.5 backdrop-blur">
       <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
