@@ -218,7 +218,8 @@ export function ChatPane({
           onScroll={onThreadScroll}
           className="cs-thread flex min-h-0 flex-1 flex-col-reverse overflow-y-auto px-3"
         >
-          <div className="py-3">
+          <div aria-hidden className="min-h-0 flex-1" />
+          <div className="shrink-0 py-3">
             {messages.map((message, index) => {
               const gap = index === 0 ? "" : message.role === "user" ? "mt-6" : "mt-3";
               return message.role === "user" ? (
