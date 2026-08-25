@@ -1,0 +1,8 @@
+node_modules
+dist
+.DS_Store
+*.log
+.vite
+.turbo
+*.tsbuildinfo
+packages/host/bin/host.local.sh

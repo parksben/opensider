@@ -1,0 +1,10 @@
+{
+  "name": "cursor-sidebar",
+  "private": true,
+  "packageManager": "pnpm@10.12.1",
+  "scripts": {
+    "dev": "pnpm --filter @cursor-sidebar/extension dev",
+    "build": "pnpm --filter @cursor-sidebar/extension build",
+    "install-host": "node scripts/install-host.mjs"
+  }
+}

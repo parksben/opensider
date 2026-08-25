@@ -161,6 +161,8 @@ Host 是 ACP Client，`clientCapabilities` 关闭 `fs` / `terminal`，让 Agent 
 Host 注册名：`com.cursor.sidebar.host`  
 macOS 清单路径：`~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.cursor.sidebar.host.json`
 
+`pnpm install-host` 会生成 `packages/host/bin/host.local.sh`（不入库），把当前 `node` 的绝对路径写进去。Chrome 拉起 Native Host 时 PATH 很瘦，nvm 里的 `node` 否则找不到。
+
 ## UI
 
 - 运行时：`@assistant-ui/react` 的 `useExternalStoreRuntime`

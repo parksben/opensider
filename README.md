@@ -31,6 +31,8 @@ pnpm install-host
 
 `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.cursor.sidebar.host.json`
 
+并生成带本机 Node 绝对路径的 `packages/host/bin/host.local.sh`（Chrome 拉起 Host 时没有 nvm 的 PATH）。
+
 扩展 ID 固定为 `gcblddgaifebccglndkaccmibhechimj`。
 
 ## 开发

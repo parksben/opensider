@@ -1,0 +1,97 @@
+@import "tailwindcss";
+
+:root {
+  --ink: #0c0d0a;
+  --panel: #14160f;
+  --panel-2: #1b1e16;
+  --line: #2c3124;
+  --text: #ece6d4;
+  --muted: #8f8872;
+  --brass: #d4a054;
+  --brass-dim: #8a6a34;
+  --ok: #8fbf6a;
+  --warn: #d4a054;
+  --bad: #d36a4a;
+  --user: #262318;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  background: var(--ink);
+  color: var(--text);
+  font-family: "IBM Plex Sans", sans-serif;
+}
+
+body {
+  background-image:
+    radial-gradient(1200px 500px at 10% -10%, rgba(212, 160, 84, 0.08), transparent 50%),
+    linear-gradient(180deg, #12140e 0%, var(--ink) 40%);
+}
+
+button,
+textarea {
+  font: inherit;
+}
+
+.markdown {
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--text);
+}
+
+.markdown p {
+  margin: 0 0 0.7em;
+}
+
+.markdown p:last-child {
+  margin-bottom: 0;
+}
+
+.markdown code {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 12px;
+  background: #1f2318;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+}
+
+.markdown pre {
+  background: #10120c;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  overflow: auto;
+  margin: 0.6em 0;
+}
+
+.markdown pre code {
+  background: none;
+  border: 0;
+  padding: 0;
+}
+
+.markdown a {
+  color: var(--brass);
+}
+
+.markdown ul,
+.markdown ol {
+  padding-left: 1.2em;
+  margin: 0.4em 0 0.8em;
+}
+
+.markdown h1,
+.markdown h2,
+.markdown h3 {
+  font-family: Fraunces, serif;
+  font-weight: 520;
+  margin: 0.8em 0 0.35em;
+}
