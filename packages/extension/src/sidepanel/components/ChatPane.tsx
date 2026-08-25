@@ -46,6 +46,7 @@ export function ChatPane({
         {messages.length === 0 ? (
           <div className="px-1 py-8 text-center">
             <div className="font-[Fraunces,serif] text-[22px] leading-tight">{label("emptyTitle")}</div>
+            <div className="mt-1.5 text-[12px] tracking-wide text-[var(--brass)]">{label("emptyLead")}</div>
             <p className="mx-auto mt-2 max-w-[16rem] text-[12.5px] leading-relaxed text-[var(--muted)]">
               {label("emptyBody")}
             </p>

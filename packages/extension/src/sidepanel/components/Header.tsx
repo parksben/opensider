@@ -1,4 +1,4 @@
-import { Globe, MessagesSquare, MousePointerClick, PlugZap, Unplug } from "lucide-react";
+import { ChevronDown, Globe, MousePointerClick, PlugZap, RotateCw, Unplug } from "lucide-react";
 import type { BrowserCommand, BrowserResult, CurrentPage } from "@shared";
 import type { TodoItem } from "../chat-types";
 import type { Locale } from "../i18n";
@@ -34,11 +34,23 @@ export function Header({
   return (
     <header className="border-b border-[var(--line)] bg-[color-mix(in_oklab,var(--panel)_88%,transparent)] px-3 py-2.5 backdrop-blur">
       <div className="flex items-center justify-between gap-2">
-        <div>
-          <div className="font-[Fraunces,serif] text-[17px] leading-none tracking-tight">{label("brand")}</div>
-          <div className="mt-1 text-[11px] tracking-wide text-[var(--muted)]">{label("subtitle")}</div>
-        </div>
-        <div className="flex items-center gap-1.5">
+        <button
+          type="button"
+          onClick={onToggleSessions}
+          className="min-w-0 flex-1 text-left"
+          aria-expanded={sessionsOpen}
+        >
+          <div className="flex items-center gap-1">
+            <div className="truncate font-[Fraunces,serif] text-[17px] leading-none tracking-tight">
+              {sessionTitle || label("untitled")}
+            </div>
+            <ChevronDown
+              size={14}
+              className={`shrink-0 text-[var(--muted)] transition-transform ${sessionsOpen ? "rotate-180" : ""}`}
+            />
+          </div>
+        </button>
+        <div className="flex shrink-0 items-center gap-1.5">
           <div className="flex overflow-hidden rounded-full border border-[var(--line)] text-[11px]">
             <button
               type="button"
@@ -68,22 +80,18 @@ export function Header({
               {status === "ready" ? label("connected") : status === "starting" ? label("starting") : label("offline")}
             </span>
           </div>
+          {status === "error" && onRetry ? (
+            <button
+              type="button"
+              onClick={onRetry}
+              className="inline-flex items-center gap-1 rounded-full border border-[var(--line)] px-2 py-1 text-[11px] text-[var(--text)]"
+            >
+              <RotateCw size={12} />
+              {label("retry")}
+            </button>
+          ) : null}
         </div>
       </div>
-
-      <button
-        type="button"
-        onClick={onToggleSessions}
-        className={`mt-2 flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-left ${
-          sessionsOpen ? "border-[var(--brass)] bg-[var(--panel)]" : "border-[var(--line)] bg-[var(--panel-2)]"
-        }`}
-      >
-        <MessagesSquare size={13} className="shrink-0 text-[var(--brass)]" />
-        <div className="min-w-0 flex-1">
-          <div className="text-[10.5px] tracking-wide text-[var(--muted)]">{label("sessions")}</div>
-          <div className="truncate text-[12px]">{sessionTitle || label("untitled")}</div>
-        </div>
-      </button>
 
       <div className="mt-2 flex items-center gap-2 rounded-md border border-[var(--line)] bg-[var(--panel-2)] px-2 py-1.5">
         <Globe size={13} className="shrink-0 text-[var(--brass)]" />
@@ -109,21 +117,7 @@ export function Header({
       ) : null}
 
       {error && status !== "ready" ? (
-        <div className="mt-2 space-y-2">
-          <p className="text-[11.5px] leading-relaxed text-[var(--bad)]">{error}</p>
-          <p className="text-[10.5px] text-[var(--muted)]">
-            {label("extensionId")}: {chrome.runtime.id}
-          </p>
-          {status === "error" && onRetry ? (
-            <button
-              type="button"
-              onClick={onRetry}
-              className="rounded-md border border-[var(--line)] px-2 py-1 text-[11.5px] text-[var(--text)]"
-            >
-              {label("retry")}
-            </button>
-          ) : null}
-        </div>
+        <p className="mt-2 text-[11.5px] leading-relaxed text-[var(--bad)]">{error}</p>
       ) : null}
 
       {todos.length > 0 ? (

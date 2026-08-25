@@ -250,7 +250,9 @@ macOS 清单路径：`~/Library/Application Support/Google/Chrome/NativeMessagin
 ## UI
 
 - 聊天：`ChatPane` 由当前会话的 `messages` / `isRunning` 驱动；工具卡片 / markdown 仍是现有组件
-- 会话：顶栏打开发布式会话抽屉（新建、切换、checkpoint）；消息上用 lucide 的 fork / bookmark
+- 顶栏左侧是可点的当前会话名（打开抽屉），不放品牌名；右侧 EN/中、连接状态，offline 时旁边是 Retry
+- 空会话：标题 Talk to Cursor，副题 Agent beside the sidebar
+- 会话抽屉：新建、切换、checkpoint；消息上用 lucide 的 fork / bookmark
 - 语言：顶栏 EN / 中 切换
 - 视觉：窄侧栏（约 380px）、橄榄黑底、黄铜强调色；图标只用 `lucide-react`
 - 字体：Fraunces（词标）+ IBM Plex Sans / Mono（正文和工具输出）
