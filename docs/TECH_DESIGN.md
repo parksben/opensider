@@ -308,7 +308,7 @@ macOS 清单路径：`~/Library/Application Support/Google/Chrome/NativeMessagin
 - 顶栏：左会话开关（收起时 Lucide `MessageSquarePlus` 气泡加号，tooltip「会话 / Sessions」；展开时 `PanelLeftClose`，tooltip「收起列表 / Collapse list」）+ 语言按钮（英显示「中」、中显示「EN」）；正中会话名；右连接状态与 offline「Connection / 重连」（icon 已是重试语义）。顶栏按钮不加涟漪。
 - 会话列表是主区域左侧栏：新建、卡片上 Pencil / Trash2 重命名与删除；`titleManual` 为真时不再用首条消息改标题
 - 空会话：消息区垂直居中，Lucide `MessageCircle` 约 120px + 一行淡灰提示，不抢视觉
-- Agent 回复底部用 lucide 的 `GitFork` + `RefreshCw`，整行居左；fork tooltip「基于此记录新建会话 / Fork from here」，刷新 tooltip「重新生成 / Regenerate」。用户气泡不放操作钮
+- Agent 回复底部用 lucide 的 `GitFork` + `RefreshCw`，整行居左；fork tooltip「从此处复制新会话 / Fork from here」，刷新 tooltip「重新生成 / Regenerate」。用户气泡不放操作钮
 - 视觉：窄侧栏（约 380px）、橄榄黑底、黄铜强调色；图标只用 `lucide-react`
 - 字体：IBM Plex Sans / Mono（中英都不用衬线体）
 - 工具卡片按 ACP `kind` 换图标：read / edit / execute / search / fetch 等

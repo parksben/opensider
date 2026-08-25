@@ -89,7 +89,7 @@ const copy = {
     model: "模型",
     pickFailed: "无法打开文件选择器。",
     pickPageFailed: "请先打开普通的 http(s) 页面，再拾取元素。",
-    fork: "基于此记录新建会话",
+    fork: "从此处复制新会话",
     regenerate: "重新生成",
     editHistoryHint: "正在修改历史消息，重新发送后，该位置后的全部内容将重新生成",
     cancelEdit: "取消修改",
