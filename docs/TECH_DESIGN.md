@@ -42,8 +42,9 @@ Cursor Agent 在 ACP 模式下仍然自己执行本地工具（读文件、写�
 ### Side Panel
 
 - 消息列表、输入框、进行中状态由侧栏自己的 React state 驱动（不依赖 assistant-ui 的 `useAuiState` 选择器，避免和 ExternalStore 不同步：表现为发了消息没动效、也没有停止按钮）
+- 会话列表、当前选中会话、语言、checkpoint 也由 App state 驱动，写入 `chrome.storage.local`
 - 工具卡片 / markdown 仍复用现有展示组件
-- 发出用户输入、取消、权限决定、提问/计划回答
+- 发出用户输入、取消、权限决定、提问/计划回答、新建 / 切换 / fork 会话
 - 展示当前页、进行中的页面命令、连接状态、todo、权限条
 - 离线发送会立刻报错；Service Worker 断开时显示原因并允许重试
 
@@ -102,8 +103,8 @@ Cursor Agent 在 ACP 模式下仍然自己执行本地工具（读文件、写�
 
 - 解析 Chrome Native Messaging 长度前缀帧（**禁止往 stdout 打日志**）
 - spawn `~/.local/bin/agent acp`（PATH 不足时用绝对路径）
-- 作为 ACP Client：`initialize` → `authenticate(cursor_login)` → `session/load` 或 `session/new`
-- 把 Side Panel 的 prompt/cancel/permission 转成 ACP
+- 作为 ACP Client：`initialize` → `authenticate(cursor_login)` → 按侧栏指令 `session/load`、`session/new` 或尝试 `session/fork`
+- 把 Side Panel 的 prompt/cancel/permission、会话新建 / 切换 / fork 转成 ACP
 - 把 Agent 的 `session/update`、权限请求、Cursor 扩展方法推给扩展
 - 把页面快照和 `browser/tools.json` 写入工作区；监视 `browser/commands/`，转给扩展，再把结果写回 `browser/results/`（截图另存 `browser/screenshots/`）
 
@@ -122,9 +123,11 @@ Host 用 Node 24 直接跑 TypeScript（类型擦除）。stdout 只给 Chrome�
       commands/<id>.json     # Agent 写入的页面命令
       results/<id>.json      # 扩展写回的结果
       screenshots/<id>.jpg   # 视口 / 元素截图
-  session.json               # { sessionId }
+  session.json               # 最近一次选中的 ACP sessionId（兼容旧版）
   host.log
 ```
+
+侧栏状态（语言、会话目录、消息、checkpoint、选中项）存在 `chrome.storage.local`，key 为 `cursor-sidebar/state`。Host 只记当前 ACP `sessionId`，方便进程重启后 `session/load`。
 
 `current.json` 示例：
 
@@ -162,6 +165,46 @@ Host 用 Node 24 直接跑 TypeScript（类型擦除）。stdout 只给 Chrome�
 
 Host 在 `session/new` 之前写好 `AGENTS.md` 和 `browser/tools.json`，这样 Agent 一进工作区就能感知读、操作和视觉方法。
 
+## 多会话、fork、checkpoint
+
+工作区仍是一个。ACP 会话可以有多条，侧栏用本地 `id` 和 `acpSessionId` 对应。
+
+```
+chrome.storage.local
+  locale: "en" | "zh"          # 默认 en
+  selectedId: <local session id>
+  sessions[]:
+    id, acpSessionId?, title, createdAt, updatedAt
+    parentId?, forkedFromMessageId?
+    pendingForkContext?        # 下一条 prompt 要带的节点前文
+    messages[], checkpoints[]
+```
+
+协议：
+
+| 侧栏 → Host | Host 行为 |
+|---|---|
+| `session.new` | `session/new`，设为当前，回 `session` |
+| `session.use` + `sessionId` | 已是当前则 noop；否则 `session/load`，失败则 `session/new` |
+| `session.fork` + `sessionId` | 先试不稳定的 `session/fork`（整段历史）；失败则 `session/new` |
+| `prompt` 可带 `sessionId` | 先切到该 ACP 会话再 prompt，避免切换竞态 |
+
+从某条消息 fork（含从 checkpoint 恢复）：
+
+1. 新本地会话，复制该消息及之前的气泡，原会话不动。
+2. 若 fork 的是**最后一条**且 Agent 支持 `session/fork`，用 ACP fork，Agent 历史与 UI 对齐，不必再灌上下文。
+3. 否则 `session/new`。Agent 是空会话，把截断后的对话写成 `pendingForkContext`，**下一条用户消息**前缀带上（UI 不显示这段包装）。这样 Agent 不会为了灌上下文先回一嘴。
+
+Checkpoint 只是会话上的 `{ id, messageId, title, createdAt }`。恢复 = 从该 `messageId` 再走一遍 fork。
+
+`isRunning` 时拒绝 new / switch / fork。流式 `update` 只写进当前选中会话。
+
+旧的 `session.json` `{ sessionId }` 在侧栏还没有本地目录时，迁成第一条会话。
+
+## 语言
+
+`packages/extension/src/sidepanel/i18n.ts` 提供 `en` / `zh` 词条。默认 `en`。切换后立刻写 `chrome.storage.local`，并设 `document.documentElement.lang`。连接错误原文（Host / Chrome `lastError`）不翻译。
+
 ## 标签切换
 
 1. SW 收到 `onActivated` / 完整 URL `onUpdated`
@@ -189,7 +232,7 @@ Host 是 ACP Client，`clientCapabilities` 关闭 `fs` / `terminal`，让 Agent 
 | `cursor/task` | 子任务卡片 |
 | `session/prompt` 结束 | 本轮 `isRunning=false` |
 
-消息状态由 Side Panel 持有。Host 重启后若 `session/load` 可用，会重放历史；Panel 以重放结果为准。
+消息状态由 Side Panel 持有并持久化。Host 重启后 `session/load` 只负责恢复 Agent 侧上下文；Panel 以本地存储的消息为准，不因为 `replay` 清空界面。
 
 ## 扩展身份
 
@@ -202,7 +245,9 @@ macOS 清单路径：`~/Library/Application Support/Google/Chrome/NativeMessagin
 
 ## UI
 
-- 聊天：`ChatPane` 由 App 的 `messages` / `isRunning` 驱动；工具卡片 / markdown 仍是现有组件
+- 聊天：`ChatPane` 由当前会话的 `messages` / `isRunning` 驱动；工具卡片 / markdown 仍是现有组件
+- 会话：顶栏打开发布式会话抽屉（新建、切换、checkpoint）；消息上用 lucide 的 fork / bookmark
+- 语言：顶栏 EN / 中 切换
 - 视觉：窄侧栏（约 380px）、橄榄黑底、黄铜强调色；图标只用 `lucide-react`
 - 字体：Fraunces（词标）+ IBM Plex Sans / Mono（正文和工具输出）
 - 工具卡片按 ACP `kind` 换图标：read / edit / execute / search / fetch 等
@@ -224,7 +269,9 @@ pnpm workspace。扩展用 Vite + `@crxjs/vite-plugin` 打包。
 |---|---|
 | Native Messaging 环境 PATH 很瘦 | 默认调用 `~/.local/bin/agent`，可覆盖 |
 | 未登录 | 侧栏提示先跑 `agent login` |
-| `session/load` 不支持或失败 | 新建会话，工作区文件仍在 |
+| `session/load` 不支持或失败 | 新建 ACP 会话，界面历史保留，下一条消息带前文 |
+| `session/fork` 不可用或不支持指定消息 | 新会话 + 首条 prompt 前缀截断记录 |
+| chrome.storage 变大 | 工具输出超长时截断再写入 |
 | 内容脚本无法注入 | `current.json` 只写 url/title，命令返回明确错误 |
 | Chrome 杀 Service Worker | 重连 Native Host；ACP 子进程随 Host 退出，重连后 load/new |
 | 侧栏晚于 Host ready 才连上 | SW 回放最近状态 |
