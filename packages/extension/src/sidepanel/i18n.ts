@@ -86,7 +86,7 @@ const copy = {
     model: "模型",
     pickFailed: "无法打开文件选择器。",
     pickPageFailed: "请先打开普通的 http(s) 页面，再拾取元素。",
-    fork: "从这里分叉",
+    fork: "基于此记录新建会话",
     sessions: "会话",
     newChat: "新会话",
     rename: "重命名",
