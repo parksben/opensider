@@ -3,6 +3,7 @@ import type { PermissionRequest, PlanPrompt, QuestionPrompt } from "../chat-type
 import type { Locale } from "../i18n";
 import { t } from "../i18n";
 import { Markdown } from "./Markdown";
+import { RippleButton } from "./RippleButton";
 
 export function PermissionBar({
   locale,
@@ -30,14 +31,13 @@ export function PermissionBar({
         </div>
         <div className="flex flex-wrap gap-1.5">
           {permission.options.map((option) => (
-            <button
+            <RippleButton
               key={option.optionId}
-              type="button"
               onClick={() => onPermission(option.optionId)}
               className="rounded-md border border-[var(--line)] bg-[var(--panel)] px-2.5 py-1 text-[12px] hover:border-[var(--brass)]"
             >
               {option.name}
-            </button>
+            </RippleButton>
           ))}
         </div>
       </section>
@@ -55,20 +55,18 @@ export function PermissionBar({
         {plan.overview ? <p className="mb-2 text-[12px] text-[var(--muted)]">{plan.overview}</p> : null}
         <Markdown text={plan.plan} />
         <div className="mt-2 flex gap-1.5">
-          <button
-            type="button"
+          <RippleButton
             onClick={() => onPlan(true)}
             className="rounded-md bg-[var(--brass)] px-2.5 py-1 text-[12px] text-[#1a140b]"
           >
             {t(locale, "acceptPlan")}
-          </button>
-          <button
-            type="button"
+          </RippleButton>
+          <RippleButton
             onClick={() => onPlan(false)}
             className="rounded-md border border-[var(--line)] px-2.5 py-1 text-[12px]"
           >
             {t(locale, "reject")}
-          </button>
+          </RippleButton>
         </div>
       </section>
     );
@@ -118,9 +116,12 @@ function QuestionForm({
           </fieldset>
         ))}
       </div>
-      <button type="submit" className="mt-2 rounded-md bg-[var(--brass)] px-2.5 py-1 text-[12px] text-[#1a140b]">
+      <RippleButton
+        type="submit"
+        className="mt-2 rounded-md bg-[var(--brass)] px-2.5 py-1 text-[12px] text-[#1a140b]"
+      >
         {t(locale, "continue")}
-      </button>
+      </RippleButton>
     </form>
   );
 }

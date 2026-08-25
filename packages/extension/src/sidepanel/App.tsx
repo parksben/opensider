@@ -100,7 +100,7 @@ export function App() {
         return {
           ...session,
           messages,
-          title: titleFromMessages(messages) || session.title,
+          title: session.titleManual ? session.title : titleFromMessages(messages) || session.title,
           updatedAt: new Date().toISOString(),
         };
       }),
@@ -353,6 +353,35 @@ export function App() {
     }
   };
 
+  const renameSession = (id: string, title: string) => {
+    if (isRunning) return;
+    patchSession(id, (session) => ({
+      ...session,
+      title: title.trim(),
+      titleManual: true,
+      updatedAt: new Date().toISOString(),
+    }));
+  };
+
+  const deleteSession = (id: string) => {
+    if (isRunning) return;
+    const remaining = sessionsRef.current.filter((session) => session.id !== id);
+    if (remaining.length > 0) {
+      setSessions(remaining);
+      if (selectedIdRef.current === id) switchSession(remaining[0].id);
+      return;
+    }
+    const created = emptySession();
+    setSessions([created]);
+    boundRef.current = false;
+    setSelectedId(created.id);
+    if (statusRef.current === "ready") {
+      pendingBind.current = { localId: created.id, kind: "new" };
+      sendRef.current({ type: "session.new" });
+      boundRef.current = true;
+    }
+  };
+
   const newSession = () => {
     if (isRunning) return;
     const created = emptySession();
@@ -433,6 +462,8 @@ export function App() {
             locked={isRunning}
             onSelect={switchSession}
             onNew={newSession}
+            onRename={renameSession}
+            onDelete={deleteSession}
           />
         ) : null}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">

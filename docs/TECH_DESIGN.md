@@ -181,7 +181,7 @@ chrome.storage.local
   selectedId: <local session id>
   selectedModelId?: string     # 与 agent models 的 id 对齐，默认 auto
   sessions[]:
-    id, acpSessionId?, title, createdAt, updatedAt
+    id, acpSessionId?, title, titleManual?, createdAt, updatedAt
     parentId?, forkedFromMessageId?
     pendingForkContext?        # 下一条 prompt 要带的节点前文
     messages[]
@@ -286,14 +286,20 @@ macOS 清单路径：`~/Library/Application Support/Google/Chrome/NativeMessagin
 
 ## UI
 
-- 聊天：`ChatPane` 由当前会话的 `messages` / `isRunning` 驱动；工具卡片 / markdown 仍是现有组件。输入区：可选附件芯片 → textarea → 第二行左 Lucide `MousePointer2` 拾取 + `Plus`、右模型下拉 + `Send` 小飞机 / 停止（14px，与顶栏 icon 同大；hover 半透明白圆）。拾取时侧栏蒙层提示去网页点选。`IconButton` 的 tooltip 用 `position: fixed` 挂到 `document.body`，按锚点测量后翻边/平移，与视口保持 8px；输入区按钮 `overflow: hidden` + CSS 涟漪。芯片 `title` 用完整路径或 selector，过长按行宽省略。
-- 顶栏：左 `PanelLeft` / `PanelLeftClose` + 语言按钮（英显示「中」、中显示「EN」）；正中会话名；右连接状态与 offline「Connection / 重连」（icon 已是重试语义）
-- 会话列表是主区域左侧栏，里头有新建会话
+- 聊天：`ChatPane` 由当前会话的 `messages` / `isRunning` 驱动；工具卡片 / markdown 仍是现有组件。输入区：可选附件芯片 → textarea → 第二行左 Lucide `MousePointer2` 拾取 + `Plus`、右模型下拉 + `Send` 小飞机 / 停止（14px，与顶栏 icon 同大；hover 半透明白圆）。拾取时侧栏蒙层提示去网页点选。`IconButton` 的 tooltip 用 `position: fixed` 挂到 `document.body`，按锚点测量后翻边/平移，与视口保持 8px。除顶栏外，按钮统一 `hover:bg-white/15` + CSS 涟漪（`RippleButton` / `IconButton`）。芯片 `title` 用完整路径或 selector，过长按行宽省略。
+- 顶栏：左 `PanelLeft` / `PanelLeftClose` + 语言按钮（英显示「中」、中显示「EN」）；正中会话名；右连接状态与 offline「Connection / 重连」（icon 已是重试语义）。顶栏按钮不加涟漪。
+- 会话列表是主区域左侧栏：新建、卡片上 Pencil / Trash2 重命名与删除；`titleManual` 为真时不再用首条消息改标题
 - 空会话：消息区垂直居中，Lucide `MessageCircle` 约 120px + 一行淡灰提示，不抢视觉
 - 消息上用 lucide 的 fork / bookmark
 - 视觉：窄侧栏（约 380px）、橄榄黑底、黄铜强调色；图标只用 `lucide-react`
 - 字体：IBM Plex Sans / Mono（中英都不用衬线体）
 - 工具卡片按 ACP `kind` 换图标：read / edit / execute / search / fetch 等
+
+## 品牌图标
+
+- 源文件 `packages/extension/assets/icon.svg` 由 `scripts/generate_icon.py` 生成，勿手改：Cursor 官方 CUBE_2D 复合路径做 clipPath（nonzero 规则中央光标自动镂空），360 个 1° 扇形逼近 conic 渐变，实现红→黄→绿顺时针风车，交界 40° smoothstep 平滑过渡
+- PNG 用 `rsvg-convert` 从 SVG 导出（16/32/48/128，保留透明），放 `packages/extension/public/icons/`，crxjs 构建时拷到 `dist/icons/`
+- manifest 的 `icons` 与 `action.default_icon` 都指向这四张图
 
 ## 仓库结构
 

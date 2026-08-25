@@ -30,6 +30,7 @@ function placeTooltip(
 export function IconButton({
   label,
   side = "bottom",
+  ripple = true,
   className = "",
   children,
   onPointerDown,
@@ -37,6 +38,7 @@ export function IconButton({
 }: ButtonHTMLAttributes<HTMLButtonElement> & {
   label: string;
   side?: "top" | "bottom";
+  ripple?: boolean;
   children: ReactNode;
 }) {
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -62,13 +64,13 @@ export function IconButton({
       ref={buttonRef}
       type="button"
       aria-label={label}
-      className={`relative overflow-hidden ${className}`}
+      className={`relative overflow-hidden ${ripple ? "hover:bg-white/15" : ""} ${className}`}
       onPointerEnter={() => setOpen(true)}
       onPointerLeave={() => setOpen(false)}
       onFocus={() => setOpen(true)}
       onBlur={() => setOpen(false)}
       onPointerDown={(event) => {
-        if (!props.disabled) spawn(event);
+        if (ripple && !props.disabled) spawn(event);
         onPointerDown?.(event);
       }}
       {...props}

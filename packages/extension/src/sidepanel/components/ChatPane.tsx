@@ -8,6 +8,7 @@ import { textOf } from "../persist";
 import { useRipple } from "../useRipple";
 import { IconButton } from "./IconButton";
 import { Markdown } from "./Markdown";
+import { RippleButton } from "./RippleButton";
 import { ToolCard } from "./ToolCard";
 
 export function ChatPane({
@@ -273,15 +274,14 @@ function AttachmentChips({
             <Icon size={12} className="shrink-0 opacity-80" />
             <span className="min-w-0 truncate">{item.name}</span>
             {removable && onRemove ? (
-              <button
-                type="button"
+              <RippleButton
                 title={removeLabel}
                 aria-label={removeLabel}
                 onClick={() => onRemove(item.path)}
-                className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[var(--muted)] hover:bg-white/10 hover:text-[var(--text)]"
+                className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[var(--muted)] hover:text-[var(--text)]"
               >
                 <X size={10} />
-              </button>
+              </RippleButton>
             ) : null}
           </span>
         );
@@ -362,20 +362,19 @@ function ModelSelect({
           {models.map((model) => {
             const active = model.id === (current?.id ?? modelId);
             return (
-              <button
+              <RippleButton
                 key={model.id}
-                type="button"
                 title={model.name}
                 onClick={() => {
                   onModel(model.id);
                   setOpen(false);
                 }}
                 className={`flex w-full px-2.5 py-1.5 text-left text-[12px] ${
-                  active ? "bg-white/8 text-[var(--text)]" : "text-[var(--muted)] hover:bg-white/5 hover:text-[var(--text)]"
+                  active ? "bg-white/8 text-[var(--text)]" : "text-[var(--muted)] hover:text-[var(--text)]"
                 }`}
               >
                 <span className="truncate">{model.name}</span>
-              </button>
+              </RippleButton>
             );
           })}
         </div>

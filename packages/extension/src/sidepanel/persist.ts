@@ -16,6 +16,7 @@ export type Session = {
   id: string;
   acpSessionId?: string;
   title: string;
+  titleManual?: boolean;
   createdAt: string;
   updatedAt: string;
   parentId?: string;

@@ -38,6 +38,7 @@ export function Header({
       <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
         <div className="flex items-center gap-1.5">
           <IconButton
+            ripple={false}
             label={sessionsOpen ? label("collapseSessions") : label("expandSessions")}
             onClick={onToggleSessions}
             aria-expanded={sessionsOpen}
@@ -46,6 +47,7 @@ export function Header({
             <ToggleIcon size={14} />
           </IconButton>
           <IconButton
+            ripple={false}
             label={label("switchLanguage")}
             onClick={() => onLocale(locale === "en" ? "zh" : "en")}
             className="flex h-7 min-w-7 shrink-0 items-center justify-center rounded-md border border-[var(--line)] px-1 text-[11px] font-medium text-[var(--text)]"
