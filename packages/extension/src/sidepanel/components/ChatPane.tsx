@@ -104,7 +104,7 @@ export function ChatPane({
                   locked={isRunning}
                   onFork={() => onFork(message.id)}
                 >
-                  <div className="ml-6 rounded-2xl rounded-br-sm bg-[var(--user)] px-3 py-2 text-[13.5px] leading-relaxed">
+                  <div className="ml-auto w-fit max-w-[80%] break-words rounded-2xl rounded-br-sm bg-[var(--user)] px-3 py-2 text-[13.5px] leading-relaxed">
                     {textOf(message.content) ? <div>{textOf(message.content)}</div> : null}
                     {message.attachments?.length ? (
                       <AttachmentChips
