@@ -75,6 +75,7 @@ export function App() {
   const pickWaiters = useRef(new Map<string, (items: AttachmentItem[]) => void>());
   const appliedModelRef = useRef("");
   const elementPickId = useRef("");
+  const turnStartedAt = useRef<number | undefined>(undefined);
   pageRef.current = page;
   statusRef.current = status;
   selectedIdRef.current = selectedId;
@@ -108,6 +109,25 @@ export function App() {
     setSessions((current) => current.map((session) => (session.id === id ? updater(session) : session)));
   };
 
+  const beginTurn = () => {
+    turnStartedAt.current = Date.now();
+    setIsRunning(true);
+  };
+
+  const finishTurn = () => {
+    const started = turnStartedAt.current;
+    turnStartedAt.current = undefined;
+    setIsRunning(false);
+    if (started == null) return;
+    const durationMs = Math.max(0, Date.now() - started);
+    updateSelectedMessages((messages) => {
+      const last = messages[messages.length - 1];
+      if (last?.role !== "assistant" || last.durationMs != null) return messages;
+      if (last.createdAt.getTime() < started - 2000) return messages;
+      return [...messages.slice(0, -1), { ...last, durationMs }];
+    });
+  };
+
   const updateSelectedMessages = (updater: (messages: ChatMessage[]) => ChatMessage[]) => {
     const id = selectedIdRef.current;
     setSessions((current) =>
@@ -130,7 +150,7 @@ export function App() {
       setError(msg.error);
       if (msg.state === "error") {
         pendingRegen.current = null;
-        setIsRunning(false);
+        finishTurn();
       }
       if (msg.state !== "ready") appliedModelRef.current = "";
       if (msg.state === "ready") tryBindCurrent();
@@ -156,7 +176,7 @@ export function App() {
       if (regen && regen.localId === targetId) {
         pendingRegen.current = null;
         const body = wrapAttachments(regen.text, regen.attachments);
-        setIsRunning(true);
+        beginTurn();
         setError(undefined);
         sendRef.current({
           type: "prompt",
@@ -219,7 +239,7 @@ export function App() {
       return;
     }
     if (msg.type === "turn.end") {
-      setIsRunning(false);
+      finishTurn();
       if (msg.stopReason === "error") setError(t(localeRef.current, "turnError"));
       return;
     }
@@ -326,7 +346,7 @@ export function App() {
       patchSession(session.id, (item) => ({ ...item, pendingForkContext: undefined }));
     }
     const body = wrapAttachments(text, attachments);
-    setIsRunning(true);
+    beginTurn();
     setError(undefined);
     sendRef.current({
       type: "prompt",
@@ -421,7 +441,7 @@ export function App() {
 
   const onCancel = () => {
     sendRef.current({ type: "cancel" });
-    setIsRunning(false);
+    finishTurn();
   };
 
   const switchSession = (id: string) => {
@@ -552,7 +572,7 @@ export function App() {
     appliedModelRef.current = "";
     boundRef.current = false;
     pendingBind.current = { localId: source.id, kind: "new" };
-    setIsRunning(true);
+    beginTurn();
     setError(undefined);
     sendRef.current({ type: "session.new" });
     boundRef.current = true;

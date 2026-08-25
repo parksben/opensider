@@ -1,5 +1,5 @@
 import type { AgentModel, AttachmentItem, AttachmentKind, CurrentPage } from "@shared";
-import { ArrowDown, ChevronDown, File, Folder, GitFork, Image, LoaderCircle, MessageCircle, MousePointer2, Plus, RefreshCw, Send, Square, X } from "lucide-react";
+import { ArrowDown, ChevronDown, ChevronRight, File, Folder, GitFork, Image, LoaderCircle, MessageCircle, MousePointer2, Plus, RefreshCw, Send, Square, X } from "lucide-react";
 import { useEffect, useRef, useState, type ClipboardEvent, type ReactNode } from "react";
 import type { ChatMessage, ChatPart } from "../chat-types";
 import type { Locale } from "../i18n";
@@ -260,7 +260,13 @@ export function ChatPane({
                   onFork={() => onFork(message.id)}
                   onRegenerate={() => onRegenerate(message.id)}
                 >
-                  <AssistantMessage locale={locale} content={message.content} page={page} />
+                  <AssistantMessage
+                    locale={locale}
+                    content={message.content}
+                    page={page}
+                    live={isRunning && message.id === messages[messages.length - 1]?.id}
+                    durationMs={message.durationMs}
+                  />
                 </MessageFrame>
               );
             })}
@@ -579,32 +585,92 @@ function compactReasoning(text: string): string {
     .join("\n");
 }
 
+function lastTextIndex(parts: ChatPart[]): number {
+  for (let index = parts.length - 1; index >= 0; index -= 1) {
+    if (parts[index].type === "text") return index;
+  }
+  return -1;
+}
+
+function formatTurnDuration(ms: number, locale: Locale): string {
+  const total = Math.max(1, Math.round(ms / 1000));
+  if (total < 60) return locale === "zh" ? `${total} 秒` : `${total}s`;
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  if (locale === "zh") return seconds ? `${minutes} 分 ${seconds} 秒` : `${minutes} 分`;
+  return seconds ? `${minutes}m ${seconds}s` : `${minutes}m`;
+}
+
+function ProcessToggle({
+  locale,
+  durationMs,
+  open,
+  onToggle,
+}: {
+  locale: Locale;
+  durationMs?: number;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const time = durationMs != null ? formatTurnDuration(durationMs, locale) : "";
+  const label = time ? t(locale, "ranFor").replace("{time}", time) : t(locale, "ran");
+  return (
+    <RippleButton
+      onClick={onToggle}
+      className="group flex w-full items-center justify-between gap-2 rounded px-1 py-0.5 text-left text-[12px] text-[var(--muted)]"
+    >
+      <span>{label}</span>
+      {open ? (
+        <ChevronDown size={14} className="shrink-0" />
+      ) : (
+        <ChevronRight size={14} className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100" />
+      )}
+    </RippleButton>
+  );
+}
+
+function renderAssistantPart(part: ChatPart, index: number, locale: Locale, page?: CurrentPage) {
+  if (part.type === "text") return <Markdown key={index} text={part.text} page={page} />;
+  if (part.type === "reasoning") {
+    return (
+      <details key={index} className="text-[12px] text-[var(--muted)]">
+        <summary className="cursor-pointer">{t(locale, "thinking")}</summary>
+        <div className="mt-1 whitespace-pre-wrap">{compactReasoning(part.text)}</div>
+      </details>
+    );
+  }
+  return <ToolCard key={part.toolCallId} locale={locale} part={part} />;
+}
+
 function AssistantMessage({
   locale,
   content,
   page,
+  live,
+  durationMs,
 }: {
   locale: Locale;
   content: ChatPart[];
   page?: CurrentPage;
+  live?: boolean;
+  durationMs?: number;
 }) {
+  const [open, setOpen] = useState(false);
   if (content.length === 0) {
     return <div className="text-[12px] text-[var(--muted)]">{t(locale, "waiting")}</div>;
   }
+  const cut = lastTextIndex(content);
+  const process = cut > 0 ? content.slice(0, cut) : cut < 0 ? content : [];
+  const body = cut >= 0 ? content.slice(cut) : [];
+  const fold = !live && process.length > 0;
+  if (!fold) {
+    return <div className="space-y-1">{content.map((part, index) => renderAssistantPart(part, index, locale, page))}</div>;
+  }
   return (
     <div className="space-y-1">
-      {content.map((part, index) => {
-        if (part.type === "text") return <Markdown key={index} text={part.text} page={page} />;
-        if (part.type === "reasoning") {
-          return (
-            <details key={index} className="text-[12px] text-[var(--muted)]">
-              <summary className="cursor-pointer">{t(locale, "thinking")}</summary>
-              <div className="mt-1 whitespace-pre-wrap">{compactReasoning(part.text)}</div>
-            </details>
-          );
-        }
-        return <ToolCard key={part.toolCallId} locale={locale} part={part} />;
-      })}
+      <ProcessToggle locale={locale} durationMs={durationMs} open={open} onToggle={() => setOpen((value) => !value)} />
+      {open ? process.map((part, index) => renderAssistantPart(part, index, locale, page)) : null}
+      {body.map((part, index) => renderAssistantPart(part, cut + index, locale, page))}
     </div>
   );
 }

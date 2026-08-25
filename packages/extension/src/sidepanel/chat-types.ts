@@ -26,6 +26,7 @@ export type ChatMessage = {
   attachments?: AttachmentItem[];
   modelId?: string;
   modelName?: string;
+  durationMs?: number;
 };
 
 export type PermissionRequest = {

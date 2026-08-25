@@ -13,6 +13,7 @@ export type StoredMessage = {
   attachments?: ChatMessage["attachments"];
   modelId?: string;
   modelName?: string;
+  durationMs?: number;
 };
 
 export type Session = {
