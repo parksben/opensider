@@ -93,7 +93,7 @@ writeFileSync(
   <key>CFBundleVersion</key>
   <string>1</string>
   <key>LSUIElement</key>
-  <true/>
+  <false/>
 </dict>
 </plist>
 `,

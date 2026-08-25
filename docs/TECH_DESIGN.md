@@ -218,7 +218,7 @@ chrome.storage.local
 
 ## 附件（只传路径）
 
-Chrome 的文件选择器不会给出本机绝对路径。加号因此发给 Host `fs.pick`。Chrome 拉起的 Host 没有 GUI 会话，JXA `NSOpenPanel` / 裸 `osascript` 经常不出现访达窗口、却当成用户取消。`install-host` 因此用 `swiftc` 编一个 `PickFiles.app`（`LSUIElement`）放到 `~/.cursor-sidebar/runtime/`，Host 用 `/usr/bin/open -W` 拉起它，路径写到临时文件再读回。面板可同时选文件和文件夹、可多选；`fs.stat` 分成 `image` / `file` / `folder`。侧栏芯片只展示 `basename`，`title` 是全路径。
+Chrome 的文件选择器不会给出本机绝对路径。加号因此发给 Host `fs.pick`。`install-host` 用 `swiftc` 编 `PickFiles.app`（常规激活策略，能到前台）放到 `~/.cursor-sidebar/runtime/`。Host **直接 exec** 包内二进制（不用 `open -W`，Chrome 子进程里 `open` 经常立刻返回、面板也不出现）。面板可同时选文件和文件夹、可多选；若进程在 400ms 内空退，再退回访达 `choose file`。`fs.stat` 分成 `image` / `file` / `folder`。侧栏芯片只展示 `basename`，`title` 是全路径。未连上就点加号，侧栏写明确错误。
 
 `session/prompt` 在用户正文后追加：
 
@@ -246,7 +246,7 @@ on them with page tools using args.selector.
 2. `initialize` 带 `_meta.parameterizedModelPicker: true`，以便 Cursor ACP 返回 `configOptions`。
 3. `session/new|load|fork` 若带 `category: "model"` 的选项，用其 `currentValue` 和名称覆盖/补全列表。
 4. 用户改模型：`session/set_config_option`（发现的 `configId`，通常是 `model`）；失败则 `session/set_model`。`auto` / 空不是合法 ACP 值，跳过 RPC。
-5. 侧栏只在 `status === ready` 且列表非空时渲染下拉。`selectedModelId` 写入 `chrome.storage.local`；仅当选的是具体模型时再 `model.set`。
+5. 侧栏只在 `status === ready` 且列表非空时渲染下拉。连上后若列表含 `auto` 且用户没有已记住的具体模型，选中态为 `auto`。`selectedModelId` 写入 `chrome.storage.local`；仅当选的是具体模型时再 `model.set`。
 
 ## 标签切换
 
@@ -340,7 +340,7 @@ pnpm workspace。扩展用 Vite + `@crxjs/vite-plugin` 打包。
 | 截图超过 Native Messaging 1MB | JPEG + 最长边 1280 + 质量下调；只传 base64，落盘后再给 Agent 路径 |
 | 元素截图像素比不对 | 用 `devicePixelRatio` 把 CSS 盒映射到截图像素 |
 | 扩展选文件没有真路径 | Host 用 `PickFiles.app`（`open -W`）弹出访达多选，回绝对路径 |
-| Chrome 子进程弹不出 NSOpenPanel | 独立 `.app` + `LSUIElement`，不走 JXA |
+| Chrome 子进程弹不出 NSOpenPanel | 直接 exec `PickFiles`（regular 激活）到前台；空退则访达 `choose file` |
 | 点拾取后旧标签没有内容脚本 | SW `scripting.executeScript` 按 manifest 补注入 |
 | ACP 不广告模型列表 | 用 `agent models` 解析账号模型；有 `configOptions` 时合并并用于 set |
 | `session/set_model` 被拒 | 先 `session/set_config_option`；initialize 声明 `parameterizedModelPicker` |

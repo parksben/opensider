@@ -51,9 +51,9 @@ export function parseAgentModels(stdout: string): ModelCatalog {
   }
   const unique = uniqueModels(models);
   const currentId =
+    unique.find((model) => model.id === "auto")?.id ||
     (markedCurrent && unique.some((model) => model.id === markedCurrent) ? markedCurrent : "") ||
     (markedDefault && unique.some((model) => model.id === markedDefault) ? markedDefault : "") ||
-    unique.find((model) => !isUnsetModel(model.id))?.id ||
     unique[0]?.id ||
     "";
   return { models: unique, currentId, modelConfigId: "model" };

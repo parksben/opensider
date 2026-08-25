@@ -26,12 +26,11 @@ const IMAGE_EXT = new Set([
   ".jxl",
 ]);
 
-const PICK_APP = join(SIDEBAR_HOME, "runtime/PickFiles.app");
-const PICK_BIN = join(PICK_APP, "Contents/MacOS/pick-files");
+const PICK_BIN = join(SIDEBAR_HOME, "runtime/PickFiles.app/Contents/MacOS/pick-files");
 
 const FALLBACK_SCRIPT = `
 tell application "Finder" to activate
-delay 0.15
+delay 0.2
 set theFiles to choose file with prompt "Select files to attach" with multiple selections allowed
 set output to ""
 repeat with f in theFiles
@@ -73,11 +72,16 @@ function toItems(paths: string[]): AttachmentItem[] {
 async function pickWithApp(): Promise<string[]> {
   const out = join(tmpdir(), `cursor-sidebar-pick-${process.pid}-${Date.now()}.txt`);
   writeFileSync(out, "");
+  const started = Date.now();
   try {
-    await execFileAsync("/usr/bin/open", ["-W", "-n", "-a", PICK_APP, "--args", out], {
-      timeout: 0,
-    });
-    return parsePaths(readFileSync(out, "utf8"));
+    log(`file pick exec ${PICK_BIN}`);
+    await execFileAsync(PICK_BIN, [out], { timeout: 0 });
+    const paths = parsePaths(readFileSync(out, "utf8"));
+    log(`file pick app done ms=${Date.now() - started} count=${paths.length}`);
+    if (paths.length === 0 && Date.now() - started < 400) {
+      throw new Error("picker exited before a panel could appear");
+    }
+    return paths;
   } finally {
     try {
       unlinkSync(out);
@@ -88,6 +92,7 @@ async function pickWithApp(): Promise<string[]> {
 }
 
 async function pickWithFinder(): Promise<string[]> {
+  log("file pick fallback Finder choose file");
   const { stdout } = await execFileAsync("/usr/bin/osascript", ["-e", FALLBACK_SCRIPT], {
     timeout: 0,
     maxBuffer: 2 * 1024 * 1024,
@@ -100,13 +105,20 @@ export async function pickLocalPaths(): Promise<{ items: AttachmentItem[]; cance
     const paths = existsSync(PICK_BIN) ? await pickWithApp() : await pickWithFinder();
     if (paths.length === 0) return { items: [], cancelled: true };
     return { items: toItems(paths), cancelled: false };
-  } catch (error) {
-    const err = error as { code?: number | string; stderr?: string; message?: string };
-    const detail = `${err.stderr ?? ""} ${err.message ?? ""}`;
-    if (err.code === 1 || /(-128|user canceled|cancelled)/i.test(detail)) {
-      return { items: [], cancelled: true };
+  } catch (first) {
+    log(`file pick primary failed: ${String(first)}`);
+    try {
+      const paths = await pickWithFinder();
+      if (paths.length === 0) return { items: [], cancelled: true };
+      return { items: toItems(paths), cancelled: false };
+    } catch (error) {
+      const err = error as { code?: number | string; stderr?: string; message?: string };
+      const detail = `${err.stderr ?? ""} ${err.message ?? ""}`;
+      if (err.code === 1 || /(-128|user canceled|cancelled)/i.test(detail)) {
+        return { items: [], cancelled: true };
+      }
+      log(`file pick failed: ${detail.trim()}`);
+      throw error;
     }
-    log(`file pick failed: ${detail.trim()}`);
-    throw error;
   }
 }

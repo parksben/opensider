@@ -144,18 +144,15 @@ export function App() {
       const incoming = msg.models.filter((model, index, all) => all.findIndex((item) => item.id === model.id) === index);
       setModels(incoming);
       const desired = selectedModelRef.current;
+      const autoId = incoming.find((model) => model.id === "auto")?.id;
       const known = incoming.some((model) => model.id === desired);
-      if (
-        desired &&
-        desired !== "auto" &&
-        known &&
-        desired !== msg.currentId &&
-        desired !== appliedModelRef.current
-      ) {
-        appliedModelRef.current = desired;
-        sendRef.current({ type: "model.set", modelId: desired });
-      } else if (!desired || !known) {
-        setSelectedModelId(msg.currentId || incoming[0]?.id || "");
+      if (desired && desired !== "auto" && known) {
+        if (desired !== msg.currentId && desired !== appliedModelRef.current) {
+          appliedModelRef.current = desired;
+          sendRef.current({ type: "model.set", modelId: desired });
+        }
+      } else {
+        setSelectedModelId(autoId || msg.currentId || incoming[0]?.id || "");
       }
       return;
     }
