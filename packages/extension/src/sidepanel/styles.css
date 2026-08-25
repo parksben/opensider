@@ -250,8 +250,14 @@ textarea {
 }
 
 .cs-fold-scroll {
-  height: 10rem;
+  max-height: 5lh;
   overflow-y: auto;
+  font-size: 11px;
+  line-height: 1.625;
+}
+
+.cs-fold-scroll pre {
+  margin: 0;
 }
 
 .cs-process-scrim {
