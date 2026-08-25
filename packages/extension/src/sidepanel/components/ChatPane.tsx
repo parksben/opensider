@@ -1,4 +1,5 @@
-import { ArrowUp, GitFork, LoaderCircle, Square } from "lucide-react";
+import { GitFork, LoaderCircle, Send, Square } from "lucide-react";
+import { IconButton } from "./IconButton";
 import { useState, type ReactNode } from "react";
 import type { ChatMessage, ChatPart } from "../chat-types";
 import type { Locale } from "../i18n";
@@ -92,24 +93,24 @@ export function ChatPane({
           />
           <div className="flex justify-end">
             {isRunning ? (
-              <button
-                type="button"
+              <IconButton
+                side="top"
+                label={label("stop")}
                 onClick={onCancel}
                 className="flex h-7 w-7 items-center justify-center rounded-full text-[var(--text)] hover:bg-white/15"
-                aria-label={label("stop")}
               >
                 <Square size={14} />
-              </button>
+              </IconButton>
             ) : (
-              <button
-                type="button"
+              <IconButton
+                side="top"
+                label={label("send")}
                 onClick={submit}
                 disabled={!draft.trim()}
                 className="flex h-7 w-7 items-center justify-center rounded-full text-[var(--text)] hover:bg-white/15 disabled:opacity-30 disabled:hover:bg-transparent"
-                aria-label={label("send")}
               >
-                <ArrowUp size={14} />
-              </button>
+                <Send size={14} />
+              </IconButton>
             )}
           </div>
         </div>
@@ -133,16 +134,14 @@ function MessageFrame({
     <div className="group relative">
       {children}
       <div className="mt-1 flex justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-        <button
-          type="button"
+        <IconButton
+          label={t(locale, "fork")}
           disabled={locked}
           onClick={onFork}
           className="rounded border border-[var(--line)] p-1 text-[var(--muted)] hover:text-[var(--text)] disabled:opacity-40"
-          aria-label={t(locale, "fork")}
-          title={t(locale, "fork")}
         >
           <GitFork size={12} />
-        </button>
+        </IconButton>
       </div>
     </div>
   );
