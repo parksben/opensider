@@ -1,5 +1,5 @@
 import type { AgentModel, AttachmentItem, AttachmentKind } from "@shared";
-import { ChevronDown, File, Folder, GitFork, Image, LoaderCircle, MessageCircle, MousePointer2, Plus, Send, Square, X } from "lucide-react";
+import { ChevronDown, File, Folder, GitFork, Image, LoaderCircle, MessageCircle, MousePointer2, Plus, RefreshCw, Send, Square, X } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { ChatMessage, ChatPart } from "../chat-types";
 import type { Locale } from "../i18n";
@@ -22,6 +22,7 @@ export function ChatPane({
   onSend,
   onCancel,
   onFork,
+  onRegenerate,
   onPickAttachments,
   onPickElement,
   onCancelElementPick,
@@ -37,6 +38,7 @@ export function ChatPane({
   onSend: (text: string, attachments: AttachmentItem[]) => void;
   onCancel: () => void;
   onFork: (messageId: string) => void;
+  onRegenerate: (messageId: string) => void;
   onPickAttachments: () => Promise<AttachmentItem[]>;
   onPickElement: () => Promise<AttachmentItem[]>;
   onCancelElementPick: () => void;
@@ -98,12 +100,7 @@ export function ChatPane({
           <div className="space-y-3 py-3">
             {messages.map((message) =>
               message.role === "user" ? (
-                <MessageFrame
-                  key={message.id}
-                  locale={locale}
-                  locked={isRunning}
-                  onFork={() => onFork(message.id)}
-                >
+                <div key={message.id}>
                   <div className="ml-auto w-fit max-w-[80%] break-words rounded-2xl rounded-br-sm bg-[var(--user)] px-3 py-2 text-[13.5px] leading-relaxed">
                     {textOf(message.content) ? <div>{textOf(message.content)}</div> : null}
                     {message.attachments?.length ? (
@@ -113,13 +110,14 @@ export function ChatPane({
                       />
                     ) : null}
                   </div>
-                </MessageFrame>
+                </div>
               ) : (
                 <MessageFrame
                   key={message.id}
                   locale={locale}
                   locked={isRunning}
                   onFork={() => onFork(message.id)}
+                  onRegenerate={() => onRegenerate(message.id)}
                 >
                   <AssistantMessage locale={locale} content={message.content} />
                 </MessageFrame>
@@ -354,17 +352,19 @@ function MessageFrame({
   locale,
   locked,
   onFork,
+  onRegenerate,
   children,
 }: {
   locale: Locale;
   locked: boolean;
   onFork: () => void;
+  onRegenerate: () => void;
   children: ReactNode;
 }) {
   return (
     <div className="group relative">
       {children}
-      <div className="mt-1 flex justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+      <div className="mt-1 flex justify-start gap-1 opacity-0 transition-opacity group-hover:opacity-100">
         <IconButton
           label={t(locale, "fork")}
           disabled={locked}
@@ -372,6 +372,14 @@ function MessageFrame({
           className="rounded border border-[var(--line)] p-1 text-[var(--muted)] hover:text-[var(--text)] disabled:opacity-40"
         >
           <GitFork size={12} />
+        </IconButton>
+        <IconButton
+          label={t(locale, "regenerate")}
+          disabled={locked}
+          onClick={onRegenerate}
+          className="rounded border border-[var(--line)] p-1 text-[var(--muted)] hover:text-[var(--text)] disabled:opacity-40"
+        >
+          <RefreshCw size={12} />
         </IconButton>
       </div>
     </div>

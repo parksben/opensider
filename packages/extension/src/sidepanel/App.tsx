@@ -26,6 +26,7 @@ import {
   titleFromMessages,
   wrapAttachments,
   wrapForkContext,
+  textOf,
   type Session,
 } from "./persist";
 
@@ -54,6 +55,12 @@ export function App() {
   const selectedIdRef = useRef(selectedId);
   const sessionsRef = useRef(sessions);
   const pendingBind = useRef<{ localId: string; kind: "new" | "use" | "fork" } | null>(null);
+  const pendingRegen = useRef<{
+    localId: string;
+    text: string;
+    attachments: AttachmentItem[];
+    context?: string;
+  } | null>(null);
   const boundRef = useRef(false);
   const localeRef = useRef(locale);
   const selectedModelRef = useRef(selectedModelId);
@@ -113,7 +120,10 @@ export function App() {
     if (msg.type === "status") {
       setStatus(msg.state);
       setError(msg.error);
-      if (msg.state === "error") setIsRunning(false);
+      if (msg.state === "error") {
+        pendingRegen.current = null;
+        setIsRunning(false);
+      }
       if (msg.state !== "ready") appliedModelRef.current = "";
       if (msg.state === "ready") tryBindCurrent();
       return;
@@ -134,6 +144,21 @@ export function App() {
         boundRef.current = true;
       }
       pendingBind.current = null;
+      const regen = pendingRegen.current;
+      if (regen && regen.localId === targetId) {
+        pendingRegen.current = null;
+        const body = wrapAttachments(regen.text, regen.attachments);
+        setIsRunning(true);
+        setError(undefined);
+        sendRef.current({
+          type: "prompt",
+          text: regen.context ? `${wrapForkContext(regen.context)}\n\n${body}` : body,
+          sessionId: msg.sessionId,
+          currentPage: pageRef.current
+            ? { title: pageRef.current.title, url: pageRef.current.url }
+            : undefined,
+        });
+      }
       return;
     }
     if (msg.type === "page") {
@@ -449,6 +474,56 @@ export function App() {
     boundRef.current = true;
   };
 
+  const regenerateFromMessage = (messageId: string) => {
+    if (isRunning) return;
+    const source = sessionsRef.current.find((item) => item.id === selectedIdRef.current);
+    if (!source) return;
+    const assistantIndex = source.messages.findIndex((message) => message.id === messageId);
+    if (assistantIndex < 0 || source.messages[assistantIndex]?.role !== "assistant") return;
+    let userIndex = -1;
+    for (let index = assistantIndex - 1; index >= 0; index -= 1) {
+      if (source.messages[index].role === "user") {
+        userIndex = index;
+        break;
+      }
+    }
+    if (userIndex < 0) return;
+    const user = source.messages[userIndex];
+    const kept = source.messages.slice(0, userIndex + 1);
+    const prior = source.messages.slice(0, userIndex);
+    pendingRegen.current = {
+      localId: source.id,
+      text: textOf(user.content),
+      attachments: user.attachments ?? [],
+      context: prior.length > 0 ? buildForkContext(prior) : undefined,
+    };
+    patchSession(source.id, (session) => ({
+      ...session,
+      acpSessionId: undefined,
+      pendingForkContext: undefined,
+      messages: kept,
+      todos: [],
+      updatedAt: new Date().toISOString(),
+    }));
+    setPermission(undefined);
+    setQuestion(undefined);
+    setPlan(undefined);
+    if (statusRef.current !== "ready") {
+      pendingRegen.current = null;
+      setError(t(localeRef.current, "offlineSend"));
+      setStatus("error");
+      setIsRunning(false);
+      return;
+    }
+    appliedModelRef.current = "";
+    boundRef.current = false;
+    pendingBind.current = { localId: source.id, kind: "new" };
+    setIsRunning(true);
+    setError(undefined);
+    sendRef.current({ type: "session.new" });
+    boundRef.current = true;
+  };
+
   if (!hydrated || !selected) {
     return <div className="h-full bg-[var(--ink)]" />;
   }
@@ -499,6 +574,7 @@ export function App() {
               onSend={onSend}
               onCancel={onCancel}
               onFork={forkFromMessage}
+              onRegenerate={regenerateFromMessage}
               onPickAttachments={onPickAttachments}
               onPickElement={onPickElement}
               onCancelElementPick={onCancelElementPick}

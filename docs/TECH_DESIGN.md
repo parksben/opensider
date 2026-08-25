@@ -208,7 +208,15 @@ chrome.storage.local
 2. 若 fork 的是**最后一条**且 Agent 支持 `session/fork`，用 ACP fork，Agent 历史与 UI 对齐，不必再灌上下文。
 3. 否则 `session/new`。Agent 是空会话，把截断后的对话写成 `pendingForkContext`，**下一条用户消息**前缀带上（UI 不显示这段包装）。这样 Agent 不会为了灌上下文先回一嘴。
 
-`isRunning` 时拒绝 new / switch / fork。流式 `update` 只写进当前选中会话。
+`isRunning` 时拒绝 new / switch / fork / regenerate。流式 `update` 只写进当前选中会话。
+
+重新生成（同一会话抽卡）：
+
+1. 只挂在 Agent 回复底部，和 Fork 同一行，整行居左（Fork 左、刷新右）。用户气泡不放这两个按钮。
+2. 截掉该条 assistant 及之后的消息，保留对应的用户气泡和附件。
+3. 当前会话 `session/new` 换一条空 ACP 会话：旧会话里已有上次回复，再 prompt 会叠一层，抽卡不干净。
+4. 该用户消息之前的记录写成 `pendingForkContext` 同款前文，立刻把同一条用户正文 / 附件再 `prompt`。新会话上重套当前模型（清掉 `appliedModelRef`，等 `models` 再 `model.set`）。
+5. 界面不新增用户气泡，等流式 `update` 长出新的 assistant。
 
 旧的 `session.json` `{ sessionId }` 在侧栏还没有本地目录时，迁成第一条会话。
 
@@ -293,7 +301,7 @@ macOS 清单路径：`~/Library/Application Support/Google/Chrome/NativeMessagin
 - 顶栏：左会话开关（收起时 Lucide `MessageSquarePlus` 气泡加号，tooltip「会话 / Sessions」；展开时 `PanelLeftClose`，tooltip「收起列表 / Collapse list」）+ 语言按钮（英显示「中」、中显示「EN」）；正中会话名；右连接状态与 offline「Connection / 重连」（icon 已是重试语义）。顶栏按钮不加涟漪。
 - 会话列表是主区域左侧栏：新建、卡片上 Pencil / Trash2 重命名与删除；`titleManual` 为真时不再用首条消息改标题
 - 空会话：消息区垂直居中，Lucide `MessageCircle` 约 120px + 一行淡灰提示，不抢视觉
-- 消息上用 lucide 的 fork / bookmark；fork tooltip 中文为「基于此记录新建会话」，英文仍是 Fork from here
+- Agent 回复底部用 lucide 的 `GitFork` + `RefreshCw`，整行居左；fork tooltip「基于此记录新建会话 / Fork from here」，刷新 tooltip「重新生成 / Regenerate」。用户气泡不放操作钮
 - 视觉：窄侧栏（约 380px）、橄榄黑底、黄铜强调色；图标只用 `lucide-react`
 - 字体：IBM Plex Sans / Mono（中英都不用衬线体）
 - 工具卡片按 ACP `kind` 换图标：read / edit / execute / search / fetch 等
