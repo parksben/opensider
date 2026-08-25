@@ -394,7 +394,7 @@ function AssistantMessage({ locale, content }: { locale: Locale; content: ChatPa
             </details>
           );
         }
-        return <ToolCard key={part.toolCallId} part={part} />;
+        return <ToolCard key={part.toolCallId} locale={locale} part={part} />;
       })}
     </div>
   );

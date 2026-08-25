@@ -9,6 +9,8 @@ import {
   Wrench,
 } from "lucide-react";
 import type { ToolPart } from "../chat-types";
+import type { Locale } from "../i18n";
+import { toolTitle } from "../tool-label";
 
 const kindIcon = {
   read: Search,
@@ -32,17 +34,20 @@ function preview(value: unknown): string {
   }
 }
 
-export function ToolCard({ part }: { part: ToolPart }) {
+export function ToolCard({ locale, part }: { locale: Locale; part: ToolPart }) {
   const Icon = kindIcon[(part.kind as keyof typeof kindIcon) ?? "other"] ?? Wrench;
   const status = part.status ?? "pending";
   const result = preview(part.result);
   const args = preview(part.args);
+  const title = toolTitle(locale, part);
 
   return (
     <details className="my-2 overflow-hidden rounded-lg border border-[var(--line)] bg-[#161910]">
       <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2">
         <Icon size={14} strokeWidth={1.75} className="shrink-0 text-[var(--brass)]" />
-        <span className="min-w-0 flex-1 truncate text-[12.5px] text-[var(--text)]">{part.toolName}</span>
+        <span className="min-w-0 flex-1 truncate text-[12.5px] text-[var(--text)]" title={part.toolName}>
+          {title}
+        </span>
         <StatusGlyph status={status} />
       </summary>
       <div className="space-y-2 border-t border-[var(--line)] px-3 py-2">
