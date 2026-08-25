@@ -1,4 +1,4 @@
-import type { BrowserCommand, BrowserResult, ClipRect, CurrentPage, ExtToHost, HostToExt } from "@shared";
+import type { AttachmentItem, BrowserCommand, BrowserResult, ClipRect, CurrentPage, ExtToHost, HostToExt } from "@shared";
 import { HOST_NAME, isActionMethod, isCaptureMethod, isTabMethod } from "@shared";
 import { captureViewport } from "./screenshot";
 
@@ -261,16 +261,85 @@ async function requestPage(tabId: number): Promise<void> {
   }
 }
 
+function isRestrictedUrl(url?: string): boolean {
+  if (!url) return true;
+  return (
+    url.startsWith("chrome://") ||
+    url.startsWith("chrome-extension://") ||
+    url.startsWith("https://chrome.google.com/webstore") ||
+    url.startsWith("https://chromewebstore.google.com/")
+  );
+}
+
+async function startPagePick(requestId: string, hint?: string): Promise<void> {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab?.id || isRestrictedUrl(tab.url)) {
+    broadcast({
+      type: "page.picked",
+      requestId,
+      items: [],
+      error: "restricted",
+    });
+    return;
+  }
+  try {
+    await chrome.tabs.sendMessage(tab.id, { type: "page.pick", requestId, hint });
+  } catch (error) {
+    broadcast({
+      type: "page.picked",
+      requestId,
+      items: [],
+      error: String(error),
+    });
+  }
+}
+
+async function cancelPagePick(): Promise<void> {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab?.id) return;
+  try {
+    await chrome.tabs.sendMessage(tab.id, { type: "page.pick.cancel" });
+  } catch {
+    // tab may not have the content script
+  }
+}
+
+function pickedItems(selector?: string): AttachmentItem[] {
+  if (!selector) return [];
+  return [{ path: selector, name: selector, kind: "element" }];
+}
+
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== "sidebar") return;
   sidebars.add(port);
   replay(port);
   connectNative();
-  port.onMessage.addListener((msg: ExtToHost) => sendNative(msg));
+  port.onMessage.addListener((msg: ExtToHost) => {
+    if (msg.type === "page.pick") {
+      void startPagePick(msg.requestId, msg.hint);
+      return;
+    }
+    if (msg.type === "page.pick.cancel") {
+      void cancelPagePick();
+      return;
+    }
+    sendNative(msg);
+  });
   port.onDisconnect.addListener(() => sidebars.delete(port));
 });
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg?.type === "page.picked") {
+    broadcast({
+      type: "page.picked",
+      requestId: String(msg.requestId ?? ""),
+      items: pickedItems(typeof msg.selector === "string" ? msg.selector : undefined),
+      cancelled: Boolean(msg.cancelled),
+      error: typeof msg.error === "string" ? msg.error : undefined,
+    });
+    sendResponse({ ok: true });
+    return true;
+  }
   if (msg?.type === "ping") {
     connectNative();
     sendResponse({ ok: true, status: lastStatus });

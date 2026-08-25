@@ -26,6 +26,8 @@ When the user talks about "this page", "the current tab", or the site they are l
 
 The current tab also changes while you work. Re-read those files after navigation or if the user says they changed pages.
 
+If the user message includes \`[Picked page elements]\`, those CSS selectors were chosen by the user in the sidebar picker. Inspect or operate on that exact node with page tools and \`args.selector\`. Do not treat those lines as file paths.
+
 ## Calling page methods
 
 Write a JSON file to \`browser/commands/<id>.json\`, then read \`browser/results/<id>.json\`. If the result is not there yet, wait a moment and read again.

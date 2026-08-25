@@ -1,3 +1,4 @@
+import type { AttachmentItem } from "@shared";
 import type { ChatMessage, ChatPart, TodoItem } from "./chat-types";
 import type { Locale } from "./i18n";
 
@@ -163,10 +164,24 @@ export async function saveState(state: {
   await chrome.storage.local.set({ [STATE_KEY]: payload });
 }
 
-export function wrapAttachments(text: string, paths: string[]): string {
-  if (paths.length === 0) return text;
-  const block = `[Attachments]\nLocal paths. Read these files or folders if needed.\n${paths
-    .map((path) => `- ${path}`)
-    .join("\n")}`;
-  return text ? `${text}\n\n${block}` : block;
+export function wrapAttachments(text: string, items: AttachmentItem[]): string {
+  const files = items.filter((item) => item.kind !== "element");
+  const elements = items.filter((item) => item.kind === "element");
+  const parts: string[] = [];
+  if (text) parts.push(text);
+  if (files.length > 0) {
+    parts.push(
+      `[Attachments]\nLocal paths. Read these files or folders if needed.\n${files
+        .map((item) => `- ${item.path}`)
+        .join("\n")}`,
+    );
+  }
+  if (elements.length > 0) {
+    parts.push(
+      `[Picked page elements]\nThe user picked these elements on the current browser tab. They want you to inspect and/or operate on them. Use page tools (queryText, click, fill, screenshotElement, exists, getAttribute, getValue, etc.) with args.selector set to the exact CSS selector below. Do not treat these as files.\n${elements
+        .map((item) => `- ${item.path}`)
+        .join("\n")}`,
+    );
+  }
+  return parts.join("\n\n");
 }

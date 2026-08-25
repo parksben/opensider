@@ -57,6 +57,7 @@ export function App() {
   const selectedModelRef = useRef(selectedModelId);
   const pickWaiters = useRef(new Map<string, (items: AttachmentItem[]) => void>());
   const appliedModelRef = useRef("");
+  const elementPickId = useRef("");
   pageRef.current = page;
   statusRef.current = status;
   selectedIdRef.current = selectedId;
@@ -149,10 +150,11 @@ export function App() {
       }
       return;
     }
-    if (msg.type === "fs.picked") {
+    if (msg.type === "fs.picked" || msg.type === "page.picked") {
       const waiter = pickWaiters.current.get(msg.requestId);
       pickWaiters.current.delete(msg.requestId);
-      if (msg.error) setError(msg.error);
+      if (msg.error === "restricted") setError(t(localeRef.current, "pickPageFailed"));
+      else if (msg.error) setError(msg.error);
       waiter?.(msg.items ?? []);
       return;
     }
@@ -272,7 +274,7 @@ export function App() {
     if (context) {
       patchSession(session.id, (item) => ({ ...item, pendingForkContext: undefined }));
     }
-    const body = wrapAttachments(text, attachments.map((item) => item.path));
+    const body = wrapAttachments(text, attachments);
     setIsRunning(true);
     setError(undefined);
     sendRef.current({
@@ -296,6 +298,26 @@ export function App() {
       pickWaiters.current.set(requestId, resolve);
       sendRef.current({ type: "fs.pick", requestId });
     });
+
+  const onPickElement = () =>
+    new Promise<AttachmentItem[]>((resolve) => {
+      const requestId = crypto.randomUUID();
+      elementPickId.current = requestId;
+      pickWaiters.current.set(requestId, resolve);
+      sendRef.current({
+        type: "page.pick",
+        requestId,
+        hint: `${t(localeRef.current, "pickHint")} · ${t(localeRef.current, "pickHintDetail")}`,
+      });
+    });
+
+  const onCancelElementPick = () => {
+    const requestId = elementPickId.current;
+    sendRef.current({ type: "page.pick.cancel", requestId });
+    const waiter = pickWaiters.current.get(requestId);
+    pickWaiters.current.delete(requestId);
+    waiter?.([]);
+  };
 
   const onModel = (modelId: string) => {
     setSelectedModelId(modelId);
@@ -425,6 +447,8 @@ export function App() {
               onCancel={onCancel}
               onFork={forkFromMessage}
               onPickAttachments={onPickAttachments}
+              onPickElement={onPickElement}
+              onCancelElementPick={onCancelElementPick}
               onModel={onModel}
             />
           </div>

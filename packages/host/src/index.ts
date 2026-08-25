@@ -93,6 +93,9 @@ async function handleExt(msg: ExtToHost): Promise<void> {
       send({ type: "hello", workspace: WORKSPACE_DIR, agentPath });
       return;
     }
+    if (msg.type === "page.pick" || msg.type === "page.pick.cancel") {
+      return;
+    }
     if (msg.type === "page.update") {
       writeCurrentPage(msg.page);
       send({ type: "page", page: msg.page });

@@ -1,5 +1,5 @@
 import type { AgentModel, AttachmentItem, AttachmentKind } from "@shared";
-import { ChevronDown, File, Folder, GitFork, Image, LoaderCircle, MessageCircle, Plus, Send, Square, X } from "lucide-react";
+import { ChevronDown, File, Folder, GitFork, Image, LoaderCircle, MessageCircle, MousePointer2, Plus, Send, Square, X } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { ChatMessage, ChatPart } from "../chat-types";
 import type { Locale } from "../i18n";
@@ -19,6 +19,8 @@ export function ChatPane({
   onCancel,
   onFork,
   onPickAttachments,
+  onPickElement,
+  onCancelElementPick,
   onModel,
 }: {
   locale: Locale;
@@ -30,13 +32,24 @@ export function ChatPane({
   onCancel: () => void;
   onFork: (messageId: string) => void;
   onPickAttachments: () => Promise<AttachmentItem[]>;
+  onPickElement: () => Promise<AttachmentItem[]>;
+  onCancelElementPick: () => void;
   onModel: (modelId: string) => void;
 }) {
   const [draft, setDraft] = useState("");
   const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
-  const [picking, setPicking] = useState(false);
+  const [pickingFiles, setPickingFiles] = useState(false);
+  const [pickingElement, setPickingElement] = useState(false);
   const label = (key: Parameters<typeof t>[1]) => t(locale, key);
   const canSend = Boolean(draft.trim() || attachments.length);
+  const busy = pickingFiles || pickingElement || isRunning;
+
+  const mergeAttachments = (items: AttachmentItem[]) => {
+    setAttachments((current) => {
+      const seen = new Set(current.map((item) => item.path));
+      return [...current, ...items.filter((item) => !seen.has(item.path))];
+    });
+  };
 
   const submit = () => {
     if (!canSend || isRunning) return;
@@ -48,21 +61,60 @@ export function ChatPane({
   };
 
   const addAttachments = async () => {
-    if (picking || isRunning) return;
-    setPicking(true);
+    if (busy) return;
+    setPickingFiles(true);
     try {
-      const items = await onPickAttachments();
-      setAttachments((current) => {
-        const seen = new Set(current.map((item) => item.path));
-        return [...current, ...items.filter((item) => !seen.has(item.path))];
-      });
+      mergeAttachments(await onPickAttachments());
     } finally {
-      setPicking(false);
+      setPickingFiles(false);
     }
   };
 
+  const startElementPick = async () => {
+    if (pickingElement) {
+      onCancelElementPick();
+      setPickingElement(false);
+      return;
+    }
+    if (pickingFiles || isRunning) return;
+    setPickingElement(true);
+    try {
+      mergeAttachments(await onPickElement());
+    } finally {
+      setPickingElement(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!pickingElement) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      onCancelElementPick();
+      setPickingElement(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [pickingElement, onCancelElementPick]);
+
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="relative flex h-full min-h-0 flex-col">
+      {pickingElement ? (
+        <button
+          type="button"
+          className="absolute inset-0 z-20 flex items-center justify-center bg-black/45 px-4"
+          onClick={() => {
+            onCancelElementPick();
+            setPickingElement(false);
+          }}
+        >
+          <span className="flex max-w-[16rem] flex-col items-center gap-2 rounded-2xl border border-[var(--line)] bg-[var(--panel)] px-4 py-3 text-center shadow-xl">
+            <MousePointer2 size={22} className="text-[var(--brass)]" />
+            <span className="text-[13px] text-[var(--text)]">{label("pickHint")}</span>
+            <span className="text-[11px] text-[var(--muted)]">{label("pickHintDetail")}</span>
+          </span>
+        </button>
+      ) : null}
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3">
         {messages.length === 0 ? (
           <div className="flex flex-1 flex-col items-center justify-center px-4">
@@ -136,15 +188,28 @@ export function ChatPane({
             }}
           />
           <div className="flex items-center justify-between gap-2">
-            <IconButton
-              side="top"
-              label={label("attach")}
-              onClick={() => void addAttachments()}
-              disabled={picking || isRunning}
-              className="flex h-7 w-7 items-center justify-center rounded-full text-[var(--text)] hover:bg-white/15 disabled:opacity-30 disabled:hover:bg-transparent"
-            >
-              {picking ? <LoaderCircle size={14} className="animate-spin" /> : <Plus size={14} />}
-            </IconButton>
+            <div className="flex items-center gap-1">
+              <IconButton
+                side="top"
+                label={label("pickElement")}
+                onClick={() => void startElementPick()}
+                disabled={pickingFiles || isRunning}
+                className={`flex h-7 w-7 items-center justify-center rounded-full hover:bg-white/15 disabled:opacity-30 disabled:hover:bg-transparent ${
+                  pickingElement ? "bg-white/15 text-[var(--brass)]" : "text-[var(--text)]"
+                }`}
+              >
+                <MousePointer2 size={14} />
+              </IconButton>
+              <IconButton
+                side="top"
+                label={label("attach")}
+                onClick={() => void addAttachments()}
+                disabled={busy}
+                className="flex h-7 w-7 items-center justify-center rounded-full text-[var(--text)] hover:bg-white/15 disabled:opacity-30 disabled:hover:bg-transparent"
+              >
+                {pickingFiles ? <LoaderCircle size={14} className="animate-spin" /> : <Plus size={14} />}
+              </IconButton>
+            </div>
             <div className="flex min-w-0 items-center justify-end gap-1.5">
               <ModelSelect
                 locale={locale}
@@ -202,7 +267,7 @@ function AttachmentChips({
           <span
             key={item.path}
             title={item.path}
-            className="inline-flex max-w-[10rem] items-center gap-1 rounded-full border border-[var(--line)] bg-[var(--panel-2)] py-0.5 pl-1.5 pr-1 text-[11px] text-[var(--muted)]"
+            className="inline-flex max-w-full items-center gap-1 rounded-full border border-[var(--line)] bg-[var(--panel-2)] py-0.5 pl-1.5 pr-1 text-[11px] text-[var(--muted)]"
           >
             <Icon size={12} className="shrink-0 opacity-80" />
             <span className="min-w-0 truncate">{item.name}</span>
@@ -227,6 +292,7 @@ function AttachmentChips({
 function kindIcon(kind: AttachmentKind) {
   if (kind === "image") return Image;
   if (kind === "folder") return Folder;
+  if (kind === "element") return MousePointer2;
   return File;
 }
 

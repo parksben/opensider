@@ -45,7 +45,7 @@ Cursor Agent 在 ACP 模式下仍然自己执行本地工具（读文件、写�
 - 会话列表、当前选中会话、语言也由 App state 驱动，写入 `chrome.storage.local`
 - 工具卡片 / markdown 仍复用现有展示组件
 - 发出用户输入（可带本机附件路径）、取消、权限决定、提问/计划回答、新建 / 切换 / fork 会话、选模型
-- 展示当前页、进行中的页面命令、连接状态、todo、权限条、输入栏附件芯片与模型下拉
+- 展示当前页、进行中的页面命令、连接状态、todo、权限条、输入栏附件芯片、元素拾取蒙层与模型下拉
 - 离线发送会立刻报错；Service Worker 断开时显示原因（含扩展 ID / `lastError`）并允许重试
 - 侧栏先 `sendMessage({ type: "ping" })` 唤醒 SW，再 `connect`。React StrictMode 卸载只摘监听器，不拆端口。端口若在 SW 还在加载时空断，自动重连，避免永远停在 Lost connection
 - 不再挂载 assistant-ui runtime；旧的 `ExternalStoreThreadRuntimeCore` 会在端口断开后抛错，把扩展标红
@@ -56,14 +56,14 @@ Cursor Agent 在 ACP 模式下仍然自己执行本地工具（读文件、写�
 - `chrome.runtime.connectNative` 连接 Host；重试时强制拆掉旧端口再连，避免僵尸 `nativePort` 让 `if (nativePort) return` 直接跳过
 - 往 Native / 侧栏端口发消息一律 try/catch，断开时清掉引用并写出 `chrome.runtime.lastError`
 - 缓存最近一次 `status` / `session` / `page` / `models`，侧栏 `onConnect` 或 `ping` 时立即回放，避免 Host 已 ready 但面板因 React StrictMode 重挂而一直显示离线
-- 在 Side Panel、Content Script、Host 之间转发消息
+- 在 Side Panel、Content Script、Host 之间转发消息；`page.pick` 只走内容脚本，不进 Native Host
 - 监听 `tabs.onActivated` / `tabs.onUpdated`，通知内容脚本刷新当前页
 - 点击工具栏图标打开 Side Panel
 - Host 包装脚本一启动就往 `~/.cursor-sidebar/host.log` 打一行，便于判断 Chrome 有没有真正拉起 Host
 
 ### Content Script
 
-运行在隔离世界，不往 `window` 挂 API，也不执行任意 JS。元素定位：`args.selector`（CSS）和 / 或 `args.text`（可见文本包含），可选 `args.nth`。
+运行在隔离世界，不往 `window` 挂 API，也不执行任意 JS。元素定位：`args.selector`（CSS）和 / 或 `args.text`（可见文本包含），可选 `args.nth`。侧栏发起 `page.pick` 时进入拾取：悬停高亮、点击生成全局唯一 CSS selector（id 优先，否则 `tag:nth-of-type` 路径，并校验 `querySelectorAll` 唯一），Esc 取消。
 
 读取：
 
@@ -196,6 +196,7 @@ chrome.storage.local
 | `session.fork` + `sessionId` | 先试不稳定的 `session/fork`（整段历史）；失败则 `session/new` |
 | `prompt` 可带 `sessionId` | 先切到该 ACP 会话再 prompt，避免切换竞态 |
 | `fs.pick` | Host 弹出本机选文件/文件夹对话框，回 `fs.picked`（绝对路径 + kind） |
+| `page.pick` | SW 让当前标签内容脚本拾取元素，回 `page.picked`（CSS selector，kind=element）；不转发 Host |
 | `model.set` | `session/set_config_option`（`category: model`）；失败再试 `session/set_model` |
 
 从某一轮之后 fork：
@@ -227,6 +228,15 @@ Local paths. Read these files or folders if needed.
 
 不把文件内容塞进 Native Messaging。用户气泡可带同样的芯片，方便回看。未发送的芯片只活在输入栏 state 里。
 
+拾取元素不经过 Host：侧栏 `page.pick` → SW → 当前标签内容脚本。点中后回 `page.picked`，芯片 `kind: element`，`path`/`name` 都是唯一 CSS selector。Prompt 另附：
+
+```
+[Picked page elements]
+The user picked these elements on the current browser tab. Inspect or operate
+on them with page tools using args.selector.
+- html > body > main > button:nth-of-type(2)
+```
+
 ## 模型选择
 
 1. Host 启动时跑 `agent models`（与 `agent --list-models` 相同），解析 `id - name` 行，推 `models` 给侧栏。
@@ -243,7 +253,7 @@ Local paths. Read these files or folders if needed.
 4. Host 写 `browser/current.json` 和 `browser/snapshot.md`
 5. Side Panel 更新顶栏
 6. 下一条 `session/prompt` 在用户文本前加一行 `[Current tab] {title} — {url}`（UI 不显示这行）
-7. 若有附件，再追加一段 `[Attachments]` 绝对路径列表（UI 气泡里只显示用户正文和芯片，不显示这段包装）
+7. 若有文件附件，再追加 `[Attachments]` 绝对路径；若有拾取的元素，再追加 `[Picked page elements]` 和 CSS selector，并写明用页面工具的 `args.selector` 去查看或操作（UI 气泡里只显示用户正文和芯片）
 
 不在切换时往会话里塞一条用户消息，以免污染对话。Agent 需要更多页面内容时，按 `AGENTS.md` 读 snapshot 或写命令文件。
 
@@ -276,7 +286,7 @@ macOS 清单路径：`~/Library/Application Support/Google/Chrome/NativeMessagin
 
 ## UI
 
-- 聊天：`ChatPane` 由当前会话的 `messages` / `isRunning` 驱动；工具卡片 / markdown 仍是现有组件。输入区：可选附件芯片 → textarea → 第二行左 Lucide `Plus`、右模型下拉 + `Send` 小飞机 / 停止（14px，与顶栏 icon 同大；hover 半透明白圆）。纯图标按钮用可见 tooltip，不用只靠浏览器原生 `title`。芯片 `title` 用完整路径。
+- 聊天：`ChatPane` 由当前会话的 `messages` / `isRunning` 驱动；工具卡片 / markdown 仍是现有组件。输入区：可选附件芯片 → textarea → 第二行左 Lucide `MousePointer2` 拾取 + `Plus`、右模型下拉 + `Send` 小飞机 / 停止（14px，与顶栏 icon 同大；hover 半透明白圆）。拾取时侧栏蒙层提示去网页点选。纯图标按钮用可见 tooltip，不用只靠浏览器原生 `title`。芯片 `title` 用完整路径或 selector，过长按行宽省略。
 - 顶栏：左 `PanelLeft` / `PanelLeftClose` + 语言按钮（英显示「中」、中显示「EN」）；正中会话名；右连接状态与 offline「Connection / 重连」（icon 已是重试语义）
 - 会话列表是主区域左侧栏，里头有新建会话
 - 空会话：消息区垂直居中，Lucide `MessageCircle` 约 120px + 一行淡灰提示，不抢视觉
@@ -316,6 +326,7 @@ pnpm workspace。扩展用 Vite + `@crxjs/vite-plugin` 打包。
 | 受控输入收不到赋值 | fill/type 用原生 value setter + input/change |
 | 点击找不到可点目标 | 同时支持 selector 与可见文本，失败返回明确错误 |
 | 导航后内容脚本被卸掉 | 标签级导航走 `chrome.tabs.update`，完成后再抓快照 |
+| 系统页无法拾取 | chrome:// 等直接报错；Esc / 再点拾取取消 |
 | 截图超过 Native Messaging 1MB | JPEG + 最长边 1280 + 质量下调；只传 base64，落盘后再给 Agent 路径 |
 | 元素截图像素比不对 | 用 `devicePixelRatio` 把 CSS 盒映射到截图像素 |
 | 扩展选文件没有真路径 | Host 用 macOS `NSOpenPanel`（JXA）多选文件+文件夹，回绝对路径 |
