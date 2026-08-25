@@ -26,19 +26,15 @@ function stickToBottom(node: HTMLElement | null, smooth = false): void {
 
 function clipboardImages(data: DataTransfer | null): File[] {
   if (!data) return [];
-  const files: File[] = [];
-  const add = (file: File | null) => {
-    if (!file || !file.type.startsWith("image/")) return;
-    if (files.some((item) => item.name === file.name && item.size === file.size && item.lastModified === file.lastModified)) {
-      return;
-    }
-    files.push(file);
-  };
-  for (const file of Array.from(data.files)) add(file);
-  for (const item of Array.from(data.items)) {
-    if (item.kind === "file") add(item.getAsFile());
-  }
-  return files;
+  const images = (files: File[]) => files.filter((file) => file.type.startsWith("image/"));
+  const fromFiles = images(Array.from(data.files));
+  if (fromFiles.length > 0) return fromFiles;
+  return images(
+    Array.from(data.items)
+      .filter((item) => item.kind === "file")
+      .map((item) => item.getAsFile())
+      .filter((file): file is File => file != null),
+  );
 }
 
 export function ChatPane({
