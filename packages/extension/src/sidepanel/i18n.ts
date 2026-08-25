@@ -8,7 +8,7 @@ const copy = {
     offline: "offline",
     noPage: "No page selected",
     switchTab: "Switch to a regular http(s) tab",
-    retry: "Retry connection",
+    retry: "Connection",
     expandSessions: "Expand",
     collapseSessions: "Collapse",
     switchLanguage: "Switch language",

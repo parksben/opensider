@@ -277,7 +277,7 @@ macOS 清单路径：`~/Library/Application Support/Google/Chrome/NativeMessagin
 ## UI
 
 - 聊天：`ChatPane` 由当前会话的 `messages` / `isRunning` 驱动；工具卡片 / markdown 仍是现有组件。输入区：可选附件芯片 → textarea → 第二行左 Lucide `Plus`、右模型下拉 + `Send` 小飞机 / 停止（14px，与顶栏 icon 同大；hover 半透明白圆）。纯图标按钮用可见 tooltip，不用只靠浏览器原生 `title`。芯片 `title` 用完整路径。
-- 顶栏：左 `PanelLeft` / `PanelLeftClose` + 语言按钮（英显示「中」、中显示「EN」）；正中会话名；右连接状态与 offline「Retry connection / 重连」
+- 顶栏：左 `PanelLeft` / `PanelLeftClose` + 语言按钮（英显示「中」、中显示「EN」）；正中会话名；右连接状态与 offline「Connection / 重连」（icon 已是重试语义）
 - 会话列表是主区域左侧栏，里头有新建会话
 - 空会话：消息区垂直居中，Lucide `MessageCircle` 约 120px + 一行淡灰提示，不抢视觉
 - 消息上用 lucide 的 fork / bookmark
