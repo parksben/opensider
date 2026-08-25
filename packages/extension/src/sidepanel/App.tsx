@@ -369,8 +369,8 @@ export function App() {
           reconnectRef.current();
         }}
       />
-      {sessionsOpen ? (
-        <div className="px-3">
+      <div className="flex min-h-0 flex-1">
+        {sessionsOpen ? (
           <SessionDrawer
             locale={locale}
             sessions={sessions}
@@ -380,56 +380,58 @@ export function App() {
             onNew={newSession}
             onRestore={restoreCheckpoint}
           />
+        ) : null}
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <div className="min-h-0 flex-1">
+            <ChatPane
+              locale={locale}
+              messages={selected.messages}
+              checkpoints={selected.checkpoints}
+              isRunning={isRunning}
+              disabled={status !== "ready"}
+              onSend={onSend}
+              onCancel={onCancel}
+              onFork={forkFromMessage}
+              onCheckpoint={saveCheckpoint}
+            />
+          </div>
+          <PermissionBar
+            locale={locale}
+            permission={permission}
+            question={question}
+            plan={plan}
+            onPermission={(optionId) => {
+              if (!permission) return;
+              sendRef.current({
+                type: "permission.reply",
+                id: permission.id,
+                outcome: { outcome: "selected", optionId },
+              });
+              setPermission(undefined);
+            }}
+            onQuestion={(answers) => {
+              if (!question) return;
+              sendRef.current({
+                type: "cursor.reply",
+                id: question.id,
+                result: { outcome: { outcome: "answered", answers } },
+              });
+              setQuestion(undefined);
+            }}
+            onPlan={(accepted) => {
+              if (!plan) return;
+              sendRef.current({
+                type: "cursor.reply",
+                id: plan.id,
+                result: accepted
+                  ? { outcome: { outcome: "accepted" } }
+                  : { outcome: { outcome: "rejected", reason: "User rejected the plan" } },
+              });
+              setPlan(undefined);
+            }}
+          />
         </div>
-      ) : null}
-      <div className="min-h-0 flex-1">
-        <ChatPane
-          locale={locale}
-          messages={selected.messages}
-          checkpoints={selected.checkpoints}
-          isRunning={isRunning}
-          disabled={status !== "ready"}
-          onSend={onSend}
-          onCancel={onCancel}
-          onFork={forkFromMessage}
-          onCheckpoint={saveCheckpoint}
-        />
       </div>
-      <PermissionBar
-        locale={locale}
-        permission={permission}
-        question={question}
-        plan={plan}
-        onPermission={(optionId) => {
-          if (!permission) return;
-          sendRef.current({
-            type: "permission.reply",
-            id: permission.id,
-            outcome: { outcome: "selected", optionId },
-          });
-          setPermission(undefined);
-        }}
-        onQuestion={(answers) => {
-          if (!question) return;
-          sendRef.current({
-            type: "cursor.reply",
-            id: question.id,
-            result: { outcome: { outcome: "answered", answers } },
-          });
-          setQuestion(undefined);
-        }}
-        onPlan={(accepted) => {
-          if (!plan) return;
-          sendRef.current({
-            type: "cursor.reply",
-            id: plan.id,
-            result: accepted
-              ? { outcome: { outcome: "accepted" } }
-              : { outcome: { outcome: "rejected", reason: "User rejected the plan" } },
-          });
-          setPlan(undefined);
-        }}
-      />
     </div>
   );
 }

@@ -24,7 +24,7 @@ export function SessionDrawer({
   const label = (key: MessageKey) => t(locale, key);
 
   return (
-    <div className="mt-2 overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--panel-2)]">
+    <aside className="flex h-full w-[13.5rem] shrink-0 flex-col border-r border-[var(--line)] bg-[var(--panel-2)]">
       <div className="flex items-center justify-between gap-2 border-b border-[var(--line)] px-2.5 py-2">
         <div className="text-[11px] tracking-wide text-[var(--muted)]">{label("sessions")}</div>
         <button
@@ -38,7 +38,7 @@ export function SessionDrawer({
         </button>
       </div>
       {locked ? <p className="px-2.5 pt-2 text-[11px] text-[var(--warn)]">{label("runningLock")}</p> : null}
-      <ul className="max-h-40 overflow-y-auto py-1">
+      <ul className="min-h-0 flex-1 overflow-y-auto py-1">
         {sessions.map((session) => {
           const active = session.id === selectedId;
           return (
@@ -95,6 +95,6 @@ export function SessionDrawer({
           <p className="mt-1 text-[11.5px] text-[var(--muted)]">{label("emptyCheckpoints")}</p>
         )}
       </div>
-    </div>
+    </aside>
   );
 }

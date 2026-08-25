@@ -51,7 +51,7 @@ export function PermissionBar({
   if (plan) {
     return (
       <section className="border-t border-[var(--line)] bg-[#1a160e] px-3 py-2.5">
-        <div className="mb-1 font-[Fraunces,serif] text-[15px]">{plan.name || t(locale, "plan")}</div>
+        <div className="mb-1 text-[15px] font-medium tracking-tight">{plan.name || t(locale, "plan")}</div>
         {plan.overview ? <p className="mb-2 text-[12px] text-[var(--muted)]">{plan.overview}</p> : null}
         <Markdown text={plan.plan} />
         <div className="mt-2 flex gap-1.5">

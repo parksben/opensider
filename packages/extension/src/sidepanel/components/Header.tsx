@@ -1,4 +1,4 @@
-import { ChevronDown, Globe, MousePointerClick, PlugZap, RotateCw, Unplug } from "lucide-react";
+import { Globe, MousePointerClick, PanelLeft, PanelLeftClose, PlugZap, RotateCw, Unplug } from "lucide-react";
 import type { BrowserCommand, BrowserResult, CurrentPage } from "@shared";
 import type { TodoItem } from "../chat-types";
 import type { Locale } from "../i18n";
@@ -31,65 +31,61 @@ export function Header({
 }) {
   const host = safeHost(page?.url);
   const label = (key: Parameters<typeof t>[1]) => t(locale, key);
+  const ToggleIcon = sessionsOpen ? PanelLeftClose : PanelLeft;
   return (
     <header className="border-b border-[var(--line)] bg-[color-mix(in_oklab,var(--panel)_88%,transparent)] px-3 py-2.5 backdrop-blur">
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex items-center gap-2">
         <button
           type="button"
           onClick={onToggleSessions}
-          className="min-w-0 flex-1 text-left"
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-[var(--line)] text-[var(--text)]"
           aria-expanded={sessionsOpen}
+          aria-label={sessionsOpen ? label("collapseSessions") : label("expandSessions")}
+          title={sessionsOpen ? label("collapseSessions") : label("expandSessions")}
         >
-          <div className="flex items-center gap-1">
-            <div className="truncate font-[Fraunces,serif] text-[17px] leading-none tracking-tight">
-              {sessionTitle || label("untitled")}
-            </div>
-            <ChevronDown
-              size={14}
-              className={`shrink-0 text-[var(--muted)] transition-transform ${sessionsOpen ? "rotate-180" : ""}`}
-            />
-          </div>
+          <ToggleIcon size={14} />
         </button>
-        <div className="flex shrink-0 items-center gap-1.5">
-          <div className="flex overflow-hidden rounded-full border border-[var(--line)] text-[11px]">
-            <button
-              type="button"
-              onClick={() => onLocale("en")}
-              className={`px-2 py-1 ${locale === "en" ? "bg-[var(--brass)] text-[#1a140b]" : "text-[var(--muted)]"}`}
-            >
-              {label("langEn")}
-            </button>
-            <button
-              type="button"
-              onClick={() => onLocale("zh")}
-              className={`px-2 py-1 ${locale === "zh" ? "bg-[var(--brass)] text-[#1a140b]" : "text-[var(--muted)]"}`}
-            >
-              {label("langZh")}
-            </button>
-          </div>
-          <div
-            className="flex items-center gap-1.5 rounded-full border border-[var(--line)] px-2 py-1 text-[11px]"
-            title={error}
+        <div
+          className="flex shrink-0 items-center gap-1.5 rounded-full border border-[var(--line)] px-2 py-1 text-[11px]"
+          title={error}
+        >
+          {status === "ready" ? (
+            <PlugZap size={13} className="text-[var(--ok)]" />
+          ) : (
+            <Unplug size={13} className={status === "error" ? "text-[var(--bad)]" : "text-[var(--warn)]"} />
+          )}
+          <span className="text-[var(--muted)]">
+            {status === "ready" ? label("connected") : status === "starting" ? label("starting") : label("offline")}
+          </span>
+        </div>
+        {status === "error" && onRetry ? (
+          <button
+            type="button"
+            onClick={onRetry}
+            className="inline-flex shrink-0 items-center gap-1 rounded-full border border-[var(--line)] px-2 py-1 text-[11px] text-[var(--text)]"
           >
-            {status === "ready" ? (
-              <PlugZap size={13} className="text-[var(--ok)]" />
-            ) : (
-              <Unplug size={13} className={status === "error" ? "text-[var(--bad)]" : "text-[var(--warn)]"} />
-            )}
-            <span className="text-[var(--muted)]">
-              {status === "ready" ? label("connected") : status === "starting" ? label("starting") : label("offline")}
-            </span>
-          </div>
-          {status === "error" && onRetry ? (
-            <button
-              type="button"
-              onClick={onRetry}
-              className="inline-flex items-center gap-1 rounded-full border border-[var(--line)] px-2 py-1 text-[11px] text-[var(--text)]"
-            >
-              <RotateCw size={12} />
-              {label("retry")}
-            </button>
-          ) : null}
+            <RotateCw size={12} />
+            {label("retry")}
+          </button>
+        ) : null}
+        <div className="min-w-0 flex-1 truncate text-[14px] font-medium tracking-tight">
+          {sessionTitle || label("untitled")}
+        </div>
+        <div className="flex shrink-0 overflow-hidden rounded-full border border-[var(--line)] text-[11px]">
+          <button
+            type="button"
+            onClick={() => onLocale("en")}
+            className={`px-2 py-1 ${locale === "en" ? "bg-[var(--brass)] text-[#1a140b]" : "text-[var(--muted)]"}`}
+          >
+            {label("langEn")}
+          </button>
+          <button
+            type="button"
+            onClick={() => onLocale("zh")}
+            className={`px-2 py-1 ${locale === "zh" ? "bg-[var(--brass)] text-[#1a140b]" : "text-[var(--muted)]"}`}
+          >
+            {label("langZh")}
+          </button>
         </div>
       </div>
 
