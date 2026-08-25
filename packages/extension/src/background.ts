@@ -262,7 +262,7 @@ async function requestPage(tabId: number): Promise<void> {
 }
 
 function isRestrictedUrl(url?: string): boolean {
-  if (!url) return true;
+  if (!url) return false;
   return (
     url.startsWith("chrome://") ||
     url.startsWith("chrome-extension://") ||
@@ -271,9 +271,44 @@ function isRestrictedUrl(url?: string): boolean {
   );
 }
 
+function isHttpTab(tab: chrome.tabs.Tab): boolean {
+  return Boolean(tab.id) && !isRestrictedUrl(tab.url) && (!tab.url || tab.url.startsWith("http://") || tab.url.startsWith("https://"));
+}
+
+async function activeHttpTab(): Promise<chrome.tabs.Tab | undefined> {
+  const queries: chrome.tabs.QueryInfo[] = [
+    { active: true, lastFocusedWindow: true },
+    { active: true, currentWindow: true },
+    { lastFocusedWindow: true },
+  ];
+  for (const query of queries) {
+    const tab = (await chrome.tabs.query(query)).find(isHttpTab);
+    if (tab) return tab;
+  }
+  const windows = await chrome.windows.getAll({ populate: true, windowTypes: ["normal"] });
+  const focused = windows.find((window) => window.focused) ?? windows[0];
+  return focused?.tabs?.find((tab) => tab.active && isHttpTab(tab));
+}
+
+async function injectContent(tabId: number): Promise<void> {
+  const files = chrome.runtime.getManifest().content_scripts?.[0]?.js ?? [];
+  if (files.length === 0) throw new Error("content script missing from manifest");
+  await chrome.scripting.executeScript({ target: { tabId }, files });
+}
+
+async function ensureContent(tabId: number): Promise<void> {
+  try {
+    await chrome.tabs.sendMessage(tabId, { type: "page.ping" });
+  } catch {
+    await injectContent(tabId);
+  }
+}
+
+let pickTabId: number | undefined;
+
 async function startPagePick(requestId: string, hint?: string): Promise<void> {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab?.id || isRestrictedUrl(tab.url)) {
+  const tab = await activeHttpTab();
+  if (!tab?.id) {
     broadcast({
       type: "page.picked",
       requestId,
@@ -282,9 +317,12 @@ async function startPagePick(requestId: string, hint?: string): Promise<void> {
     });
     return;
   }
+  pickTabId = tab.id;
   try {
+    await ensureContent(tab.id);
     await chrome.tabs.sendMessage(tab.id, { type: "page.pick", requestId, hint });
   } catch (error) {
+    pickTabId = undefined;
     broadcast({
       type: "page.picked",
       requestId,
@@ -295,10 +333,11 @@ async function startPagePick(requestId: string, hint?: string): Promise<void> {
 }
 
 async function cancelPagePick(): Promise<void> {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab?.id) return;
+  const tabId = pickTabId ?? (await activeHttpTab())?.id;
+  pickTabId = undefined;
+  if (!tabId) return;
   try {
-    await chrome.tabs.sendMessage(tab.id, { type: "page.pick.cancel" });
+    await chrome.tabs.sendMessage(tabId, { type: "page.pick.cancel" });
   } catch {
     // tab may not have the content script
   }
@@ -330,6 +369,7 @@ chrome.runtime.onConnect.addListener((port) => {
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg?.type === "page.picked") {
+    pickTabId = undefined;
     broadcast({
       type: "page.picked",
       requestId: String(msg.requestId ?? ""),

@@ -56,7 +56,7 @@ Cursor Agent 在 ACP 模式下仍然自己执行本地工具（读文件、写�
 - `chrome.runtime.connectNative` 连接 Host；重试时强制拆掉旧端口再连，避免僵尸 `nativePort` 让 `if (nativePort) return` 直接跳过
 - 往 Native / 侧栏端口发消息一律 try/catch，断开时清掉引用并写出 `chrome.runtime.lastError`
 - 缓存最近一次 `status` / `session` / `page` / `models`，侧栏 `onConnect` 或 `ping` 时立即回放，避免 Host 已 ready 但面板因 React StrictMode 重挂而一直显示离线
-- 在 Side Panel、Content Script、Host 之间转发消息；`page.pick` 只走内容脚本，不进 Native Host
+- 在 Side Panel、Content Script、Host 之间转发消息；`page.pick` 只走内容脚本，不进 Native Host。先 ping，失败则按 manifest 注入内容脚本再拾取
 - 监听 `tabs.onActivated` / `tabs.onUpdated`，通知内容脚本刷新当前页
 - 点击工具栏图标打开 Side Panel
 - Host 包装脚本一启动就往 `~/.cursor-sidebar/host.log` 打一行，便于判断 Chrome 有没有真正拉起 Host
@@ -218,7 +218,7 @@ chrome.storage.local
 
 ## 附件（只传路径）
 
-Chrome 的文件选择器不会给出本机绝对路径。加号因此发给 Host `fs.pick`：子进程跑 JXA `NSOpenPanel`（可同时选文件和文件夹、可多选），`fs.stat` 分成 `image` / `file` / `folder`。侧栏芯片只展示 `basename`，`title` 是全路径。
+Chrome 的文件选择器不会给出本机绝对路径。加号因此发给 Host `fs.pick`。Chrome 拉起的 Host 没有 GUI 会话，JXA `NSOpenPanel` / 裸 `osascript` 经常不出现访达窗口、却当成用户取消。`install-host` 因此用 `swiftc` 编一个 `PickFiles.app`（`LSUIElement`）放到 `~/.cursor-sidebar/runtime/`，Host 用 `/usr/bin/open -W` 拉起它，路径写到临时文件再读回。面板可同时选文件和文件夹、可多选；`fs.stat` 分成 `image` / `file` / `folder`。侧栏芯片只展示 `basename`，`title` 是全路径。
 
 `session/prompt` 在用户正文后追加：
 
@@ -231,7 +231,7 @@ Local paths. Read these files or folders if needed.
 
 不把文件内容塞进 Native Messaging。用户气泡可带同样的芯片，方便回看。未发送的芯片只活在输入栏 state 里。
 
-拾取元素不经过 Host：侧栏 `page.pick` → SW → 当前标签内容脚本。点中后回 `page.picked`，芯片 `kind: element`，`path`/`name` 都是唯一 CSS selector。Prompt 另附：
+拾取元素不经过 Host：侧栏 `page.pick` → SW → 当前标签内容脚本。侧栏遮罩挂在 `App` 根上（`fixed inset-0` + `backdrop-blur`），盖住顶栏和会话列表，不因 ChatPane 高度裁切；点遮罩不取消。SW 用 `lastFocusedWindow` 找普通 http(s) 标签，`sendMessage` 失败则 `chrome.scripting.executeScript` 注入 manifest 里的内容脚本再试（扩展重载后旧标签默认没有脚本）。点中后回 `page.picked`，芯片 `kind: element`，`path`/`name` 都是唯一 CSS selector。Prompt 另附：
 
 ```
 [Picked page elements]
@@ -289,7 +289,7 @@ macOS 清单路径：`~/Library/Application Support/Google/Chrome/NativeMessagin
 
 ## UI
 
-- 聊天：`ChatPane` 由当前会话的 `messages` / `isRunning` 驱动；工具卡片 / markdown 仍是现有组件。输入区：可选附件芯片 → textarea → 第二行左 Lucide `MousePointer2` 拾取 + `Plus`、右模型下拉 + `Send` 小飞机 / 停止（14px，与顶栏 icon 同大；hover 半透明白圆）。拾取时侧栏蒙层提示去网页点选。`IconButton` 的 tooltip 用 `position: fixed` 挂到 `document.body`，按锚点测量后翻边/平移，与视口保持 8px。除顶栏外，按钮统一 `hover:bg-white/15` + CSS 涟漪（`RippleButton` / `IconButton`）。芯片 `title` 用完整路径或 selector，过长按行宽省略。
+- 聊天：`ChatPane` 由当前会话的 `messages` / `isRunning` 驱动；工具卡片 / markdown 仍是现有组件。输入区：可选附件芯片 → textarea → 第二行左 Lucide `MousePointer2` 拾取 + `Plus`、右模型下拉 + `Send` 小飞机 / 停止（14px，与顶栏 icon 同大；hover 半透明白圆）。拾取时 `App` 全栏模糊遮罩 + 居中提示，完成或 Esc 才收。`IconButton` 的 tooltip 用 `position: fixed` 挂到 `document.body`，按锚点测量后翻边/平移，与视口保持 8px。除顶栏外，按钮统一 `hover:bg-white/15` + CSS 涟漪（`RippleButton` / `IconButton`）。芯片 `title` 用完整路径或 selector，过长按行宽省略。
 - 顶栏：左 `PanelLeft` / `PanelLeftClose` + 语言按钮（英显示「中」、中显示「EN」）；正中会话名；右连接状态与 offline「Connection / 重连」（icon 已是重试语义）。顶栏按钮不加涟漪。
 - 会话列表是主区域左侧栏：新建、卡片上 Pencil / Trash2 重命名与删除；`titleManual` 为真时不再用首条消息改标题
 - 空会话：消息区垂直居中，Lucide `MessageCircle` 约 120px + 一行淡灰提示，不抢视觉
@@ -339,6 +339,8 @@ pnpm workspace。扩展用 Vite + `@crxjs/vite-plugin` 打包。
 | 系统页无法拾取 | chrome:// 等直接报错；Esc / 再点拾取取消 |
 | 截图超过 Native Messaging 1MB | JPEG + 最长边 1280 + 质量下调；只传 base64，落盘后再给 Agent 路径 |
 | 元素截图像素比不对 | 用 `devicePixelRatio` 把 CSS 盒映射到截图像素 |
-| 扩展选文件没有真路径 | Host 用 macOS `NSOpenPanel`（JXA）多选文件+文件夹，回绝对路径 |
+| 扩展选文件没有真路径 | Host 用 `PickFiles.app`（`open -W`）弹出访达多选，回绝对路径 |
+| Chrome 子进程弹不出 NSOpenPanel | 独立 `.app` + `LSUIElement`，不走 JXA |
+| 点拾取后旧标签没有内容脚本 | SW `scripting.executeScript` 按 manifest 补注入 |
 | ACP 不广告模型列表 | 用 `agent models` 解析账号模型；有 `configOptions` 时合并并用于 set |
 | `session/set_model` 被拒 | 先 `session/set_config_option`；initialize 声明 `parameterizedModelPicker` |

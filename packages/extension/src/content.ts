@@ -2,6 +2,10 @@ import { extractSnapshot, measureTarget, measureViewport, runPageMethod } from "
 import { startPick, stopPick } from "./picker";
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.type === "page.ping") {
+    sendResponse({ ok: true });
+    return true;
+  }
   if (message?.type === "page.pick") {
     startPick(String(message.requestId ?? ""), String(message.hint ?? "Click an element on the page"));
     sendResponse({ ok: true });

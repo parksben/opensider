@@ -125,6 +125,7 @@ async function handleExt(msg: ExtToHost): Promise<void> {
     }
     if (msg.type === "fs.pick") {
       try {
+        log("opening file picker");
         const picked = await pickLocalPaths();
         send({
           type: "fs.picked",

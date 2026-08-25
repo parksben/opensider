@@ -15,6 +15,7 @@ export function ChatPane({
   locale,
   messages,
   isRunning,
+  pickingElement,
   models,
   modelId,
   onSend,
@@ -28,6 +29,7 @@ export function ChatPane({
   locale: Locale;
   messages: ChatMessage[];
   isRunning: boolean;
+  pickingElement: boolean;
   models: AgentModel[];
   modelId: string;
   onSend: (text: string, attachments: AttachmentItem[]) => void;
@@ -41,7 +43,6 @@ export function ChatPane({
   const [draft, setDraft] = useState("");
   const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
   const [pickingFiles, setPickingFiles] = useState(false);
-  const [pickingElement, setPickingElement] = useState(false);
   const label = (key: Parameters<typeof t>[1]) => t(locale, key);
   const canSend = Boolean(draft.trim() || attachments.length);
   const busy = pickingFiles || pickingElement || isRunning;
@@ -75,48 +76,14 @@ export function ChatPane({
   const startElementPick = async () => {
     if (pickingElement) {
       onCancelElementPick();
-      setPickingElement(false);
       return;
     }
     if (pickingFiles || isRunning) return;
-    setPickingElement(true);
-    try {
-      mergeAttachments(await onPickElement());
-    } finally {
-      setPickingElement(false);
-    }
+    mergeAttachments(await onPickElement());
   };
-
-  useEffect(() => {
-    if (!pickingElement) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      onCancelElementPick();
-      setPickingElement(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [pickingElement, onCancelElementPick]);
 
   return (
     <div className="relative flex h-full min-h-0 flex-col">
-      {pickingElement ? (
-        <button
-          type="button"
-          className="absolute inset-0 z-20 flex items-center justify-center bg-black/45 px-4"
-          onClick={() => {
-            onCancelElementPick();
-            setPickingElement(false);
-          }}
-        >
-          <span className="flex max-w-[16rem] flex-col items-center gap-2 rounded-2xl border border-[var(--line)] bg-[var(--panel)] px-4 py-3 text-center shadow-xl">
-            <MousePointer2 size={22} className="text-[var(--brass)]" />
-            <span className="text-[13px] text-[var(--text)]">{label("pickHint")}</span>
-            <span className="text-[11px] text-[var(--muted)]">{label("pickHintDetail")}</span>
-          </span>
-        </button>
-      ) : null}
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3">
         {messages.length === 0 ? (
           <div className="flex flex-1 flex-col items-center justify-center px-4">

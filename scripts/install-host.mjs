@@ -1,4 +1,5 @@
-import { chmodSync, cpSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { chmodSync, cpSync, existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -73,6 +74,40 @@ exec "${nodePath}" --no-warnings src/index.ts
 );
 chmodSync(hostSh, 0o755);
 
+const pickApp = resolve(runtimeRoot, "PickFiles.app");
+mkdirSync(resolve(pickApp, "Contents/MacOS"), { recursive: true });
+writeFileSync(
+  resolve(pickApp, "Contents/Info.plist"),
+  `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key>
+  <string>com.cursor.sidebar.pick</string>
+  <key>CFBundleName</key>
+  <string>Cursor Sidebar Pick</string>
+  <key>CFBundleExecutable</key>
+  <string>pick-files</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleVersion</key>
+  <string>1</string>
+  <key>LSUIElement</key>
+  <true/>
+</dict>
+</plist>
+`,
+);
+const pickBin = resolve(pickApp, "Contents/MacOS/pick-files");
+const compiled = spawnSync("swiftc", ["-O", "-o", pickBin, resolve(root, "packages/host/src/pick.swift")], {
+  encoding: "utf8",
+});
+if (compiled.status !== 0) {
+  console.warn(`swiftc failed (file picker will fall back to Finder):\n${compiled.stderr || compiled.stdout}`);
+} else {
+  chmodSync(pickBin, 0o755);
+}
+
 const destDirs = collectManifestDirs();
 const manifest = `${JSON.stringify(
   {
@@ -97,4 +132,5 @@ console.log(`Host: ${hostSh}`);
 console.log(`Runtime: ${runtimeRoot}`);
 console.log(`Allowed origin: chrome-extension://${EXTENSION_ID}/`);
 console.log(`Workspace: ${workspace}`);
+console.log(`Picker: ${existsSync(pickBin) ? pickBin : "Finder fallback"}`);
 console.log(`Manifests: ${destDirs.join(", ")}`);

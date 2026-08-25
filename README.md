@@ -27,7 +27,7 @@ pnpm install-host
 3. 「加载已解压的扩展程序」，选 `packages/extension/dist`
 4. 点工具栏图标打开侧栏
 
-`pnpm build` 会同时跑 `pnpm install-host`。安装脚本把 Host 源码拷到 `~/.cursor-sidebar/runtime/`（离开 Desktop，否则 macOS 会拦 Chrome 启动它），把 Native Messaging 清单写到 Chrome / Chrome Beta / Chrome Canary / Chromium 的 `NativeMessagingHosts`，主路径是：
+`pnpm build` 会同时跑 `pnpm install-host`。安装脚本把 Host 源码拷到 `~/.cursor-sidebar/runtime/`（离开 Desktop，否则 macOS 会拦 Chrome 启动它），并用 `swiftc` 编一个 `PickFiles.app` 供加号唤起访达。Native Messaging 清单写到 Chrome / Chrome Beta / Chrome Canary / Chromium 的 `NativeMessagingHosts`，主路径是：
 
 `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.cursor.sidebar.host.json`
 

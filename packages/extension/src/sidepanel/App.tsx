@@ -7,6 +7,7 @@ import type {
   ExtToHost,
   HostToExt,
 } from "@shared";
+import { MousePointer2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { applyAcpUpdate, createUserMessage } from "./acp-messages";
 import { connectSidebar } from "./bridge";
@@ -44,6 +45,7 @@ export function App() {
   const [question, setQuestion] = useState<QuestionPrompt>();
   const [plan, setPlan] = useState<PlanPrompt>();
   const [activity, setActivity] = useState<{ command: BrowserCommand; result?: BrowserResult }>();
+  const [pickingElement, setPickingElement] = useState(false);
 
   const sendRef = useRef<(msg: ExtToHost) => void>(() => undefined);
   const reconnectRef = useRef<() => void>(() => undefined);
@@ -153,6 +155,7 @@ export function App() {
     if (msg.type === "fs.picked" || msg.type === "page.picked") {
       const waiter = pickWaiters.current.get(msg.requestId);
       pickWaiters.current.delete(msg.requestId);
+      if (msg.type === "page.picked") setPickingElement(false);
       if (msg.error === "restricted") setError(t(localeRef.current, "pickPageFailed"));
       else if (msg.error) setError(msg.error);
       waiter?.(msg.items ?? []);
@@ -303,6 +306,7 @@ export function App() {
     new Promise<AttachmentItem[]>((resolve) => {
       const requestId = crypto.randomUUID();
       elementPickId.current = requestId;
+      setPickingElement(true);
       pickWaiters.current.set(requestId, resolve);
       sendRef.current({
         type: "page.pick",
@@ -316,8 +320,20 @@ export function App() {
     sendRef.current({ type: "page.pick.cancel", requestId });
     const waiter = pickWaiters.current.get(requestId);
     pickWaiters.current.delete(requestId);
+    setPickingElement(false);
     waiter?.([]);
   };
+
+  useEffect(() => {
+    if (!pickingElement) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      onCancelElementPick();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [pickingElement]);
 
   const onModel = (modelId: string) => {
     setSelectedModelId(modelId);
@@ -472,6 +488,7 @@ export function App() {
               locale={locale}
               messages={selected.messages}
               isRunning={isRunning}
+              pickingElement={pickingElement}
               models={models}
               modelId={selectedModelId}
               onSend={onSend}
@@ -520,6 +537,15 @@ export function App() {
           />
         </div>
       </div>
+      {pickingElement ? (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[rgba(8,9,6,0.55)] px-5 backdrop-blur-md">
+          <div className="flex max-w-[17rem] flex-col items-center gap-2.5 rounded-2xl border border-[var(--line)] bg-[var(--panel)]/92 px-5 py-4 text-center shadow-2xl">
+            <MousePointer2 size={26} className="text-[var(--brass)]" />
+            <p className="text-[13px] leading-relaxed text-[var(--text)]">{t(locale, "pickHint")}</p>
+            <p className="text-[11px] text-[var(--muted)]">{t(locale, "pickHintDetail")}</p>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
