@@ -249,6 +249,11 @@ textarea {
   overflow-y: auto;
 }
 
+.cs-fold-scroll {
+  height: 10rem;
+  overflow-y: auto;
+}
+
 .cs-process-scrim {
   pointer-events: none;
   position: absolute;

@@ -1,16 +1,8 @@
-import {
-  Check,
-  CircleAlert,
-  FilePenLine,
-  Globe,
-  LoaderCircle,
-  Search,
-  SquareTerminal,
-  Wrench,
-} from "lucide-react";
+import { FilePenLine, Globe, LoaderCircle, Search, SquareTerminal, Wrench } from "lucide-react";
 import type { ToolPart } from "../chat-types";
 import type { Locale } from "../i18n";
 import { toolTitle } from "../tool-label";
+import { TextFold } from "./TextFold";
 
 const kindIcon = {
   read: Search,
@@ -40,38 +32,23 @@ export function ToolCard({ locale, part }: { locale: Locale; part: ToolPart }) {
   const result = preview(part.result);
   const args = preview(part.args);
   const title = toolTitle(locale, part);
+  const running = status === "pending" || status === "in_progress";
 
   return (
-    <details className="my-2 overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--code)]">
-      <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2">
-        <Icon size={14} strokeWidth={1.75} className="shrink-0 text-[var(--brass)]" />
-        <span className="min-w-0 flex-1 truncate text-[12.5px] text-[var(--text)]" title={part.toolName}>
-          {title}
+    <TextFold
+      label={title}
+      paneClass="cs-fold-scroll"
+      icon={
+        <span className="inline-flex shrink-0 items-center gap-1 text-[var(--muted)]">
+          <Icon size={12} strokeWidth={1.75} />
+          {running ? <LoaderCircle size={12} className="animate-spin" /> : null}
         </span>
-        <StatusGlyph status={status} />
-      </summary>
-      <div className="space-y-2 border-t border-[var(--line)] px-3 py-2">
-        {args ? (
-          <pre className="max-h-40 overflow-auto font-mono text-[11px] leading-relaxed text-[var(--muted)]">
-            {args}
-          </pre>
-        ) : null}
-        {result ? (
-          <pre className="max-h-56 overflow-auto font-mono text-[11px] leading-relaxed text-[var(--text)]">
-            {result}
-          </pre>
-        ) : null}
+      }
+    >
+      <div className="space-y-2 text-[11px] leading-relaxed text-[var(--muted)]">
+        {args ? <pre className="whitespace-pre-wrap font-mono">{args}</pre> : null}
+        {result ? <pre className="whitespace-pre-wrap font-mono">{result}</pre> : null}
       </div>
-    </details>
+    </TextFold>
   );
-}
-
-function StatusGlyph({ status }: { status: string }) {
-  if (status === "completed") {
-    return <Check size={13} className="text-[var(--ok)]" />;
-  }
-  if (status === "failed") {
-    return <CircleAlert size={13} className="text-[var(--bad)]" />;
-  }
-  return <LoaderCircle size={13} className="animate-spin text-[var(--brass)]" />;
 }

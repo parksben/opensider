@@ -1,6 +1,6 @@
 import type { AgentModel, AttachmentItem, AttachmentKind, CurrentPage } from "@shared";
-import { ArrowDown, ChevronDown, ChevronRight, File, Folder, GitFork, Image, LoaderCircle, MessageCircle, MousePointer2, Plus, RefreshCw, Send, Square, X } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type ReactNode, type RefObject } from "react";
+import { ArrowDown, ChevronDown, File, Folder, GitFork, Image, LoaderCircle, MessageCircle, MousePointer2, Plus, RefreshCw, Send, Square, X } from "lucide-react";
+import { useEffect, useRef, useState, type ClipboardEvent, type ReactNode } from "react";
 import type { ChatMessage, ChatPart } from "../chat-types";
 import type { Locale } from "../i18n";
 import { t } from "../i18n";
@@ -9,6 +9,7 @@ import { useRipple } from "../useRipple";
 import { IconButton } from "./IconButton";
 import { Markdown } from "./Markdown";
 import { RippleButton } from "./RippleButton";
+import { TextFold } from "./TextFold";
 import { ToolCard } from "./ToolCard";
 
 const STICKY_PX = 96;
@@ -603,55 +604,20 @@ function formatTurnDuration(ms: number, locale: Locale): string {
   return seconds ? `${minutes}m ${seconds}s` : `${minutes}m`;
 }
 
-function ProcessToggle({
-  locale,
-  durationMs,
-  open,
-  onToggle,
-  buttonRef,
-}: {
-  locale: Locale;
-  durationMs?: number;
-  open: boolean;
-  onToggle: () => void;
-  buttonRef: RefObject<HTMLButtonElement | null>;
-}) {
+function processLabel(locale: Locale, durationMs?: number): string {
   const time = durationMs != null ? formatTurnDuration(durationMs, locale) : "";
-  const label = time ? t(locale, "ranFor").replace("{time}", time) : t(locale, "ran");
-  return (
-    <button
-      ref={buttonRef}
-      type="button"
-      onClick={onToggle}
-      className="group flex w-full items-center bg-transparent py-0.5 text-left"
-    >
-      <span className="inline-flex items-center gap-0.5 text-[12px] text-[var(--muted)]">
-        <span>{label}</span>
-        {open ? (
-          <ChevronDown size={12} className="shrink-0" />
-        ) : (
-          <ChevronRight size={12} className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100" />
-        )}
-      </span>
-    </button>
-  );
-}
-
-function processEdges(node: HTMLElement): { top: boolean; bottom: boolean } {
-  return {
-    top: node.scrollTop > 2,
-    bottom: node.scrollHeight - node.clientHeight - node.scrollTop > 2,
-  };
+  return time ? t(locale, "ranFor").replace("{time}", time) : t(locale, "ran");
 }
 
 function renderAssistantPart(part: ChatPart, index: number, locale: Locale, page?: CurrentPage) {
   if (part.type === "text") return <Markdown key={index} text={part.text} page={page} />;
   if (part.type === "reasoning") {
     return (
-      <details key={index} className="text-[12px] text-[var(--muted)]">
-        <summary className="cursor-pointer">{t(locale, "thinking")}</summary>
-        <div className="mt-1 whitespace-pre-wrap">{compactReasoning(part.text)}</div>
-      </details>
+      <TextFold key={index} label={t(locale, "thinking")} paneClass="cs-fold-scroll">
+        <div className="whitespace-pre-wrap text-[11px] leading-relaxed text-[var(--muted)]">
+          {compactReasoning(part.text)}
+        </div>
+      </TextFold>
     );
   }
   return <ToolCard key={part.toolCallId} locale={locale} part={part} />;
@@ -670,48 +636,6 @@ function AssistantMessage({
   live?: boolean;
   durationMs?: number;
 }) {
-  const [open, setOpen] = useState(false);
-  const [edges, setEdges] = useState({ top: false, bottom: false });
-  const toggleRef = useRef<HTMLButtonElement>(null);
-  const processScrollRef = useRef<HTMLDivElement>(null);
-  const anchorTop = useRef<number | null>(null);
-
-  const syncEdges = () => {
-    const node = processScrollRef.current;
-    if (!node) {
-      setEdges({ top: false, bottom: false });
-      return;
-    }
-    setEdges(processEdges(node));
-  };
-
-  const toggle = () => {
-    anchorTop.current = toggleRef.current?.getBoundingClientRect().top ?? null;
-    setOpen((value) => !value);
-  };
-
-  useLayoutEffect(() => {
-    if (anchorTop.current == null || !toggleRef.current) return;
-    const thread = toggleRef.current.closest(".cs-thread");
-    if (!(thread instanceof HTMLElement)) {
-      anchorTop.current = null;
-      return;
-    }
-    thread.scrollTop += toggleRef.current.getBoundingClientRect().top - anchorTop.current;
-    anchorTop.current = null;
-    syncEdges();
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-    const node = processScrollRef.current;
-    if (!node) return;
-    syncEdges();
-    const observer = new ResizeObserver(syncEdges);
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [open]);
-
   if (content.length === 0) {
     return <div className="text-[12px] text-[var(--muted)]">{t(locale, "waiting")}</div>;
   }
@@ -724,22 +648,9 @@ function AssistantMessage({
   }
   return (
     <div className="space-y-1">
-      <ProcessToggle
-        locale={locale}
-        durationMs={durationMs}
-        open={open}
-        onToggle={toggle}
-        buttonRef={toggleRef}
-      />
-      {open ? (
-        <div className="cs-process">
-          <div ref={processScrollRef} className="cs-process-scroll space-y-1" onScroll={syncEdges}>
-            {process.map((part, index) => renderAssistantPart(part, index, locale, page))}
-          </div>
-          <div className={`cs-process-scrim cs-process-scrim-top${edges.top ? " is-on" : ""}`} />
-          <div className={`cs-process-scrim cs-process-scrim-bottom${edges.bottom ? " is-on" : ""}`} />
-        </div>
-      ) : null}
+      <TextFold label={processLabel(locale, durationMs)} paneClass="cs-process-scroll space-y-1">
+        {process.map((part, index) => renderAssistantPart(part, index, locale, page))}
+      </TextFold>
       {body.map((part, index) => renderAssistantPart(part, cut + index, locale, page))}
     </div>
   );
