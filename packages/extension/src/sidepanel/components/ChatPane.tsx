@@ -1,5 +1,5 @@
 import type { AgentModel, AttachmentItem, AttachmentKind } from "@shared";
-import { ChevronDown, File, Folder, GitFork, Image, LoaderCircle, MessageCircle, MousePointer2, Plus, RefreshCw, Send, Square, X } from "lucide-react";
+import { ArrowDown, ChevronDown, File, Folder, GitFork, Image, LoaderCircle, MessageCircle, MousePointer2, Plus, RefreshCw, Send, Square, X } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { ChatMessage, ChatPart } from "../chat-types";
 import type { Locale } from "../i18n";
@@ -10,6 +10,18 @@ import { IconButton } from "./IconButton";
 import { Markdown } from "./Markdown";
 import { RippleButton } from "./RippleButton";
 import { ToolCard } from "./ToolCard";
+
+const STICKY_PX = 96;
+
+function distanceFromBottom(node: HTMLElement): number {
+  if (node.scrollTop <= 0) return Math.abs(node.scrollTop);
+  return node.scrollHeight - node.clientHeight - node.scrollTop;
+}
+
+function stickToBottom(node: HTMLElement | null, smooth = false): void {
+  if (!node) return;
+  node.scrollTo({ top: 0, behavior: smooth ? "smooth" : "auto" });
+}
 
 export function ChatPane({
   locale,
@@ -54,7 +66,9 @@ export function ChatPane({
   const [editingId, setEditingId] = useState<string>();
   const [stash, setStash] = useState<{ draft: string; attachments: AttachmentItem[] } | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   const editingRef = useRef<string | undefined>(undefined);
+  const [awayFromBottom, setAwayFromBottom] = useState(false);
   editingRef.current = editingId;
   const label = (key: Parameters<typeof t>[1]) => t(locale, key);
   const canSend = Boolean(draft.trim() || attachments.length);
@@ -78,6 +92,7 @@ export function ChatPane({
     setStash(null);
     if (reviseId) onRevise(reviseId, text, files);
     else onSend(text, files);
+    requestAnimationFrame(() => stickToBottom(listRef.current));
   };
 
   const cancelEdit = () => {
@@ -110,7 +125,15 @@ export function ChatPane({
       setDraft("");
       setAttachments([]);
     }
+    setAwayFromBottom(false);
+    requestAnimationFrame(() => stickToBottom(listRef.current));
   }, [sessionId]);
+
+  const onThreadScroll = () => {
+    const node = listRef.current;
+    if (!node) return;
+    setAwayFromBottom(distanceFromBottom(node) > STICKY_PX);
+  };
 
   const addAttachments = async () => {
     if (busy) return;
@@ -133,15 +156,19 @@ export function ChatPane({
 
   return (
     <div className="relative flex h-full min-h-0 flex-col">
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3">
-        {messages.length === 0 ? (
-          <div className="flex flex-1 flex-col items-center justify-center px-4">
-            <MessageCircle size={120} strokeWidth={1} className="text-[var(--muted)] opacity-25" />
-            <p className="mt-4 max-w-[16rem] text-center text-[12px] leading-relaxed text-[var(--muted)] opacity-55">
-              {label("emptyHint")}
-            </p>
-          </div>
-        ) : (
+      {messages.length === 0 ? (
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center px-4">
+          <MessageCircle size={120} strokeWidth={1} className="text-[var(--muted)] opacity-25" />
+          <p className="mt-4 max-w-[16rem] text-center text-[12px] leading-relaxed text-[var(--muted)] opacity-55">
+            {label("emptyHint")}
+          </p>
+        </div>
+      ) : (
+        <div
+          ref={listRef}
+          onScroll={onThreadScroll}
+          className="cs-thread flex min-h-0 flex-1 flex-col-reverse overflow-y-auto px-3"
+        >
           <div className="space-y-3 py-3">
             {messages.map((message) =>
               message.role === "user" ? (
@@ -189,9 +216,23 @@ export function ChatPane({
               </div>
             ) : null}
           </div>
-        )}
-      </div>
+        </div>
+      )}
       <div className="sticky bottom-0 bg-gradient-to-t from-[var(--ink)] via-[var(--ink)] to-transparent px-3 pb-3 pt-2">
+        <div className="relative">
+          {awayFromBottom ? (
+            <IconButton
+              side="top"
+              label={label("scrollToBottom")}
+              onClick={() => {
+                stickToBottom(listRef.current, true);
+                setAwayFromBottom(false);
+              }}
+              className="absolute right-0 bottom-full z-20 mb-4 flex h-14 w-14 items-center justify-center rounded-full border border-[var(--line)] bg-[var(--panel)] text-[var(--text)] hover:bg-[var(--hover)]"
+            >
+              <ArrowDown size={22} />
+            </IconButton>
+          ) : null}
         <div
           className={`cs-composer rounded-xl bg-[var(--panel)] px-2 py-2 ${isRunning ? "is-running" : ""}`}
         >
@@ -280,6 +321,7 @@ export function ChatPane({
               )}
             </div>
           </div>
+        </div>
         </div>
       </div>
     </div>

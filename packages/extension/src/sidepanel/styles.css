@@ -220,6 +220,10 @@ textarea {
   padding: 10px 8px;
 }
 
+.cs-thread {
+  overflow-anchor: none;
+}
+
 .cs-mermaid svg {
   display: block;
   max-width: 100%;
