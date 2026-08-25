@@ -1,4 +1,5 @@
 import { ShieldAlert } from "lucide-react";
+import type { CurrentPage } from "@shared";
 import type { PermissionRequest, PlanPrompt, QuestionPrompt } from "../chat-types";
 import type { Locale } from "../i18n";
 import { t } from "../i18n";
@@ -13,11 +14,13 @@ export function PermissionBar({
   onPermission,
   onQuestion,
   onPlan,
+  page,
 }: {
   locale: Locale;
   permission?: PermissionRequest;
   question?: QuestionPrompt;
   plan?: PlanPrompt;
+  page?: CurrentPage;
   onPermission: (optionId: string) => void;
   onQuestion: (answers: Array<{ questionId: string; selectedOptionIds: string[] }>) => void;
   onPlan: (accepted: boolean) => void;
@@ -53,7 +56,7 @@ export function PermissionBar({
       <section className="border-t border-[var(--line)] bg-[var(--panel-2)] px-3 py-2.5">
         <div className="mb-1 text-[15px] font-medium tracking-tight">{plan.name || t(locale, "plan")}</div>
         {plan.overview ? <p className="mb-2 text-[12px] text-[var(--muted)]">{plan.overview}</p> : null}
-        <Markdown text={plan.plan} />
+        <Markdown text={plan.plan} page={page} />
         <div className="mt-2 flex gap-1.5">
           <RippleButton
             onClick={() => onPlan(true)}

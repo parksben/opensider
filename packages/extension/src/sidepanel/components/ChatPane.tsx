@@ -1,4 +1,4 @@
-import type { AgentModel, AttachmentItem, AttachmentKind } from "@shared";
+import type { AgentModel, AttachmentItem, AttachmentKind, CurrentPage } from "@shared";
 import { ArrowDown, ChevronDown, File, Folder, GitFork, Image, LoaderCircle, MessageCircle, MousePointer2, Plus, RefreshCw, Send, Square, X } from "lucide-react";
 import { useEffect, useRef, useState, type ClipboardEvent, type ReactNode } from "react";
 import type { ChatMessage, ChatPart } from "../chat-types";
@@ -59,6 +59,7 @@ export function ChatPane({
   onPickElement,
   onCancelElementPick,
   onModel,
+  page,
 }: {
   locale: Locale;
   sessionId: string;
@@ -78,6 +79,7 @@ export function ChatPane({
   onPickElement: () => Promise<AttachmentItem[]>;
   onCancelElementPick: () => void;
   onModel: (modelId: string) => void;
+  page?: CurrentPage;
 }) {
   const [draft, setDraft] = useState("");
   const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
@@ -258,7 +260,7 @@ export function ChatPane({
                   onFork={() => onFork(message.id)}
                   onRegenerate={() => onRegenerate(message.id)}
                 >
-                  <AssistantMessage locale={locale} content={message.content} />
+                  <AssistantMessage locale={locale} content={message.content} page={page} />
                 </MessageFrame>
               );
             })}
@@ -577,14 +579,22 @@ function compactReasoning(text: string): string {
     .join("\n");
 }
 
-function AssistantMessage({ locale, content }: { locale: Locale; content: ChatPart[] }) {
+function AssistantMessage({
+  locale,
+  content,
+  page,
+}: {
+  locale: Locale;
+  content: ChatPart[];
+  page?: CurrentPage;
+}) {
   if (content.length === 0) {
     return <div className="text-[12px] text-[var(--muted)]">{t(locale, "waiting")}</div>;
   }
   return (
     <div className="space-y-1">
       {content.map((part, index) => {
-        if (part.type === "text") return <Markdown key={index} text={part.text} />;
+        if (part.type === "text") return <Markdown key={index} text={part.text} page={page} />;
         if (part.type === "reasoning") {
           return (
             <details key={index} className="text-[12px] text-[var(--muted)]">

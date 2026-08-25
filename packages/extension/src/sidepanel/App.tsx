@@ -649,6 +649,7 @@ export function App() {
               onPickElement={onPickElement}
               onCancelElementPick={onCancelElementPick}
               onModel={onModel}
+              page={page}
             />
           </div>
           <PermissionBar
@@ -674,6 +675,7 @@ export function App() {
               });
               setQuestion(undefined);
             }}
+            page={page}
             onPlan={(accepted) => {
               if (!plan) return;
               sendRef.current({
