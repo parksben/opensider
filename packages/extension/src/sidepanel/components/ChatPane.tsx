@@ -591,6 +591,24 @@ function lastTextIndex(parts: ChatPart[]): number {
   return -1;
 }
 
+function liveVisibleParts(parts: ChatPart[]): Array<{ part: ChatPart; index: number }> {
+  const visible: Array<{ part: ChatPart; index: number }> = [];
+  for (let index = 0; index < parts.length; index += 1) {
+    const part = parts[index];
+    if (part.type === "text") {
+      visible.push({ part, index });
+      continue;
+    }
+    const prev = visible[visible.length - 1];
+    if (prev && prev.part.type !== "text") {
+      visible[visible.length - 1] = { part, index };
+    } else {
+      visible.push({ part, index });
+    }
+  }
+  return visible;
+}
+
 function formatTurnDuration(ms: number, locale: Locale): string {
   const total = Math.max(1, Math.round(ms / 1000));
   if (total < 60) return locale === "zh" ? `${total} 秒` : `${total}s`;
@@ -640,7 +658,12 @@ function AssistantMessage({
   const body = cut >= 0 ? content.slice(cut) : [];
   const fold = !live && process.length > 0;
   if (!fold) {
-    return <div className="space-y-1">{content.map((part, index) => renderAssistantPart(part, index, locale, page))}</div>;
+    const items = live ? liveVisibleParts(content) : content.map((part, index) => ({ part, index }));
+    return (
+      <div className="space-y-1">
+        {items.map(({ part, index }) => renderAssistantPart(part, index, locale, page))}
+      </div>
+    );
   }
   return (
     <div className="space-y-1">
