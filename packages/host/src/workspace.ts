@@ -5,6 +5,7 @@ import {
   BROWSER_DIR,
   COMMANDS_DIR,
   CURRENT_PAGE_PATH,
+  PASTED_DIR,
   RESULTS_DIR,
   SCREENSHOTS_DIR,
   SESSION_PATH,
@@ -82,6 +83,7 @@ export function ensureWorkspace(): void {
   mkdirSync(COMMANDS_DIR, { recursive: true });
   mkdirSync(RESULTS_DIR, { recursive: true });
   mkdirSync(SCREENSHOTS_DIR, { recursive: true });
+  mkdirSync(PASTED_DIR, { recursive: true });
   mkdirSync(SIDEBAR_HOME, { recursive: true });
   writeFileSync(AGENTS_MD_PATH, AGENTS_MD);
   writeFileSync(

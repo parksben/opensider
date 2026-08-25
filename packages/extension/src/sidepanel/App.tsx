@@ -9,6 +9,7 @@ import type {
 } from "@shared";
 import { MousePointer2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { encodeImageBlob } from "../image-encode";
 import { applyAcpUpdate, createUserMessage } from "./acp-messages";
 import { connectSidebar } from "./bridge";
 import type { ChatMessage, PermissionRequest, PlanPrompt, QuestionPrompt, TodoItem } from "./chat-types";
@@ -188,7 +189,7 @@ export function App() {
       }
       return;
     }
-    if (msg.type === "fs.picked" || msg.type === "page.picked") {
+    if (msg.type === "fs.picked" || msg.type === "fs.saved" || msg.type === "page.picked") {
       const waiter = pickWaiters.current.get(msg.requestId);
       pickWaiters.current.delete(msg.requestId);
       if (msg.type === "page.picked") setPickingElement(false);
@@ -348,6 +349,34 @@ export function App() {
       pickWaiters.current.set(requestId, resolve);
       sendRef.current({ type: "fs.pick", requestId });
     });
+
+  const onPasteImages = async (files: File[]) => {
+    if (statusRef.current !== "ready") {
+      setError(t(localeRef.current, "pasteFailed"));
+      return [] as AttachmentItem[];
+    }
+    const items: AttachmentItem[] = [];
+    for (const [index, file] of files.entries()) {
+      try {
+        const payload = await encodeImageBlob(file);
+        const saved = await new Promise<AttachmentItem[]>((resolve) => {
+          const requestId = crypto.randomUUID();
+          pickWaiters.current.set(requestId, resolve);
+          sendRef.current({
+            type: "fs.save",
+            requestId,
+            name: `paste-${Date.now()}-${index}.jpg`,
+            imageBase64: payload.imageBase64,
+            mime: "image/jpeg",
+          });
+        });
+        items.push(...saved);
+      } catch (error) {
+        setError(error instanceof Error ? error.message : t(localeRef.current, "pasteFailed"));
+      }
+    }
+    return items;
+  };
 
   const onPickElement = () =>
     new Promise<AttachmentItem[]>((resolve) => {
@@ -616,6 +645,7 @@ export function App() {
               onFork={forkFromMessage}
               onRegenerate={regenerateFromMessage}
               onPickAttachments={onPickAttachments}
+              onPasteImages={onPasteImages}
               onPickElement={onPickElement}
               onCancelElementPick={onCancelElementPick}
               onModel={onModel}

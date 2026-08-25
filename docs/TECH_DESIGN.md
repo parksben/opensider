@@ -132,6 +132,7 @@ Host 用 Node 24 直接跑 TypeScript（类型擦除）。stdout 只给 Chrome�
       commands/<id>.json     # Agent 写入的页面命令
       results/<id>.json      # 扩展写回的结果
       screenshots/<id>.jpg   # 视口 / 元素截图
+      pasted/<id>.jpg        # 用户从输入框粘贴的截图
   session.json               # 最近一次选中的 ACP sessionId（兼容旧版）
   host.log
 ```
@@ -200,6 +201,7 @@ chrome.storage.local
 | `session.fork` + `sessionId` | 先试不稳定的 `session/fork`（整段历史）；失败则 `session/new` |
 | `prompt` 可带 `sessionId` | 先切到该 ACP 会话再 prompt，避免切换竞态 |
 | `fs.pick` | Host 弹出本机选文件/文件夹对话框，回 `fs.picked`（绝对路径 + kind） |
+| `fs.save` | Host 把侧栏压好的 JPEG 写到 `browser/pasted/`，回 `fs.saved`（绝对路径 + kind=image） |
 | `page.pick` | SW 让当前标签内容脚本拾取元素，回 `page.picked`（CSS selector，kind=element）；不转发 Host |
 | `model.set` | 非 `auto` 时 `session/set_config_option`（`category: model`）；失败再试 `session/set_model` |
 
@@ -239,6 +241,8 @@ chrome.storage.local
 ## 附件（只传路径）
 
 Chrome 的文件选择器不会给出本机绝对路径。加号因此发给 Host `fs.pick`。`install-host` 用 `swiftc` 编 `PickFiles.app`（常规激活策略，能到前台）放到 `~/.cursor-sidebar/runtime/`。Host **直接 exec** 包内二进制（不用 `open -W`，Chrome 子进程里 `open` 经常立刻返回、面板也不出现）。面板可同时选文件和文件夹、可多选；若进程在 400ms 内空退，再退回访达 `choose file`。`fs.stat` 分成 `image` / `file` / `folder`。侧栏芯片只展示 `basename`，`title` 是全路径。未连上就点加号，侧栏写明确错误。
+
+剪贴板里的截图同样没有本机路径，不能当文件选。composer `paste` 若带 `image/*`，先按页面截图那套压成 JPEG（最长边约 1280、质量约 0.72、base64 &lt; 700KB，以免 Native Messaging 超 1MB），再 `fs.save` 落到 `~/.cursor-sidebar/workspace/browser/pasted/`。回包后当普通 `kind: image` 芯片，走同一套 `wrapAttachments`。有图时 `preventDefault`，避免二进制糊进 textarea；若同时带纯文本则插到光标处。落盘完成前不让发送，以免消息先走、图还没进附件。未连上或压图/写盘失败写明确错误。
 
 `session/prompt` 在用户正文后追加：
 

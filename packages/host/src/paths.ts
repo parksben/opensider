@@ -7,6 +7,7 @@ export const BROWSER_DIR = join(WORKSPACE_DIR, "browser");
 export const COMMANDS_DIR = join(BROWSER_DIR, "commands");
 export const RESULTS_DIR = join(BROWSER_DIR, "results");
 export const SCREENSHOTS_DIR = join(BROWSER_DIR, "screenshots");
+export const PASTED_DIR = join(BROWSER_DIR, "pasted");
 export const TOOLS_PATH = join(BROWSER_DIR, "tools.json");
 export const CURRENT_PAGE_PATH = join(BROWSER_DIR, "current.json");
 export const SNAPSHOT_PATH = join(BROWSER_DIR, "snapshot.md");

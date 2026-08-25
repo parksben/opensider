@@ -1,6 +1,6 @@
 import type { AgentModel, AttachmentItem, AttachmentKind } from "@shared";
 import { ArrowDown, ChevronDown, File, Folder, GitFork, Image, LoaderCircle, MessageCircle, MousePointer2, Plus, RefreshCw, Send, Square, X } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ClipboardEvent, type ReactNode } from "react";
 import type { ChatMessage, ChatPart } from "../chat-types";
 import type { Locale } from "../i18n";
 import { t } from "../i18n";
@@ -23,6 +23,23 @@ function stickToBottom(node: HTMLElement | null, smooth = false): void {
   node.scrollTo({ top: 0, behavior: smooth ? "smooth" : "auto" });
 }
 
+function clipboardImages(data: DataTransfer | null): File[] {
+  if (!data) return [];
+  const files: File[] = [];
+  const add = (file: File | null) => {
+    if (!file || !file.type.startsWith("image/")) return;
+    if (files.some((item) => item.name === file.name && item.size === file.size && item.lastModified === file.lastModified)) {
+      return;
+    }
+    files.push(file);
+  };
+  for (const file of Array.from(data.files)) add(file);
+  for (const item of Array.from(data.items)) {
+    if (item.kind === "file") add(item.getAsFile());
+  }
+  return files;
+}
+
 export function ChatPane({
   locale,
   sessionId,
@@ -38,6 +55,7 @@ export function ChatPane({
   onFork,
   onRegenerate,
   onPickAttachments,
+  onPasteImages,
   onPickElement,
   onCancelElementPick,
   onModel,
@@ -56,6 +74,7 @@ export function ChatPane({
   onFork: (messageId: string) => void;
   onRegenerate: (messageId: string) => void;
   onPickAttachments: () => Promise<AttachmentItem[]>;
+  onPasteImages: (files: File[]) => Promise<AttachmentItem[]>;
   onPickElement: () => Promise<AttachmentItem[]>;
   onCancelElementPick: () => void;
   onModel: (modelId: string) => void;
@@ -63,6 +82,7 @@ export function ChatPane({
   const [draft, setDraft] = useState("");
   const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
   const [pickingFiles, setPickingFiles] = useState(false);
+  const [savingPaste, setSavingPaste] = useState(false);
   const [editingId, setEditingId] = useState<string>();
   const [stash, setStash] = useState<{ draft: string; attachments: AttachmentItem[] } | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -72,7 +92,7 @@ export function ChatPane({
   editingRef.current = editingId;
   const label = (key: Parameters<typeof t>[1]) => t(locale, key);
   const canSend = Boolean(draft.trim() || attachments.length);
-  const busy = pickingFiles || pickingElement || isRunning;
+  const busy = pickingFiles || pickingElement || isRunning || savingPaste;
 
   const mergeAttachments = (items: AttachmentItem[]) => {
     setAttachments((current) => {
@@ -82,7 +102,7 @@ export function ChatPane({
   };
 
   const submit = () => {
-    if (!canSend || isRunning) return;
+    if (!canSend || isRunning || savingPaste) return;
     const text = draft.trim();
     const files = attachments;
     const reviseId = editingId;
@@ -143,6 +163,36 @@ export function ChatPane({
     } finally {
       setPickingFiles(false);
     }
+  };
+
+  const addPastedImages = async (files: File[]) => {
+    if (files.length === 0 || busy) return;
+    setSavingPaste(true);
+    try {
+      mergeAttachments(await onPasteImages(files));
+    } finally {
+      setSavingPaste(false);
+    }
+  };
+
+  const onComposerPaste = (event: ClipboardEvent<HTMLElement>) => {
+    const images = clipboardImages(event.clipboardData);
+    if (images.length === 0) return;
+    event.preventDefault();
+    const text = event.clipboardData.getData("text/plain");
+    if (text) {
+      const node = inputRef.current;
+      const start = node?.selectionStart ?? draft.length;
+      const end = node?.selectionEnd ?? draft.length;
+      setDraft((current) => current.slice(0, start) + text + current.slice(end));
+      requestAnimationFrame(() => {
+        if (!node) return;
+        const cursor = start + text.length;
+        node.selectionStart = cursor;
+        node.selectionEnd = cursor;
+      });
+    }
+    void addPastedImages(images);
   };
 
   const startElementPick = async () => {
@@ -238,6 +288,7 @@ export function ChatPane({
           ) : null}
         <div
           className={`cs-composer rounded-xl bg-[var(--panel)] px-2 py-2 ${isRunning ? "is-running" : ""}`}
+          onPaste={onComposerPaste}
         >
           {editingId ? (
             <div className="mb-1.5 flex items-start justify-between gap-2 px-1">
@@ -281,7 +332,7 @@ export function ChatPane({
                 side="top"
                 label={label("pickElement")}
                 onClick={() => void startElementPick()}
-                disabled={pickingFiles || isRunning}
+                disabled={pickingFiles || savingPaste || isRunning}
                 className={`flex h-7 w-7 items-center justify-center rounded-full hover:bg-[var(--hover)] disabled:opacity-30 disabled:hover:bg-transparent ${
                   pickingElement ? "bg-[var(--hover)] text-[var(--brass)]" : "text-[var(--text)]"
                 }`}
@@ -295,7 +346,7 @@ export function ChatPane({
                 disabled={busy}
                 className="flex h-7 w-7 items-center justify-center rounded-full text-[var(--text)] hover:bg-[var(--hover)] disabled:opacity-30 disabled:hover:bg-transparent"
               >
-                {pickingFiles ? <LoaderCircle size={14} className="animate-spin" /> : <Plus size={14} />}
+                {pickingFiles || savingPaste ? <LoaderCircle size={14} className="animate-spin" /> : <Plus size={14} />}
               </IconButton>
             </div>
             <div className="flex min-w-0 items-center justify-end gap-1.5">

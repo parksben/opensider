@@ -12,6 +12,7 @@ import {
 import { createNativeIo } from "./native.ts";
 import { defaultAgentPath } from "./paths.ts";
 import { pickLocalPaths } from "./pick.ts";
+import { savePastedJpeg } from "./save.ts";
 import { watchCommands, writeCommandResult } from "./watch.ts";
 import { ensureWorkspace, readSessionId, WORKSPACE_DIR, writeCurrentPage, writeSessionId } from "./workspace.ts";
 
@@ -141,6 +142,21 @@ async function handleExt(msg: ExtToHost): Promise<void> {
       } catch (error) {
         send({
           type: "fs.picked",
+          requestId: msg.requestId,
+          items: [],
+          error: String(error),
+        });
+      }
+      return;
+    }
+    if (msg.type === "fs.save") {
+      try {
+        const item = savePastedJpeg(msg.imageBase64, msg.name);
+        log(`saved paste ${item.path}`);
+        send({ type: "fs.saved", requestId: msg.requestId, items: [item] });
+      } catch (error) {
+        send({
+          type: "fs.saved",
           requestId: msg.requestId,
           items: [],
           error: String(error),
