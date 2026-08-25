@@ -239,6 +239,47 @@ textarea {
   background: color-mix(in srgb, var(--panel) 90%, transparent) !important;
 }
 
+.cs-process {
+  isolation: isolate;
+  position: relative;
+}
+
+.cs-process-scroll {
+  max-height: min(36vh, 16rem);
+  overflow-y: auto;
+}
+
+.cs-process-scrim {
+  pointer-events: none;
+  position: absolute;
+  right: 0;
+  left: 0;
+  height: 1.75rem;
+  opacity: 0;
+  transition: opacity 120ms linear;
+}
+
+.cs-process-scrim.is-on {
+  opacity: 1;
+}
+
+.cs-process-scrim-top {
+  top: 0;
+  background: linear-gradient(to bottom, var(--ink), transparent);
+  mix-blend-mode: multiply;
+}
+
+.cs-process-scrim-bottom {
+  bottom: 0;
+  background: linear-gradient(to top, var(--ink), transparent);
+  mix-blend-mode: multiply;
+}
+
+[data-theme="light"] .cs-process-scrim-top,
+[data-theme="light"] .cs-process-scrim-bottom {
+  mix-blend-mode: lighten;
+}
+
 .cs-mermaid svg {
   display: block;
   max-width: 100%;
