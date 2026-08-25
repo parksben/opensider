@@ -40,6 +40,74 @@ textarea {
   font: inherit;
 }
 
+@property --cs-spin {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+@property --cs-sweep {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+.cs-composer {
+  --cs-spin: 0deg;
+  --cs-sweep: 0deg;
+  position: relative;
+  border: 1px solid var(--line);
+  transition: border-color 480ms ease;
+}
+
+.cs-composer::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  pointer-events: none;
+  background: conic-gradient(
+    from var(--cs-spin),
+    #ea4335 0deg,
+    #fbbc05 calc(var(--cs-sweep) * 0.25),
+    #34a853 calc(var(--cs-sweep) * 0.5),
+    #4285f4 calc(var(--cs-sweep) * 0.75),
+    #ea4335 var(--cs-sweep),
+    transparent var(--cs-sweep)
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  transition: --cs-sweep 700ms ease;
+}
+
+.cs-composer.is-running {
+  border-color: transparent;
+}
+
+.cs-composer.is-running::before {
+  --cs-sweep: 360deg;
+  animation: cs-composer-spin 6s linear infinite;
+}
+
+@keyframes cs-composer-spin {
+  to {
+    --cs-spin: 360deg;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cs-composer.is-running::before {
+    animation: none;
+  }
+}
+
 @keyframes cs-ripple {
   0% {
     transform: translate(-50%, -50%) scale(0);

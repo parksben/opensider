@@ -135,7 +135,9 @@ export function ChatPane({
         )}
       </div>
       <div className="sticky bottom-0 bg-gradient-to-t from-[var(--ink)] via-[var(--ink)] to-transparent px-3 pb-3 pt-2">
-        <div className="rounded-xl border border-[var(--line)] bg-[var(--panel)] px-2 py-2">
+        <div
+          className={`cs-composer rounded-xl bg-[var(--panel)] px-2 py-2 ${isRunning ? "is-running" : ""}`}
+        >
           {attachments.length > 0 ? (
             <AttachmentChips
               items={attachments}
