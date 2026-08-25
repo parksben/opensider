@@ -16,6 +16,7 @@ const nodePath = process.execPath;
 mkdirSync(destDir, { recursive: true });
 mkdirSync(resolve(workspace, "browser/commands"), { recursive: true });
 mkdirSync(resolve(workspace, "browser/results"), { recursive: true });
+mkdirSync(resolve(workspace, "browser/screenshots"), { recursive: true });
 
 writeFileSync(
   hostSh,
@@ -23,6 +24,8 @@ writeFileSync(
 set -euo pipefail
 export HOME="\${HOME:-${homedir()}}"
 export PATH="\${HOME}/.local/bin:/opt/homebrew/bin:/usr/local/bin:\${PATH:-}"
+mkdir -p "\${HOME}/.cursor-sidebar"
+echo "\$(date -u +%Y-%m-%dT%H:%M:%SZ) launch pid=\$\$" >> "\${HOME}/.cursor-sidebar/host.log"
 cd "${hostDir}"
 exec "${nodePath}" --experimental-strip-types src/index.ts
 `,

@@ -4,8 +4,29 @@ import { captureViewport } from "./screenshot";
 
 let nativePort: chrome.runtime.Port | null = null;
 const sidebars = new Set<chrome.runtime.Port>();
+let lastStatus: HostToExt = { type: "status", state: "starting" };
+let lastPage: HostToExt | undefined;
+let lastSession: HostToExt | undefined;
+let ignoreNextDisconnect = false;
+
+function remember(msg: HostToExt): void {
+  if (msg.type === "status") lastStatus = msg;
+  if (msg.type === "page") lastPage = msg;
+  if (msg.type === "session") lastSession = msg;
+}
+
+function replay(port: chrome.runtime.Port): void {
+  try {
+    port.postMessage(lastStatus);
+    if (lastSession) port.postMessage(lastSession);
+    if (lastPage) port.postMessage(lastPage);
+  } catch {
+    sidebars.delete(port);
+  }
+}
 
 function broadcast(msg: HostToExt): void {
+  remember(msg);
   for (const port of sidebars) {
     try {
       port.postMessage(msg);
@@ -36,8 +57,14 @@ function connectNative(): void {
   });
 
   nativePort.onDisconnect.addListener(() => {
-    const error = chrome.runtime.lastError?.message ?? "Native host disconnected.";
     nativePort = null;
+    if (ignoreNextDisconnect) {
+      ignoreNextDisconnect = false;
+      return;
+    }
+    const error =
+      chrome.runtime.lastError?.message ??
+      "Native host disconnected. Run `pnpm install-host`, then reload this extension.";
     broadcast({ type: "status", state: "error", error });
   });
 
@@ -46,7 +73,21 @@ function connectNative(): void {
 
 function sendNative(msg: ExtToHost): void {
   connectNative();
-  nativePort?.postMessage(msg);
+  if (!nativePort) {
+    broadcast({
+      type: "status",
+      state: "error",
+      error: "Native host is not connected. Retry the connection or run `pnpm install-host`.",
+    });
+    if (msg.type === "prompt") broadcast({ type: "turn.end", stopReason: "error" });
+    return;
+  }
+  try {
+    nativePort.postMessage(msg);
+  } catch (error) {
+    broadcast({ type: "status", state: "error", error: String(error) });
+    if (msg.type === "prompt") broadcast({ type: "turn.end", stopReason: "error" });
+  }
 }
 
 function fail(command: BrowserCommand, error: string): BrowserResult {
@@ -197,9 +238,31 @@ async function requestPage(tabId: number): Promise<void> {
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== "sidebar") return;
   sidebars.add(port);
+  replay(port);
   connectNative();
   port.onMessage.addListener((msg: ExtToHost) => sendNative(msg));
   port.onDisconnect.addListener(() => sidebars.delete(port));
+});
+
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (msg?.type === "reconnect") {
+    if (nativePort) {
+      ignoreNextDisconnect = true;
+      try {
+        nativePort.disconnect();
+      } catch {
+        ignoreNextDisconnect = false;
+      }
+    }
+    nativePort = null;
+    lastStatus = { type: "status", state: "starting" };
+    lastSession = undefined;
+    broadcast(lastStatus);
+    connectNative();
+    sendResponse({ ok: true });
+    return true;
+  }
+  return false;
 });
 
 void chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });

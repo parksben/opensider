@@ -1,13 +1,11 @@
-import type { AppendMessage } from "@assistant-ui/react";
 import type { BrowserCommand, BrowserResult, CurrentPage, ExtToHost, HostToExt } from "@shared";
 import { useEffect, useRef, useState } from "react";
 import { applyAcpUpdate, createUserMessage } from "./acp-messages";
 import { connectSidebar } from "./bridge";
 import type { ChatMessage, PermissionRequest, PlanPrompt, QuestionPrompt, TodoItem } from "./chat-types";
+import { ChatPane } from "./components/ChatPane";
 import { Header } from "./components/Header";
 import { PermissionBar } from "./components/PermissionBar";
-import { Thread } from "./components/Thread";
-import { SidebarRuntime } from "./runtime";
 
 export function App() {
   const [status, setStatus] = useState<"starting" | "ready" | "error">("starting");
@@ -21,27 +19,17 @@ export function App() {
   const [plan, setPlan] = useState<PlanPrompt>();
   const [activity, setActivity] = useState<{ command: BrowserCommand; result?: BrowserResult }>();
   const sendRef = useRef<(msg: ExtToHost) => void>(() => undefined);
+  const reconnectRef = useRef<() => void>(() => undefined);
   const pageRef = useRef<CurrentPage | undefined>(undefined);
+  const statusRef = useRef(status);
   pageRef.current = page;
-
-  useEffect(() => {
-    const { send, disconnect } = connectSidebar((msg) => handleHost(msg));
-    sendRef.current = send;
-    return () => {
-      sendRef.current = () => undefined;
-      disconnect();
-    };
-  }, []);
+  statusRef.current = status;
 
   const handleHost = (msg: HostToExt) => {
     if (msg.type === "status") {
       setStatus(msg.state);
       setError(msg.error);
       if (msg.state === "error") setIsRunning(false);
-      return;
-    }
-    if (msg.type === "session" && msg.replay) {
-      setMessages([]);
       return;
     }
     if (msg.type === "page") {
@@ -107,13 +95,28 @@ export function App() {
     }
   };
 
-  const onNew = async (message: AppendMessage) => {
-    const text = message.content
-      .filter((part) => part.type === "text")
-      .map((part) => part.text)
-      .join("\n");
-    if (!text.trim()) return;
+  const handleHostRef = useRef(handleHost);
+  handleHostRef.current = handleHost;
+
+  useEffect(() => {
+    const { send, reconnect, disconnect } = connectSidebar((msg) => handleHostRef.current(msg));
+    sendRef.current = send;
+    reconnectRef.current = reconnect;
+    return () => {
+      sendRef.current = () => undefined;
+      reconnectRef.current = () => undefined;
+      disconnect();
+    };
+  }, []);
+
+  const onSend = (text: string) => {
     setMessages((current) => [...current, createUserMessage(text)]);
+    if (statusRef.current !== "ready") {
+      setError("Local agent is offline. Retry the connection, then send again.");
+      setStatus("error");
+      setIsRunning(false);
+      return;
+    }
     setIsRunning(true);
     setError(undefined);
     sendRef.current({
@@ -132,16 +135,26 @@ export function App() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <Header status={status} error={error} page={page} todos={todos} activity={activity} />
+      <Header
+        status={status}
+        error={error}
+        page={page}
+        todos={todos}
+        activity={activity}
+        onRetry={() => {
+          setStatus("starting");
+          setError("Reconnecting…");
+          reconnectRef.current();
+        }}
+      />
       <div className="min-h-0 flex-1">
-        <SidebarRuntime
+        <ChatPane
           messages={messages}
           isRunning={isRunning}
-          onNew={onNew}
+          disabled={status !== "ready"}
+          onSend={onSend}
           onCancel={onCancel}
-        >
-          <Thread />
-        </SidebarRuntime>
+        />
       </div>
       <PermissionBar
         permission={permission}

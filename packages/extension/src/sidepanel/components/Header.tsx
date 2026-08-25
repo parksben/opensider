@@ -8,12 +8,14 @@ export function Header({
   page,
   todos,
   activity,
+  onRetry,
 }: {
   status: "starting" | "ready" | "error";
   error?: string;
   page?: CurrentPage;
   todos: TodoItem[];
   activity?: { command: BrowserCommand; result?: BrowserResult };
+  onRetry?: () => void;
 }) {
   const host = safeHost(page?.url);
   return (
@@ -61,8 +63,19 @@ export function Header({
         </div>
       ) : null}
 
-      {error && status === "error" ? (
-        <p className="mt-2 text-[11.5px] leading-relaxed text-[var(--bad)]">{error}</p>
+      {error && status !== "ready" ? (
+        <div className="mt-2 space-y-2">
+          <p className="text-[11.5px] leading-relaxed text-[var(--bad)]">{error}</p>
+          {status === "error" && onRetry ? (
+            <button
+              type="button"
+              onClick={onRetry}
+              className="rounded-md border border-[var(--line)] px-2 py-1 text-[11.5px] text-[var(--text)]"
+            >
+              Retry connection
+            </button>
+          ) : null}
+        </div>
       ) : null}
 
       {todos.length > 0 ? (

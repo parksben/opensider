@@ -1,6 +1,6 @@
 # Cursor Sidebar — 需求文档
 
-> Chrome 侧栏插件：用 assistant-ui 与本机 Cursor Agent 进行同一会话的对话，并让 Agent 读取和操作当前浏览器页面。
+> Chrome 侧栏插件：用侧栏自己的聊天面板与本机 Cursor Agent 进行同一会话的对话，并让 Agent 读取和操作当前浏览器页面。
 
 ## 产品目标
 
@@ -23,12 +23,13 @@
 
 1. 用户完成本机 Cursor CLI 登录（`agent login`）。
 2. 用户安装 Native Messaging Host（由浏览器按需拉起，不是常驻服务），并以未打包方式加载本扩展。
-3. 点击工具栏图标打开 Side Panel。未连接时，侧栏说明如何安装 Host 和登录 CLI。
-4. 连接成功后，Host 拉起 `agent acp`，复用已有登录，进入 Agent 模式（完整本地工具）。
+3. 点击工具栏图标打开 Side Panel。未连接时，侧栏说明原因（Host 未安装、被拒绝、CLI 未登录等），并提供重试。
+4. 连接成功后，Host 拉起 `agent acp`，复用已有登录，进入 Agent 模式（完整本地工具）。关掉再打开侧栏时，应回放最近一次连接状态，而不是一直停在离线。
+5. 用户发送后，侧栏立刻出现用户气泡和进行中指示，并可将发送钮换成停止。离线时发送会留下可见错误，而不是没有任何反馈。
 
 ### 聊天
 
-1. 侧栏是唯一的对话入口，UI 基于 assistant-ui。
+1. 侧栏是唯一的对话入口。消息列表、输入框、进行中状态由侧栏自己渲染，不依赖 assistant-ui 的 runtime 选择器。
 2. 用户发送消息后，本机 Agent 流式回复。
 3. Agent 调用本地工具时，侧栏实时展示：工具名、状态（pending / 进行中 / 成功 / 失败）、输入摘要、输出 / diff。
 4. Agent 请求权限时，侧栏弹出允许一次 / 始终允许 / 拒绝，不自动静默放行写文件和执行命令。
@@ -65,7 +66,7 @@
 
 | 决策 | 选择 | 原因 |
 |---|---|---|
-| UI | assistant-ui | 纯聊天组件库，可接自定义 runtime，适合渲染 tool call |
+| UI | 自研 ChatPane（lucide） | assistant-ui ExternalStore 的 `useAuiState` 与消息状态不同步，表现为发了没动效、也停不了 |
 | 浏览器 | 仅 Chrome | Side Panel + Native Messaging 最成熟 |
 | 与 CLI 的连接 | Native Messaging Host 拉起 `agent acp` | 扩展无法 spawn 进程；Host 由 Chrome 按需启动，不是常驻服务 |
 | 页面工具 | 内容脚本 + 工作区文件 RPC | 读和写都走同一通道，不必上 MCP、不必再开端口 |

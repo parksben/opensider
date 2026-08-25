@@ -5,7 +5,7 @@
 ## 总览
 
 ```
-Chrome Side Panel (assistant-ui)
+Chrome Side Panel (ChatPane)
         │ chrome.runtime
 Service Worker
         │ Native Messaging (stdio, Chrome 按需拉起)
@@ -41,17 +41,20 @@ Cursor Agent 在 ACP 模式下仍然自己执行本地工具（读文件、写�
 
 ### Side Panel
 
-- assistant-ui + `useExternalStoreRuntime`
-- 自己持有消息列表，把 ACP `session/update` 映射成 assistant-ui 的 text / reasoning / tool-call
+- 消息列表、输入框、进行中状态由侧栏自己的 React state 驱动（不依赖 assistant-ui 的 `useAuiState` 选择器，避免和 ExternalStore 不同步：表现为发了消息没动效、也没有停止按钮）
+- 工具卡片 / markdown 仍复用现有展示组件
 - 发出用户输入、取消、权限决定、提问/计划回答
 - 展示当前页、进行中的页面命令、连接状态、todo、权限条
+- 离线发送会立刻报错；Service Worker 断开时显示原因并允许重试
 
 ### Service Worker
 
 - `chrome.runtime.connectNative` 连接 Host
+- 缓存最近一次 `status` / `session` / `page`，侧栏 `onConnect` 时立即回放，避免 Host 已 ready 但面板因 React StrictMode 重挂而一直显示离线
 - 在 Side Panel、Content Script、Host 之间转发消息
 - 监听 `tabs.onActivated` / `tabs.onUpdated`，通知内容脚本刷新当前页
 - 点击工具栏图标打开 Side Panel
+- Host 包装脚本一启动就往 `~/.cursor-sidebar/host.log` 打一行，便于判断 Chrome 有没有真正拉起 Host
 
 ### Content Script
 
@@ -199,7 +202,7 @@ macOS 清单路径：`~/Library/Application Support/Google/Chrome/NativeMessagin
 
 ## UI
 
-- 运行时：`@assistant-ui/react` 的 `useExternalStoreRuntime`
+- 聊天：`ChatPane` 由 App 的 `messages` / `isRunning` 驱动；工具卡片 / markdown 仍是现有组件
 - 视觉：窄侧栏（约 380px）、橄榄黑底、黄铜强调色；图标只用 `lucide-react`
 - 字体：Fraunces（词标）+ IBM Plex Sans / Mono（正文和工具输出）
 - 工具卡片按 ACP `kind` 换图标：read / edit / execute / search / fetch 等
@@ -224,6 +227,8 @@ pnpm workspace。扩展用 Vite + `@crxjs/vite-plugin` 打包。
 | `session/load` 不支持或失败 | 新建会话，工作区文件仍在 |
 | 内容脚本无法注入 | `current.json` 只写 url/title，命令返回明确错误 |
 | Chrome 杀 Service Worker | 重连 Native Host；ACP 子进程随 Host 退出，重连后 load/new |
+| 侧栏晚于 Host ready 才连上 | SW 回放最近状态 |
+| 发消息无反馈 | 输入和 isRunning 由 App state 驱动，不走 useAuiState |
 | 命令文件误触发 | 只认 `browser/commands/*.json` 且含 `id`+白名单 `method` |
 | 受控输入收不到赋值 | fill/type 用原生 value setter + input/change |
 | 点击找不到可点目标 | 同时支持 selector 与可见文本，失败返回明确错误 |
