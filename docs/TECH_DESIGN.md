@@ -84,6 +84,15 @@ Cursor Agent 在 ACP 模式下仍然自己执行本地工具（读文件、写�
 | `scroll` / `scrollIntoView` | 窗口滚动或滚到元素 |
 | `waitFor` | 轮询直到元素出现，默认 8s，最长 20s |
 
+视觉（Service Worker 截图，内容脚本只负责量元素）：
+
+| 方法 | 作用 |
+|---|---|
+| `screenshot` | 当前可见视口；可选 `x,y,width,height` 裁切视口区域 |
+| `screenshotElement` | 滚入视口后按元素包围盒裁切 |
+
+`chrome.tabs.captureVisibleTab` 得到 JPEG，按 devicePixelRatio 裁切，最长边压到约 1280，质量约 0.72，保证 Native Messaging 帧小于 1MB。Host 把 base64 落成 `browser/screenshots/<id>.jpg`，结果 JSON 只保留绝对路径、宽高、mime。Agent 用已有 Read 打开该图片做视觉分析。v1 不拼整页长截图。
+
 标签级操作由 Service Worker 执行：`navigate`（仅 http(s)）、`goBack`、`goForward`、`reload`。完成后重新抓快照。
 
 ### Native Host
@@ -93,7 +102,7 @@ Cursor Agent 在 ACP 模式下仍然自己执行本地工具（读文件、写�
 - 作为 ACP Client：`initialize` → `authenticate(cursor_login)` → `session/load` 或 `session/new`
 - 把 Side Panel 的 prompt/cancel/permission 转成 ACP
 - 把 Agent 的 `session/update`、权限请求、Cursor 扩展方法推给扩展
-- 把页面快照写入工作区；监视 `browser/commands/`，转给当前标签的内容脚本，再把结果写回 `browser/results/`
+- 把页面快照和 `browser/tools.json` 写入工作区；监视 `browser/commands/`，转给扩展，再把结果写回 `browser/results/`（截图另存 `browser/screenshots/`）
 
 Host 用 Node 24 直接跑 TypeScript（类型擦除）。stdout 只给 Chrome，ACP 走子进程管道，日志走 stderr 或 `~/.cursor-sidebar/host.log`。
 
@@ -102,12 +111,14 @@ Host 用 Node 24 直接跑 TypeScript（类型擦除）。stdout 只给 Chrome�
 ```
 ~/.cursor-sidebar/
   workspace/                 # ACP session cwd
-    AGENTS.md                # 页面协议说明，Agent 会读
+    AGENTS.md                # 页面协议说明，会话开始就会被读到
     browser/
+      tools.json             # 机器可读方法目录，Host 启动时写入
       current.json           # 当前标签：tabId, url, title, updatedAt
       snapshot.md            # 最近一次可读正文
       commands/<id>.json     # Agent 写入的页面命令
       results/<id>.json      # 扩展写回的结果
+      screenshots/<id>.jpg   # 视口 / 元素截图
   session.json               # { sessionId }
   host.log
 ```
@@ -144,7 +155,9 @@ Host 用 Node 24 直接跑 TypeScript（类型擦除）。stdout 只给 Chrome�
 }
 ```
 
-命令默认超时 20s（`waitFor` / 导航可能更久）。失败结果带 `ok: false` 和错误信息。单文件和 Native Messaging 都遵守约 200KB 截断，避免 1MB 帧上限。操作类命令成功后刷新 `current.json` / `snapshot.md`。侧栏通过 `browser.command` / `browser.result` 显示当前页面动作。
+命令默认超时 20s（`waitFor` / 导航可能更久）。失败结果带 `ok: false` 和错误信息。文本结果约 200KB 截断。截图走 JPEG 压缩，结果 JSON 不内嵌像素。操作类命令成功后刷新 `current.json` / `snapshot.md`。侧栏通过 `browser.command` / `browser.result` 显示当前页面动作。
+
+Host 在 `session/new` 之前写好 `AGENTS.md` 和 `browser/tools.json`，这样 Agent 一进工作区就能感知读、操作和视觉方法。
 
 ## 标签切换
 
@@ -215,3 +228,5 @@ pnpm workspace。扩展用 Vite + `@crxjs/vite-plugin` 打包。
 | 受控输入收不到赋值 | fill/type 用原生 value setter + input/change |
 | 点击找不到可点目标 | 同时支持 selector 与可见文本，失败返回明确错误 |
 | 导航后内容脚本被卸掉 | 标签级导航走 `chrome.tabs.update`，完成后再抓快照 |
+| 截图超过 Native Messaging 1MB | JPEG + 最长边 1280 + 质量下调；只传 base64，落盘后再给 Agent 路径 |
+| 元素截图像素比不对 | 用 `devicePixelRatio` 把 CSS 盒映射到截图像素 |

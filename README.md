@@ -1,6 +1,6 @@
 # Cursor Sidebar
 
-Chrome 侧栏插件：用 [assistant-ui](https://www.assistant-ui.com/) 连接本机 Cursor CLI Agent（`agent acp`）。同一个工作区、同一条会话；Agent 能读取当前页，也能点击、填表、导航。
+Chrome 侧栏插件：用 [assistant-ui](https://www.assistant-ui.com/) 连接本机 Cursor CLI Agent（`agent acp`）。同一个工作区、同一条会话；Agent 能读取当前页、点击填表导航，也能截视口或单个元素做视觉分析。
 
 不另起本地 HTTP 服务，不上 MCP。Chrome 通过 Native Messaging 按需拉起 Host，Host 再拉起 Agent。
 
@@ -45,7 +45,7 @@ pnpm dev
 
 ## 工作区
 
-会话 cwd 固定为 `~/.cursor-sidebar/workspace`。页面快照和 Agent 发起的页面命令都在 `workspace/browser/`。协议写在该目录的 `AGENTS.md`。
+会话 cwd 固定为 `~/.cursor-sidebar/workspace`。页面快照、命令和截图都在 `workspace/browser/`。Host 启动时写入 `AGENTS.md` 与 `browser/tools.json`，Agent 一进会话就能看见全部页面方法。
 
 ## 仓库结构
 
