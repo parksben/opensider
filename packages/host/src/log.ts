@@ -10,5 +10,4 @@ export function log(message: string): void {
   } catch {
     // ignore
   }
-  process.stderr.write(line);
 }

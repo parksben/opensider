@@ -27,11 +27,11 @@ pnpm install-host
 3. 「加载已解压的扩展程序」，选 `packages/extension/dist`
 4. 点工具栏图标打开侧栏
 
-`pnpm install-host` 会把 Native Messaging 清单写到 Chrome / Chrome Beta / Chrome Canary / Chromium 的 `NativeMessagingHosts` 目录，主路径是：
+`pnpm build` 会同时跑 `pnpm install-host`。安装脚本把 Host 源码拷到 `~/.cursor-sidebar/runtime/`（离开 Desktop，否则 macOS 会拦 Chrome 启动它），把 Native Messaging 清单写到 Chrome / Chrome Beta / Chrome Canary / Chromium 的 `NativeMessagingHosts`，主路径是：
 
 `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.cursor.sidebar.host.json`
 
-并生成带本机 Node 绝对路径的 `packages/host/bin/host.local.sh`（Chrome 拉起 Host 时没有 nvm 的 PATH）。
+启动脚本里的 `node` 是绝对路径（Chrome 拉起 Host 时没有 nvm 的 PATH）。改完 Host 源码后要再 `pnpm install-host` 或 `pnpm build`，Chrome 才会用到新副本。
 
 扩展 ID 固定为 `gcblddgaifebccglndkaccmibhechimj`。
 

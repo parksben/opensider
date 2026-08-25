@@ -114,12 +114,15 @@ Cursor Agent 在 ACP 模式下仍然自己执行本地工具（读文件、写�
 - 把 Agent 的 `session/update`、权限请求、Cursor 扩展方法推给扩展
 - 把页面快照和 `browser/tools.json` 写入工作区；监视 `browser/commands/`，转给扩展，再把结果写回 `browser/results/`（截图另存 `browser/screenshots/`）
 
-Host 用 Node 24 直接跑 TypeScript（类型擦除）。stdout 只给 Chrome，ACP 走子进程管道，日志走 stderr 或 `~/.cursor-sidebar/host.log`。
+Host 用 Node 24 直接跑 TypeScript（类型擦除）。stdout 只给 Chrome，ACP 走子进程管道，日志只写 `~/.cursor-sidebar/host.log`。
 
 ## 工作区布局
 
 ```
 ~/.cursor-sidebar/
+  runtime/                   # Chrome 实际拉起的 Host 副本（不在 Desktop）
+    packages/host/src
+    packages/shared/src
   workspace/                 # ACP session cwd
     AGENTS.md                # 页面协议说明，会话开始就会被读到
     browser/
@@ -282,7 +285,7 @@ Host 是 ACP Client，`clientCapabilities` 关闭 `fs` / `terminal`，让 Agent 
 Host 注册名：`com.cursor.sidebar.host`  
 macOS 清单路径：`~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.cursor.sidebar.host.json`
 
-`pnpm install-host` 会生成 `packages/host/bin/host.local.sh`（不入库），把当前 `node` 的绝对路径写进去。Chrome 拉起 Native Host 时 PATH 很瘦，nvm 里的 `node` 否则找不到。
+`pnpm install-host`（`pnpm build` 也会跑）把 `packages/host` 和 `packages/shared` 的源码拷到 `~/.cursor-sidebar/runtime/`，再生成带本机 Node 绝对路径的启动脚本。Chrome 的 Native Messaging 清单 `path` 指向这份副本，而不是 Desktop 仓库里的脚本：macOS TCC 会拦 Chrome 执行 Desktop / Documents / Downloads 下的文件，Chrome 只报 `Native host has exited`，宿主日志也不会出现。nvm 的 `node` 也必须写绝对路径，因为 Chrome 拉起 Host 时 PATH 很瘦。Host 日志只写 `~/.cursor-sidebar/host.log`，不写 stderr，避免 Chrome 把 stderr 当成协议失败。
 
 ## UI
 
@@ -317,6 +320,7 @@ pnpm workspace。扩展用 Vite + `@crxjs/vite-plugin` 打包。
 | 风险 | 处理 |
 |---|---|
 | Native Messaging 环境 PATH 很瘦 | 默认调用 `~/.local/bin/agent`，可覆盖 |
+| macOS 拦 Chrome 执行 Desktop 上的 Host | `install-host` 把运行副本放到 `~/.cursor-sidebar/runtime` |
 | 未登录 | 侧栏提示先跑 `agent login` |
 | `session/load` 不支持或失败 | 新建 ACP 会话，界面历史保留，下一条消息带前文 |
 | `session/fork` 不可用或不支持指定消息 | 新会话 + 首条 prompt 前缀截断记录 |

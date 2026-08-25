@@ -4,7 +4,7 @@
   "packageManager": "pnpm@10.12.1",
   "scripts": {
     "dev": "pnpm --filter @cursor-sidebar/extension dev",
-    "build": "pnpm --filter @cursor-sidebar/extension build",
+    "build": "pnpm --filter @cursor-sidebar/extension build && node scripts/install-host.mjs",
     "install-host": "node scripts/install-host.mjs"
   }
 }
