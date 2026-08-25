@@ -39,9 +39,8 @@ export function ToolCard({ locale, part }: { locale: Locale; part: ToolPart }) {
       label={title}
       paneClass="cs-fold-scroll"
       icon={
-        <span className="inline-flex shrink-0 items-center gap-1 text-[var(--muted)]">
-          <Icon size={12} strokeWidth={1.75} />
-          {running ? <LoaderCircle size={12} className="animate-spin" /> : null}
+        <span className="inline-flex shrink-0 text-[var(--muted)]">
+          {running ? <LoaderCircle size={12} className="animate-spin" /> : <Icon size={12} strokeWidth={1.75} />}
         </span>
       }
     >
