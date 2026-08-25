@@ -617,17 +617,20 @@ function ProcessToggle({
   const time = durationMs != null ? formatTurnDuration(durationMs, locale) : "";
   const label = time ? t(locale, "ranFor").replace("{time}", time) : t(locale, "ran");
   return (
-    <RippleButton
+    <button
+      type="button"
       onClick={onToggle}
-      className="group flex w-full items-center justify-between gap-2 rounded px-1 py-0.5 text-left text-[12px] text-[var(--muted)]"
+      className="group flex w-full items-center bg-transparent py-0.5 text-left"
     >
-      <span>{label}</span>
-      {open ? (
-        <ChevronDown size={14} className="shrink-0" />
-      ) : (
-        <ChevronRight size={14} className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100" />
-      )}
-    </RippleButton>
+      <span className="inline-flex items-center gap-0.5 text-[12px] text-[var(--muted)]">
+        <span>{label}</span>
+        {open ? (
+          <ChevronDown size={12} className="shrink-0" />
+        ) : (
+          <ChevronRight size={12} className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100" />
+        )}
+      </span>
+    </button>
   );
 }
 
