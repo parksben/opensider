@@ -1,10 +1,10 @@
 import { watch } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { BrowserCommand, BrowserResult } from "../../shared/src/protocol.ts";
+import type { BrowserCommand, BrowserResult, ScreenshotPayload } from "../../shared/src/protocol.ts";
 import { PAGE_METHODS } from "../../shared/src/protocol.ts";
 import { log } from "./log.ts";
-import { COMMANDS_DIR, RESULTS_DIR } from "./paths.ts";
+import { COMMANDS_DIR, RESULTS_DIR, SCREENSHOTS_DIR } from "./paths.ts";
 
 const processed = new Set<string>();
 
@@ -34,8 +34,33 @@ async function readCommand(file: string, onCommand: (command: BrowserCommand) =>
   }
 }
 
+function isScreenshotPayload(value: unknown): value is ScreenshotPayload {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      "imageBase64" in value &&
+      typeof (value as ScreenshotPayload).imageBase64 === "string",
+  );
+}
+
 export async function writeCommandResult(result: BrowserResult): Promise<void> {
+  let stored = result;
+  if (isScreenshotPayload(result.data)) {
+    const image = result.data;
+    const path = join(SCREENSHOTS_DIR, `${result.id}.jpg`);
+    await writeFile(path, Buffer.from(image.imageBase64, "base64"));
+    stored = {
+      ...result,
+      data: {
+        path,
+        mime: image.mime,
+        width: image.width,
+        height: image.height,
+      },
+    };
+    log(`wrote screenshot ${path} ${image.width}x${image.height}`);
+  }
   const file = join(RESULTS_DIR, `${result.id}.json`);
-  await writeFile(file, `${JSON.stringify(result, null, 2)}\n`);
+  await writeFile(file, `${JSON.stringify(stored, null, 2)}\n`);
   log(`wrote result ${result.id} ok=${result.ok}`);
 }

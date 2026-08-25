@@ -1,14 +1,16 @@
 import { mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
-import type { CurrentPage } from "../../shared/src/protocol.ts";
+import { TOOL_CATALOG, type CurrentPage } from "../../shared/src/protocol.ts";
 import {
   AGENTS_MD_PATH,
   BROWSER_DIR,
   COMMANDS_DIR,
   CURRENT_PAGE_PATH,
   RESULTS_DIR,
+  SCREENSHOTS_DIR,
   SESSION_PATH,
   SIDEBAR_HOME,
   SNAPSHOT_PATH,
+  TOOLS_PATH,
   WORKSPACE_DIR,
 } from "./paths.ts";
 
@@ -16,7 +18,7 @@ const AGENTS_MD = `# Browser page tools
 
 You are chatting from a Chrome sidebar. The user keeps ONE session and ONE workspace across every browser tab.
 
-You can both READ the current page and OPERATE it (click, fill, navigate). Prefer these browser methods over guessing from memory.
+Read \`browser/tools.json\` now. It lists every page method available in this session (read, act, vision). Prefer those methods over guessing from memory.
 
 ## Current page
 
@@ -62,14 +64,39 @@ Find elements with \`args.selector\` (CSS), \`args.text\` (visible text contains
 - \`navigate\` — \`args.url\`, http(s) only
 - \`goBack\` / \`goForward\` / \`reload\`
 
+### Vision
+
+Use screenshots when the DOM text is not enough to understand layout, pick a target, or plan the next click.
+
+- \`screenshot\` — visible viewport JPEG; optional \`x,y,width,height\` in CSS pixels
+- \`screenshotElement\` — scroll an element into view and crop it (\`selector\` or \`text\`)
+
+The result JSON has \`data.path\` (absolute file). **Read that JPEG** to inspect the page visually. Do not expect base64 in the JSON.
+
 Do not invent other methods. Do not try to run arbitrary JavaScript. After acting, re-read \`browser/current.json\` if the page may have changed.
 `;
 
 export function ensureWorkspace(): void {
   mkdirSync(COMMANDS_DIR, { recursive: true });
   mkdirSync(RESULTS_DIR, { recursive: true });
+  mkdirSync(SCREENSHOTS_DIR, { recursive: true });
   mkdirSync(SIDEBAR_HOME, { recursive: true });
   writeFileSync(AGENTS_MD_PATH, AGENTS_MD);
+  writeFileSync(
+    TOOLS_PATH,
+    `${JSON.stringify(
+      {
+        version: 2,
+        transport: "workspace-files",
+        commandsDir: "browser/commands",
+        resultsDir: "browser/results",
+        screenshotsDir: "browser/screenshots",
+        methods: TOOL_CATALOG,
+      },
+      null,
+      2,
+    )}\n`,
+  );
 }
 
 export function writeCurrentPage(page: CurrentPage): void {

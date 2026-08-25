@@ -1,4 +1,4 @@
-import type { BrowserCommand, BrowserCommandArgs, BrowserResult, CurrentPage, PageMethod } from "@shared";
+import type { BrowserCommand, BrowserCommandArgs, BrowserResult, ClipRect, CurrentPage, PageMethod } from "@shared";
 
 const MAX_TEXT = 200_000;
 const SELECTOR_MAX = 300;
@@ -97,6 +97,43 @@ function collectCandidates(args: BrowserCommandArgs): HTMLElement[] {
       .slice(0, 40) as HTMLElement[];
   }
   throw new Error("args.selector or args.text is required");
+}
+
+export function measureTarget(args: BrowserCommandArgs): ClipRect {
+  const el = findElement(args);
+  el.scrollIntoView({ block: "center", inline: "nearest" });
+  highlight(el);
+  const box = el.getBoundingClientRect();
+  const left = Math.max(0, box.x);
+  const top = Math.max(0, box.y);
+  const right = Math.min(window.innerWidth, box.x + box.width);
+  const bottom = Math.min(window.innerHeight, box.y + box.height);
+  const width = right - left;
+  const height = bottom - top;
+  if (width < 2 || height < 2) {
+    throw new Error("element is not visible in the viewport");
+  }
+  return {
+    x: left,
+    y: top,
+    width,
+    height,
+    dpr: window.devicePixelRatio || 1,
+    viewportWidth: window.innerWidth,
+    viewportHeight: window.innerHeight,
+  };
+}
+
+export function measureViewport(): ClipRect {
+  return {
+    x: 0,
+    y: 0,
+    width: window.innerWidth,
+    height: window.innerHeight,
+    dpr: window.devicePixelRatio || 1,
+    viewportWidth: window.innerWidth,
+    viewportHeight: window.innerHeight,
+  };
 }
 
 function findElement(args: BrowserCommandArgs): HTMLElement {
@@ -331,6 +368,8 @@ async function invoke(method: PageMethod, args: BrowserCommandArgs): Promise<unk
     case "goBack":
     case "goForward":
     case "reload":
+    case "screenshot":
+    case "screenshotElement":
       throw new Error(`${method} is handled by the extension service worker`);
     default:
       throw new Error(`unknown method ${method}`);

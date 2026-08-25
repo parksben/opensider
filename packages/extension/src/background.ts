@@ -1,5 +1,6 @@
-import type { BrowserCommand, BrowserResult, CurrentPage, ExtToHost, HostToExt } from "@shared";
-import { HOST_NAME, isActionMethod, isTabMethod } from "@shared";
+import type { BrowserCommand, BrowserResult, ClipRect, CurrentPage, ExtToHost, HostToExt } from "@shared";
+import { HOST_NAME, isActionMethod, isCaptureMethod, isTabMethod } from "@shared";
+import { captureViewport } from "./screenshot";
 
 let nativePort: chrome.runtime.Port | null = null;
 const sidebars = new Set<chrome.runtime.Port>();
@@ -102,6 +103,41 @@ async function runTabMethod(tabId: number, command: BrowserCommand): Promise<Bro
   return { id: command.id, ok: true, method: command.method, data: { action: "reload" } };
 }
 
+async function runCapture(tab: { id?: number; windowId?: number }, command: BrowserCommand): Promise<BrowserResult> {
+  if (tab.id == null || tab.windowId == null) return fail(command, "tab is not capturable");
+  let clip: ClipRect | undefined;
+  if (command.method === "screenshotElement") {
+    const measured = (await chrome.tabs.sendMessage(tab.id, {
+      type: "page.measure",
+      args: command.args ?? {},
+    })) as { ok: boolean; rect?: ClipRect; error?: string };
+    if (!measured?.ok || !measured.rect) return fail(command, measured?.error ?? "measure failed");
+    clip = measured.rect;
+    await new Promise((resolve) => setTimeout(resolve, 120));
+  } else if (
+    command.args &&
+    [command.args.x, command.args.y, command.args.width, command.args.height].some((value) => value != null)
+  ) {
+    const view = (await chrome.tabs.sendMessage(tab.id, { type: "page.viewport" })) as {
+      ok: boolean;
+      rect?: ClipRect;
+      error?: string;
+    };
+    if (!view?.ok || !view.rect) return fail(command, view?.error ?? "viewport measure failed");
+    clip = {
+      x: command.args.x ?? 0,
+      y: command.args.y ?? 0,
+      width: command.args.width ?? view.rect.viewportWidth,
+      height: command.args.height ?? view.rect.viewportHeight,
+      dpr: view.rect.dpr,
+      viewportWidth: view.rect.viewportWidth,
+      viewportHeight: view.rect.viewportHeight,
+    };
+  }
+  const payload = await captureViewport(tab.windowId, clip);
+  return { id: command.id, ok: true, method: command.method, data: payload };
+}
+
 async function dispatchCommand(command: BrowserCommand): Promise<void> {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab?.id) {
@@ -113,9 +149,11 @@ async function dispatchCommand(command: BrowserCommand): Promise<void> {
 
   let result: BrowserResult;
   try {
-    result = isTabMethod(command.method)
-      ? await runTabMethod(tab.id, command)
-      : await Promise.race([
+    result = isCaptureMethod(command.method)
+      ? await runCapture(tab, command)
+      : isTabMethod(command.method)
+        ? await runTabMethod(tab.id, command)
+        : await Promise.race([
           chrome.tabs.sendMessage(tab.id, { type: "browser.command", command }) as Promise<BrowserResult>,
           new Promise<BrowserResult>((resolve) => {
             setTimeout(
