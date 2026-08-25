@@ -64,7 +64,7 @@ export function IconButton({
       ref={buttonRef}
       type="button"
       aria-label={label}
-      className={`relative overflow-hidden ${ripple ? "hover:bg-white/15" : ""} ${className}`}
+      className={`relative overflow-hidden ${ripple ? "hover:bg-[var(--hover)]" : ""} ${className}`}
       onPointerEnter={() => setOpen(true)}
       onPointerLeave={() => setOpen(false)}
       onFocus={() => setOpen(true)}

@@ -19,6 +19,12 @@ import { SessionDrawer } from "./components/SessionDrawer";
 import type { Locale } from "./i18n";
 import { t } from "./i18n";
 import {
+  applyResolvedTheme,
+  resolveTheme,
+  watchSystemTheme,
+  type ThemePreference,
+} from "./theme";
+import {
   buildForkContext,
   emptySession,
   loadState,
@@ -33,6 +39,7 @@ import {
 export function App() {
   const [hydrated, setHydrated] = useState(false);
   const [locale, setLocale] = useState<Locale>("en");
+  const [theme, setTheme] = useState<ThemePreference>("dark");
   const [sessions, setSessions] = useState<Session[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [models, setModels] = useState<AgentModel[]>([]);
@@ -261,6 +268,7 @@ export function App() {
         ? state.selectedId
         : sessions[0].id;
       setLocale(state.locale);
+      setTheme(state.theme);
       setSessions(sessions);
       setSelectedId(selectedId);
       setSelectedModelId(state.selectedModelId);
@@ -274,8 +282,14 @@ export function App() {
 
   useEffect(() => {
     if (!hydrated) return;
-    void saveState({ locale, selectedId, selectedModelId, sessions });
-  }, [hydrated, locale, selectedId, selectedModelId, sessions]);
+    void saveState({ locale, theme, selectedId, selectedModelId, sessions });
+  }, [hydrated, locale, theme, selectedId, selectedModelId, sessions]);
+
+  useEffect(() => {
+    applyResolvedTheme(resolveTheme(theme));
+    if (theme !== "system") return;
+    return watchSystemTheme(() => applyResolvedTheme(resolveTheme("system")));
+  }, [theme]);
 
   useEffect(() => {
     const { send, reconnect, disconnect } = connectSidebar((msg) => handleHostRef.current(msg));
@@ -557,7 +571,9 @@ export function App() {
         activity={activity}
         sessionTitle={selected.title || t(locale, "untitled")}
         sessionsOpen={sessionsOpen}
+        theme={theme}
         onLocale={setLocale}
+        onTheme={setTheme}
         onToggleSessions={() => setSessionsOpen((open) => !open)}
         onRetry={() => {
           boundRef.current = false;
@@ -639,7 +655,7 @@ export function App() {
         </div>
       </div>
       {pickingElement ? (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[rgba(8,9,6,0.55)] px-5 backdrop-blur-md">
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[var(--overlay)] px-5 backdrop-blur-md">
           <div className="flex max-w-[17rem] flex-col items-center gap-2.5 rounded-2xl border border-[var(--line)] bg-[var(--panel)]/92 px-5 py-4 text-center shadow-2xl">
             <MousePointer2 size={26} className="text-[var(--brass)]" />
             <p className="text-[13px] leading-relaxed text-[var(--text)]">{t(locale, "pickHint")}</p>

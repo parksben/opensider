@@ -153,7 +153,7 @@ export function ChatPane({
                     className={`ml-auto w-fit max-w-[80%] break-words rounded-2xl rounded-br-sm bg-[var(--user)] px-3 py-2 text-left text-[13.5px] leading-relaxed disabled:cursor-default ${
                       editingId === message.id
                         ? "ring-1 ring-[var(--brass)]"
-                        : "cursor-pointer hover:bg-[#2f2b1c]"
+                        : "cursor-pointer hover:bg-[var(--user-hover)]"
                     }`}
                   >
                     {textOf(message.content) ? <div>{textOf(message.content)}</div> : null}
@@ -233,8 +233,8 @@ export function ChatPane({
                 label={label("pickElement")}
                 onClick={() => void startElementPick()}
                 disabled={pickingFiles || isRunning}
-                className={`flex h-7 w-7 items-center justify-center rounded-full hover:bg-white/15 disabled:opacity-30 disabled:hover:bg-transparent ${
-                  pickingElement ? "bg-white/15 text-[var(--brass)]" : "text-[var(--text)]"
+                className={`flex h-7 w-7 items-center justify-center rounded-full hover:bg-[var(--hover)] disabled:opacity-30 disabled:hover:bg-transparent ${
+                  pickingElement ? "bg-[var(--hover)] text-[var(--brass)]" : "text-[var(--text)]"
                 }`}
               >
                 <MousePointer2 size={14} />
@@ -244,7 +244,7 @@ export function ChatPane({
                 label={label("attach")}
                 onClick={() => void addAttachments()}
                 disabled={busy}
-                className="flex h-7 w-7 items-center justify-center rounded-full text-[var(--text)] hover:bg-white/15 disabled:opacity-30 disabled:hover:bg-transparent"
+                className="flex h-7 w-7 items-center justify-center rounded-full text-[var(--text)] hover:bg-[var(--hover)] disabled:opacity-30 disabled:hover:bg-transparent"
               >
                 {pickingFiles ? <LoaderCircle size={14} className="animate-spin" /> : <Plus size={14} />}
               </IconButton>
@@ -258,7 +258,7 @@ export function ChatPane({
                   side="top"
                   label={label("stop")}
                   onClick={onCancel}
-                  className="flex h-7 w-7 items-center justify-center rounded-full text-[var(--text)] hover:bg-white/15"
+                  className="flex h-7 w-7 items-center justify-center rounded-full text-[var(--text)] hover:bg-[var(--hover)]"
                 >
                   <Square size={14} />
                 </IconButton>
@@ -268,7 +268,7 @@ export function ChatPane({
                   label={label("send")}
                   onClick={submit}
                   disabled={!canSend}
-                  className="flex h-7 w-7 items-center justify-center rounded-full text-[var(--text)] hover:bg-white/15 disabled:opacity-30 disabled:hover:bg-transparent"
+                  className="flex h-7 w-7 items-center justify-center rounded-full text-[var(--text)] hover:bg-[var(--hover)] disabled:opacity-30 disabled:hover:bg-transparent"
                 >
                   <Send size={14} />
                 </IconButton>
@@ -403,7 +403,7 @@ function ModelSelect({
                   setOpen(false);
                 }}
                 className={`flex w-full px-2.5 py-1.5 text-left text-[12px] ${
-                  active ? "bg-white/8 text-[var(--text)]" : "text-[var(--muted)] hover:text-[var(--text)]"
+                  active ? "bg-[var(--hover-strong)] text-[var(--text)]" : "text-[var(--muted)] hover:text-[var(--text)]"
                 }`}
               >
                 <span className="truncate">{model.name}</span>

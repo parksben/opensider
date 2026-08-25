@@ -1,6 +1,7 @@
 import type { AttachmentItem } from "@shared";
 import type { ChatMessage, ChatPart, TodoItem } from "./chat-types";
 import type { Locale } from "./i18n";
+import { isThemePreference, type ThemePreference } from "./theme";
 
 export const STATE_KEY = "cursor-sidebar/state";
 
@@ -29,6 +30,7 @@ export type Session = {
 export type PersistedState = {
   version: 1;
   locale: Locale;
+  theme?: ThemePreference;
   selectedId: string;
   selectedModelId?: string;
   sessions: Array<Omit<Session, "messages"> & { messages: StoredMessage[] }>;
@@ -128,6 +130,7 @@ export function wrapForkContext(context: string): string {
 
 export async function loadState(): Promise<{
   locale: Locale;
+  theme: ThemePreference;
   selectedId: string;
   selectedModelId: string;
   sessions: Session[];
@@ -135,7 +138,7 @@ export async function loadState(): Promise<{
   const raw = await chrome.storage.local.get(STATE_KEY);
   const data = raw[STATE_KEY] as PersistedState | undefined;
   if (!data || data.version !== 1 || !Array.isArray(data.sessions)) {
-    return { locale: "en", selectedId: "", selectedModelId: "", sessions: [] };
+    return { locale: "en", theme: "dark", selectedId: "", selectedModelId: "", sessions: [] };
   }
   const sessions = data.sessions.map(hydrateSession);
   const selectedId = sessions.some((session) => session.id === data.selectedId)
@@ -143,6 +146,7 @@ export async function loadState(): Promise<{
     : (sessions[0]?.id ?? "");
   return {
     locale: data.locale === "zh" ? "zh" : "en",
+    theme: isThemePreference(data.theme) ? data.theme : "dark",
     selectedId,
     selectedModelId: data.selectedModelId || "",
     sessions,
@@ -151,6 +155,7 @@ export async function loadState(): Promise<{
 
 export async function saveState(state: {
   locale: Locale;
+  theme: ThemePreference;
   selectedId: string;
   selectedModelId: string;
   sessions: Session[];
@@ -158,6 +163,7 @@ export async function saveState(state: {
   const payload: PersistedState = {
     version: 1,
     locale: state.locale,
+    theme: state.theme,
     selectedId: state.selectedId,
     selectedModelId: state.selectedModelId,
     sessions: state.sessions.map(serializeSession),

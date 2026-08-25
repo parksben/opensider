@@ -11,7 +11,7 @@ export function RippleButton({
   return (
     <button
       type="button"
-      className={`relative overflow-hidden hover:bg-white/15 ${className}`}
+      className={`relative overflow-hidden hover:bg-[var(--hover)] ${className}`}
       onPointerDown={(event) => {
         if (!props.disabled) spawn(event);
         onPointerDown?.(event);

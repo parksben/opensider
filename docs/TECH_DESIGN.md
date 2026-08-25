@@ -181,6 +181,7 @@ Host 在 `session/new` 之前写好 `AGENTS.md` 和 `browser/tools.json`，这�
 ```
 chrome.storage.local
   locale: "en" | "zh"          # 默认 en
+  theme: "light" | "dark" | "system"  # 默认 dark；system 跟 prefers-color-scheme
   selectedId: <local session id>
   selectedModelId?: string     # 具体模型 id；auto / 空 = 不指定，不调用 set_model
   sessions[]:
@@ -230,6 +231,10 @@ chrome.storage.local
 ## 语言
 
 `packages/extension/src/sidepanel/i18n.ts` 提供 `en` / `zh` 词条。默认 `en`。切换后立刻写 `chrome.storage.local`，并设 `document.documentElement.lang`。连接错误原文（Host / Chrome `lastError`）不翻译。
+
+## 主题
+
+`theme.ts`：偏好 `light | dark | system`，解析后给 `document.documentElement.dataset.theme`。`system` 时听 `prefers-color-scheme`。颜色全走 CSS 变量：`:root` / `[data-theme=dark]` 是现有橄榄黑；`[data-theme=light]` 是暖纸底 + 近黑正文（muted 用深橄榄，不用深色那套浅灰字）。`--hover` / `--code` / `--user` / `--on-brass` / `--overlay` 两套分开，组件不再写死 `#161910` 这类只适合深色的底。Mermaid 按解析后的主题重 `initialize`。顶栏 `Sun` / `Moon` / `SunMoon` 循环三态。
 
 ## 附件（只传路径）
 
@@ -304,12 +309,12 @@ macOS 清单路径：`~/Library/Application Support/Google/Chrome/NativeMessagin
 
 ## UI
 
-- 聊天：`ChatPane` 由当前会话的 `messages` / `isRunning` 驱动；用户气泡 `w-fit max-w-[80%] ml-auto`，相对消息列表内容区收缩；工具卡片 / markdown 仍是现有组件。`Markdown` 对 ` ```mermaid ` 围栏动态加载 `mermaid` 再 `render` 成 SVG（`securityLevel: strict`、暗色黄铜主题），约 160ms 防抖；画失败或流式半截仍走原来的 `pre > code`。输入区：可选附件芯片 → textarea → 第二行左 Lucide `MousePointer2` 拾取 + `Plus`、右模型下拉（仅 `ready` 且列表非空）+ `Send` 小飞机 / 停止（14px，与顶栏 icon 同大；hover 半透明白圆）。`isRunning` 时 `.cs-composer` 用 `@property --cs-spin`：圆锥渐变经 mask 只画 1px 描边，opacity 淡入铺满 360°，再 4s linear 转一圈；结束只淡出 opacity，sweep 保持满圈以免描边收起。`prefers-reduced-motion` 时只铺满不转。工具卡片标题用 `toolTitle(locale, part)`：按 `kind` 与常见英文前缀映射到 i18n，后面的路径/查询不翻译。拾取时 `App` 全栏模糊遮罩 + 居中提示，完成或 Esc 才收。`IconButton` 的 tooltip 用 `position: fixed` 挂到 `document.body`，按锚点测量后翻边/平移，与视口保持 8px。除顶栏外，按钮统一 `hover:bg-white/15` + CSS 涟漪（`RippleButton` / `IconButton`）。芯片统一 `max-width: 200px`（文件 / 文件夹 / 图片 / 拾取元素相同），文案 `truncate`，`title` 为完整路径或 selector。
-- 顶栏：左会话开关（收起时 Lucide `MessageSquarePlus` 气泡加号，tooltip「会话 / Sessions」；展开时 `PanelLeftClose`，tooltip「收起列表 / Collapse list」）+ 语言按钮（英显示「中」、中显示「EN」）；正中会话名；右连接状态与 offline「Connection / 重连」（icon 已是重试语义）。顶栏按钮不加涟漪。
+- 聊天：`ChatPane` 由当前会话的 `messages` / `isRunning` 驱动；用户气泡 `w-fit max-w-[80%] ml-auto`，相对消息列表内容区收缩；工具卡片 / markdown 仍是现有组件。`Markdown` 对 ` ```mermaid ` 围栏动态加载 `mermaid` 再 `render` 成 SVG（`securityLevel: strict`、暗色黄铜主题），约 160ms 防抖；画失败或流式半截仍走原来的 `pre > code`。输入区：可选附件芯片 → textarea → 第二行左 Lucide `MousePointer2` 拾取 + `Plus`、右模型下拉（仅 `ready` 且列表非空）+ `Send` 小飞机 / 停止（14px，与顶栏 icon 同大；hover 半透明白圆）。`isRunning` 时 `.cs-composer` 用 `@property --cs-spin`：圆锥渐变经 mask 只画 1px 描边，opacity 淡入铺满 360°，再 4s linear 转一圈；结束只淡出 opacity，sweep 保持满圈以免描边收起。`prefers-reduced-motion` 时只铺满不转。工具卡片标题用 `toolTitle(locale, part)`：按 `kind` 与常见英文前缀映射到 i18n，后面的路径/查询不翻译。拾取时 `App` 全栏模糊遮罩 + 居中提示，完成或 Esc 才收。`IconButton` 的 tooltip 用 `position: fixed` 挂到 `document.body`，按锚点测量后翻边/平移，与视口保持 8px。除顶栏外，按钮统一 `hover:bg-[var(--hover)]` + CSS 涟漪（`RippleButton` / `IconButton`）。芯片统一 `max-width: 200px`（文件 / 文件夹 / 图片 / 拾取元素相同），文案 `truncate`，`title` 为完整路径或 selector。
+- 顶栏：左会话开关（收起时 Lucide `MessageSquarePlus` 气泡加号，tooltip「会话 / Sessions」；展开时 `PanelLeftClose`，tooltip「收起列表 / Collapse list」）+ 语言按钮（英显示「中」、中显示「EN」）+ 开关灯（`Sun` / `Moon` / `SunMoon`，tooltip 浅色 / 深色 / 跟随设备）；正中会话名；右连接状态与 offline「Connection / 重连」（icon 已是重试语义）。顶栏按钮不加涟漪。
 - 会话列表是主区域左侧栏：新建、卡片上 Pencil / Trash2 重命名与删除；`titleManual` 为真时不再用首条消息改标题
 - 空会话：消息区垂直居中，Lucide `MessageCircle` 约 120px + 一行淡灰提示，不抢视觉
 - Agent 回复底部用 lucide 的 `GitFork` + `RefreshCw`，整行居左；fork tooltip「从此处复制新会话 / Fork from here」，刷新 tooltip「重新生成 / Regenerate」。用户气泡不放操作钮
-- 视觉：窄侧栏（约 380px）、橄榄黑底、黄铜强调色；图标只用 `lucide-react`
+- 视觉：窄侧栏（约 380px）、深色橄榄黑 / 浅色暖纸、黄铜强调色；图标只用 `lucide-react`
 - 字体：IBM Plex Sans / Mono（中英都不用衬线体）
 - 工具卡片按 ACP `kind` 换图标：read / edit / execute / search / fetch 等
 

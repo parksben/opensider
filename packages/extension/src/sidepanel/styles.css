@@ -1,18 +1,54 @@
 @import "tailwindcss";
 
-:root {
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
   --ink: #0c0d0a;
+  --ink-top: #12140e;
   --panel: #14160f;
   --panel-2: #1b1e16;
   --line: #2c3124;
   --text: #ece6d4;
-  --muted: #8f8872;
+  --muted: #a39b84;
   --brass: #d4a054;
   --brass-dim: #8a6a34;
   --ok: #8fbf6a;
   --warn: #d4a054;
-  --bad: #d36a4a;
-  --user: #262318;
+  --bad: #e07a5c;
+  --user: #2a2618;
+  --user-hover: #35301c;
+  --code: #10120c;
+  --code-inline: #1f2318;
+  --hover: rgb(255 255 255 / 0.15);
+  --hover-strong: rgb(255 255 255 / 0.08);
+  --on-brass: #1a140b;
+  --overlay: rgb(8 9 6 / 0.55);
+  --glow: rgb(212 160 84 / 0.08);
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+  --ink: #f3efe3;
+  --ink-top: #f7f3e8;
+  --panel: #fffdf6;
+  --panel-2: #efe8d4;
+  --line: #c9bfa4;
+  --text: #1a1812;
+  --muted: #5a5346;
+  --brass: #8a5f16;
+  --brass-dim: #6e4c12;
+  --ok: #2d6b2f;
+  --warn: #8a5f16;
+  --bad: #b1321c;
+  --user: #e4d9b8;
+  --user-hover: #d8cca6;
+  --code: #e8e0c8;
+  --code-inline: #ece4cc;
+  --hover: rgb(26 24 18 / 0.08);
+  --hover-strong: rgb(26 24 18 / 0.06);
+  --on-brass: #fff8e8;
+  --overlay: rgb(243 239 227 / 0.62);
+  --glow: rgb(138 95 22 / 0.08);
 }
 
 * {
@@ -31,8 +67,8 @@ body,
 
 body {
   background-image:
-    radial-gradient(1200px 500px at 10% -10%, rgba(212, 160, 84, 0.08), transparent 50%),
-    linear-gradient(180deg, #12140e 0%, var(--ink) 40%);
+    radial-gradient(1200px 500px at 10% -10%, var(--glow), transparent 50%),
+    linear-gradient(180deg, var(--ink-top) 0%, var(--ink) 40%);
 }
 
 button,
@@ -137,14 +173,14 @@ textarea {
 .markdown code {
   font-family: "IBM Plex Mono", monospace;
   font-size: 12px;
-  background: #1f2318;
+  background: var(--code-inline);
   border: 1px solid var(--line);
   border-radius: 4px;
   padding: 0.1em 0.35em;
 }
 
 .markdown pre {
-  background: #10120c;
+  background: var(--code);
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 10px 12px;
@@ -180,7 +216,7 @@ textarea {
   overflow-x: auto;
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #10120c;
+  background: var(--code);
   padding: 10px 8px;
 }
 

@@ -1,8 +1,9 @@
-import { Globe, MessageSquarePlus, MousePointerClick, PanelLeftClose, PlugZap, RotateCw, Unplug } from "lucide-react";
+import { Globe, MessageSquarePlus, Moon, MousePointerClick, PanelLeftClose, PlugZap, RotateCw, Sun, SunMoon, Unplug } from "lucide-react";
 import type { BrowserCommand, BrowserResult, CurrentPage } from "@shared";
 import type { TodoItem } from "../chat-types";
 import type { Locale } from "../i18n";
 import { t } from "../i18n";
+import { nextTheme, type ThemePreference } from "../theme";
 import { IconButton } from "./IconButton";
 
 export function Header({
@@ -14,8 +15,10 @@ export function Header({
   activity,
   sessionTitle,
   sessionsOpen,
+  theme,
   onRetry,
   onLocale,
+  onTheme,
   onToggleSessions,
 }: {
   locale: Locale;
@@ -26,8 +29,10 @@ export function Header({
   activity?: { command: BrowserCommand; result?: BrowserResult };
   sessionTitle: string;
   sessionsOpen: boolean;
+  theme: ThemePreference;
   onRetry?: () => void;
   onLocale: (locale: Locale) => void;
+  onTheme: (theme: ThemePreference) => void;
   onToggleSessions: () => void;
 }) {
   const host = safeHost(page?.url);
@@ -53,6 +58,14 @@ export function Header({
             className="flex h-7 min-w-7 shrink-0 items-center justify-center rounded-md border border-[var(--line)] px-1 text-[11px] font-medium text-[var(--text)]"
           >
             {locale === "en" ? "中" : "EN"}
+          </IconButton>
+          <IconButton
+            ripple={false}
+            label={theme === "light" ? label("themeLight") : theme === "dark" ? label("themeDark") : label("themeSystem")}
+            onClick={() => onTheme(nextTheme(theme))}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-[var(--line)] text-[var(--text)]"
+          >
+            {theme === "light" ? <Sun size={14} /> : theme === "dark" ? <Moon size={14} /> : <SunMoon size={14} />}
           </IconButton>
         </div>
         <div className="max-w-[46vw] truncate text-center text-[14px] font-medium tracking-tight">

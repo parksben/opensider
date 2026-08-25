@@ -24,7 +24,7 @@ export function PermissionBar({
 }) {
   if (permission) {
     return (
-      <section className="border-t border-[var(--line)] bg-[#1a160e] px-3 py-2.5">
+      <section className="border-t border-[var(--line)] bg-[var(--panel-2)] px-3 py-2.5">
         <div className="mb-2 flex items-center gap-2 text-[12.5px]">
           <ShieldAlert size={14} className="text-[var(--brass)]" />
           <span>{permission.title || t(locale, "wantsTool")}</span>
@@ -50,14 +50,14 @@ export function PermissionBar({
 
   if (plan) {
     return (
-      <section className="border-t border-[var(--line)] bg-[#1a160e] px-3 py-2.5">
+      <section className="border-t border-[var(--line)] bg-[var(--panel-2)] px-3 py-2.5">
         <div className="mb-1 text-[15px] font-medium tracking-tight">{plan.name || t(locale, "plan")}</div>
         {plan.overview ? <p className="mb-2 text-[12px] text-[var(--muted)]">{plan.overview}</p> : null}
         <Markdown text={plan.plan} />
         <div className="mt-2 flex gap-1.5">
           <RippleButton
             onClick={() => onPlan(true)}
-            className="rounded-md bg-[var(--brass)] px-2.5 py-1 text-[12px] text-[#1a140b]"
+            className="rounded-md bg-[var(--brass)] px-2.5 py-1 text-[12px] text-[var(--on-brass)]"
           >
             {t(locale, "acceptPlan")}
           </RippleButton>
@@ -86,7 +86,7 @@ function QuestionForm({
 }) {
   return (
     <form
-      className="border-t border-[var(--line)] bg-[#1a160e] px-3 py-2.5"
+      className="border-t border-[var(--line)] bg-[var(--panel-2)] px-3 py-2.5"
       onSubmit={(event) => {
         event.preventDefault();
         const data = new FormData(event.currentTarget);
@@ -118,7 +118,7 @@ function QuestionForm({
       </div>
       <RippleButton
         type="submit"
-        className="mt-2 rounded-md bg-[var(--brass)] px-2.5 py-1 text-[12px] text-[#1a140b]"
+        className="mt-2 rounded-md bg-[var(--brass)] px-2.5 py-1 text-[12px] text-[var(--on-brass)]"
       >
         {t(locale, "continue")}
       </RippleButton>
