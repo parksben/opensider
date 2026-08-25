@@ -5,6 +5,7 @@ import type { ChatMessage, ChatPart } from "../chat-types";
 import type { Locale } from "../i18n";
 import { t } from "../i18n";
 import { textOf } from "../persist";
+import { useRipple } from "../useRipple";
 import { IconButton } from "./IconButton";
 import { Markdown } from "./Markdown";
 import { ToolCard } from "./ToolCard";
@@ -311,6 +312,7 @@ function ModelSelect({
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const { ripples, spawn, done } = useRipple();
   const current = models.find((model) => model.id === modelId) ?? models[0];
   const label = current?.name || modelId || t(locale, "model");
 
@@ -339,10 +341,21 @@ function ModelSelect({
         aria-expanded={open}
         disabled={disabled}
         onClick={() => setOpen((value) => !value)}
-        className="flex h-7 max-w-[9.5rem] items-center gap-1 rounded-full border border-[var(--line)] bg-[var(--panel-2)] px-2 text-[11px] text-[var(--muted)] hover:text-[var(--text)] disabled:opacity-40"
+        onPointerDown={(event) => {
+          if (!disabled) spawn(event);
+        }}
+        className="relative flex h-7 max-w-[9.5rem] items-center gap-1 overflow-hidden rounded-full border border-[var(--line)] bg-[var(--panel-2)] px-2 text-[11px] text-[var(--muted)] hover:text-[var(--text)] disabled:opacity-40"
       >
         <span className="min-w-0 truncate">{label}</span>
         <ChevronDown size={12} className={`shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
+        {ripples.map((ripple) => (
+          <span
+            key={ripple.id}
+            className="cs-ripple"
+            style={{ left: ripple.x, top: ripple.y, width: ripple.size, height: ripple.size }}
+            onAnimationEnd={() => done(ripple.id)}
+          />
+        ))}
       </button>
       {open ? (
         <div className="absolute right-0 bottom-full z-30 mb-1.5 max-h-56 w-56 overflow-y-auto rounded-lg border border-[var(--line)] bg-[var(--panel)] py-1 shadow-xl">
