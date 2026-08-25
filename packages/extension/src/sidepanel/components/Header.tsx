@@ -34,58 +34,55 @@ export function Header({
   const ToggleIcon = sessionsOpen ? PanelLeftClose : PanelLeft;
   return (
     <header className="border-b border-[var(--line)] bg-[color-mix(in_oklab,var(--panel)_88%,transparent)] px-3 py-2.5 backdrop-blur">
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={onToggleSessions}
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-[var(--line)] text-[var(--text)]"
-          aria-expanded={sessionsOpen}
-          aria-label={sessionsOpen ? label("collapseSessions") : label("expandSessions")}
-          title={sessionsOpen ? label("collapseSessions") : label("expandSessions")}
-        >
-          <ToggleIcon size={14} />
-        </button>
-        <div
-          className="flex shrink-0 items-center gap-1.5 rounded-full border border-[var(--line)] px-2 py-1 text-[11px]"
-          title={error}
-        >
-          {status === "ready" ? (
-            <PlugZap size={13} className="text-[var(--ok)]" />
-          ) : (
-            <Unplug size={13} className={status === "error" ? "text-[var(--bad)]" : "text-[var(--warn)]"} />
-          )}
-          <span className="text-[var(--muted)]">
-            {status === "ready" ? label("connected") : status === "starting" ? label("starting") : label("offline")}
-          </span>
-        </div>
-        {status === "error" && onRetry ? (
+      <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+        <div className="flex items-center gap-1.5">
           <button
             type="button"
-            onClick={onRetry}
-            className="inline-flex shrink-0 items-center gap-1 rounded-full border border-[var(--line)] px-2 py-1 text-[11px] text-[var(--text)]"
+            onClick={onToggleSessions}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-[var(--line)] text-[var(--text)]"
+            aria-expanded={sessionsOpen}
+            aria-label={sessionsOpen ? label("collapseSessions") : label("expandSessions")}
+            title={sessionsOpen ? label("collapseSessions") : label("expandSessions")}
           >
-            <RotateCw size={12} />
-            {label("retry")}
+            <ToggleIcon size={14} />
           </button>
-        ) : null}
-        <div className="min-w-0 flex-1 truncate text-[14px] font-medium tracking-tight">
+          <button
+            type="button"
+            onClick={() => onLocale(locale === "en" ? "zh" : "en")}
+            className="flex h-7 min-w-7 shrink-0 items-center justify-center rounded-md border border-[var(--line)] px-1 text-[11px] font-medium text-[var(--text)]"
+            aria-label={label("switchLanguage")}
+            title={label("switchLanguage")}
+          >
+            {locale === "en" ? "中" : "EN"}
+          </button>
+        </div>
+        <div className="max-w-[46vw] truncate text-center text-[14px] font-medium tracking-tight">
           {sessionTitle || label("untitled")}
         </div>
-        <div className="flex shrink-0 overflow-hidden rounded-full border border-[var(--line)] text-[11px]">
-          <button
-            type="button"
-            onClick={() => onLocale("en")}
-            className={`px-2 py-1 ${locale === "en" ? "bg-[var(--brass)] text-[#1a140b]" : "text-[var(--muted)]"}`}
+        <div className="flex items-center justify-end gap-1.5">
+          <div
+            className="flex items-center gap-1.5 rounded-full border border-[var(--line)] px-2 py-1 text-[11px]"
+            title={error}
           >
-            {label("langEn")}
-          </button>
-          <button
-            type="button"
-            onClick={() => onLocale("zh")}
-            className={`px-2 py-1 ${locale === "zh" ? "bg-[var(--brass)] text-[#1a140b]" : "text-[var(--muted)]"}`}
-          >
-            {label("langZh")}
-          </button>
+            {status === "ready" ? (
+              <PlugZap size={13} className="text-[var(--ok)]" />
+            ) : (
+              <Unplug size={13} className={status === "error" ? "text-[var(--bad)]" : "text-[var(--warn)]"} />
+            )}
+            <span className="text-[var(--muted)]">
+              {status === "ready" ? label("connected") : status === "starting" ? label("starting") : label("offline")}
+            </span>
+          </div>
+          {status === "error" && onRetry ? (
+            <button
+              type="button"
+              onClick={onRetry}
+              className="inline-flex items-center gap-1 rounded-full border border-[var(--line)] px-2 py-1 text-[11px] text-[var(--text)]"
+            >
+              <RotateCw size={12} />
+              {label("retry")}
+            </button>
+          ) : null}
         </div>
       </div>
 

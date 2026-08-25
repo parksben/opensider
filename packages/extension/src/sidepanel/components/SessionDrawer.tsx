@@ -1,4 +1,4 @@
-import { GitFork, Plus, RotateCcw } from "lucide-react";
+import { GitFork, Plus } from "lucide-react";
 import type { Locale, MessageKey } from "../i18n";
 import { t } from "../i18n";
 import type { Session } from "../persist";
@@ -10,7 +10,6 @@ export function SessionDrawer({
   locked,
   onSelect,
   onNew,
-  onRestore,
 }: {
   locale: Locale;
   sessions: Session[];
@@ -18,9 +17,7 @@ export function SessionDrawer({
   locked: boolean;
   onSelect: (id: string) => void;
   onNew: () => void;
-  onRestore: (checkpointId: string) => void;
 }) {
-  const selected = sessions.find((session) => session.id === selectedId);
   const label = (key: MessageKey) => t(locale, key);
 
   return (
@@ -72,29 +69,6 @@ export function SessionDrawer({
           );
         })}
       </ul>
-      <div className="border-t border-[var(--line)] px-2.5 py-2">
-        <div className="text-[11px] tracking-wide text-[var(--muted)]">{label("checkpoints")}</div>
-        {selected && selected.checkpoints.length > 0 ? (
-          <ul className="mt-1 space-y-1">
-            {selected.checkpoints.map((checkpoint) => (
-              <li key={checkpoint.id} className="flex items-center justify-between gap-2">
-                <span className="truncate text-[12px]">{checkpoint.title}</span>
-                <button
-                  type="button"
-                  disabled={locked}
-                  onClick={() => onRestore(checkpoint.id)}
-                  className="inline-flex items-center gap-1 rounded-md border border-[var(--line)] px-1.5 py-0.5 text-[11px] disabled:opacity-40"
-                >
-                  <RotateCcw size={10} />
-                  {label("restore")}
-                </button>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="mt-1 text-[11.5px] text-[var(--muted)]">{label("emptyCheckpoints")}</p>
-        )}
-      </div>
     </aside>
   );
 }

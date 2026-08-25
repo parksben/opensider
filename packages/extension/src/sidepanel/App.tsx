@@ -321,30 +321,6 @@ export function App() {
     boundRef.current = true;
   };
 
-  const saveCheckpoint = (messageId: string) => {
-    const source = sessionsRef.current.find((item) => item.id === selectedIdRef.current);
-    if (!source) return;
-    const message = source.messages.find((item) => item.id === messageId);
-    if (!message) return;
-    if (source.checkpoints.some((item) => item.messageId === messageId)) return;
-    const title = titleFromMessages([message]) || t(locale, "checkpointNamed");
-    patchSession(source.id, (session) => ({
-      ...session,
-      checkpoints: [
-        ...session.checkpoints,
-        { id: crypto.randomUUID(), messageId, title, createdAt: new Date().toISOString() },
-      ],
-    }));
-    setSessionsOpen(true);
-  };
-
-  const restoreCheckpoint = (checkpointId: string) => {
-    const source = sessionsRef.current.find((item) => item.id === selectedIdRef.current);
-    const checkpoint = source?.checkpoints.find((item) => item.id === checkpointId);
-    if (!checkpoint) return;
-    forkFromMessage(checkpoint.messageId);
-  };
-
   if (!hydrated || !selected) {
     return <div className="h-full bg-[var(--ink)]" />;
   }
@@ -378,7 +354,6 @@ export function App() {
             locked={isRunning}
             onSelect={switchSession}
             onNew={newSession}
-            onRestore={restoreCheckpoint}
           />
         ) : null}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -386,13 +361,11 @@ export function App() {
             <ChatPane
               locale={locale}
               messages={selected.messages}
-              checkpoints={selected.checkpoints}
               isRunning={isRunning}
               disabled={status !== "ready"}
               onSend={onSend}
               onCancel={onCancel}
               onFork={forkFromMessage}
-              onCheckpoint={saveCheckpoint}
             />
           </div>
           <PermissionBar

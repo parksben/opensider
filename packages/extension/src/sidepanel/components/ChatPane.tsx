@@ -1,9 +1,8 @@
-import { ArrowUp, Bookmark, GitFork, LoaderCircle, Square } from "lucide-react";
+import { ArrowUp, GitFork, LoaderCircle, Square } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import type { ChatMessage, ChatPart } from "../chat-types";
 import type { Locale } from "../i18n";
 import { t } from "../i18n";
-import type { Checkpoint } from "../persist";
 import { textOf } from "../persist";
 import { Markdown } from "./Markdown";
 import { ToolCard } from "./ToolCard";
@@ -11,27 +10,22 @@ import { ToolCard } from "./ToolCard";
 export function ChatPane({
   locale,
   messages,
-  checkpoints,
   isRunning,
   disabled,
   onSend,
   onCancel,
   onFork,
-  onCheckpoint,
 }: {
   locale: Locale;
   messages: ChatMessage[];
-  checkpoints: Checkpoint[];
   isRunning: boolean;
   disabled: boolean;
   onSend: (text: string) => void;
   onCancel: () => void;
   onFork: (messageId: string) => void;
-  onCheckpoint: (messageId: string) => void;
 }) {
   const [draft, setDraft] = useState("");
   const label = (key: Parameters<typeof t>[1]) => t(locale, key);
-  const marked = new Set(checkpoints.map((item) => item.messageId));
 
   const submit = () => {
     const text = draft.trim();
@@ -57,10 +51,8 @@ export function ChatPane({
               <MessageFrame
                 key={message.id}
                 locale={locale}
-                marked={marked.has(message.id)}
                 locked={isRunning}
                 onFork={() => onFork(message.id)}
-                onCheckpoint={() => onCheckpoint(message.id)}
               >
                 <div className="ml-6 rounded-2xl rounded-br-sm bg-[var(--user)] px-3 py-2 text-[13.5px] leading-relaxed">
                   {textOf(message.content)}
@@ -70,10 +62,8 @@ export function ChatPane({
               <MessageFrame
                 key={message.id}
                 locale={locale}
-                marked={marked.has(message.id)}
                 locked={isRunning}
                 onFork={() => onFork(message.id)}
-                onCheckpoint={() => onCheckpoint(message.id)}
               >
                 <AssistantMessage locale={locale} content={message.content} />
               </MessageFrame>
@@ -130,24 +120,19 @@ export function ChatPane({
 
 function MessageFrame({
   locale,
-  marked,
   locked,
   onFork,
-  onCheckpoint,
   children,
 }: {
   locale: Locale;
-  marked: boolean;
   locked: boolean;
   onFork: () => void;
-  onCheckpoint: () => void;
   children: ReactNode;
 }) {
   return (
     <div className="group relative">
       {children}
       <div className="mt-1 flex justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-        {marked ? <Bookmark size={12} className="text-[var(--brass)]" /> : null}
         <button
           type="button"
           disabled={locked}
@@ -157,16 +142,6 @@ function MessageFrame({
           title={t(locale, "fork")}
         >
           <GitFork size={12} />
-        </button>
-        <button
-          type="button"
-          disabled={locked}
-          onClick={onCheckpoint}
-          className="rounded border border-[var(--line)] p-1 text-[var(--muted)] hover:text-[var(--text)] disabled:opacity-40"
-          aria-label={t(locale, "checkpoint")}
-          title={t(locale, "checkpoint")}
-        >
-          <Bookmark size={12} />
         </button>
       </div>
     </div>

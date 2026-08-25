@@ -3,13 +3,6 @@ import type { Locale } from "./i18n";
 
 export const STATE_KEY = "cursor-sidebar/state";
 
-export type Checkpoint = {
-  id: string;
-  messageId: string;
-  title: string;
-  createdAt: string;
-};
-
 export type StoredMessage = {
   id: string;
   role: "user" | "assistant";
@@ -28,7 +21,6 @@ export type Session = {
   pendingForkContext?: string;
   messages: ChatMessage[];
   todos: TodoItem[];
-  checkpoints: Checkpoint[];
 };
 
 export type PersistedState = {
@@ -74,7 +66,6 @@ export function hydrateSession(session: PersistedState["sessions"][number]): Ses
       createdAt: new Date(message.createdAt),
     })),
     todos: session.todos ?? [],
-    checkpoints: session.checkpoints ?? [],
   };
 }
 
@@ -87,7 +78,6 @@ export function emptySession(partial?: Partial<Session>): Session {
     updatedAt: now,
     messages: [],
     todos: [],
-    checkpoints: [],
     ...partial,
   };
 }
