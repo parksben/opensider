@@ -36,15 +36,29 @@ function broadcast(msg: HostToExt): void {
   }
 }
 
-function connectNative(): void {
+function nativeError(detail: string): string {
+  return `${detail} Extension id: ${chrome.runtime.id}. Host: ${HOST_NAME}.`;
+}
+
+function connectNative(force = false): void {
+  if (nativePort && force) {
+    ignoreNextDisconnect = true;
+    try {
+      nativePort.disconnect();
+    } catch {
+      ignoreNextDisconnect = false;
+    }
+    nativePort = null;
+  }
   if (nativePort) return;
   try {
     nativePort = chrome.runtime.connectNative(HOST_NAME);
   } catch (error) {
+    nativePort = null;
     broadcast({
       type: "status",
       state: "error",
-      error: `Native host is not installed. ${String(error)}`,
+      error: nativeError(`Native host is not installed. ${String(error)}`),
     });
     return;
   }
@@ -65,10 +79,19 @@ function connectNative(): void {
     const error =
       chrome.runtime.lastError?.message ??
       "Native host disconnected. Run `pnpm install-host`, then reload this extension.";
-    broadcast({ type: "status", state: "error", error });
+    broadcast({ type: "status", state: "error", error: nativeError(error) });
   });
 
-  nativePort.postMessage({ type: "hello" } satisfies ExtToHost);
+  try {
+    nativePort.postMessage({ type: "hello" } satisfies ExtToHost);
+  } catch (error) {
+    nativePort = null;
+    broadcast({
+      type: "status",
+      state: "error",
+      error: nativeError(`Could not talk to the native host. ${String(error)}`),
+    });
+  }
 }
 
 function sendNative(msg: ExtToHost): void {
@@ -246,19 +269,10 @@ chrome.runtime.onConnect.addListener((port) => {
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg?.type === "reconnect") {
-    if (nativePort) {
-      ignoreNextDisconnect = true;
-      try {
-        nativePort.disconnect();
-      } catch {
-        ignoreNextDisconnect = false;
-      }
-    }
-    nativePort = null;
     lastStatus = { type: "status", state: "starting" };
     lastSession = undefined;
     broadcast(lastStatus);
-    connectNative();
+    connectNative(true);
     sendResponse({ ok: true });
     return true;
   }
@@ -266,6 +280,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 });
 
 void chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+connectNative();
 
 chrome.tabs.onActivated.addListener((info) => {
   void requestPage(info.tabId);

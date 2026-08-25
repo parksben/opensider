@@ -27,7 +27,7 @@ pnpm install-host
 3. 「加载已解压的扩展程序」，选 `packages/extension/dist`
 4. 点工具栏图标打开侧栏
 
-`pnpm install-host` 会把 Native Messaging 清单写到：
+`pnpm install-host` 会把 Native Messaging 清单写到 Chrome / Chrome Beta / Chrome Canary / Chromium 的 `NativeMessagingHosts` 目录，主路径是：
 
 `~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.cursor.sidebar.host.json`
 

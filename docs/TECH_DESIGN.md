@@ -46,11 +46,15 @@ Cursor Agent 在 ACP 模式下仍然自己执行本地工具（读文件、写�
 - 工具卡片 / markdown 仍复用现有展示组件
 - 发出用户输入、取消、权限决定、提问/计划回答、新建 / 切换 / fork 会话
 - 展示当前页、进行中的页面命令、连接状态、todo、权限条
-- 离线发送会立刻报错；Service Worker 断开时显示原因并允许重试
+- 离线发送会立刻报错；Service Worker 断开时显示原因（含扩展 ID / `lastError`）并允许重试
+- 侧栏端口做成引用计数单例，StrictMode 连断连时延迟拆除，避免往已断开的 `Port` 上 `postMessage`
+- 不再挂载 assistant-ui runtime；旧的 `ExternalStoreThreadRuntimeCore` 会在端口断开后抛错，把扩展标红
 
 ### Service Worker
 
-- `chrome.runtime.connectNative` 连接 Host
+- Service Worker 一启动就 `connectNative`，不依赖侧栏先连上
+- `chrome.runtime.connectNative` 连接 Host；重试时强制拆掉旧端口再连，避免僵尸 `nativePort` 让 `if (nativePort) return` 直接跳过
+- 往 Native / 侧栏端口发消息一律 try/catch，断开时清掉引用并写出 `chrome.runtime.lastError`
 - 缓存最近一次 `status` / `session` / `page`，侧栏 `onConnect` 时立即回放，避免 Host 已 ready 但面板因 React StrictMode 重挂而一直显示离线
 - 在 Side Panel、Content Script、Host 之间转发消息
 - 监听 `tabs.onActivated` / `tabs.onUpdated`，通知内容脚本刷新当前页
@@ -275,6 +279,8 @@ pnpm workspace。扩展用 Vite + `@crxjs/vite-plugin` 打包。
 | 内容脚本无法注入 | `current.json` 只写 url/title，命令返回明确错误 |
 | Chrome 杀 Service Worker | 重连 Native Host；ACP 子进程随 Host 退出，重连后 load/new |
 | 侧栏晚于 Host ready 才连上 | SW 回放最近状态 |
+| React StrictMode 拆掉端口后再 postMessage | 端口单例 + 延迟拆除 + try/catch |
+| 重试无效 | 强制重连 Native Host；`connect` 唤醒 SW，失败原因写到顶栏 |
 | 发消息无反馈 | 输入和 isRunning 由 App state 驱动，不走 useAuiState |
 | 命令文件误触发 | 只认 `browser/commands/*.json` 且含 `id`+白名单 `method` |
 | 受控输入收不到赋值 | fill/type 用原生 value setter + input/change |

@@ -7,7 +7,6 @@
     "build": "vite build"
   },
   "dependencies": {
-    "@assistant-ui/react": "^0.15.16",
     "@cursor-sidebar/shared": "workspace:*",
     "lucide-react": "^0.542.0",
     "react": "^19.1.1",

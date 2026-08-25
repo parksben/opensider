@@ -1,11 +1,15 @@
 #!/bin/bash
-set -euo pipefail
 
 export HOME="${HOME:-$HOME}"
-export PATH="${HOME}/.local/bin:/opt/homebrew/bin:/usr/local/bin:${PATH:-}"
+export PATH="/bin:/usr/bin:${HOME}/.local/bin:/opt/homebrew/bin:/usr/local/bin:${PATH:-}"
 
-mkdir -p "${HOME}/.cursor-sidebar"
-echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) launch pid=$$" >> "${HOME}/.cursor-sidebar/host.log"
+mkdir -p "${HOME}/.cursor-sidebar" /tmp
+{
+  echo "$(/bin/date -u +%Y-%m-%dT%H:%M:%SZ) launch pid=$$"
+} >> "${HOME}/.cursor-sidebar/host.log" 2>/dev/null || true
+{
+  echo "$(/bin/date -u +%Y-%m-%dT%H:%M:%SZ) launch pid=$$"
+} >> /tmp/cursor-sidebar-host.log 2>/dev/null || true
 
 HOST_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$HOST_DIR"

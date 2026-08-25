@@ -111,6 +111,9 @@ export function Header({
       {error && status !== "ready" ? (
         <div className="mt-2 space-y-2">
           <p className="text-[11.5px] leading-relaxed text-[var(--bad)]">{error}</p>
+          <p className="text-[10.5px] text-[var(--muted)]">
+            {label("extensionId")}: {chrome.runtime.id}
+          </p>
           {status === "error" && onRetry ? (
             <button
               type="button"
