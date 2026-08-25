@@ -119,11 +119,12 @@ export function applyAcpUpdate(messages: ChatMessage[], update: Record<string, u
   return messages;
 }
 
-export function createUserMessage(text: string): ChatMessage {
+export function createUserMessage(text: string, attachments?: ChatMessage["attachments"]): ChatMessage {
   return {
     id: id(),
     role: "user",
     content: [{ type: "text", text }],
     createdAt: new Date(),
+    attachments: attachments && attachments.length > 0 ? attachments : undefined,
   };
 }

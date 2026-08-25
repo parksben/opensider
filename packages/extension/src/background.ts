@@ -7,12 +7,14 @@ const sidebars = new Set<chrome.runtime.Port>();
 let lastStatus: HostToExt = { type: "status", state: "starting" };
 let lastPage: HostToExt | undefined;
 let lastSession: HostToExt | undefined;
+let lastModels: HostToExt | undefined;
 let ignoreNextDisconnect = false;
 
 function remember(msg: HostToExt): void {
   if (msg.type === "status") lastStatus = msg;
   if (msg.type === "page") lastPage = msg;
   if (msg.type === "session") lastSession = msg;
+  if (msg.type === "models") lastModels = msg;
 }
 
 function replay(port: chrome.runtime.Port): void {
@@ -20,6 +22,7 @@ function replay(port: chrome.runtime.Port): void {
     port.postMessage(lastStatus);
     if (lastSession) port.postMessage(lastSession);
     if (lastPage) port.postMessage(lastPage);
+    if (lastModels) port.postMessage(lastModels);
   } catch {
     sidebars.delete(port);
   }

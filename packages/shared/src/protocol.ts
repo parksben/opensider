@@ -176,6 +176,19 @@ export type PermissionOption = {
   kind?: string;
 };
 
+export type AttachmentKind = "image" | "file" | "folder";
+
+export type AttachmentItem = {
+  path: string;
+  name: string;
+  kind: AttachmentKind;
+};
+
+export type AgentModel = {
+  id: string;
+  name: string;
+};
+
 export type ExtToHost =
   | { type: "hello" }
   | { type: "prompt"; text: string; sessionId?: string; currentPage?: { title: string; url: string } }
@@ -183,6 +196,8 @@ export type ExtToHost =
   | { type: "session.new" }
   | { type: "session.use"; sessionId: string }
   | { type: "session.fork"; sessionId: string }
+  | { type: "fs.pick"; requestId: string }
+  | { type: "model.set"; modelId: string; sessionId?: string }
   | { type: "page.update"; page: CurrentPage }
   | { type: "browser.result"; result: BrowserResult }
   | {
@@ -202,4 +217,12 @@ export type HostToExt =
   | { type: "turn.end"; stopReason: string }
   | { type: "page"; page: CurrentPage }
   | { type: "browser.command"; command: BrowserCommand }
-  | { type: "browser.result"; result: BrowserResult };
+  | { type: "browser.result"; result: BrowserResult }
+  | {
+      type: "fs.picked";
+      requestId: string;
+      items: AttachmentItem[];
+      cancelled?: boolean;
+      error?: string;
+    }
+  | { type: "models"; models: AgentModel[]; currentId: string };

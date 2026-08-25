@@ -1,3 +1,7 @@
+import type { AttachmentItem } from "@shared";
+
+export type { AttachmentItem };
+
 export type ToolStatus = "pending" | "in_progress" | "completed" | "failed";
 
 export type TextPart = { type: "text"; text: string };
@@ -19,6 +23,7 @@ export type ChatMessage = {
   role: "user" | "assistant";
   content: ChatPart[];
   createdAt: Date;
+  attachments?: AttachmentItem[];
 };
 
 export type PermissionRequest = {

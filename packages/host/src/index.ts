@@ -1,8 +1,16 @@
 import type { ExtToHost, HostToExt } from "../../shared/src/protocol.ts";
-import { AcpClient } from "./acp.ts";
+import { AcpClient, type SessionOpen } from "./acp.ts";
 import { log } from "./log.ts";
+import {
+  catalogFromConfigOptions,
+  listAgentModels,
+  mergeCatalog,
+  type ConfigOption,
+  type ModelCatalog,
+} from "./models.ts";
 import { createNativeIo } from "./native.ts";
 import { defaultAgentPath } from "./paths.ts";
+import { pickLocalPaths } from "./pick.ts";
 import { watchCommands, writeCommandResult } from "./watch.ts";
 import { ensureWorkspace, readSessionId, WORKSPACE_DIR, writeCurrentPage, writeSessionId } from "./workspace.ts";
 
@@ -11,6 +19,12 @@ ensureWorkspace();
 const agentPath = defaultAgentPath();
 let client: AcpClient | undefined;
 let promptInFlight = false;
+let catalog: ModelCatalog = {
+  models: [{ id: "auto", name: "Auto" }],
+  currentId: "auto",
+  modelConfigId: "model",
+};
+let pendingModelId: string | undefined;
 
 const native = createNativeIo((raw) => {
   const msg = raw as ExtToHost;
@@ -19,6 +33,57 @@ const native = createNativeIo((raw) => {
 
 function send(msg: HostToExt): void {
   native.send(msg);
+}
+
+function sendModels(): void {
+  send({ type: "models", models: catalog.models, currentId: catalog.currentId });
+}
+
+async function refreshModels(): Promise<void> {
+  try {
+    catalog = mergeCatalog(catalog, await listAgentModels(agentPath));
+  } catch (error) {
+    log(`list models failed: ${String(error)}`);
+  }
+}
+
+function absorbSessionOptions(opened: SessionOpen): void {
+  const options = opened.configOptions as ConfigOption[] | undefined;
+  catalog = mergeCatalog(catalog, catalogFromConfigOptions(options));
+}
+
+async function openAndAnnounce(open: () => Promise<SessionOpen>): Promise<void> {
+  const opened = await open();
+  writeSessionId(opened.sessionId);
+  absorbSessionOptions(opened);
+  await applyPendingModel();
+  send({
+    type: "session",
+    sessionId: opened.sessionId,
+    replay: opened.replay,
+    created: opened.created,
+    forked: opened.forked,
+  });
+  sendModels();
+}
+
+async function applyPendingModel(): Promise<void> {
+  if (!pendingModelId || !client?.getSessionId()) return;
+  try {
+    await applyModel(pendingModelId);
+  } catch (error) {
+    log(`apply model skipped: ${String(error)}`);
+  }
+}
+
+async function applyModel(modelId: string): Promise<void> {
+  if (!client) throw new Error("agent is not ready");
+  const result = await client.setModel(modelId, catalog.modelConfigId);
+  const options = (result as { configOptions?: ConfigOption[] } | undefined)?.configOptions;
+  catalog = mergeCatalog(catalog, {
+    ...catalogFromConfigOptions(options),
+    currentId: modelId,
+  });
 }
 
 async function handleExt(msg: ExtToHost): Promise<void> {
@@ -39,43 +104,50 @@ async function handleExt(msg: ExtToHost): Promise<void> {
     if (msg.type === "session.new") {
       if (!client) throw new Error("agent is not ready");
       if (promptInFlight) throw new Error("a turn is already running");
-      const opened = await client.createSession();
-      writeSessionId(opened.sessionId);
-      send({
-        type: "session",
-        sessionId: opened.sessionId,
-        replay: opened.replay,
-        created: opened.created,
-        forked: opened.forked,
-      });
+      await openAndAnnounce(() => client!.createSession());
       return;
     }
     if (msg.type === "session.use") {
       if (!client) throw new Error("agent is not ready");
       if (promptInFlight) throw new Error("a turn is already running");
-      const opened = await client.useSession(msg.sessionId);
-      writeSessionId(opened.sessionId);
-      send({
-        type: "session",
-        sessionId: opened.sessionId,
-        replay: opened.replay,
-        created: opened.created,
-        forked: opened.forked,
-      });
+      await openAndAnnounce(() => client!.useSession(msg.sessionId));
       return;
     }
     if (msg.type === "session.fork") {
       if (!client) throw new Error("agent is not ready");
       if (promptInFlight) throw new Error("a turn is already running");
-      const opened = await client.forkSession(msg.sessionId);
-      writeSessionId(opened.sessionId);
-      send({
-        type: "session",
-        sessionId: opened.sessionId,
-        replay: opened.replay,
-        created: opened.created,
-        forked: opened.forked,
-      });
+      await openAndAnnounce(() => client!.forkSession(msg.sessionId));
+      return;
+    }
+    if (msg.type === "fs.pick") {
+      try {
+        const picked = await pickLocalPaths();
+        send({
+          type: "fs.picked",
+          requestId: msg.requestId,
+          items: picked.items,
+          cancelled: picked.cancelled,
+        });
+      } catch (error) {
+        send({
+          type: "fs.picked",
+          requestId: msg.requestId,
+          items: [],
+          error: String(error),
+        });
+      }
+      return;
+    }
+    if (msg.type === "model.set") {
+      pendingModelId = msg.modelId;
+      catalog = { ...catalog, currentId: msg.modelId };
+      if (!client?.getSessionId()) {
+        sendModels();
+        return;
+      }
+      if (msg.sessionId) await client.useSession(msg.sessionId);
+      await applyModel(msg.modelId);
+      sendModels();
       return;
     }
     if (msg.type === "prompt") {
@@ -130,14 +202,23 @@ async function main(): Promise<void> {
   send({ type: "status", state: "starting" });
   try {
     client = new AcpClient(agentPath, WORKSPACE_DIR, {
-      onUpdate: (update) => send({ type: "update", update }),
+      onUpdate: (update) => {
+        if (update.sessionUpdate === "config_option_update") {
+          catalog = mergeCatalog(catalog, catalogFromConfigOptions(update.configOptions as ConfigOption[]));
+          sendModels();
+        }
+        send({ type: "update", update });
+      },
       onPermission: (id, params) => send({ type: "permission", id, params }),
       onCursor: (id, method, params) => send({ type: "cursor", id, method, params }),
     });
     client.start();
+    await refreshModels();
     await client.initialize();
     const opened = await client.openSession(readSessionId());
     writeSessionId(opened.sessionId);
+    absorbSessionOptions(opened);
+    await applyPendingModel();
     send({
       type: "session",
       sessionId: opened.sessionId,
@@ -145,6 +226,7 @@ async function main(): Promise<void> {
       created: opened.created,
       forked: opened.forked,
     });
+    sendModels();
     send({ type: "status", state: "ready" });
     log(`ready session=${opened.sessionId} replay=${opened.replay}`);
   } catch (error) {

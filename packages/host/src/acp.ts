@@ -9,6 +9,14 @@ type Pending = {
   reject: (error: Error) => void;
 };
 
+export type SessionOpen = {
+  sessionId: string;
+  replay: boolean;
+  created: boolean;
+  forked: boolean;
+  configOptions?: unknown;
+};
+
 export type AcpHandlers = {
   onUpdate: (update: Record<string, unknown>) => void;
   onPermission: (id: number, params: Record<string, unknown>) => void;
@@ -82,23 +90,31 @@ export class AcpClient {
       clientCapabilities: {
         fs: { readTextFile: false, writeTextFile: false },
         terminal: false,
+        session: { configOptions: { boolean: {} } },
+        _meta: { parameterizedModelPicker: true },
       },
       clientInfo: { name: "cursor-sidebar", version: "0.1.0" },
     });
     await this.request("authenticate", { methodId: "cursor_login" });
   }
 
-  async createSession(): Promise<{ sessionId: string; replay: boolean; created: boolean; forked: boolean }> {
+  async createSession(): Promise<SessionOpen> {
     const result = (await this.request("session/new", {
       cwd: this.cwd,
       mcpServers: [],
-    })) as { sessionId: string };
+    })) as { sessionId: string; configOptions?: unknown };
     this.sessionId = result.sessionId;
     await this.trySetAgentMode(result.sessionId);
-    return { sessionId: result.sessionId, replay: false, created: true, forked: false };
+    return {
+      sessionId: result.sessionId,
+      replay: false,
+      created: true,
+      forked: false,
+      configOptions: result.configOptions,
+    };
   }
 
-  async openSession(existingId?: string): Promise<{ sessionId: string; replay: boolean; created: boolean; forked: boolean }> {
+  async openSession(existingId?: string): Promise<SessionOpen> {
     if (existingId) {
       const loaded = await this.useSession(existingId);
       if (!loaded.created) return loaded;
@@ -106,38 +122,67 @@ export class AcpClient {
     return this.createSession();
   }
 
-  async useSession(existingId: string): Promise<{ sessionId: string; replay: boolean; created: boolean; forked: boolean }> {
+  async useSession(existingId: string): Promise<SessionOpen> {
     if (this.sessionId === existingId) {
       return { sessionId: existingId, replay: true, created: false, forked: false };
     }
     try {
-      await this.request("session/load", {
+      const result = (await this.request("session/load", {
         sessionId: existingId,
         cwd: this.cwd,
         mcpServers: [],
-      });
+      })) as { sessionId?: string; configOptions?: unknown };
       this.sessionId = existingId;
       await this.trySetAgentMode(existingId);
-      return { sessionId: existingId, replay: true, created: false, forked: false };
+      return {
+        sessionId: existingId,
+        replay: true,
+        created: false,
+        forked: false,
+        configOptions: result.configOptions,
+      };
     } catch (error) {
       log(`session/load failed, creating new: ${String(error)}`);
       return this.createSession();
     }
   }
 
-  async forkSession(existingId: string): Promise<{ sessionId: string; replay: boolean; created: boolean; forked: boolean }> {
+  async forkSession(existingId: string): Promise<SessionOpen> {
     try {
       const result = (await this.request("session/fork", {
         sessionId: existingId,
         cwd: this.cwd,
         mcpServers: [],
-      })) as { sessionId: string };
+      })) as { sessionId: string; configOptions?: unknown };
       this.sessionId = result.sessionId;
       await this.trySetAgentMode(result.sessionId);
-      return { sessionId: result.sessionId, replay: false, created: true, forked: true };
+      return {
+        sessionId: result.sessionId,
+        replay: false,
+        created: true,
+        forked: true,
+        configOptions: result.configOptions,
+      };
     } catch (error) {
       log(`session/fork failed, creating new: ${String(error)}`);
       return this.createSession();
+    }
+  }
+
+  async setModel(modelId: string, configId = "model"): Promise<unknown> {
+    if (!this.sessionId) throw new Error("no session");
+    try {
+      return await this.request("session/set_config_option", {
+        sessionId: this.sessionId,
+        configId,
+        value: modelId,
+      });
+    } catch (error) {
+      log(`session/set_config_option failed, trying session/set_model: ${String(error)}`);
+      return this.request("session/set_model", {
+        sessionId: this.sessionId,
+        modelId,
+      });
     }
   }
 

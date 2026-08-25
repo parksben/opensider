@@ -1,4 +1,12 @@
-import type { BrowserCommand, BrowserResult, CurrentPage, ExtToHost, HostToExt } from "@shared";
+import type {
+  AgentModel,
+  AttachmentItem,
+  BrowserCommand,
+  BrowserResult,
+  CurrentPage,
+  ExtToHost,
+  HostToExt,
+} from "@shared";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { applyAcpUpdate, createUserMessage } from "./acp-messages";
 import { connectSidebar } from "./bridge";
@@ -15,6 +23,7 @@ import {
   loadState,
   saveState,
   titleFromMessages,
+  wrapAttachments,
   wrapForkContext,
   type Session,
 } from "./persist";
@@ -24,6 +33,8 @@ export function App() {
   const [locale, setLocale] = useState<Locale>("en");
   const [sessions, setSessions] = useState<Session[]>([]);
   const [selectedId, setSelectedId] = useState("");
+  const [models, setModels] = useState<AgentModel[]>([{ id: "auto", name: "Auto" }]);
+  const [selectedModelId, setSelectedModelId] = useState("auto");
   const [sessionsOpen, setSessionsOpen] = useState(false);
   const [status, setStatus] = useState<"starting" | "ready" | "error">("starting");
   const [error, setError] = useState<string>();
@@ -43,11 +54,15 @@ export function App() {
   const pendingBind = useRef<{ localId: string; kind: "new" | "use" | "fork" } | null>(null);
   const boundRef = useRef(false);
   const localeRef = useRef(locale);
+  const selectedModelRef = useRef(selectedModelId);
+  const pickWaiters = useRef(new Map<string, (items: AttachmentItem[]) => void>());
+  const appliedModelRef = useRef("");
   pageRef.current = page;
   statusRef.current = status;
   selectedIdRef.current = selectedId;
   sessionsRef.current = sessions;
   localeRef.current = locale;
+  selectedModelRef.current = selectedModelId;
 
   const tryBindCurrent = () => {
     if (statusRef.current !== "ready") return;
@@ -96,6 +111,7 @@ export function App() {
       setStatus(msg.state);
       setError(msg.error);
       if (msg.state === "error") setIsRunning(false);
+      if (msg.state !== "ready") appliedModelRef.current = "";
       if (msg.state === "ready") tryBindCurrent();
       return;
     }
@@ -119,6 +135,25 @@ export function App() {
     }
     if (msg.type === "page") {
       setPage(msg.page);
+      return;
+    }
+    if (msg.type === "models") {
+      setModels(msg.models.length > 0 ? msg.models : [{ id: "auto", name: "Auto" }]);
+      const desired = selectedModelRef.current;
+      const known = msg.models.some((model) => model.id === desired);
+      if (desired && known && desired !== msg.currentId && desired !== appliedModelRef.current) {
+        appliedModelRef.current = desired;
+        sendRef.current({ type: "model.set", modelId: desired });
+      } else if (!desired || !known) {
+        setSelectedModelId(msg.currentId || "auto");
+      }
+      return;
+    }
+    if (msg.type === "fs.picked") {
+      const waiter = pickWaiters.current.get(msg.requestId);
+      pickWaiters.current.delete(msg.requestId);
+      if (msg.error) setError(msg.error);
+      waiter?.(msg.items ?? []);
       return;
     }
     if (msg.type === "browser.command") {
@@ -194,6 +229,7 @@ export function App() {
       setLocale(state.locale);
       setSessions(sessions);
       setSelectedId(selectedId);
+      setSelectedModelId(state.selectedModelId);
       setHydrated(true);
     });
   }, []);
@@ -204,8 +240,8 @@ export function App() {
 
   useEffect(() => {
     if (!hydrated) return;
-    void saveState({ locale, selectedId, sessions });
-  }, [hydrated, locale, selectedId, sessions]);
+    void saveState({ locale, selectedId, selectedModelId, sessions });
+  }, [hydrated, locale, selectedId, selectedModelId, sessions]);
 
   useEffect(() => {
     const { send, reconnect, disconnect } = connectSidebar((msg) => handleHostRef.current(msg));
@@ -222,9 +258,9 @@ export function App() {
     if (hydrated) tryBindCurrent();
   }, [hydrated, selectedId]);
 
-  const onSend = (text: string) => {
+  const onSend = (text: string, attachments: AttachmentItem[] = []) => {
     const session = sessionsRef.current.find((item) => item.id === selectedIdRef.current);
-    const user = createUserMessage(text);
+    const user = createUserMessage(text, attachments);
     updateSelectedMessages((current) => [...current, user]);
     if (statusRef.current !== "ready") {
       setError(t(locale, "offlineSend"));
@@ -236,16 +272,37 @@ export function App() {
     if (context) {
       patchSession(session.id, (item) => ({ ...item, pendingForkContext: undefined }));
     }
+    const body = wrapAttachments(text, attachments.map((item) => item.path));
     setIsRunning(true);
     setError(undefined);
     sendRef.current({
       type: "prompt",
-      text: context ? `${wrapForkContext(context)}\n\n${text}` : text,
+      text: context ? `${wrapForkContext(context)}\n\n${body}` : body,
       sessionId: session?.acpSessionId,
       currentPage: pageRef.current
         ? { title: pageRef.current.title, url: pageRef.current.url }
         : undefined,
     });
+  };
+
+  const onPickAttachments = () =>
+    new Promise<AttachmentItem[]>((resolve) => {
+      if (statusRef.current !== "ready") {
+        setError(t(localeRef.current, "pickFailed"));
+        resolve([]);
+        return;
+      }
+      const requestId = crypto.randomUUID();
+      pickWaiters.current.set(requestId, resolve);
+      sendRef.current({ type: "fs.pick", requestId });
+    });
+
+  const onModel = (modelId: string) => {
+    setSelectedModelId(modelId);
+    appliedModelRef.current = modelId;
+    if (statusRef.current === "ready") {
+      sendRef.current({ type: "model.set", modelId });
+    }
   };
 
   const onCancel = () => {
@@ -362,9 +419,13 @@ export function App() {
               locale={locale}
               messages={selected.messages}
               isRunning={isRunning}
+              models={models}
+              modelId={selectedModelId}
               onSend={onSend}
               onCancel={onCancel}
               onFork={forkFromMessage}
+              onPickAttachments={onPickAttachments}
+              onModel={onModel}
             />
           </div>
           <PermissionBar

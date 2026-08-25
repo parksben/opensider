@@ -44,8 +44,8 @@ Cursor Agent 在 ACP 模式下仍然自己执行本地工具（读文件、写�
 - 消息列表、输入框、进行中状态由侧栏自己的 React state 驱动（不依赖 assistant-ui 的 `useAuiState` 选择器，避免和 ExternalStore 不同步：表现为发了消息没动效、也没有停止按钮）
 - 会话列表、当前选中会话、语言也由 App state 驱动，写入 `chrome.storage.local`
 - 工具卡片 / markdown 仍复用现有展示组件
-- 发出用户输入、取消、权限决定、提问/计划回答、新建 / 切换 / fork 会话
-- 展示当前页、进行中的页面命令、连接状态、todo、权限条
+- 发出用户输入（可带本机附件路径）、取消、权限决定、提问/计划回答、新建 / 切换 / fork 会话、选模型
+- 展示当前页、进行中的页面命令、连接状态、todo、权限条、输入栏附件芯片与模型下拉
 - 离线发送会立刻报错；Service Worker 断开时显示原因（含扩展 ID / `lastError`）并允许重试
 - 侧栏端口做成引用计数单例，StrictMode 连断连时延迟拆除，避免往已断开的 `Port` 上 `postMessage`
 - 不再挂载 assistant-ui runtime；旧的 `ExternalStoreThreadRuntimeCore` 会在端口断开后抛错，把扩展标红
@@ -107,8 +107,10 @@ Cursor Agent 在 ACP 模式下仍然自己执行本地工具（读文件、写�
 
 - 解析 Chrome Native Messaging 长度前缀帧（**禁止往 stdout 打日志**）
 - spawn `~/.local/bin/agent acp`（PATH 不足时用绝对路径）
-- 作为 ACP Client：`initialize` → `authenticate(cursor_login)` → 按侧栏指令 `session/load`、`session/new` 或尝试 `session/fork`
-- 把 Side Panel 的 prompt/cancel/permission、会话新建 / 切换 / fork 转成 ACP
+- 作为 ACP Client：`initialize`（声明 `parameterizedModelPicker`）→ `authenticate(cursor_login)` → 按侧栏指令 `session/load`、`session/new` 或尝试 `session/fork`
+- 把 Side Panel 的 prompt/cancel/permission、会话新建 / 切换 / fork、模型切换转成 ACP
+- 用本机系统对话框选出文件/文件夹的绝对路径（Chrome `<input type=file>` 给不出真路径）
+- 用 `agent models` 列出账号可选模型，并结合 `session/new` 的 `configOptions`
 - 把 Agent 的 `session/update`、权限请求、Cursor 扩展方法推给扩展
 - 把页面快照和 `browser/tools.json` 写入工作区；监视 `browser/commands/`，转给扩展，再把结果写回 `browser/results/`（截图另存 `browser/screenshots/`）
 
@@ -177,6 +179,7 @@ Host 在 `session/new` 之前写好 `AGENTS.md` 和 `browser/tools.json`，这�
 chrome.storage.local
   locale: "en" | "zh"          # 默认 en
   selectedId: <local session id>
+  selectedModelId?: string     # 与 agent models 的 id 对齐，默认 auto
   sessions[]:
     id, acpSessionId?, title, createdAt, updatedAt
     parentId?, forkedFromMessageId?
@@ -192,6 +195,8 @@ chrome.storage.local
 | `session.use` + `sessionId` | 已是当前则 noop；否则 `session/load`，失败则 `session/new` |
 | `session.fork` + `sessionId` | 先试不稳定的 `session/fork`（整段历史）；失败则 `session/new` |
 | `prompt` 可带 `sessionId` | 先切到该 ACP 会话再 prompt，避免切换竞态 |
+| `fs.pick` | Host 弹出本机选文件/文件夹对话框，回 `fs.picked`（绝对路径 + kind） |
+| `model.set` | `session/set_config_option`（`category: model`）；失败再试 `session/set_model` |
 
 从某一轮之后 fork：
 
@@ -207,6 +212,29 @@ chrome.storage.local
 
 `packages/extension/src/sidepanel/i18n.ts` 提供 `en` / `zh` 词条。默认 `en`。切换后立刻写 `chrome.storage.local`，并设 `document.documentElement.lang`。连接错误原文（Host / Chrome `lastError`）不翻译。
 
+## 附件（只传路径）
+
+Chrome 的文件选择器不会给出本机绝对路径。加号因此发给 Host `fs.pick`：子进程跑 JXA `NSOpenPanel`（可同时选文件和文件夹、可多选），`fs.stat` 分成 `image` / `file` / `folder`。侧栏芯片只展示 `basename`，`title` 是全路径。
+
+`session/prompt` 在用户正文后追加：
+
+```
+[Attachments]
+Local paths. Read these files or folders if needed.
+- /abs/path/photo.png
+- /abs/path/src
+```
+
+不把文件内容塞进 Native Messaging。用户气泡可带同样的芯片，方便回看。未发送的芯片只活在输入栏 state 里。
+
+## 模型选择
+
+1. Host 启动时跑 `agent models`（与 `agent --list-models` 相同），解析 `id - name` 行，推 `models` 给侧栏。
+2. `initialize` 带 `_meta.parameterizedModelPicker: true`，以便 Cursor ACP 返回 `configOptions`。
+3. `session/new|load|fork` 若带 `category: "model"` 的选项，用其 `currentValue` 和名称覆盖/补全列表。
+4. 用户改模型：`session/set_config_option`（发现的 `configId`，通常是 `model`）；失败则 `session/set_model`。
+5. 侧栏把 `selectedModelId` 写入 `chrome.storage.local`；会话绑定成功后再 `model.set` 一次，避免新会话回到默认。
+
 ## 标签切换
 
 1. SW 收到 `onActivated` / 完整 URL `onUpdated`
@@ -215,6 +243,7 @@ chrome.storage.local
 4. Host 写 `browser/current.json` 和 `browser/snapshot.md`
 5. Side Panel 更新顶栏
 6. 下一条 `session/prompt` 在用户文本前加一行 `[Current tab] {title} — {url}`（UI 不显示这行）
+7. 若有附件，再追加一段 `[Attachments]` 绝对路径列表（UI 气泡里只显示用户正文和芯片，不显示这段包装）
 
 不在切换时往会话里塞一条用户消息，以免污染对话。Agent 需要更多页面内容时，按 `AGENTS.md` 读 snapshot 或写命令文件。
 
@@ -247,7 +276,7 @@ macOS 清单路径：`~/Library/Application Support/Google/Chrome/NativeMessagin
 
 ## UI
 
-- 聊天：`ChatPane` 由当前会话的 `messages` / `isRunning` 驱动；工具卡片 / markdown 仍是现有组件。输入区两行：上方 textarea，下方靠右 Lucide `Send` 小飞机 / 停止（14px，与顶栏 icon 同大；hover 半透明白圆）。纯图标按钮用可见 tooltip，不用只靠浏览器原生 `title`
+- 聊天：`ChatPane` 由当前会话的 `messages` / `isRunning` 驱动；工具卡片 / markdown 仍是现有组件。输入区：可选附件芯片 → textarea → 第二行左 Lucide `Plus`、右模型下拉 + `Send` 小飞机 / 停止（14px，与顶栏 icon 同大；hover 半透明白圆）。纯图标按钮用可见 tooltip，不用只靠浏览器原生 `title`。芯片 `title` 用完整路径。
 - 顶栏：左 `PanelLeft` / `PanelLeftClose` + 语言按钮（英显示「中」、中显示「EN」）；正中会话名；右连接状态与 offline「Retry connection / 重连」
 - 会话列表是主区域左侧栏，里头有新建会话
 - 空会话：消息区垂直居中，Lucide `MessageCircle` 约 120px + 一行淡灰提示，不抢视觉
@@ -288,3 +317,6 @@ pnpm workspace。扩展用 Vite + `@crxjs/vite-plugin` 打包。
 | 导航后内容脚本被卸掉 | 标签级导航走 `chrome.tabs.update`，完成后再抓快照 |
 | 截图超过 Native Messaging 1MB | JPEG + 最长边 1280 + 质量下调；只传 base64，落盘后再给 Agent 路径 |
 | 元素截图像素比不对 | 用 `devicePixelRatio` 把 CSS 盒映射到截图像素 |
+| 扩展选文件没有真路径 | Host 用 macOS `NSOpenPanel`（JXA）多选文件+文件夹，回绝对路径 |
+| ACP 不广告模型列表 | 用 `agent models` 解析账号模型；有 `configOptions` 时合并并用于 set |
+| `session/set_model` 被拒 | 先 `session/set_config_option`；initialize 声明 `parameterizedModelPicker` |

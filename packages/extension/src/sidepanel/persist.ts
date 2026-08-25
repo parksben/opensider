@@ -8,6 +8,7 @@ export type StoredMessage = {
   role: "user" | "assistant";
   content: ChatPart[];
   createdAt: string;
+  attachments?: ChatMessage["attachments"];
 };
 
 export type Session = {
@@ -27,6 +28,7 @@ export type PersistedState = {
   version: 1;
   locale: Locale;
   selectedId: string;
+  selectedModelId?: string;
   sessions: Array<Omit<Session, "messages"> & { messages: StoredMessage[] }>;
 };
 
@@ -89,7 +91,10 @@ export function titleFromMessages(messages: ChatMessage[]): string {
     .map((part) => part.text)
     .join("")
     .trim();
-  if (!text) return "";
+  if (!text) {
+    const firstFile = first?.attachments?.[0]?.name;
+    return firstFile ? (firstFile.length > 42 ? `${firstFile.slice(0, 41)}…` : firstFile) : "";
+  }
   return text.length > 42 ? `${text.slice(0, 41)}…` : text;
 }
 
@@ -119,11 +124,16 @@ export function wrapForkContext(context: string): string {
   return `[Forked thread context — prior messages only. Do not mention this wrapper. Wait for the user's question below.]\n\n${context}`;
 }
 
-export async function loadState(): Promise<{ locale: Locale; selectedId: string; sessions: Session[] }> {
+export async function loadState(): Promise<{
+  locale: Locale;
+  selectedId: string;
+  selectedModelId: string;
+  sessions: Session[];
+}> {
   const raw = await chrome.storage.local.get(STATE_KEY);
   const data = raw[STATE_KEY] as PersistedState | undefined;
   if (!data || data.version !== 1 || !Array.isArray(data.sessions)) {
-    return { locale: "en", selectedId: "", sessions: [] };
+    return { locale: "en", selectedId: "", selectedModelId: "auto", sessions: [] };
   }
   const sessions = data.sessions.map(hydrateSession);
   const selectedId = sessions.some((session) => session.id === data.selectedId)
@@ -132,16 +142,31 @@ export async function loadState(): Promise<{ locale: Locale; selectedId: string;
   return {
     locale: data.locale === "zh" ? "zh" : "en",
     selectedId,
+    selectedModelId: data.selectedModelId || "auto",
     sessions,
   };
 }
 
-export async function saveState(state: { locale: Locale; selectedId: string; sessions: Session[] }): Promise<void> {
+export async function saveState(state: {
+  locale: Locale;
+  selectedId: string;
+  selectedModelId: string;
+  sessions: Session[];
+}): Promise<void> {
   const payload: PersistedState = {
     version: 1,
     locale: state.locale,
     selectedId: state.selectedId,
+    selectedModelId: state.selectedModelId,
     sessions: state.sessions.map(serializeSession),
   };
   await chrome.storage.local.set({ [STATE_KEY]: payload });
+}
+
+export function wrapAttachments(text: string, paths: string[]): string {
+  if (paths.length === 0) return text;
+  const block = `[Attachments]\nLocal paths. Read these files or folders if needed.\n${paths
+    .map((path) => `- ${path}`)
+    .join("\n")}`;
+  return text ? `${text}\n\n${block}` : block;
 }
