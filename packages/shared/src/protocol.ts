@@ -178,8 +178,11 @@ export type PermissionOption = {
 
 export type ExtToHost =
   | { type: "hello" }
-  | { type: "prompt"; text: string; currentPage?: { title: string; url: string } }
+  | { type: "prompt"; text: string; sessionId?: string; currentPage?: { title: string; url: string } }
   | { type: "cancel" }
+  | { type: "session.new" }
+  | { type: "session.use"; sessionId: string }
+  | { type: "session.fork"; sessionId: string }
   | { type: "page.update"; page: CurrentPage }
   | { type: "browser.result"; result: BrowserResult }
   | {
@@ -192,7 +195,7 @@ export type ExtToHost =
 export type HostToExt =
   | { type: "hello"; workspace: string; agentPath: string }
   | { type: "status"; state: "starting" | "ready" | "error"; error?: string }
-  | { type: "session"; sessionId: string; replay?: boolean }
+  | { type: "session"; sessionId: string; replay?: boolean; created?: boolean; forked?: boolean }
   | { type: "update"; update: Record<string, unknown> }
   | { type: "permission"; id: number; params: Record<string, unknown> }
   | { type: "cursor"; id?: number; method: string; params: Record<string, unknown> }

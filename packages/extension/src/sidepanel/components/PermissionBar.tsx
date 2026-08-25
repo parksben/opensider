@@ -1,8 +1,11 @@
 import { ShieldAlert } from "lucide-react";
-import { Markdown } from "./Markdown";
 import type { PermissionRequest, PlanPrompt, QuestionPrompt } from "../chat-types";
+import type { Locale } from "../i18n";
+import { t } from "../i18n";
+import { Markdown } from "./Markdown";
 
 export function PermissionBar({
+  locale,
   permission,
   question,
   plan,
@@ -10,6 +13,7 @@ export function PermissionBar({
   onQuestion,
   onPlan,
 }: {
+  locale: Locale;
   permission?: PermissionRequest;
   question?: QuestionPrompt;
   plan?: PlanPrompt;
@@ -22,7 +26,7 @@ export function PermissionBar({
       <section className="border-t border-[var(--line)] bg-[#1a160e] px-3 py-2.5">
         <div className="mb-2 flex items-center gap-2 text-[12.5px]">
           <ShieldAlert size={14} className="text-[var(--brass)]" />
-          <span>{permission.title || "Agent wants to run a tool"}</span>
+          <span>{permission.title || t(locale, "wantsTool")}</span>
         </div>
         <div className="flex flex-wrap gap-1.5">
           {permission.options.map((option) => (
@@ -41,13 +45,13 @@ export function PermissionBar({
   }
 
   if (question) {
-    return <QuestionForm prompt={question} onSubmit={onQuestion} />;
+    return <QuestionForm locale={locale} prompt={question} onSubmit={onQuestion} />;
   }
 
   if (plan) {
     return (
       <section className="border-t border-[var(--line)] bg-[#1a160e] px-3 py-2.5">
-        <div className="mb-1 font-[Fraunces,serif] text-[15px]">{plan.name || "Plan"}</div>
+        <div className="mb-1 font-[Fraunces,serif] text-[15px]">{plan.name || t(locale, "plan")}</div>
         {plan.overview ? <p className="mb-2 text-[12px] text-[var(--muted)]">{plan.overview}</p> : null}
         <Markdown text={plan.plan} />
         <div className="mt-2 flex gap-1.5">
@@ -56,14 +60,14 @@ export function PermissionBar({
             onClick={() => onPlan(true)}
             className="rounded-md bg-[var(--brass)] px-2.5 py-1 text-[12px] text-[#1a140b]"
           >
-            Accept plan
+            {t(locale, "acceptPlan")}
           </button>
           <button
             type="button"
             onClick={() => onPlan(false)}
             className="rounded-md border border-[var(--line)] px-2.5 py-1 text-[12px]"
           >
-            Reject
+            {t(locale, "reject")}
           </button>
         </div>
       </section>
@@ -74,9 +78,11 @@ export function PermissionBar({
 }
 
 function QuestionForm({
+  locale,
   prompt,
   onSubmit,
 }: {
+  locale: Locale;
   prompt: QuestionPrompt;
   onSubmit: (answers: Array<{ questionId: string; selectedOptionIds: string[] }>) => void;
 }) {
@@ -93,7 +99,7 @@ function QuestionForm({
         onSubmit(answers);
       }}
     >
-      <div className="mb-2 text-[12.5px]">{prompt.title || "Agent needs a decision"}</div>
+      <div className="mb-2 text-[12.5px]">{prompt.title || t(locale, "needsDecision")}</div>
       <div className="space-y-3">
         {prompt.questions.map((question) => (
           <fieldset key={question.id} className="space-y-1">
@@ -113,7 +119,7 @@ function QuestionForm({
         ))}
       </div>
       <button type="submit" className="mt-2 rounded-md bg-[var(--brass)] px-2.5 py-1 text-[12px] text-[#1a140b]">
-        Continue
+        {t(locale, "continue")}
       </button>
     </form>
   );

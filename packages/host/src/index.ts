@@ -36,9 +36,64 @@ async function handleExt(msg: ExtToHost): Promise<void> {
       await writeCommandResult(msg.result);
       return;
     }
+    if (msg.type === "session.new") {
+      if (!client) throw new Error("agent is not ready");
+      if (promptInFlight) throw new Error("a turn is already running");
+      const opened = await client.createSession();
+      writeSessionId(opened.sessionId);
+      send({
+        type: "session",
+        sessionId: opened.sessionId,
+        replay: opened.replay,
+        created: opened.created,
+        forked: opened.forked,
+      });
+      return;
+    }
+    if (msg.type === "session.use") {
+      if (!client) throw new Error("agent is not ready");
+      if (promptInFlight) throw new Error("a turn is already running");
+      const opened = await client.useSession(msg.sessionId);
+      writeSessionId(opened.sessionId);
+      send({
+        type: "session",
+        sessionId: opened.sessionId,
+        replay: opened.replay,
+        created: opened.created,
+        forked: opened.forked,
+      });
+      return;
+    }
+    if (msg.type === "session.fork") {
+      if (!client) throw new Error("agent is not ready");
+      if (promptInFlight) throw new Error("a turn is already running");
+      const opened = await client.forkSession(msg.sessionId);
+      writeSessionId(opened.sessionId);
+      send({
+        type: "session",
+        sessionId: opened.sessionId,
+        replay: opened.replay,
+        created: opened.created,
+        forked: opened.forked,
+      });
+      return;
+    }
     if (msg.type === "prompt") {
       if (!client) throw new Error("agent is not ready");
       if (promptInFlight) throw new Error("a turn is already running");
+      if (msg.sessionId) {
+        const opened = await client.useSession(msg.sessionId);
+        writeSessionId(opened.sessionId);
+        if (opened.created) {
+          send({
+            type: "session",
+            sessionId: opened.sessionId,
+            replay: opened.replay,
+            created: opened.created,
+            forked: opened.forked,
+          });
+        }
+      }
       const prefix = msg.currentPage
         ? `[Current tab] ${msg.currentPage.title} — ${msg.currentPage.url}\n\n`
         : "";
@@ -83,7 +138,13 @@ async function main(): Promise<void> {
     await client.initialize();
     const opened = await client.openSession(readSessionId());
     writeSessionId(opened.sessionId);
-    send({ type: "session", sessionId: opened.sessionId, replay: opened.replay });
+    send({
+      type: "session",
+      sessionId: opened.sessionId,
+      replay: opened.replay,
+      created: opened.created,
+      forked: opened.forked,
+    });
     send({ type: "status", state: "ready" });
     log(`ready session=${opened.sessionId} replay=${opened.replay}`);
   } catch (error) {

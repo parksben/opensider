@@ -88,29 +88,57 @@ export class AcpClient {
     await this.request("authenticate", { methodId: "cursor_login" });
   }
 
-  async openSession(existingId?: string): Promise<{ sessionId: string; replay: boolean }> {
-    if (existingId) {
-      try {
-        await this.request("session/load", {
-          sessionId: existingId,
-          cwd: this.cwd,
-          mcpServers: [],
-        });
-        this.sessionId = existingId;
-        await this.trySetAgentMode(existingId);
-        return { sessionId: existingId, replay: true };
-      } catch (error) {
-        log(`session/load failed, creating new: ${String(error)}`);
-      }
-    }
-
+  async createSession(): Promise<{ sessionId: string; replay: boolean; created: boolean; forked: boolean }> {
     const result = (await this.request("session/new", {
       cwd: this.cwd,
       mcpServers: [],
     })) as { sessionId: string };
     this.sessionId = result.sessionId;
     await this.trySetAgentMode(result.sessionId);
-    return { sessionId: result.sessionId, replay: false };
+    return { sessionId: result.sessionId, replay: false, created: true, forked: false };
+  }
+
+  async openSession(existingId?: string): Promise<{ sessionId: string; replay: boolean; created: boolean; forked: boolean }> {
+    if (existingId) {
+      const loaded = await this.useSession(existingId);
+      if (!loaded.created) return loaded;
+    }
+    return this.createSession();
+  }
+
+  async useSession(existingId: string): Promise<{ sessionId: string; replay: boolean; created: boolean; forked: boolean }> {
+    if (this.sessionId === existingId) {
+      return { sessionId: existingId, replay: true, created: false, forked: false };
+    }
+    try {
+      await this.request("session/load", {
+        sessionId: existingId,
+        cwd: this.cwd,
+        mcpServers: [],
+      });
+      this.sessionId = existingId;
+      await this.trySetAgentMode(existingId);
+      return { sessionId: existingId, replay: true, created: false, forked: false };
+    } catch (error) {
+      log(`session/load failed, creating new: ${String(error)}`);
+      return this.createSession();
+    }
+  }
+
+  async forkSession(existingId: string): Promise<{ sessionId: string; replay: boolean; created: boolean; forked: boolean }> {
+    try {
+      const result = (await this.request("session/fork", {
+        sessionId: existingId,
+        cwd: this.cwd,
+        mcpServers: [],
+      })) as { sessionId: string };
+      this.sessionId = result.sessionId;
+      await this.trySetAgentMode(result.sessionId);
+      return { sessionId: result.sessionId, replay: false, created: true, forked: true };
+    } catch (error) {
+      log(`session/fork failed, creating new: ${String(error)}`);
+      return this.createSession();
+    }
   }
 
   async prompt(text: string): Promise<{ stopReason: string }> {

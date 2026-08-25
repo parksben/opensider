@@ -16,7 +16,7 @@ import {
 
 const AGENTS_MD = `# Browser page tools
 
-You are chatting from a Chrome sidebar. The user keeps ONE session and ONE workspace across every browser tab.
+You are chatting from a Chrome sidebar. The user keeps ONE workspace across every browser tab, and may switch among several chat sessions. Page files in this workspace are shared; the current conversation is only the session you are in.
 
 Read \`browser/tools.json\` now. It lists every page method available in this session (read, act, vision). Prefer those methods over guessing from memory.
 

@@ -1,35 +1,120 @@
 import type { BrowserCommand, BrowserResult, CurrentPage, ExtToHost, HostToExt } from "@shared";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { applyAcpUpdate, createUserMessage } from "./acp-messages";
 import { connectSidebar } from "./bridge";
 import type { ChatMessage, PermissionRequest, PlanPrompt, QuestionPrompt, TodoItem } from "./chat-types";
 import { ChatPane } from "./components/ChatPane";
 import { Header } from "./components/Header";
 import { PermissionBar } from "./components/PermissionBar";
+import { SessionDrawer } from "./components/SessionDrawer";
+import type { Locale } from "./i18n";
+import { t } from "./i18n";
+import {
+  buildForkContext,
+  emptySession,
+  loadState,
+  saveState,
+  titleFromMessages,
+  wrapForkContext,
+  type Session,
+} from "./persist";
 
 export function App() {
+  const [hydrated, setHydrated] = useState(false);
+  const [locale, setLocale] = useState<Locale>("en");
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [selectedId, setSelectedId] = useState("");
+  const [sessionsOpen, setSessionsOpen] = useState(false);
   const [status, setStatus] = useState<"starting" | "ready" | "error">("starting");
   const [error, setError] = useState<string>();
   const [page, setPage] = useState<CurrentPage>();
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isRunning, setIsRunning] = useState(false);
-  const [todos, setTodos] = useState<TodoItem[]>([]);
   const [permission, setPermission] = useState<PermissionRequest>();
   const [question, setQuestion] = useState<QuestionPrompt>();
   const [plan, setPlan] = useState<PlanPrompt>();
   const [activity, setActivity] = useState<{ command: BrowserCommand; result?: BrowserResult }>();
+
   const sendRef = useRef<(msg: ExtToHost) => void>(() => undefined);
   const reconnectRef = useRef<() => void>(() => undefined);
   const pageRef = useRef<CurrentPage | undefined>(undefined);
   const statusRef = useRef(status);
+  const selectedIdRef = useRef(selectedId);
+  const sessionsRef = useRef(sessions);
+  const pendingBind = useRef<{ localId: string; kind: "new" | "use" | "fork" } | null>(null);
+  const boundRef = useRef(false);
+  const localeRef = useRef(locale);
   pageRef.current = page;
   statusRef.current = status;
+  selectedIdRef.current = selectedId;
+  sessionsRef.current = sessions;
+  localeRef.current = locale;
+
+  const tryBindCurrent = () => {
+    if (statusRef.current !== "ready") return;
+    if (pendingBind.current || boundRef.current) return;
+    const list = sessionsRef.current;
+    const id = selectedIdRef.current || list[0]?.id;
+    const session = list.find((item) => item.id === id);
+    if (!session) return;
+    if (session.acpSessionId) {
+      pendingBind.current = { localId: session.id, kind: "use" };
+      sendRef.current({ type: "session.use", sessionId: session.acpSessionId });
+    } else {
+      pendingBind.current = { localId: session.id, kind: "new" };
+      sendRef.current({ type: "session.new" });
+    }
+    boundRef.current = true;
+  };
+
+  const selected = useMemo(
+    () => sessions.find((session) => session.id === selectedId) ?? sessions[0],
+    [sessions, selectedId],
+  );
+
+  const patchSession = (id: string, updater: (session: Session) => Session) => {
+    setSessions((current) => current.map((session) => (session.id === id ? updater(session) : session)));
+  };
+
+  const updateSelectedMessages = (updater: (messages: ChatMessage[]) => ChatMessage[]) => {
+    const id = selectedIdRef.current;
+    setSessions((current) =>
+      current.map((session) => {
+        if (session.id !== id) return session;
+        const messages = updater(session.messages);
+        return {
+          ...session,
+          messages,
+          title: titleFromMessages(messages) || session.title,
+          updatedAt: new Date().toISOString(),
+        };
+      }),
+    );
+  };
 
   const handleHost = (msg: HostToExt) => {
     if (msg.type === "status") {
       setStatus(msg.state);
       setError(msg.error);
       if (msg.state === "error") setIsRunning(false);
+      if (msg.state === "ready") tryBindCurrent();
+      return;
+    }
+    if (msg.type === "session") {
+      const pending = pendingBind.current;
+      const current = sessionsRef.current.find((item) => item.id === selectedIdRef.current);
+      const targetId = pending?.localId ?? (current && !current.acpSessionId ? current.id : undefined);
+      if (targetId) {
+        patchSession(targetId, (session) => ({
+          ...session,
+          acpSessionId: msg.sessionId,
+          pendingForkContext:
+            pending?.kind === "fork" && msg.forked === false
+              ? (session.pendingForkContext ?? buildForkContext(session.messages))
+              : session.pendingForkContext,
+        }));
+        boundRef.current = true;
+      }
+      pendingBind.current = null;
       return;
     }
     if (msg.type === "page") {
@@ -49,14 +134,12 @@ export function App() {
       return;
     }
     if (msg.type === "update") {
-      setMessages((current) => applyAcpUpdate(current, msg.update));
+      updateSelectedMessages((current) => applyAcpUpdate(current, msg.update));
       return;
     }
     if (msg.type === "turn.end") {
       setIsRunning(false);
-      if (msg.stopReason === "error") {
-        setError("The agent turn ended with an error.");
-      }
+      if (msg.stopReason === "error") setError(t(localeRef.current, "turnError"));
       return;
     }
     if (msg.type === "permission") {
@@ -64,7 +147,7 @@ export function App() {
       const options = (msg.params.options as PermissionRequest["options"]) ?? [];
       setPermission({
         id: msg.id,
-        title: toolCall?.title ?? "Permission required",
+        title: toolCall?.title ?? t(localeRef.current, "wantsTool"),
         options,
       });
       return;
@@ -73,7 +156,11 @@ export function App() {
       if (msg.method === "cursor/update_todos") {
         const incoming = (msg.params.todos as TodoItem[]) ?? [];
         const merge = Boolean(msg.params.merge);
-        setTodos((current) => (merge ? mergeTodos(current, incoming) : incoming));
+        const id = selectedIdRef.current;
+        patchSession(id, (session) => ({
+          ...session,
+          todos: merge ? mergeTodos(session.todos, incoming) : incoming,
+        }));
         return;
       }
       if (msg.method === "cursor/ask_question" && msg.id !== undefined) {
@@ -99,6 +186,28 @@ export function App() {
   handleHostRef.current = handleHost;
 
   useEffect(() => {
+    void loadState().then((state) => {
+      const sessions = state.sessions.length > 0 ? state.sessions : [emptySession()];
+      const selectedId = sessions.some((session) => session.id === state.selectedId)
+        ? state.selectedId
+        : sessions[0].id;
+      setLocale(state.locale);
+      setSessions(sessions);
+      setSelectedId(selectedId);
+      setHydrated(true);
+    });
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.lang = locale === "zh" ? "zh-CN" : "en";
+  }, [locale]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    void saveState({ locale, selectedId, sessions });
+  }, [hydrated, locale, selectedId, sessions]);
+
+  useEffect(() => {
     const { send, reconnect, disconnect } = connectSidebar((msg) => handleHostRef.current(msg));
     sendRef.current = send;
     reconnectRef.current = reconnect;
@@ -109,19 +218,30 @@ export function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (hydrated) tryBindCurrent();
+  }, [hydrated, selectedId]);
+
   const onSend = (text: string) => {
-    setMessages((current) => [...current, createUserMessage(text)]);
+    const session = sessionsRef.current.find((item) => item.id === selectedIdRef.current);
+    const user = createUserMessage(text);
+    updateSelectedMessages((current) => [...current, user]);
     if (statusRef.current !== "ready") {
-      setError("Local agent is offline. Retry the connection, then send again.");
+      setError(t(locale, "offlineSend"));
       setStatus("error");
       setIsRunning(false);
       return;
+    }
+    const context = session?.pendingForkContext;
+    if (context) {
+      patchSession(session.id, (item) => ({ ...item, pendingForkContext: undefined }));
     }
     setIsRunning(true);
     setError(undefined);
     sendRef.current({
       type: "prompt",
-      text,
+      text: context ? `${wrapForkContext(context)}\n\n${text}` : text,
+      sessionId: session?.acpSessionId,
       currentPage: pageRef.current
         ? { title: pageRef.current.title, url: pageRef.current.url }
         : undefined,
@@ -133,30 +253,150 @@ export function App() {
     setIsRunning(false);
   };
 
+  const switchSession = (id: string) => {
+    if (isRunning) return;
+    if (id === selectedIdRef.current) return;
+    boundRef.current = false;
+    setSelectedId(id);
+    setPermission(undefined);
+    setQuestion(undefined);
+    setPlan(undefined);
+    const session = sessionsRef.current.find((item) => item.id === id);
+    if (!session) return;
+    if (session.acpSessionId) {
+      pendingBind.current = { localId: id, kind: "use" };
+      sendRef.current({ type: "session.use", sessionId: session.acpSessionId });
+      boundRef.current = true;
+    } else if (statusRef.current === "ready") {
+      pendingBind.current = { localId: id, kind: "new" };
+      sendRef.current({ type: "session.new" });
+      boundRef.current = true;
+    }
+  };
+
+  const newSession = () => {
+    if (isRunning) return;
+    const created = emptySession();
+    setSessions((current) => [created, ...current]);
+    boundRef.current = false;
+    setSelectedId(created.id);
+    setSessionsOpen(true);
+    if (statusRef.current === "ready") {
+      pendingBind.current = { localId: created.id, kind: "new" };
+      sendRef.current({ type: "session.new" });
+      boundRef.current = true;
+    }
+  };
+
+  const forkFromMessage = (messageId: string) => {
+    if (isRunning) return;
+    const source = sessionsRef.current.find((item) => item.id === selectedIdRef.current);
+    if (!source) return;
+    const index = source.messages.findIndex((message) => message.id === messageId);
+    if (index < 0) return;
+    const sliced = source.messages.slice(0, index + 1).map((message) => ({
+      ...message,
+      content: message.content.map((part) => ({ ...part })),
+    }));
+    const atTip = index === source.messages.length - 1;
+    const created = emptySession({
+      parentId: source.id,
+      forkedFromMessageId: messageId,
+      messages: sliced,
+      title: titleFromMessages(sliced),
+      pendingForkContext: atTip ? undefined : buildForkContext(sliced),
+    });
+    setSessions((current) => [created, ...current]);
+    boundRef.current = false;
+    setSelectedId(created.id);
+    setSessionsOpen(true);
+    if (statusRef.current !== "ready") return;
+    if (atTip && source.acpSessionId) {
+      pendingBind.current = { localId: created.id, kind: "fork" };
+      sendRef.current({ type: "session.fork", sessionId: source.acpSessionId });
+    } else {
+      pendingBind.current = { localId: created.id, kind: "new" };
+      sendRef.current({ type: "session.new" });
+    }
+    boundRef.current = true;
+  };
+
+  const saveCheckpoint = (messageId: string) => {
+    const source = sessionsRef.current.find((item) => item.id === selectedIdRef.current);
+    if (!source) return;
+    const message = source.messages.find((item) => item.id === messageId);
+    if (!message) return;
+    if (source.checkpoints.some((item) => item.messageId === messageId)) return;
+    const title = titleFromMessages([message]) || t(locale, "checkpointNamed");
+    patchSession(source.id, (session) => ({
+      ...session,
+      checkpoints: [
+        ...session.checkpoints,
+        { id: crypto.randomUUID(), messageId, title, createdAt: new Date().toISOString() },
+      ],
+    }));
+    setSessionsOpen(true);
+  };
+
+  const restoreCheckpoint = (checkpointId: string) => {
+    const source = sessionsRef.current.find((item) => item.id === selectedIdRef.current);
+    const checkpoint = source?.checkpoints.find((item) => item.id === checkpointId);
+    if (!checkpoint) return;
+    forkFromMessage(checkpoint.messageId);
+  };
+
+  if (!hydrated || !selected) {
+    return <div className="h-full bg-[var(--ink)]" />;
+  }
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <Header
+        locale={locale}
         status={status}
         error={error}
         page={page}
-        todos={todos}
+        todos={selected.todos}
         activity={activity}
+        sessionTitle={selected.title || t(locale, "untitled")}
+        sessionsOpen={sessionsOpen}
+        onLocale={setLocale}
+        onToggleSessions={() => setSessionsOpen((open) => !open)}
         onRetry={() => {
+          boundRef.current = false;
           setStatus("starting");
-          setError("Reconnecting…");
+          setError(t(locale, "reconnecting"));
           reconnectRef.current();
         }}
       />
+      {sessionsOpen ? (
+        <div className="px-3">
+          <SessionDrawer
+            locale={locale}
+            sessions={sessions}
+            selectedId={selected.id}
+            locked={isRunning}
+            onSelect={switchSession}
+            onNew={newSession}
+            onRestore={restoreCheckpoint}
+          />
+        </div>
+      ) : null}
       <div className="min-h-0 flex-1">
         <ChatPane
-          messages={messages}
+          locale={locale}
+          messages={selected.messages}
+          checkpoints={selected.checkpoints}
           isRunning={isRunning}
           disabled={status !== "ready"}
           onSend={onSend}
           onCancel={onCancel}
+          onFork={forkFromMessage}
+          onCheckpoint={saveCheckpoint}
         />
       </div>
       <PermissionBar
+        locale={locale}
         permission={permission}
         question={question}
         plan={plan}
