@@ -4,16 +4,26 @@ function id(): string {
   return crypto.randomUUID();
 }
 
-function lastAssistant(messages: ChatMessage[]): { messages: ChatMessage[]; index: number } {
+function lastAssistant(
+  messages: ChatMessage[],
+  model?: { modelId?: string; modelName?: string },
+): { messages: ChatMessage[]; index: number } {
   const last = messages[messages.length - 1];
   if (last?.role === "assistant") {
-    return { messages: [...messages], index: messages.length - 1 };
+    const hasOwn = Boolean(last.modelId || last.modelName);
+    const hasIncoming = Boolean(model?.modelId || model?.modelName);
+    const stamped = hasOwn || !hasIncoming ? last : { ...last, modelId: model?.modelId, modelName: model?.modelName };
+    const copy = [...messages];
+    copy[copy.length - 1] = stamped;
+    return { messages: copy, index: copy.length - 1 };
   }
   const created: ChatMessage = {
     id: id(),
     role: "assistant",
     content: [],
     createdAt: new Date(),
+    modelId: model?.modelId,
+    modelName: model?.modelName,
   };
   return { messages: [...messages, created], index: messages.length };
 }
@@ -43,7 +53,11 @@ function findTool(messages: ChatMessage[], toolCallId: string): { messageIndex: 
   return undefined;
 }
 
-export function applyAcpUpdate(messages: ChatMessage[], update: Record<string, unknown>): ChatMessage[] {
+export function applyAcpUpdate(
+  messages: ChatMessage[],
+  update: Record<string, unknown>,
+  model?: { modelId?: string; modelName?: string },
+): ChatMessage[] {
   const kind = String(update.sessionUpdate ?? "");
 
   if (kind === "user_message_chunk") {
@@ -64,7 +78,7 @@ export function applyAcpUpdate(messages: ChatMessage[], update: Record<string, u
 
   if (kind === "agent_message_chunk") {
     const text = String((update.content as { text?: string } | undefined)?.text ?? "");
-    const next = lastAssistant(messages);
+    const next = lastAssistant(messages, model);
     const message = next.messages[next.index];
     const updated = { ...message, content: appendText(message.content, "text", text) };
     next.messages[next.index] = updated;
@@ -73,7 +87,7 @@ export function applyAcpUpdate(messages: ChatMessage[], update: Record<string, u
 
   if (kind === "agent_thought_chunk") {
     const text = String((update.content as { text?: string } | undefined)?.text ?? "");
-    const next = lastAssistant(messages);
+    const next = lastAssistant(messages, model);
     const message = next.messages[next.index];
     const updated = { ...message, content: appendText(message.content, "reasoning", text) };
     next.messages[next.index] = updated;
@@ -90,7 +104,7 @@ export function applyAcpUpdate(messages: ChatMessage[], update: Record<string, u
       status: (update.status as ToolStatus | undefined) ?? "pending",
       kind: update.kind ? String(update.kind) : undefined,
     };
-    const next = lastAssistant(messages);
+    const next = lastAssistant(messages, model);
     const message = next.messages[next.index];
     next.messages[next.index] = { ...message, content: [...message.content, tool] };
     return next.messages;
@@ -100,7 +114,7 @@ export function applyAcpUpdate(messages: ChatMessage[], update: Record<string, u
     const toolCallId = String(update.toolCallId ?? "");
     const found = findTool(messages, toolCallId);
     if (!found) {
-      return applyAcpUpdate(messages, { ...update, sessionUpdate: "tool_call" });
+      return applyAcpUpdate(messages, { ...update, sessionUpdate: "tool_call" }, model);
     }
     const message = messages[found.messageIndex];
     const current = message.content[found.partIndex] as ToolPart;

@@ -170,6 +170,11 @@ export function ChatPane({
                   key={message.id}
                   locale={locale}
                   locked={isRunning}
+                  modelLabel={
+                    message.modelName ||
+                    models.find((item) => item.id === message.modelId)?.name ||
+                    (message.modelId && message.modelId !== "auto" ? message.modelId : "")
+                  }
                   onFork={() => onFork(message.id)}
                   onRegenerate={() => onRegenerate(message.id)}
                 >
@@ -419,12 +424,14 @@ function ModelSelect({
 function MessageFrame({
   locale,
   locked,
+  modelLabel,
   onFork,
   onRegenerate,
   children,
 }: {
   locale: Locale;
   locked: boolean;
+  modelLabel?: string;
   onFork: () => void;
   onRegenerate: () => void;
   children: ReactNode;
@@ -432,23 +439,30 @@ function MessageFrame({
   return (
     <div className="group relative">
       {children}
-      <div className="mt-1 flex justify-start gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-        <IconButton
-          label={t(locale, "fork")}
-          disabled={locked}
-          onClick={onFork}
-          className="rounded border border-[var(--line)] p-1 text-[var(--muted)] hover:text-[var(--text)] disabled:opacity-40"
-        >
-          <GitFork size={12} />
-        </IconButton>
-        <IconButton
-          label={t(locale, "regenerate")}
-          disabled={locked}
-          onClick={onRegenerate}
-          className="rounded border border-[var(--line)] p-1 text-[var(--muted)] hover:text-[var(--text)] disabled:opacity-40"
-        >
-          <RefreshCw size={12} />
-        </IconButton>
+      <div className="mt-1 flex items-center justify-start opacity-0 transition-opacity group-hover:opacity-100">
+        {modelLabel ? (
+          <span className="min-w-0 truncate text-[11px] text-[var(--muted)]">
+            {t(locale, "generatedBy").replace("{name}", modelLabel)}
+          </span>
+        ) : null}
+        <div className={`flex items-center gap-1 ${modelLabel ? "ml-4" : ""}`}>
+          <IconButton
+            label={t(locale, "fork")}
+            disabled={locked}
+            onClick={onFork}
+            className="rounded p-1 text-[var(--muted)] hover:text-[var(--text)] disabled:opacity-40"
+          >
+            <GitFork size={12} />
+          </IconButton>
+          <IconButton
+            label={t(locale, "regenerate")}
+            disabled={locked}
+            onClick={onRegenerate}
+            className="rounded p-1 text-[var(--muted)] hover:text-[var(--text)] disabled:opacity-40"
+          >
+            <RefreshCw size={12} />
+          </IconButton>
+        </div>
       </div>
     </div>
   );

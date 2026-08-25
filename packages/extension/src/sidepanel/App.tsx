@@ -210,7 +210,11 @@ export function App() {
       return;
     }
     if (msg.type === "update") {
-      updateSelectedMessages((current) => applyAcpUpdate(current, msg.update));
+      const modelId = selectedModelRef.current;
+      const modelName =
+        models.find((item) => item.id === modelId)?.name ||
+        (!modelId || modelId === "auto" ? "Auto" : modelId);
+      updateSelectedMessages((current) => applyAcpUpdate(current, msg.update, { modelId, modelName }));
       return;
     }
     if (msg.type === "turn.end") {

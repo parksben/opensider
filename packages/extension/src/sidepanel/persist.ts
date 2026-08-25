@@ -11,6 +11,8 @@ export type StoredMessage = {
   content: ChatPart[];
   createdAt: string;
   attachments?: ChatMessage["attachments"];
+  modelId?: string;
+  modelName?: string;
 };
 
 export type Session = {

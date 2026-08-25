@@ -24,6 +24,8 @@ export type ChatMessage = {
   content: ChatPart[];
   createdAt: Date;
   attachments?: AttachmentItem[];
+  modelId?: string;
+  modelName?: string;
 };
 
 export type PermissionRequest = {
