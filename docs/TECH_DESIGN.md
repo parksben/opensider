@@ -267,7 +267,7 @@ Host 是 ACP Client，`clientCapabilities` 关闭 `fs` / `terminal`，让 Agent 
 | ACP | 侧栏 |
 |---|---|
 | `agent_message_chunk` | assistant 文本 part，流式追加 |
-| `agent_thought_chunk` | reasoning part |
+| `agent_thought_chunk` | reasoning part；展示时去掉空行，原文仍按流式存 |
 | `tool_call` / `tool_call_update` | tool-call part（title、kind、status、input、output、diff） |
 | `session/request_permission` | 权限条 |
 | `cursor/ask_question` | 选择题 |

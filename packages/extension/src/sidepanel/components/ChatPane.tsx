@@ -378,6 +378,13 @@ function MessageFrame({
   );
 }
 
+function compactReasoning(text: string): string {
+  return text
+    .split(/\r?\n/)
+    .filter((line) => line.trim().length > 0)
+    .join("\n");
+}
+
 function AssistantMessage({ locale, content }: { locale: Locale; content: ChatPart[] }) {
   if (content.length === 0) {
     return <div className="text-[12px] text-[var(--muted)]">{t(locale, "waiting")}</div>;
@@ -390,7 +397,7 @@ function AssistantMessage({ locale, content }: { locale: Locale; content: ChatPa
           return (
             <details key={index} className="text-[12px] text-[var(--muted)]">
               <summary className="cursor-pointer">{t(locale, "thinking")}</summary>
-              <div className="mt-1 whitespace-pre-wrap">{part.text}</div>
+              <div className="mt-1 whitespace-pre-wrap">{compactReasoning(part.text)}</div>
             </details>
           );
         }
