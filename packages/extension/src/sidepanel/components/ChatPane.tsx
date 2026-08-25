@@ -169,10 +169,11 @@ export function ChatPane({
           onScroll={onThreadScroll}
           className="cs-thread flex min-h-0 flex-1 flex-col-reverse overflow-y-auto px-3"
         >
-          <div className="space-y-3 py-3">
-            {messages.map((message) =>
-              message.role === "user" ? (
-                <div key={message.id} className="flex justify-end">
+          <div className="py-3">
+            {messages.map((message, index) => {
+              const gap = index === 0 ? "" : message.role === "user" ? "mt-6" : "mt-3";
+              return message.role === "user" ? (
+                <div key={message.id} className={`flex justify-end ${gap}`}>
                   <button
                     type="button"
                     disabled={isRunning}
@@ -197,6 +198,8 @@ export function ChatPane({
                   key={message.id}
                   locale={locale}
                   locked={isRunning}
+                  hideActions={isRunning && message.id === messages[messages.length - 1]?.id}
+                  className={gap}
                   modelLabel={
                     message.modelName ||
                     models.find((item) => item.id === message.modelId)?.name ||
@@ -207,10 +210,10 @@ export function ChatPane({
                 >
                   <AssistantMessage locale={locale} content={message.content} />
                 </MessageFrame>
-              ),
-            )}
+              );
+            })}
             {isRunning ? (
-              <div className="flex items-center gap-2 text-[12px] text-[var(--brass)]">
+              <div className="mt-3 flex items-center gap-2 text-[12px] text-[var(--brass)]">
                 <LoaderCircle size={14} className="animate-spin" />
                 {label("working")}
               </div>
@@ -466,6 +469,8 @@ function ModelSelect({
 function MessageFrame({
   locale,
   locked,
+  hideActions,
+  className = "",
   modelLabel,
   onFork,
   onRegenerate,
@@ -473,39 +478,43 @@ function MessageFrame({
 }: {
   locale: Locale;
   locked: boolean;
+  hideActions?: boolean;
+  className?: string;
   modelLabel?: string;
   onFork: () => void;
   onRegenerate: () => void;
   children: ReactNode;
 }) {
   return (
-    <div className="group relative">
+    <div className={`group relative ${className}`}>
       {children}
-      <div className="mt-1 flex items-center justify-start opacity-0 transition-opacity group-hover:opacity-100">
-        {modelLabel ? (
-          <span className="min-w-0 truncate text-[11px] text-[var(--muted)]">
-            {t(locale, "generatedBy").replace("{name}", modelLabel)}
-          </span>
-        ) : null}
-        <div className={`flex items-center gap-1 ${modelLabel ? "ml-4" : ""}`}>
-          <IconButton
-            label={t(locale, "fork")}
-            disabled={locked}
-            onClick={onFork}
-            className="rounded p-1 text-[var(--muted)] hover:text-[var(--text)] disabled:opacity-40"
-          >
-            <GitFork size={12} />
-          </IconButton>
-          <IconButton
-            label={t(locale, "regenerate")}
-            disabled={locked}
-            onClick={onRegenerate}
-            className="rounded p-1 text-[var(--muted)] hover:text-[var(--text)] disabled:opacity-40"
-          >
-            <RefreshCw size={12} />
-          </IconButton>
+      {hideActions ? null : (
+        <div className="mt-1 flex items-center justify-start opacity-0 transition-opacity group-hover:opacity-100">
+          {modelLabel ? (
+            <span className="min-w-0 truncate text-[11px] text-[var(--muted)]">
+              {t(locale, "generatedBy").replace("{name}", modelLabel)}
+            </span>
+          ) : null}
+          <div className={`flex items-center gap-1 ${modelLabel ? "ml-4" : ""}`}>
+            <IconButton
+              label={t(locale, "fork")}
+              disabled={locked}
+              onClick={onFork}
+              className="rounded p-1 text-[var(--muted)] hover:text-[var(--text)] disabled:opacity-40"
+            >
+              <GitFork size={12} />
+            </IconButton>
+            <IconButton
+              label={t(locale, "regenerate")}
+              disabled={locked}
+              onClick={onRegenerate}
+              className="rounded p-1 text-[var(--muted)] hover:text-[var(--text)] disabled:opacity-40"
+            >
+              <RefreshCw size={12} />
+            </IconButton>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
