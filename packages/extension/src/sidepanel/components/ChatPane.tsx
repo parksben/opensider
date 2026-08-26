@@ -299,7 +299,7 @@ export function ChatPane({
     <div className="relative flex h-full min-h-0 flex-col">
       {messages.length === 0 ? (
         <div className="flex min-h-0 w-full flex-1 flex-col items-center justify-center">
-          <img src={logoUrl} alt="" width={120} height={120} aria-hidden="true" className="opacity-20" />
+          <img src={logoUrl} alt="" width={120} height={120} aria-hidden="true" className="opacity-10" />
           <p className="mt-4 w-full px-[min(200px,max(1rem,calc(50%-12rem)))] text-center text-[12px] leading-relaxed text-[var(--muted)] opacity-55">
             {label("emptyHint")}
           </p>
