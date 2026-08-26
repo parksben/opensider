@@ -1,4 +1,4 @@
-import { GitFork, LoaderCircle, MessageSquarePlus, Pencil, Pin, Trash2 } from "lucide-react";
+import { GitFork, MessageSquarePlus, Pencil, Pin, Trash2 } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import type { Locale, MessageKey } from "../i18n";
 import { t } from "../i18n";
@@ -274,19 +274,25 @@ export function SessionDrawer({
                   return (
                     <li key={session.id} className="group/session" data-session-id={session.id}>
                       <div
-                        className={`flex w-full items-start gap-1 px-1.5 py-1.5 ${
+                        className={`flex w-full items-start gap-1.5 px-1.5 py-1.5 ${
                           highlighted ? "bg-[var(--hover-strong)]" : ""
                         } ${active && !highlighted ? "bg-[color-mix(in_oklab,var(--brass)_16%,transparent)]" : ""}`}
                         onPointerEnter={() => setHighlightId(session.id)}
                       >
-                        {editing ? (
-                          <div className="flex min-w-0 flex-1 items-start gap-2 px-1">
+                        <span className="flex h-6 w-3.5 shrink-0 items-center justify-center">
+                          {running ? (
+                            <span className="cs-braille-spin" aria-label={label("sessionRunning")} />
+                          ) : (
                             <span
-                              className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${
+                              className={`h-1.5 w-1.5 rounded-full ${
                                 active ? "bg-[var(--brass)]" : "bg-[var(--line)]"
                               }`}
                             />
-                            <div className="min-w-0 flex-1">
+                          )}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          {editing ? (
+                            <div className="flex h-6 min-w-0 items-center">
                               <SessionTitleInput
                                 initial={session.title || label("untitled")}
                                 onCancel={() => setEditingId(undefined)}
@@ -295,64 +301,49 @@ export function SessionDrawer({
                                   setEditingId(undefined);
                                 }}
                               />
-                              <SessionMeta locale={locale} session={session} />
                             </div>
-                          </div>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => onSelect(session.id)}
-                            className="flex min-w-0 flex-1 items-start gap-2 px-1 text-left"
-                          >
-                            <span
-                              className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${
-                                active ? "bg-[var(--brass)]" : "bg-[var(--line)]"
-                              }`}
-                            />
-                            <span className="min-w-0 flex-1">
-                              <span className="flex items-center gap-1.5">
-                                <span className="min-w-0 truncate text-[12.5px]">{displayTitle(session, locale)}</span>
-                                {running ? (
-                                  <LoaderCircle
-                                    size={11}
-                                    className="shrink-0 animate-spin text-[var(--muted)]"
-                                    aria-label={label("sessionRunning")}
-                                  />
-                                ) : null}
-                              </span>
-                              <SessionMeta locale={locale} session={session} />
-                            </span>
-                          </button>
-                        )}
-                        <div
-                          className={`flex shrink-0 items-center gap-0.5 pt-0.5 ${
-                            editing || highlighted ? "opacity-100" : "opacity-0 group-hover/session:opacity-100"
-                          }`}
-                        >
-                          <IconButton
-                            side="top"
-                            label={pinned ? label("unpinSession") : label("pinSession")}
-                            onClick={() => onPin(session.id)}
-                            className="flex h-6 w-6 items-center justify-center rounded-full text-[var(--muted)] disabled:opacity-40"
-                          >
-                            <Pin size={12} className={pinned ? "fill-current" : undefined} />
-                          </IconButton>
-                          <IconButton
-                            side="top"
-                            label={label("rename")}
-                            onClick={() => setEditingId(session.id)}
-                            className="flex h-6 w-6 items-center justify-center rounded-full text-[var(--muted)] disabled:opacity-40"
-                          >
-                            <Pencil size={12} />
-                          </IconButton>
-                          <IconButton
-                            side="top"
-                            label={label("deleteSession")}
-                            onClick={() => onDelete(session.id)}
-                            className="flex h-6 w-6 items-center justify-center rounded-full text-[var(--muted)] disabled:opacity-40"
-                          >
-                            <Trash2 size={12} />
-                          </IconButton>
+                          ) : (
+                            <div className="flex min-w-0 items-start">
+                              <button
+                                type="button"
+                                onClick={() => onSelect(session.id)}
+                                title={displayTitle(session, locale)}
+                                className="min-w-0 flex-1 text-left"
+                              >
+                                <span className="block h-6 truncate text-[12.5px] leading-6">
+                                  {displayTitle(session, locale)}
+                                </span>
+                                <SessionMeta locale={locale} running={running} session={session} />
+                              </button>
+                              <div className="hidden h-6 shrink-0 items-center group-hover/session:flex">
+                                <IconButton
+                                  side="top"
+                                  label={pinned ? label("unpinSession") : label("pinSession")}
+                                  onClick={() => onPin(session.id)}
+                                  className="flex h-6 w-6 items-center justify-center rounded-full text-[var(--muted)] disabled:opacity-40"
+                                >
+                                  <Pin size={12} className={pinned ? "fill-current" : undefined} />
+                                </IconButton>
+                                <IconButton
+                                  side="top"
+                                  label={label("rename")}
+                                  onClick={() => setEditingId(session.id)}
+                                  className="flex h-6 w-6 items-center justify-center rounded-full text-[var(--muted)] disabled:opacity-40"
+                                >
+                                  <Pencil size={12} />
+                                </IconButton>
+                                <IconButton
+                                  side="top"
+                                  label={label("deleteSession")}
+                                  onClick={() => onDelete(session.id)}
+                                  className="flex h-6 w-6 items-center justify-center rounded-full text-[var(--muted)] disabled:opacity-40"
+                                >
+                                  <Trash2 size={12} />
+                                </IconButton>
+                              </div>
+                            </div>
+                          )}
+                          {editing ? <SessionMeta locale={locale} running={running} session={session} /> : null}
                         </div>
                       </div>
                     </li>
@@ -367,10 +358,20 @@ export function SessionDrawer({
   );
 }
 
-function SessionMeta({ locale, session }: { locale: Locale; session: Session }) {
+function SessionMeta({
+  locale,
+  session,
+  running,
+}: {
+  locale: Locale;
+  session: Session;
+  running?: boolean;
+}) {
   return (
     <span className="mt-0.5 flex items-center gap-1 text-[10.5px] text-[var(--muted)]">
-      {session.parentId ? (
+      {running ? (
+        t(locale, "sessionRunning")
+      ) : session.parentId ? (
         <>
           <GitFork size={10} />
           {t(locale, "forked")}
