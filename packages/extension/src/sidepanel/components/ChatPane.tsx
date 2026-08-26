@@ -9,11 +9,13 @@ import { closeAtMenuLock, installAtMenuGuard, openAtMenuLock, shouldBlockSubmit 
 import { composerHasContent } from "../mentions";
 import { stripEnvPrompt, textOf, type AgentMode } from "../persist";
 import { useRipple } from "../useRipple";
+import type { QueuedMessage } from "../queued-message";
 import { AtMenu } from "./AtMenu";
 import { ComposerEditor, type ComposerHandle } from "./ComposerEditor";
 import { IconButton } from "./IconButton";
 import { kindIcon, UserRichText } from "./MentionChip";
 import { Markdown } from "./Markdown";
+import { QueuedMessageList } from "./QueuedMessageList";
 import { RippleButton } from "./RippleButton";
 import { TextFold } from "./TextFold";
 import { TodoList } from "./TodoList";
@@ -36,6 +38,10 @@ export function ChatPane({
   modelId,
   showModelPicker,
   onSend,
+  onEnqueue,
+  onUpdateQueued,
+  onDeleteQueued,
+  onEditingQueued,
   onRevise,
   onCancel,
   onFork,
@@ -50,6 +56,7 @@ export function ChatPane({
   page,
   hitl,
   todos,
+  queue,
 }: {
   locale: Locale;
   sessionId: string;
@@ -60,7 +67,12 @@ export function ChatPane({
   modelId: string;
   showModelPicker: boolean;
   hitl?: ReactNode;
+  queue: QueuedMessage[];
   onSend: (text: string, attachments: AttachmentItem[]) => void;
+  onEnqueue: (text: string, attachments: AttachmentItem[]) => void;
+  onUpdateQueued: (id: string, text: string, attachments: AttachmentItem[]) => void;
+  onDeleteQueued: (id: string) => void;
+  onEditingQueued: (id?: string) => void;
   onRevise: (messageId: string, text: string, attachments: AttachmentItem[]) => void;
   onCancel: () => void;
   onFork: (messageId: string) => void;
@@ -80,6 +92,7 @@ export function ChatPane({
   const [pickingFiles, setPickingFiles] = useState(false);
   const [savingPaste, setSavingPaste] = useState(false);
   const [editingId, setEditingId] = useState<string>();
+  const [editingQueueId, setEditingQueueId] = useState<string>();
   const [stash, setStash] = useState<{ draft: string; attachments: AttachmentItem[] } | null>(null);
   const [atOpen, setAtOpen] = useState(false);
   const composerRef = useRef<ComposerHandle>(null);
@@ -88,15 +101,20 @@ export function ChatPane({
   const { tabs: historyTabs, attachments: historyAttachments, rememberAttachments } = useComposerHistory();
   const threadEndRef = useRef<HTMLDivElement>(null);
   const editingRef = useRef<string | undefined>(undefined);
+  const editingQueueRef = useRef<string | undefined>(undefined);
+  const onEditingQueuedRef = useRef(onEditingQueued);
   const [awayFromBottom, setAwayFromBottom] = useState(false);
   const startEditRef = useRef<(message: ChatMessage) => void>(() => {});
   const onStartEdit = useCallback((message: ChatMessage) => {
     startEditRef.current(message);
   }, []);
   editingRef.current = editingId;
+  editingQueueRef.current = editingQueueId;
+  onEditingQueuedRef.current = onEditingQueued;
   const label = (key: Parameters<typeof t>[1]) => t(locale, key);
   const canSend = Boolean(composerHasContent(draft) || attachments.length);
-  const busy = pickingFiles || pickingElement || isRunning || savingPaste;
+  const locking = pickingFiles || pickingElement || savingPaste;
+  const busy = locking;
 
   const mergeAttachments = (items: AttachmentItem[]) => {
     if (items.length > 0) rememberAttachments(items);
@@ -118,30 +136,51 @@ export function ChatPane({
 
   const submit = (fromEnter = false) => {
     if (fromEnter && shouldBlockSubmit()) return;
-    if (!canSend || isRunning || savingPaste) return;
+    if (!canSend || savingPaste) return;
+    if (editingId && isRunning) return;
     const text = draft.trim();
     const files = attachments;
     const reviseId = editingId;
+    const queueEditId = editingQueueId;
     setDraft("");
     setAttachments([]);
     setEditingId(undefined);
+    setEditingQueueId(undefined);
     setStash(null);
     closeAtMenu();
     if (reviseId) onRevise(reviseId, text, files);
+    else if (queueEditId) onUpdateQueued(queueEditId, text, files);
+    else if (isRunning) onEnqueue(text, files);
     else onSend(text, files);
     requestAnimationFrame(() => stickToBottom(listRef.current));
   };
 
-  const cancelEdit = () => {
+  const restoreStash = () => {
     setDraft(stash?.draft ?? "");
     setAttachments(stash?.attachments ?? []);
-    setEditingId(undefined);
     setStash(null);
+  };
+
+  const cancelEdit = () => {
+    restoreStash();
+    setEditingId(undefined);
+  };
+
+  const cancelQueueEdit = () => {
+    restoreStash();
+    setEditingQueueId(undefined);
+    onEditingQueued();
+  };
+
+  const beginComposerEdit = () => {
+    if (!editingId && !editingQueueId) setStash({ draft, attachments });
   };
 
   const startEdit = (message: ChatMessage) => {
     if (isRunning || pickingElement) return;
-    if (!editingId) setStash({ draft, attachments });
+    beginComposerEdit();
+    if (editingQueueId) onEditingQueued();
+    setEditingQueueId(undefined);
     setEditingId(message.id);
     setDraft(stripEnvPrompt(textOf(message.content)));
     setAttachments(message.attachments ? [...message.attachments] : []);
@@ -152,16 +191,41 @@ export function ChatPane({
   };
   startEditRef.current = startEdit;
 
+  const startQueueEdit = (item: QueuedMessage) => {
+    if (pickingElement) return;
+    beginComposerEdit();
+    setEditingId(undefined);
+    setEditingQueueId(item.id);
+    setDraft(item.text);
+    setAttachments(item.attachments ? [...item.attachments] : []);
+    onEditingQueued(item.id);
+    requestAnimationFrame(() => {
+      composerRef.current?.focus();
+      composerRef.current?.moveCaretToEnd();
+    });
+  };
+
+  const removeQueued = (id: string) => {
+    if (editingQueueId === id) {
+      restoreStash();
+      setEditingQueueId(undefined);
+    }
+    onDeleteQueued(id);
+  };
+
   useEffect(() => {
     installAtMenuGuard();
   }, []);
 
   useEffect(() => {
     const wasEditing = editingRef.current;
+    const wasQueueEdit = editingQueueRef.current;
     setEditingId(undefined);
+    setEditingQueueId(undefined);
     setStash(null);
     closeAtMenu();
-    if (wasEditing) {
+    if (wasQueueEdit) onEditingQueuedRef.current();
+    if (wasEditing || wasQueueEdit) {
       setDraft("");
       setAttachments([]);
     }
@@ -209,7 +273,7 @@ export function ChatPane({
       onCancelElementPick();
       return;
     }
-    if (pickingFiles || isRunning) return;
+    if (pickingFiles || savingPaste) return;
     mergeAttachments(await onPickElement());
   };
 
@@ -263,8 +327,27 @@ export function ChatPane({
           ) : null}
         <TodoList locale={locale} todos={todos ?? []} />
         {hitl}
+        <QueuedMessageList
+          locale={locale}
+          items={queue}
+          editingId={editingQueueId}
+          onEdit={startQueueEdit}
+          onDelete={removeQueued}
+        />
         <div className={`cs-composer rounded-xl bg-[var(--panel)] px-2 py-2 ${isRunning ? "is-running" : ""}`}>
-          {editingId ? (
+          {editingQueueId ? (
+            <div className="mb-1.5 flex items-start justify-between gap-2 px-1">
+              <p className="min-w-0 flex-1 text-[11px] leading-snug text-[var(--muted)]">
+                {label("editQueueHint")}
+              </p>
+              <RippleButton
+                onClick={cancelQueueEdit}
+                className="shrink-0 rounded px-1.5 py-0.5 text-[11px] text-[var(--brass)] hover:bg-[var(--brass)]/20"
+              >
+                {label("cancelQueueEdit")}
+              </RippleButton>
+            </div>
+          ) : editingId ? (
             <div className="mb-1.5 flex items-start justify-between gap-2 px-1">
               <p className="min-w-0 flex-1 text-[11px] leading-snug text-[var(--muted)]">
                 {label("editHistoryHint")}
@@ -311,7 +394,7 @@ export function ChatPane({
                 side="top"
                 label={label("pickElement")}
                 onClick={() => void startElementPick()}
-                disabled={pickingFiles || savingPaste || isRunning}
+                disabled={locking}
                 className={`flex h-7 w-7 items-center justify-center rounded-full hover:bg-[var(--hover)] disabled:opacity-30 disabled:hover:bg-transparent ${
                   pickingElement ? "bg-[var(--hover)] text-[var(--brass)]" : "text-[var(--text)]"
                 }`}
@@ -330,7 +413,7 @@ export function ChatPane({
                     composerRef.current?.insertAtStart("@");
                     openAtMenu();
                   }}
-                  disabled={isRunning}
+                  disabled={locking}
                   className={`flex h-7 w-7 items-center justify-center rounded-full hover:bg-[var(--hover)] disabled:opacity-30 disabled:hover:bg-transparent ${
                     atOpen ? "bg-[var(--hover)] text-[var(--brass)]" : "text-[var(--text)]"
                   }`}
@@ -365,17 +448,16 @@ export function ChatPane({
                 >
                   <Square size={14} />
                 </IconButton>
-              ) : (
-                <IconButton
-                  side="top"
-                  label={label("send")}
-                  onClick={submit}
-                  disabled={!canSend}
-                  className="flex h-7 w-7 items-center justify-center rounded-full text-[var(--text)] hover:bg-[var(--hover)] disabled:opacity-30 disabled:hover:bg-transparent"
-                >
-                  <Send size={14} />
-                </IconButton>
-              )}
+              ) : null}
+              <IconButton
+                side="top"
+                label={label("send")}
+                onClick={submit}
+                disabled={!canSend || savingPaste || Boolean(editingId && isRunning)}
+                className="flex h-7 w-7 items-center justify-center rounded-full text-[var(--text)] hover:bg-[var(--hover)] disabled:opacity-30 disabled:hover:bg-transparent"
+              >
+                <Send size={14} />
+              </IconButton>
             </div>
           </div>
         </div>

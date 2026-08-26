@@ -44,8 +44,8 @@ Cursor Agent 在 ACP 模式下仍然自己执行本地工具（读文件、写�
 - 消息列表、输入框、进行中状态由侧栏自己的 React state 驱动（不依赖 assistant-ui 的 `useAuiState` 选择器，避免和 ExternalStore 不同步：表现为发了消息没动效、也没有停止按钮）
 - 会话列表、当前选中会话、语言也由 App state 驱动，写入 `chrome.storage.local`
 - 工具调用、思考、markdown 由侧栏自己的折叠行 / Markdown 组件展示
-- 发出用户输入（可带本机附件路径）、取消、权限决定、提问/计划回答、新建 / 切换 / fork 会话、选模型
-- 展示进行中的页面命令、无边框连接状态、输入框上方的 todo 与权限/提问/计划卡片、输入栏附件芯片、`@` 提及菜单、元素拾取蒙层与模型下拉。顶栏不放当前页 favicon。
+- 发出用户输入（可带本机附件路径）、取消、权限决定、提问/计划回答、新建 / 切换 / fork 会话、选模型；进行中再发送的消息进该会话内存队列，`turn.end` 后按序发出
+- 展示进行中的页面命令、无边框连接状态、输入框上方的 todo、消息队列与权限/提问/计划卡片、输入栏附件芯片、`@` 提及菜单、元素拾取蒙层与模型下拉。顶栏不放当前页 favicon。
 - 离线发送会立刻报错；Service Worker 断开时显示原因（含扩展 ID / `lastError`）并允许重试
 - 侧栏先 `sendMessage({ type: "ping" })` 唤醒 SW，再 `connect`。React StrictMode 卸载只摘监听器，不拆端口。端口若在 SW 还在加载时空断，自动重连，避免永远停在 Lost connection
 - 不再挂载 assistant-ui runtime；旧的 `ExternalStoreThreadRuntimeCore` 会在端口断开后抛错，把扩展标红
@@ -236,6 +236,14 @@ chrome.storage.local
 2. composer 顶部一行：左 muted 提示，右 `RippleButton` 黄铜字「取消修改 / Cancel edit」。
 3. 再发送走同一套 `startReplayTurn`：用新正文/附件替换该 user，截掉其后，`session/new` + 前文再 prompt。不另开本地会话。
 4. 切会话时退出编辑态；当前会话进行中不允许进入。
+
+消息队列（进行中再发送）：
+
+1. 队列按本地会话 id 存在 `App` 内存里（`queues`），不写 `chrome.storage`。切走会话不丢；删会话时一并丢掉。
+2. `onSend` 抽成 `sendToSession(localId, text, attachments)`。自动发出后台会话的队首时必须带上该会话 id，不得再用 `selectedId`。
+3. `ChatPane` 提交：改历史仍走 `onRevise`（进行中拒绝）；改队列项走 `onUpdateQueued`（覆盖后清编辑态再 flush）；否则进行中 `onEnqueue`，空闲 `onSend`。进行中 `Stop` 与 `Send` 并存；回形针 / 拾取 / `@` 不再因 `isRunning` 禁用，方便往队列里组消息。
+4. 只在 Host `turn.end` 里 `finishTurn` 之后 `flushQueue`。队空或该会话仍在跑则 return；`editingQueueRef` 指向队首则按住，等用户点发送覆盖后再发。改的不是队首则队首照常 shift。`cancel` 立刻 `finishTurn` 但不 flush，等这条 `turn.end`，避免旧结束事件误结束下一条。连接 `error` / `finishAllTurns` 不自动 flush。
+5. 取消队列编辑、删掉一项、或覆盖保存之后，若该会话已空闲，再 `flushQueue` 一次，避免队首解按后卡住。`QueuedMessageList` 画在 composer 上方：左 `displayMentionText`（过长省略，没有正文则附件名），右 `Pencil` / `Trash2`。
 
 旧的 `session.json` `{ sessionId }` 在侧栏还没有本地目录时，迁成第一条会话。
 

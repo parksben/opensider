@@ -26,6 +26,7 @@ import {
   readCachedTheme,
   type ThemePreference,
 } from "./theme";
+import type { QueuedMessage } from "./queued-message";
 import {
   buildForkContext,
   autoPermissionOptionId,
@@ -60,6 +61,7 @@ export function App() {
   const [error, setError] = useState<string>();
   const [page, setPage] = useState<CurrentPage>();
   const [runningIds, setRunningIds] = useState<string[]>([]);
+  const [queues, setQueues] = useState<Record<string, QueuedMessage[]>>({});
   const [permissions, setPermissions] = useState<Record<string, PermissionRequest>>({});
   const [questions, setQuestions] = useState<Record<string, QuestionPrompt>>({});
   const [plans, setPlans] = useState<Record<string, PlanPrompt>>({});
@@ -85,6 +87,9 @@ export function App() {
   const appliedModelRef = useRef("");
   const elementPickId = useRef("");
   const runningIdsRef = useRef<Set<string>>(new Set());
+  const queuesRef = useRef<Record<string, QueuedMessage[]>>({});
+  const editingQueueRef = useRef<{ sessionId: string; id: string } | null>(null);
+  const flushQueueRef = useRef<(sessionId: string) => void>(() => undefined);
   const turnStartedAt = useRef(new Map<string, number>());
   pageRef.current = page;
   statusRef.current = status;
@@ -327,6 +332,7 @@ export function App() {
     if (msg.type === "turn.end") {
       const localId = localIdForAcp(msg.sessionId);
       finishTurn(localId);
+      if (localId) flushQueueRef.current(localId);
       if (msg.stopReason === "error" && localId === selectedIdRef.current) {
         setError(t(localeRef.current, "turnError"));
       }
@@ -455,14 +461,21 @@ export function App() {
     if (hydrated) tryBindCurrent();
   }, [hydrated, selectedId]);
 
-  const onSend = (text: string, attachments: AttachmentItem[] = []) => {
-    const session = sessionsRef.current.find((item) => item.id === selectedIdRef.current);
-    const localId = session?.id ?? selectedIdRef.current;
+  const setSessionQueue = (sessionId: string, list: QueuedMessage[]) => {
+    const next = { ...queuesRef.current };
+    if (list.length) next[sessionId] = list;
+    else delete next[sessionId];
+    queuesRef.current = next;
+    setQueues(next);
+  };
+
+  const sendToSession = (localId: string, text: string, attachments: AttachmentItem[] = []) => {
     if (!localId) return;
+    const session = sessionsRef.current.find((item) => item.id === localId);
     const user = createUserMessage(text, attachments);
     updateSessionMessages(localId, (current) => [...current, user]);
     if (statusRef.current !== "ready") {
-      setError(t(locale, "offlineSend"));
+      setError(t(localeRef.current, "offlineSend"));
       setStatus("error");
       return;
     }
@@ -489,6 +502,71 @@ export function App() {
         ? { title: pageRef.current.title, url: pageRef.current.url }
         : undefined,
     });
+  };
+
+  const flushQueue = (sessionId: string) => {
+    if (!sessionId || runningIdsRef.current.has(sessionId)) return;
+    const list = queuesRef.current[sessionId] ?? [];
+    const first = list[0];
+    if (!first) return;
+    const editing = editingQueueRef.current;
+    if (editing && editing.sessionId === sessionId && editing.id === first.id) return;
+    setSessionQueue(sessionId, list.slice(1));
+    sendToSession(sessionId, first.text, first.attachments);
+  };
+  flushQueueRef.current = flushQueue;
+
+  const onSend = (text: string, attachments: AttachmentItem[] = []) => {
+    const localId = selectedIdRef.current;
+    if (localId) sendToSession(localId, text, attachments);
+  };
+
+  const onEnqueue = (text: string, attachments: AttachmentItem[] = []) => {
+    const sessionId = selectedIdRef.current;
+    if (!sessionId) return;
+    const item: QueuedMessage = { id: crypto.randomUUID(), text, attachments };
+    setSessionQueue(sessionId, [...(queuesRef.current[sessionId] ?? []), item]);
+  };
+
+  const onUpdateQueued = (id: string, text: string, attachments: AttachmentItem[]) => {
+    const sessionId = selectedIdRef.current;
+    if (!sessionId) return;
+    const list = queuesRef.current[sessionId] ?? [];
+    setSessionQueue(
+      sessionId,
+      list.map((item) => (item.id === id ? { ...item, text, attachments } : item)),
+    );
+    if (editingQueueRef.current?.sessionId === sessionId && editingQueueRef.current.id === id) {
+      editingQueueRef.current = null;
+    }
+    flushQueue(sessionId);
+  };
+
+  const onDeleteQueued = (id: string) => {
+    const sessionId = selectedIdRef.current;
+    if (!sessionId) return;
+    setSessionQueue(
+      sessionId,
+      (queuesRef.current[sessionId] ?? []).filter((item) => item.id !== id),
+    );
+    if (editingQueueRef.current?.sessionId === sessionId && editingQueueRef.current.id === id) {
+      editingQueueRef.current = null;
+    }
+    flushQueue(sessionId);
+  };
+
+  const onEditingQueued = (id?: string) => {
+    const sessionId = selectedIdRef.current;
+    if (id) {
+      if (sessionId) {
+        editingQueueRef.current = { sessionId, id };
+        flushQueue(sessionId);
+      }
+      return;
+    }
+    const prev = editingQueueRef.current;
+    editingQueueRef.current = null;
+    if (prev) flushQueue(prev.sessionId);
   };
 
   const onPickAttachments = () =>
@@ -612,6 +690,8 @@ export function App() {
       finishTurn(id);
     }
     clearHitl(id);
+    if (queuesRef.current[id]) setSessionQueue(id, []);
+    if (editingQueueRef.current?.sessionId === id) editingQueueRef.current = null;
     pendingBinds.current = pendingBinds.current.filter((item) => item.localId !== id);
     if (pendingRegen.current?.localId === id) pendingRegen.current = null;
     const remaining = sessionsRef.current.filter((session) => session.id !== id);
@@ -807,6 +887,11 @@ export function App() {
               }}
               page={page}
               todos={selected.todos}
+              queue={queues[selected.id] ?? []}
+              onEnqueue={onEnqueue}
+              onUpdateQueued={onUpdateQueued}
+              onDeleteQueued={onDeleteQueued}
+              onEditingQueued={onEditingQueued}
               hitl={
                 <PermissionBar
                   locale={locale}
