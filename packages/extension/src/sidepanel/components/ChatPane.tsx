@@ -1,6 +1,6 @@
 import type { AgentModel, AttachmentItem, AttachmentKind, CurrentPage } from "@shared";
 import { ArrowDown, Check, ChevronDown, Copy, File, Folder, GitFork, Image, LoaderCircle, MessageSquareMore, MousePointer2, Plus, RefreshCw, Send, Shield, Square, X, Zap } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from "react";
 import type { ChatMessage, ChatPart, TodoItem } from "../chat-types";
 import type { Locale } from "../i18n";
 import { t } from "../i18n";
@@ -187,6 +187,10 @@ export function ChatPane({
   const threadEndRef = useRef<HTMLDivElement>(null);
   const editingRef = useRef<string | undefined>(undefined);
   const [awayFromBottom, setAwayFromBottom] = useState(false);
+  const startEditRef = useRef<(message: ChatMessage) => void>(() => {});
+  const onStartEdit = useCallback((message: ChatMessage) => {
+    startEditRef.current(message);
+  }, []);
   editingRef.current = editingId;
   const label = (key: Parameters<typeof t>[1]) => t(locale, key);
   const canSend = Boolean(draft.trim() || attachments.length);
@@ -235,6 +239,7 @@ export function ChatPane({
       fitComposer(node);
     });
   };
+  startEditRef.current = startEdit;
 
   useLayoutEffect(() => {
     fitComposer(inputRef.current);
@@ -333,57 +338,17 @@ export function ChatPane({
         >
           <div aria-hidden className="min-h-0 flex-1" />
           <div className="shrink-0 py-3">
-            {messages.map((message, index) => {
-              const gap = index === 0 ? "" : message.role === "user" ? "mt-6" : "mt-3";
-              return message.role === "user" ? (
-                <div key={message.id} className={`flex justify-end ${gap}`}>
-                  <button
-                    type="button"
-                    disabled={isRunning}
-                    onClick={() => startEdit(message)}
-                    className={`ml-auto w-fit max-w-[80%] break-words rounded-2xl rounded-br-sm bg-[var(--user)] px-3 py-2 text-left text-[13.5px] leading-relaxed disabled:cursor-default ${
-                      editingId === message.id
-                        ? "ring-1 ring-[var(--brass)]"
-                        : "cursor-pointer hover:bg-[var(--user-hover)]"
-                    }`}
-                  >
-                    {stripEnvPrompt(textOf(message.content)) ? (
-                      <div>{stripEnvPrompt(textOf(message.content))}</div>
-                    ) : null}
-                    {message.attachments?.length ? (
-                      <AttachmentChips
-                        items={message.attachments}
-                        className={stripEnvPrompt(textOf(message.content)) ? "mt-2" : ""}
-                      />
-                    ) : null}
-                  </button>
-                </div>
-              ) : (
-                <MessageFrame
-                  key={message.id}
-                  locale={locale}
-                  locked={isRunning}
-                  hideActions={isRunning && message.id === messages[messages.length - 1]?.id}
-                  className={gap}
-                  modelLabel={
-                    message.modelName ||
-                    models.find((item) => item.id === message.modelId)?.name ||
-                    (message.modelId && message.modelId !== "auto" ? message.modelId : "")
-                  }
-                  onFork={() => onFork(message.id)}
-                  onRegenerate={() => onRegenerate(message.id)}
-                  replyMarkdown={replyMarkdown(message.content)}
-                >
-                  <AssistantMessage
-                    locale={locale}
-                    content={message.content}
-                    page={page}
-                    live={isRunning && message.id === messages[messages.length - 1]?.id}
-                    durationMs={message.durationMs}
-                  />
-                </MessageFrame>
-              );
-            })}
+            <MessageThread
+              locale={locale}
+              messages={messages}
+              isRunning={isRunning}
+              editingId={editingId}
+              models={models}
+              page={page}
+              onStartEdit={onStartEdit}
+              onFork={onFork}
+              onRegenerate={onRegenerate}
+            />
             <div ref={threadEndRef} aria-hidden className="h-px w-full" />
           </div>
         </div>
@@ -504,6 +469,84 @@ export function ChatPane({
     </div>
   );
 }
+
+const MessageThread = memo(function MessageThread({
+  locale,
+  messages,
+  isRunning,
+  editingId,
+  models,
+  page,
+  onStartEdit,
+  onFork,
+  onRegenerate,
+}: {
+  locale: Locale;
+  messages: ChatMessage[];
+  isRunning: boolean;
+  editingId?: string;
+  models: AgentModel[];
+  page?: CurrentPage;
+  onStartEdit: (message: ChatMessage) => void;
+  onFork: (messageId: string) => void;
+  onRegenerate: (messageId: string) => void;
+}) {
+  return (
+    <>
+      {messages.map((message, index) => {
+        const gap = index === 0 ? "" : message.role === "user" ? "mt-6" : "mt-3";
+        return message.role === "user" ? (
+          <div key={message.id} className={`flex justify-end ${gap}`}>
+            <button
+              type="button"
+              disabled={isRunning}
+              onClick={() => onStartEdit(message)}
+              className={`ml-auto w-fit max-w-[80%] break-words rounded-2xl rounded-br-sm bg-[var(--user)] px-3 py-2 text-left text-[13.5px] leading-relaxed disabled:cursor-default ${
+                editingId === message.id
+                  ? "ring-1 ring-[var(--brass)]"
+                  : "cursor-pointer hover:bg-[var(--user-hover)]"
+              }`}
+            >
+              {stripEnvPrompt(textOf(message.content)) ? (
+                <div>{stripEnvPrompt(textOf(message.content))}</div>
+              ) : null}
+              {message.attachments?.length ? (
+                <AttachmentChips
+                  items={message.attachments}
+                  className={stripEnvPrompt(textOf(message.content)) ? "mt-2" : ""}
+                />
+              ) : null}
+            </button>
+          </div>
+        ) : (
+          <MessageFrame
+            key={message.id}
+            locale={locale}
+            locked={isRunning}
+            hideActions={isRunning && message.id === messages[messages.length - 1]?.id}
+            className={gap}
+            modelLabel={
+              message.modelName ||
+              models.find((item) => item.id === message.modelId)?.name ||
+              (message.modelId && message.modelId !== "auto" ? message.modelId : "")
+            }
+            onFork={() => onFork(message.id)}
+            onRegenerate={() => onRegenerate(message.id)}
+            replyMarkdown={replyMarkdown(message.content)}
+          >
+            <AssistantMessage
+              locale={locale}
+              content={message.content}
+              page={page}
+              live={isRunning && message.id === messages[messages.length - 1]?.id}
+              durationMs={message.durationMs}
+            />
+          </MessageFrame>
+        );
+      })}
+    </>
+  );
+});
 
 function AttachmentChips({
   items,

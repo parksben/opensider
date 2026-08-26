@@ -66,11 +66,6 @@ body,
   font-family: "IBM Plex Sans", sans-serif;
 }
 
-body > svg[aria-roledescription="error"],
-body > [id^="dcs-mmd-"] {
-  display: none !important;
-}
-
 body {
   background-image:
     radial-gradient(1200px 500px at 10% -10%, var(--glow), transparent 50%),
@@ -319,4 +314,5 @@ input {
   max-width: 100%;
   height: auto;
   margin: 0 auto;
+  font-family: inherit;
 }

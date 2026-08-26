@@ -8,8 +8,8 @@
   },
   "dependencies": {
     "@cursor-sidebar/shared": "workspace:*",
+    "@dagrejs/dagre": "^3.1.1",
     "lucide-react": "^0.542.0",
-    "mermaid": "^11.17.2",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "react-markdown": "^10.1.0",

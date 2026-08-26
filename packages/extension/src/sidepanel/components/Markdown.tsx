@@ -1,4 +1,4 @@
-import { Children, isValidElement, type MouseEvent, type ReactNode } from "react";
+import { Children, isValidElement, memo, type MouseEvent, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { openAgentLink, type LinkPage } from "../open-link";
@@ -14,7 +14,7 @@ function codeText(node: ReactNode): string {
   return String(node.props.children ?? "").replace(/\n$/, "");
 }
 
-export function Markdown({ text, page }: { text: string; page?: LinkPage }) {
+export const Markdown = memo(function Markdown({ text, page }: { text: string; page?: LinkPage }) {
   const onLink = (event: MouseEvent<HTMLAnchorElement>, href?: string) => {
     event.preventDefault();
     const forceNewTab = event.metaKey || event.ctrlKey || event.shiftKey || event.altKey;
@@ -49,4 +49,4 @@ export function Markdown({ text, page }: { text: string; page?: LinkPage }) {
       </ReactMarkdown>
     </div>
   );
-}
+}, (prev, next) => prev.text === next.text && prev.page?.tabId === next.page?.tabId && prev.page?.url === next.page?.url);
