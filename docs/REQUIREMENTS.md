@@ -24,7 +24,7 @@
 1. 用户完成本机 Cursor CLI 登录（`agent login`）。
 2. 用户安装 Native Messaging Host（由浏览器按需拉起，不是常驻服务），并以未打包方式加载本扩展。Host 的可执行副本装在 `~/.cursor-sidebar/runtime`，不从 Desktop 上的仓库直接拉起：macOS 会拦 Chrome 执行 Desktop / Documents / Downloads 里的脚本，表现为「Native host has exited」。
 3. 点击工具栏图标打开 Side Panel。顶栏左侧是语言切换（圆角描边按钮：英文界面显示「中」，中文界面显示「EN」）、开关灯（三态：浅色 / 深色 / 跟随设备，点一下切下一个；Lucide `Sun` / `Moon` / `Monitor`）。会话名和会话列表按钮组成一组、相对 header 水平居中：标题在左、按钮在右。该组最大宽度为左右两侧内容各留 32px，标题不换行；超出时标题省略，hover 用原生 `title` 展示全文。右侧是无边框的连接状态，offline 时旁有「重连 / Connection」（旋转箭头 icon 已表示重试，英文不再写 Retry）。连接状态右侧只放当前页 favicon（取不到则用 Globe）；hover 弹出两行详情：第一行网页标题，第二行完整 URL。不再单独铺一条当前页 banner。不放插件名和 slogan。未连接时说明原因。重连必须真正重连 Native Host，不能因为端口已断开就静默失败。两套主题的正文、次要文案与背景对比度都要够读，不能在某一主题下糊成一团。
-4. 标题右侧按钮始终是圆形气泡加号（Lucide `MessageCirclePlus`），tooltip 为「会话 / Sessions」。点开后出现居中模态：无关闭钮、无底栏，只有顶部「新建 + 筛选」和会话列表。列表按 `updatedAt` 倒序；筛选按标题不区分大小写。列表（含顶栏）最大高度为视口上下各留 200px，超出滚动。上下键循环高亮并滚入视口，回车切换当前高亮会话并关闭；点遮罩或 Esc 关闭。新建在筛选框左侧，Lucide `MessageSquarePlus` +「新会话 / New chat」。再点标题旁按钮也可关掉。
+4. 标题右侧按钮始终是圆形气泡加号（Lucide `MessageCirclePlus`），tooltip 为「会话 / Sessions」。点开后出现居中模态：无关闭钮、无底栏，只有顶部「新建 + 筛选」和会话列表。遮罩用半透明底加背景模糊（与拾取元素遮罩同一档 `backdrop-blur-md`），好和后面的聊天区分开。列表按 `updatedAt` 倒序；筛选按标题不区分大小写。列表（含顶栏）最大高度为视口上下各留 200px，超出滚动。上下键循环高亮并滚入视口，回车切换当前高亮会话并关闭；点遮罩或 Esc 关闭。新建在筛选框左侧，Lucide `MessageSquarePlus` +「新会话 / New chat」。再点标题旁按钮也可关掉。
 5. 连接成功后，Host 拉起 `agent acp`，复用已有登录，进入 Agent 模式（完整本地工具）。关掉再打开侧栏时，应回放最近一次连接状态，而不是一直停在离线。侧栏与 Service Worker 之间的端口断开时，不得抛未捕获异常（Chrome 扩展页里那种 `disconnected port object`），并应自动重连；不要停在「Lost connection to the extension service worker」就不再试。
 6. 用户发送后，侧栏立刻出现用户气泡，输入框描边进入进行中动效，发送钮换成停止。不再另起一行「Agent is working」转圈。离线时发送会留下可见错误，而不是没有任何反馈。
 
