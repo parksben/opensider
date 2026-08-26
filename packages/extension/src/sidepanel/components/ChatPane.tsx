@@ -984,6 +984,8 @@ function liveVisibleParts(parts: ChatPart[]): Array<{ part: ChatPart; index: num
   for (let index = 0; index < parts.length; index += 1) {
     const part = parts[index];
     if (part.type === "text") {
+      const prev = visible[visible.length - 1];
+      if (prev && prev.part.type !== "text") visible.pop();
       visible.push({ part, index });
       continue;
     }
@@ -1011,11 +1013,30 @@ function processLabel(locale: Locale, durationMs?: number): string {
   return time ? t(locale, "ranFor").replace("{time}", time) : t(locale, "ran");
 }
 
-function renderAssistantPart(part: ChatPart, index: number, locale: Locale, page?: CurrentPage) {
+function renderAssistantPart(
+  part: ChatPart,
+  index: number,
+  locale: Locale,
+  page?: CurrentPage,
+  live?: boolean,
+  lastIndex?: number,
+) {
   if (part.type === "text") return <Markdown key={index} text={part.text} page={page} />;
   if (part.type === "reasoning") {
+    const thinking = Boolean(live && lastIndex != null && index === lastIndex);
     return (
-      <TextFold key={index} label={t(locale, "thinking")} paneClass="cs-fold-scroll">
+      <TextFold
+        key={index}
+        label={t(locale, "thinking")}
+        paneClass="cs-fold-scroll"
+        icon={
+          thinking ? (
+            <span className="inline-flex shrink-0 text-[var(--muted)]">
+              <LoaderCircle size={12} className="animate-spin" />
+            </span>
+          ) : undefined
+        }
+      >
         <div className="whitespace-pre-wrap text-[11px] leading-relaxed text-[var(--muted)]">
           {compactReasoning(part.text)}
         </div>
@@ -1045,11 +1066,12 @@ function AssistantMessage({
   const process = cut > 0 ? content.slice(0, cut) : cut < 0 ? content : [];
   const body = cut >= 0 ? content.slice(cut) : [];
   const fold = !live && process.length > 0;
+  const lastIndex = content.length - 1;
   if (!fold) {
     const items = live ? liveVisibleParts(content) : content.map((part, index) => ({ part, index }));
     return (
       <div className="space-y-1">
-        {items.map(({ part, index }) => renderAssistantPart(part, index, locale, page))}
+        {items.map(({ part, index }) => renderAssistantPart(part, index, locale, page, live, lastIndex))}
       </div>
     );
   }

@@ -37,7 +37,7 @@ export function ToolCard({ locale, part }: { locale: Locale; part: ToolPart }) {
   return (
     <TextFold
       label={title}
-      paneClass="cs-fold-scroll"
+      paneClass="cs-fold-scroll cs-tool-scroll"
       icon={
         <span className="inline-flex shrink-0 text-[var(--muted)]">
           {running ? <LoaderCircle size={12} className="animate-spin" /> : <Icon size={12} strokeWidth={1.75} />}

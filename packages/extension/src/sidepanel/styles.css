@@ -299,6 +299,10 @@ input {
   line-height: 1.625;
 }
 
+.cs-fold-scroll.cs-tool-scroll {
+  max-height: 10lh;
+}
+
 .cs-fold-scroll pre {
   margin: 0;
 }
