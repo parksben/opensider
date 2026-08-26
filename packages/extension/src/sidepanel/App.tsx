@@ -10,7 +10,7 @@ import type {
 import { MousePointer2 } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { encodeImageBlob } from "../image-encode";
-import { applyAcpUpdate, createUserMessage } from "./acp-messages";
+import { applyAcpUpdate, applyBrowserTool, createUserMessage } from "./acp-messages";
 import { connectSidebar } from "./bridge";
 import type { ChatMessage, PermissionRequest, PlanPrompt, QuestionPrompt, TodoItem } from "./chat-types";
 import { ChatPane } from "./components/ChatPane";
@@ -59,7 +59,6 @@ export function App() {
   const [permissions, setPermissions] = useState<Record<string, PermissionRequest>>({});
   const [questions, setQuestions] = useState<Record<string, QuestionPrompt>>({});
   const [plans, setPlans] = useState<Record<string, PlanPrompt>>({});
-  const [activity, setActivity] = useState<{ command: BrowserCommand; result?: BrowserResult }>();
   const [pickingElement, setPickingElement] = useState(false);
 
   const sendRef = useRef<(msg: ExtToHost) => void>(() => undefined);
@@ -171,6 +170,19 @@ export function App() {
       outcome: { outcome: "selected", optionId },
     });
     return true;
+  };
+
+  const recordBrowserTool = (command: BrowserCommand, result?: BrowserResult) => {
+    let localId = selectedIdRef.current;
+    if (!runningIdsRef.current.has(localId)) {
+      localId = [...runningIdsRef.current][0] ?? localId;
+    }
+    if (!localId) return;
+    const modelId = selectedModelRef.current;
+    const modelName =
+      models.find((item) => item.id === modelId)?.name ||
+      (!modelId || modelId === "auto" ? "Auto" : modelId);
+    updateSessionMessages(localId, (current) => applyBrowserTool(current, command, result, { modelId, modelName }));
   };
 
   const updateSessionMessages = (id: string, updater: (messages: ChatMessage[]) => ChatMessage[]) => {
@@ -285,15 +297,11 @@ export function App() {
       return;
     }
     if (msg.type === "browser.command") {
-      setActivity({ command: msg.command });
+      recordBrowserTool(msg.command);
       return;
     }
     if (msg.type === "browser.result") {
-      setActivity((current) =>
-        current && current.command.id === msg.result.id
-          ? { command: current.command, result: msg.result }
-          : { command: { id: msg.result.id, method: msg.result.method }, result: msg.result },
-      );
+      recordBrowserTool({ id: msg.result.id, method: msg.result.method }, msg.result);
       return;
     }
     if (msg.type === "update") {
@@ -723,7 +731,6 @@ export function App() {
         status={status}
         error={error}
         page={page}
-        activity={activity}
         sessionTitle={selected.title}
         sessionsOpen={sessionsOpen}
         theme={theme}

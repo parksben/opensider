@@ -58,6 +58,6 @@ export function toolTitle(locale: Locale, part: ToolPart): string {
   const label = t(locale, key);
   const detail = parsed?.detail ?? "";
   if (detail) return `${label} ${detail}`;
-  if (key === "toolOther" && raw && raw.toLowerCase() !== "tool") return raw;
+  if (raw && raw.toLowerCase() !== "tool") return raw;
   return label;
 }

@@ -1,3 +1,4 @@
+import type { BrowserCommand, BrowserResult } from "@shared";
 import type { ChatMessage, ChatPart, ToolPart, ToolStatus } from "./chat-types";
 
 function id(): string {
@@ -120,6 +121,56 @@ export function applyAcpUpdate(
   }
 
   return messages;
+}
+
+function browserKind(method: string): string {
+  if (/^(get|query|exists|listTabs)/.test(method)) return "read";
+  if (/^(navigate|goBack|goForward|reload|switchTab|moveTabsToWindow)/.test(method)) return "fetch";
+  return "other";
+}
+
+function browserTitle(command: BrowserCommand): string {
+  const args = command.args;
+  const detail = [args?.url, args?.selector, args?.text, args?.tabId != null ? String(args.tabId) : ""]
+    .filter(Boolean)
+    .join(" ");
+  return detail ? `${command.method} ${detail}` : command.method;
+}
+
+export function applyBrowserTool(
+  messages: ChatMessage[],
+  command: BrowserCommand,
+  result?: BrowserResult,
+  model?: { modelId?: string; modelName?: string },
+): ChatMessage[] {
+  const toolCallId = `browser:${command.id}`;
+  const found = findTool(messages, toolCallId);
+  const part: ToolPart = {
+    type: "tool-call",
+    toolCallId,
+    toolName: browserTitle(command),
+    args: command.args ?? {},
+    result: result ? (result.ok ? result.data ?? result.error : result.error) : undefined,
+    status: result ? (result.ok ? "completed" : "failed") : "in_progress",
+    kind: browserKind(command.method),
+  };
+  if (found) {
+    const message = messages[found.messageIndex];
+    const current = message.content[found.partIndex] as ToolPart;
+    const patched: ToolPart = {
+      ...part,
+      toolName: command.args ? part.toolName : current.toolName,
+      args: command.args ?? current.args,
+      kind: current.kind ?? part.kind,
+    };
+    const copy = messages.slice();
+    copy[found.messageIndex] = replacePart(message, found.partIndex, patched);
+    return copy;
+  }
+  const next = lastAssistant(messages, model);
+  const message = next.messages[next.index];
+  next.messages[next.index] = { ...message, content: [...message.content, part] };
+  return next.messages;
 }
 
 export function createUserMessage(text: string, attachments?: ChatMessage["attachments"]): ChatMessage {

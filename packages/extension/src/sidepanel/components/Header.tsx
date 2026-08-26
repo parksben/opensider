@@ -1,6 +1,6 @@
-import { Check, Globe, History, MessageSquarePlus, Monitor, Moon, MousePointerClick, Pencil, RotateCw, Sun, Unplug } from "lucide-react";
+import { Check, Globe, History, MessageSquarePlus, Monitor, Moon, Pencil, RotateCw, Sun, Unplug } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { BrowserCommand, BrowserResult, CurrentPage } from "@shared";
+import type { CurrentPage } from "@shared";
 import type { Locale } from "../i18n";
 import { t } from "../i18n";
 import { nextTheme, type ThemePreference } from "../theme";
@@ -11,7 +11,6 @@ export function Header({
   status,
   error,
   page,
-  activity,
   sessionTitle,
   sessionsOpen,
   theme,
@@ -26,7 +25,6 @@ export function Header({
   status: "starting" | "ready" | "error";
   error?: string;
   page?: CurrentPage;
-  activity?: { command: BrowserCommand; result?: BrowserResult };
   sessionTitle: string;
   sessionsOpen: boolean;
   theme: ThemePreference;
@@ -209,32 +207,11 @@ export function Header({
         </div>
       </div>
 
-      {activity ? (
-        <div className="mt-2 flex items-center gap-2 text-[11.5px] text-[var(--muted)]">
-          <MousePointerClick size={13} className="shrink-0 text-[var(--brass)]" />
-          <span className="truncate">
-            {activity.command.method}
-            {targetLabel(activity.command)}
-            {activity.result
-              ? activity.result.ok
-                ? ` · ${label("activityDone")}`
-                : ` · ${activity.result.error ?? label("activityFailed")}`
-              : ` · ${label("activityRunning")}`}
-          </span>
-        </div>
-      ) : null}
-
       {error && status !== "ready" ? (
         <p className="mt-2 text-[11.5px] leading-relaxed text-[var(--bad)]">{error}</p>
       ) : null}
     </header>
   );
-}
-
-function targetLabel(command: BrowserCommand): string {
-  const args = command.args;
-  const bit = args?.selector || args?.text || args?.url || args?.key;
-  return bit ? ` ${bit}` : "";
 }
 
 function PageFavicon({ locale, page }: { locale: Locale; page?: CurrentPage }) {

@@ -101,7 +101,7 @@ Cursor Agent 在 ACP 模式下仍然自己执行本地工具（读文件、写�
 
 `chrome.tabs.captureVisibleTab` 得到 JPEG，按 devicePixelRatio 裁切，最长边压到约 1280，质量约 0.72，保证 Native Messaging 帧小于 1MB。Host 把 base64 落成 `browser/screenshots/<id>.jpg`，结果 JSON 只保留绝对路径、宽高、mime。Agent 用已有 Read 打开该图片做视觉分析。v1 不拼整页长截图。
 
-标签级操作由 Service Worker 执行：`navigate`（仅 http(s)）、`goBack`、`goForward`、`reload`。完成后重新抓快照。
+标签级操作由 Service Worker 执行：`navigate`（仅 http(s)）、`goBack`、`goForward`、`reload`。窗口级也走 SW（不经内容脚本）：`listTabs`、`switchTab`（`args.tabId` + 聚焦窗口）、`moveTabsToWindow`（`args.tabIds`，可选 `args.windowId`；没有则 `chrome.windows.create` 再 `tabs.move`）。完成后刷新 `current.json`，并重写 `browser/tabs.json`。manifest 加 `windows`。
 
 ### Native Host
 
@@ -130,6 +130,7 @@ Host 用 Node 24 直接跑 TypeScript（类型擦除）。stdout 只给 Chrome�
     browser/
       tools.json             # 机器可读方法目录，Host 启动时写入
       current.json           # 当前标签：tabId, url, title, updatedAt
+      tabs.json              # 全部普通窗口/标签：tabId, windowId, title, url, active, pinned, restricted
       snapshot.md            # 最近一次可读正文
       commands/<id>.json     # Agent 写入的页面命令
       results/<id>.json      # 扩展写回的结果
@@ -173,9 +174,9 @@ Host 用 Node 24 直接跑 TypeScript（类型擦除）。stdout 只给 Chrome�
 }
 ```
 
-命令默认超时 20s（`waitFor` / 导航可能更久）。失败结果带 `ok: false` 和错误信息。文本结果约 200KB 截断。截图走 JPEG 压缩，结果 JSON 不内嵌像素。操作类命令成功后刷新 `current.json` / `snapshot.md`。侧栏通过 `browser.command` / `browser.result` 显示当前页面动作。
+命令默认超时 20s（`waitFor` / 导航可能更久）。失败结果带 `ok: false` 和错误信息。文本结果约 200KB 截断。截图走 JPEG 压缩，结果 JSON 不内嵌像素。操作类命令成功后刷新 `current.json` / `snapshot.md`。侧栏把 `browser.command` / `browser.result` 写成当前轮 assistant 的 `tool-call`（`toolCallId` 为 `browser:<id>`），跟 ACP 工具同一套 `ToolCard`，不挂 Header。
 
-Host 在 `session/new` 之前写好 `AGENTS.md` 和 `browser/tools.json`，这样 Agent 一进工作区就能感知读、操作和视觉方法。
+Host 在 `session/new` 之前写好 `AGENTS.md` 和 `browser/tools.json`，这样 Agent 一进工作区就能感知读、操作、视觉和标签/窗口方法。SW 在标签/窗口变化时（250ms 防抖）发 `tabs.update`，Host 写 `browser/tabs.json`。`listTabs` 结果与该文件同形，给需要立刻拿到列表的命令用。
 
 ## 多会话与 fork
 
@@ -291,8 +292,9 @@ on them with page tools using args.selector.
 5. Side Panel 更新顶栏右侧 favicon（`favIconUrl` 由 SW 从 `chrome.tabs` 并进 `CurrentPage`，不写进 workspace）
 6. 下一条 `session/prompt` 在用户文本前加一行 `[Current tab] {title} — {url}`（UI 不显示这行）
 7. 若有文件附件，再追加 `[Attachments]` 绝对路径；若有拾取的元素，再追加 `[Picked page elements]` 和 CSS selector，并写明用页面工具的 `args.selector` 去查看或操作（UI 气泡里只显示用户正文和芯片）
+8. 同时（及 `onCreated` / `onRemoved` / `onMoved` / `onAttached` / `onDetached` / 窗口焦点变化）防抖写 `browser/tabs.json`。Agent `switchTab` / `moveTabsToWindow` 成功后再抓当前页快照。
 
-不在切换时往会话里塞一条用户消息，以免污染对话。Agent 需要更多页面内容时，按 `AGENTS.md` 读 snapshot 或写命令文件。
+不在切换时往会话里塞一条用户消息，以免污染对话。Agent 需要更多页面内容时，按 `AGENTS.md` 读 snapshot 或写命令文件。跨标签先读 `tabs.json`（或 `listTabs`）拿 `tabId`，再 `switchTab`，然后用原来的页面方法操作新的当前页。
 
 ## ACP 映射
 
