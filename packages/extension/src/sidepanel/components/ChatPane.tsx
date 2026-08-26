@@ -1,5 +1,5 @@
 import type { AgentModel, AttachmentItem, AttachmentKind, CurrentPage } from "@shared";
-import { ArrowDown, ChevronDown, File, Folder, GitFork, Image, LoaderCircle, MessageSquareMore, MousePointer2, Plus, RefreshCw, Send, Shield, Square, X, Zap } from "lucide-react";
+import { ArrowDown, Check, ChevronDown, Copy, File, Folder, GitFork, Image, LoaderCircle, MessageSquareMore, MousePointer2, Plus, RefreshCw, Send, Shield, Square, X, Zap } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from "react";
 import type { ChatMessage, ChatPart } from "../chat-types";
 import type { Locale } from "../i18n";
@@ -263,6 +263,7 @@ export function ChatPane({
                   }
                   onFork={() => onFork(message.id)}
                   onRegenerate={() => onRegenerate(message.id)}
+                  replyMarkdown={replyMarkdown(message.content)}
                 >
                   <AssistantMessage
                     locale={locale}
@@ -616,12 +617,25 @@ function ModelSelect({
   );
 }
 
+function replyMarkdown(content: ChatPart[]): string {
+  const cut = lastTextIndex(content);
+  if (cut < 0) return "";
+  const folded = cut > 0;
+  const source = folded ? content.slice(cut) : content;
+  return source
+    .filter((part) => part.type === "text")
+    .map((part) => part.text)
+    .join("\n\n")
+    .trim();
+}
+
 function MessageFrame({
   locale,
   locked,
   hideActions,
   className = "",
   modelLabel,
+  replyMarkdown: markdown,
   onFork,
   onRegenerate,
   children,
@@ -631,21 +645,43 @@ function MessageFrame({
   hideActions?: boolean;
   className?: string;
   modelLabel?: string;
+  replyMarkdown: string;
   onFork: () => void;
   onRegenerate: () => void;
   children: ReactNode;
 }) {
+  const [copied, setCopied] = useState(false);
+  const copyReply = async () => {
+    if (!markdown) return;
+    try {
+      await navigator.clipboard.writeText(markdown);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      setCopied(false);
+    }
+  };
   return (
     <div className={`group/msg relative ${className}`}>
       {children}
       {hideActions ? null : (
-        <div className="mt-1 flex items-center justify-start opacity-0 transition-opacity group-hover/msg:opacity-100">
+        <div className="mt-1 flex items-center justify-between gap-2 opacity-0 transition-opacity group-hover/msg:opacity-100">
           {modelLabel ? (
             <span className="min-w-0 truncate text-[11px] text-[var(--muted)]">
               {t(locale, "generatedBy").replace("{name}", modelLabel)}
             </span>
-          ) : null}
-          <div className={`flex items-center gap-1 ${modelLabel ? "ml-4" : ""}`}>
+          ) : (
+            <span />
+          )}
+          <div className="flex shrink-0 items-center gap-1">
+            <IconButton
+              label={copied ? t(locale, "copiedReply") : t(locale, "copyReply")}
+              disabled={locked || !markdown}
+              onClick={() => void copyReply()}
+              className="rounded p-1 text-[var(--muted)] hover:text-[var(--text)] disabled:opacity-40"
+            >
+              {copied ? <Check size={12} /> : <Copy size={12} />}
+            </IconButton>
             <IconButton
               label={t(locale, "fork")}
               disabled={locked}
