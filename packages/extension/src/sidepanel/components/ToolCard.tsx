@@ -3,6 +3,7 @@ import type { ToolPart } from "../chat-types";
 import type { Locale } from "../i18n";
 import { toolLiveHeadline } from "../tool-label";
 import { TextFold } from "./TextFold";
+import { ToolJsonView } from "./ToolJsonView";
 
 const kindIcon = {
   read: Search,
@@ -16,23 +17,13 @@ const kindIcon = {
   other: Wrench,
 } as const;
 
-function preview(value: unknown): string {
-  if (value == null) return "";
-  if (typeof value === "string") return value;
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return String(value);
-  }
-}
-
 export function ToolCard({ locale, part }: { locale: Locale; part: ToolPart }) {
   const Icon = kindIcon[(part.kind as keyof typeof kindIcon) ?? "other"] ?? Wrench;
   const status = part.status ?? "pending";
-  const result = preview(part.result);
-  const args = preview(part.args);
   const running = status === "pending" || status === "in_progress";
   const title = toolLiveHeadline(locale, part);
+  const hasArgs = part.args != null && part.args !== "";
+  const hasResult = part.result != null && part.result !== "";
 
   return (
     <TextFold
@@ -45,8 +36,8 @@ export function ToolCard({ locale, part }: { locale: Locale; part: ToolPart }) {
       }
     >
       <div className="space-y-2 text-[11px] leading-relaxed text-[var(--muted)]">
-        {args ? <pre className="whitespace-pre-wrap font-mono">{args}</pre> : null}
-        {result ? <pre className="whitespace-pre-wrap font-mono">{result}</pre> : null}
+        {hasArgs ? <ToolJsonView value={part.args} /> : null}
+        {hasResult ? <ToolJsonView value={part.result} /> : null}
       </div>
     </TextFold>
   );
