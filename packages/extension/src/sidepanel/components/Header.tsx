@@ -1,4 +1,4 @@
-import { Globe, MessageSquarePlus, Moon, MousePointerClick, PanelLeftClose, PlugZap, RotateCw, Sun, SunMoon, Unplug } from "lucide-react";
+import { Globe, MessageSquarePlus, Monitor, Moon, MousePointerClick, PanelLeftClose, PlugZap, RotateCw, Sun, Unplug } from "lucide-react";
 import type { BrowserCommand, BrowserResult, CurrentPage } from "@shared";
 import type { TodoItem } from "../chat-types";
 import type { Locale } from "../i18n";
@@ -65,7 +65,7 @@ export function Header({
             onClick={() => onTheme(nextTheme(theme))}
             className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-[var(--line)] text-[var(--text)]"
           >
-            {theme === "light" ? <Sun size={14} /> : theme === "dark" ? <Moon size={14} /> : <SunMoon size={14} />}
+            {theme === "light" ? <Sun size={14} /> : theme === "dark" ? <Moon size={14} /> : <Monitor size={14} />}
           </IconButton>
         </div>
         <div className="max-w-[46vw] truncate text-center text-[14px] font-medium tracking-tight">
