@@ -70,7 +70,7 @@ function toItems(paths: string[]): AttachmentItem[] {
 }
 
 async function pickWithApp(): Promise<string[]> {
-  const out = join(tmpdir(), `cursor-sidebar-pick-${process.pid}-${Date.now()}.txt`);
+  const out = join(tmpdir(), `opensider-pick-${process.pid}-${Date.now()}.txt`);
   writeFileSync(out, "");
   const started = Date.now();
   try {

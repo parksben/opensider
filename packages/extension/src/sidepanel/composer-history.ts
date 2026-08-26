@@ -1,10 +1,13 @@
 import type { AttachmentItem } from "@shared";
 import { useCallback, useEffect, useState } from "react";
+import { STATE_KEY } from "./persist";
 
-const SESSION_STATE_KEY = "cursor-sidebar/state";
+const PREVIOUS_TAB_HISTORY_KEY = "cursor-sidebar/tab-history";
+const PREVIOUS_ATTACHMENT_HISTORY_KEY = "cursor-sidebar/attachment-history";
+const PREVIOUS_STATE_KEY = "cursor-sidebar/state";
 
-export const TAB_HISTORY_KEY = "cursor-sidebar/tab-history";
-export const ATTACHMENT_HISTORY_KEY = "cursor-sidebar/attachment-history";
+export const TAB_HISTORY_KEY = "opensider/tab-history";
+export const ATTACHMENT_HISTORY_KEY = "opensider/attachment-history";
 export const ATTACHMENT_HISTORY_LIMIT = 50;
 export const TAB_HISTORY_LIMIT = 200;
 
@@ -56,8 +59,8 @@ function isAttachment(value: unknown): value is AttachmentItem {
 }
 
 export async function loadTabHistory(): Promise<HistoryTab[]> {
-  const raw = await chrome.storage.local.get(TAB_HISTORY_KEY);
-  const list = raw[TAB_HISTORY_KEY];
+  const raw = await chrome.storage.local.get([TAB_HISTORY_KEY, PREVIOUS_TAB_HISTORY_KEY]);
+  const list = raw[TAB_HISTORY_KEY] ?? raw[PREVIOUS_TAB_HISTORY_KEY];
   return Array.isArray(list) ? list.filter(isHistoryTab) : [];
 }
 
@@ -66,8 +69,8 @@ export async function saveTabHistory(list: HistoryTab[]): Promise<void> {
 }
 
 export async function loadAttachmentHistory(): Promise<AttachmentItem[]> {
-  const raw = await chrome.storage.local.get(ATTACHMENT_HISTORY_KEY);
-  const list = raw[ATTACHMENT_HISTORY_KEY];
+  const raw = await chrome.storage.local.get([ATTACHMENT_HISTORY_KEY, PREVIOUS_ATTACHMENT_HISTORY_KEY]);
+  const list = raw[ATTACHMENT_HISTORY_KEY] ?? raw[PREVIOUS_ATTACHMENT_HISTORY_KEY];
   return Array.isArray(list) ? list.filter(isAttachment) : [];
 }
 
@@ -113,11 +116,11 @@ export function useComposerHistory(): {
       const [storedTabs, storedAttachments, rawState] = await Promise.all([
         loadTabHistory(),
         loadAttachmentHistory(),
-        chrome.storage.local.get(SESSION_STATE_KEY),
+        chrome.storage.local.get([STATE_KEY, PREVIOUS_STATE_KEY]),
       ]);
       if (cancelled) return;
       const fromSessions: AttachmentItem[] = [];
-      const persisted = rawState[SESSION_STATE_KEY] as
+      const persisted = (rawState[STATE_KEY] ?? rawState[PREVIOUS_STATE_KEY]) as
         | { sessions?: Array<{ messages?: Array<{ attachments?: AttachmentItem[] }> }> }
         | undefined;
       for (const session of persisted?.sessions ?? []) {

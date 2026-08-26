@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""生成 Cursor Sidebar 扩展图标 packages/extension/assets/icon.svg。
+"""生成 OpenSider 扩展图标 packages/extension/assets/icon.svg。
 
 造型：Cursor 官方立方体轮廓（CUBE_2D 路径，nonzero 规则中央光标区域自动镂空透明），
 内部填 Google 三色顺时针渐变风车：红(上) → 黄(右下) → 绿(左下)。

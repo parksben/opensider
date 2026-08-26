@@ -1,7 +1,18 @@
+import { existsSync, renameSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-export const SIDEBAR_HOME = join(homedir(), ".cursor-sidebar");
+const nextHome = join(homedir(), ".opensider");
+const previousHome = join(homedir(), ".cursor-sidebar");
+if (!existsSync(nextHome) && existsSync(previousHome)) {
+  try {
+    renameSync(previousHome, nextHome);
+  } catch {
+    // keep going with the new path
+  }
+}
+
+export const SIDEBAR_HOME = nextHome;
 export const WORKSPACE_DIR = join(SIDEBAR_HOME, "workspace");
 export const BROWSER_DIR = join(WORKSPACE_DIR, "browser");
 export const COMMANDS_DIR = join(BROWSER_DIR, "commands");

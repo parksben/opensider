@@ -3,9 +3,9 @@ import { EXTENSION_KEY } from "../shared/src/protocol";
 
 export default defineManifest({
   manifest_version: 3,
-  name: "Cursor Sidebar",
+  name: "OpenSider",
   version: "0.1.0",
-  description: "Chat with your local Cursor Agent from a Chrome side panel.",
+  description: "Chat with your local Cursor Agent from the OpenSider side panel.",
   key: EXTENSION_KEY,
   icons: {
     "16": "icons/icon16.png",
@@ -14,7 +14,7 @@ export default defineManifest({
     "128": "icons/icon128.png",
   },
   action: {
-    default_title: "Cursor Sidebar",
+    default_title: "OpenSider",
     default_icon: {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",

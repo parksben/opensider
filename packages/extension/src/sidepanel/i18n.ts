@@ -1,6 +1,7 @@
 export type Locale = "en" | "zh";
 
-export const LOCALE_CACHE_KEY = "cursor-sidebar/locale";
+export const LOCALE_CACHE_KEY = "opensider/locale";
+const PREVIOUS_LOCALE_CACHE_KEY = "cursor-sidebar/locale";
 
 export function isLocale(value: unknown): value is Locale {
   return value === "en" || value === "zh";
@@ -8,7 +9,7 @@ export function isLocale(value: unknown): value is Locale {
 
 export function readCachedLocale(): Locale | undefined {
   try {
-    const value = window.localStorage.getItem(LOCALE_CACHE_KEY);
+    const value = window.localStorage.getItem(LOCALE_CACHE_KEY) ?? window.localStorage.getItem(PREVIOUS_LOCALE_CACHE_KEY);
     return isLocale(value) ? value : undefined;
   } catch {
     return undefined;

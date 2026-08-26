@@ -10,7 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     let home = FileManager.default.homeDirectoryForCurrentUser.path
-    let logPath = home + "/.cursor-sidebar/host.log"
+    let logPath = home + "/.opensider/host.log"
     let stamp = ISO8601DateFormatter().string(from: Date())
     if let handle = FileHandle(forWritingAtPath: logPath) {
       handle.seekToEndOfFile()

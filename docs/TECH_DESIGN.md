@@ -1,6 +1,6 @@
-# Cursor Sidebar — 技术设计
+# OpenSider — 技术设计
 
-> Chrome 扩展通过 Native Messaging 托管 `agent acp`；页面感知用内容脚本 + 工作区文件，不使用 MCP，不运行常驻本地服务。
+> 产品名 OpenSider。Chrome 扩展通过 Native Messaging 托管 `agent acp`；页面感知用内容脚本 + 工作区文件，不使用 MCP，不运行常驻本地服务。对外名称、包名、Native Host、本机目录和 storage key 都用 `opensider` / `com.opensider.host` / `~/.opensider`。首次启动若还剩旧目录 `~/.cursor-sidebar` 或旧 storage key，会读出来迁到新名。
 
 ## 总览
 
@@ -11,7 +11,7 @@ Service Worker
         │ Native Messaging (stdio, Chrome 按需拉起)
 Native Host
         ├─ child process: `agent acp`   (JSON-RPC over stdio)
-        └─ 工作区文件: ~/.cursor-sidebar/workspace
+        └─ 工作区文件: ~/.opensider/workspace
                browser/current.json
                browser/snapshot.md
                browser/commands/*.json
@@ -59,7 +59,7 @@ Cursor Agent 在 ACP 模式下仍然自己执行本地工具（读文件、写�
 - 在 Side Panel、Content Script、Host 之间转发消息；`page.pick` 只走内容脚本，不进 Native Host。先 ping，失败则按 manifest 注入内容脚本再拾取
 - 监听 `tabs.onActivated` / `tabs.onUpdated`，通知内容脚本刷新当前页
 - 点击工具栏图标打开 Side Panel
-- Host 包装脚本一启动就往 `~/.cursor-sidebar/host.log` 打一行，便于判断 Chrome 有没有真正拉起 Host
+- Host 包装脚本一启动就往 `~/.opensider/host.log` 打一行，便于判断 Chrome 有没有真正拉起 Host
 
 ### Content Script
 
@@ -116,12 +116,12 @@ Cursor Agent 在 ACP 模式下仍然自己执行本地工具（读文件、写�
 - 把 Agent 的 `session/update`、权限请求、Cursor 扩展方法推给扩展
 - 把页面快照和 `browser/tools.json` 写入工作区；监视 `browser/commands/`，转给扩展，再把结果写回 `browser/results/`（截图另存 `browser/screenshots/`）
 
-Host 用 Node 24 直接跑 TypeScript（类型擦除）。stdout 只给 Chrome，ACP 走子进程管道，日志只写 `~/.cursor-sidebar/host.log`。
+Host 用 Node 24 直接跑 TypeScript（类型擦除）。stdout 只给 Chrome，ACP 走子进程管道，日志只写 `~/.opensider/host.log`。
 
 ## 工作区布局
 
 ```
-~/.cursor-sidebar/
+~/.opensider/
   runtime/                   # Chrome 实际拉起的 Host 副本（不在 Desktop）
     packages/host/src
     packages/shared/src
@@ -140,7 +140,7 @@ Host 用 Node 24 直接跑 TypeScript（类型擦除）。stdout 只给 Chrome�
   host.log
 ```
 
-侧栏状态（语言、会话目录、消息、选中项）存在 `chrome.storage.local`，key 为 `cursor-sidebar/state`。Host 只记当前 ACP `sessionId`，方便进程重启后 `session/load`。
+侧栏状态（语言、会话目录、消息、选中项）存在 `chrome.storage.local`，key 为 `opensider/state`。Host 只记当前 ACP `sessionId`，方便进程重启后 `session/load`。
 
 `current.json` 示例：
 
@@ -251,17 +251,17 @@ chrome.storage.local
 
 ## 语言
 
-`packages/extension/src/sidepanel/i18n.ts` 提供 `en` / `zh` 词条。默认 `en`。完整 state 仍写 `chrome.storage.local`；切换时同步镜像 `localStorage` 的 `cursor-sidebar/locale`。`theme-boot.js` 同时读这份镜像并设 `document.documentElement.lang`，避免每次打开先闪英文。React 初始 state 也从镜像读。连接错误原文（Host / Chrome `lastError`）不翻译。composer `placeholder` 在发送提示后补一句 `@` 引用：中「输入@可引用内容」、英「Type @ to mention」。
+`packages/extension/src/sidepanel/i18n.ts` 提供 `en` / `zh` 词条。默认 `en`。完整 state 仍写 `chrome.storage.local`；切换时同步镜像 `localStorage` 的 `opensider/locale`。`theme-boot.js` 同时读这份镜像并设 `document.documentElement.lang`，避免每次打开先闪英文。React 初始 state 也从镜像读。连接错误原文（Host / Chrome `lastError`）不翻译。composer `placeholder` 在发送提示后补一句 `@` 引用：中「输入@可引用内容」、英「Type @ to mention」。
 
 ## 主题
 
-`theme.ts`：偏好 `light | dark | system`，解析后给 `document.documentElement.dataset.theme`。`system` 时听 `prefers-color-scheme`。完整 state 仍写 `chrome.storage.local`（`theme` 必填）；切换时同步镜像 `localStorage` 的 `cursor-sidebar/theme`。`index.html` 用 `public/theme-boot.js`（非 inline，避免 MV3 CSP；Vite 拷到扩展根）在 React 之前读这份镜像并设 `data-theme`，避免每次打开先闪默认深色。React 初始 state 也从镜像读，`useLayoutEffect` 再 apply。颜色全走 CSS 变量：`:root` / `[data-theme=dark]` 是现有橄榄黑；`[data-theme=light]` 是中性浅灰层次（画布 `--ink` `#f3f4f6` → 抬升 `--panel` 近白 → 凹陷 `--panel-2`），少蓝、少脏；正文冷灰黑（muted 用石板灰）+ 钢蓝强调（仍走 `--brass` token）。`--hover` / `--code` / `--user` / `--on-brass` / `--overlay` 两套分开，组件不再写死 `#161910` 这类只适合深色的底。图走 CSS 变量配色，不跑 mermaid `initialize`。顶栏 `Sun` / `Moon` / `Monitor` 循环三态。
+`theme.ts`：偏好 `light | dark | system`，解析后给 `document.documentElement.dataset.theme`。`system` 时听 `prefers-color-scheme`。完整 state 仍写 `chrome.storage.local`（`theme` 必填）；切换时同步镜像 `localStorage` 的 `opensider/theme`。`index.html` 用 `public/theme-boot.js`（非 inline，避免 MV3 CSP；Vite 拷到扩展根）在 React 之前读这份镜像并设 `data-theme`，避免每次打开先闪默认深色。React 初始 state 也从镜像读，`useLayoutEffect` 再 apply。颜色全走 CSS 变量：`:root` / `[data-theme=dark]` 是现有橄榄黑；`[data-theme=light]` 是中性浅灰层次（画布 `--ink` `#f3f4f6` → 抬升 `--panel` 近白 → 凹陷 `--panel-2`），少蓝、少脏；正文冷灰黑（muted 用石板灰）+ 钢蓝强调（仍走 `--brass` token）。`--hover` / `--code` / `--user` / `--on-brass` / `--overlay` 两套分开，组件不再写死 `#161910` 这类只适合深色的底。图走 CSS 变量配色，不跑 mermaid `initialize`。顶栏 `Sun` / `Moon` / `Monitor` 循环三态。
 
 ## 附件（只传路径）
 
-Chrome 的文件选择器不会给出本机绝对路径。加号因此发给 Host `fs.pick`。`install-host` 用 `swiftc` 编 `PickFiles.app`（常规激活策略，能到前台）放到 `~/.cursor-sidebar/runtime/`。Host **直接 exec** 包内二进制（不用 `open -W`，Chrome 子进程里 `open` 经常立刻返回、面板也不出现）。面板可同时选文件和文件夹、可多选；若进程在 400ms 内空退，再退回访达 `choose file`。`fs.stat` 分成 `image` / `file` / `folder`。侧栏芯片只展示 `basename`，`title` 是全路径。未连上就点加号，侧栏写明确错误。
+Chrome 的文件选择器不会给出本机绝对路径。加号因此发给 Host `fs.pick`。`install-host` 用 `swiftc` 编 `PickFiles.app`（常规激活策略，能到前台）放到 `~/.opensider/runtime/`。Host **直接 exec** 包内二进制（不用 `open -W`，Chrome 子进程里 `open` 经常立刻返回、面板也不出现）。面板可同时选文件和文件夹、可多选；若进程在 400ms 内空退，再退回访达 `choose file`。`fs.stat` 分成 `image` / `file` / `folder`。侧栏芯片只展示 `basename`，`title` 是全路径。未连上就点加号，侧栏写明确错误。
 
-剪贴板里的截图同样没有本机路径，不能当文件选。composer `paste` 若带 `image/*`，先按页面截图那套压成 JPEG（最长边约 1280、质量约 0.72、base64 &lt; 700KB，以免 Native Messaging 超 1MB），再 `fs.save` 落到 `~/.cursor-sidebar/workspace/browser/pasted/`。回包后当普通 `kind: image` 芯片，走同一套 `wrapAttachments`。Chrome 会把同一张图同时挂在 `clipboardData.files` 和 `items` 上，且 `getAsFile()` 的 `lastModified` 往往对不上，按 name/size/mtime 去重会漏。`clipboardImages` 只读 `files` 里的图片；没有才退到 `items`。有图时 `preventDefault`，避免二进制糊进 textarea；若同时带纯文本则插到光标处。落盘完成前不让发送，以免消息先走、图还没进附件。未连上或压图/写盘失败写明确错误。
+剪贴板里的截图同样没有本机路径，不能当文件选。composer `paste` 若带 `image/*`，先按页面截图那套压成 JPEG（最长边约 1280、质量约 0.72、base64 &lt; 700KB，以免 Native Messaging 超 1MB），再 `fs.save` 落到 `~/.opensider/workspace/browser/pasted/`。回包后当普通 `kind: image` 芯片，走同一套 `wrapAttachments`。Chrome 会把同一张图同时挂在 `clipboardData.files` 和 `items` 上，且 `getAsFile()` 的 `lastModified` 往往对不上，按 name/size/mtime 去重会漏。`clipboardImages` 只读 `files` 里的图片；没有才退到 `items`。有图时 `preventDefault`，避免二进制糊进 textarea；若同时带纯文本则插到光标处。落盘完成前不让发送，以免消息先走、图还没进附件。未连上或压图/写盘失败写明确错误。
 
 `session/prompt` 在用户正文后追加：
 
@@ -272,7 +272,7 @@ Local paths. Read these files or folders if needed.
 - /abs/path/src
 ```
 
-发给 Agent 仍只传路径，不把附件字节塞进 prompt。预览是例外：侧栏 `fs.preview` 向 Host 要一份 data URL，按 `path` 缓存在内存里。`ImagePreview` portal 到 `document.body`：`fixed inset-0`、`--overlay` + `backdrop-filter: blur(2px)`，点遮罩 / Esc 关闭。图 `max-width: 80vw`（左右各 10%）、`max-height: 100vh`、`width/height: auto`，小于上限则按自身像素居中。用户气泡改成外层 `div` 点空白处改历史，图片芯片 `stopPropagation`，进行中也能预览。未发送的芯片只活在输入栏 state 里。每次成功加入附件（选文件 / 粘贴图 / 拾取元素）同时写入 `chrome.storage.local` 的 `cursor-sidebar/attachment-history`：按 `path` 去重、最近的在前，最多 50 条，供 `@` 菜单再用。
+发给 Agent 仍只传路径，不把附件字节塞进 prompt。预览是例外：侧栏 `fs.preview` 向 Host 要一份 data URL，按 `path` 缓存在内存里。`ImagePreview` portal 到 `document.body`：`fixed inset-0`、`--overlay` + `backdrop-filter: blur(2px)`，点遮罩 / Esc 关闭。图 `max-width: 80vw`（左右各 10%）、`max-height: 100vh`、`width/height: auto`，小于上限则按自身像素居中。用户气泡改成外层 `div` 点空白处改历史，图片芯片 `stopPropagation`，进行中也能预览。未发送的芯片只活在输入栏 state 里。每次成功加入附件（选文件 / 粘贴图 / 拾取元素）同时写入 `chrome.storage.local` 的 `opensider/attachment-history`：按 `path` 去重、最近的在前，最多 50 条，供 `@` 菜单再用。
 
 ## 提及芯片（`@`）
 
@@ -301,7 +301,7 @@ Read file/folder/image paths. For kind=element, use page tools with args.selecto
 
 `AGENTS.md` 同步写明这两块。用户气泡和改历史回填都走同一套 parse → 芯片。会话标题用去掉 token、换成 `@标题` 后的纯文本。
 
-历史标签存在 `cursor-sidebar/tab-history`：侧栏自己听 `chrome.tabs`（onCreated / onUpdated / onActivated）并启动时 `query`，按 URL 去重、最近见过的在前。关标签不删历史。菜单第一 tab 用这份列表（左 favicon，失败则 Lucide `Globe`）。
+历史标签存在 `opensider/tab-history`：侧栏自己听 `chrome.tabs`（onCreated / onUpdated / onActivated）并启动时 `query`，按 URL 去重、最近见过的在前。关标签不删历史。菜单第一 tab 用这份列表（左 favicon，失败则 Lucide `Globe`）。
 
 `@` 按钮：focus 编辑器、caret 移到最前、插入 `@`、打开菜单。`AtMenu` portal 到 `document.body`，`position: fixed`，锚点用编辑器上次 range 的 caret 盒；优先放在光标上方（底边 = caret.top - 6），四边夹在视口内缩 16px，高度按上方可用空间收缩，列表 `flex-1 min-h-0` 滚动。mousedown `preventDefault` 以免抢焦点，插入前恢复上次 range。键盘与模型下拉同一套循环高亮 + `scrollIntoView({ block: "nearest" })`；Tab / 左右键切「标签页 / 附件」两个页。回车 / 点击只 `insertMention`。上次没兜住：AtMenu 的 `document` capture 把 `onSelect` 放进 effect 依赖，每次 ChatPane 渲染都拆掉重绑；`stopImmediatePropagation` 拦不住 React 根节点委托；`menuOpen` / `atOpen` 是异步 state，打开菜单的同一拍或 `flushSync` 插芯片之后 Composer 仍会 `onSubmit`；`submit()` 自己也不看菜单。现在用模块级同步锁 `atMenuLock`：输入 `@` 或点 `@` 的当帧就 `open=true`；`installAtMenuGuard` 在 `window` capture 常驻，Enter 只 `confirm` 插芯片；Composer 原生 capture + React `onKeyDown` + `beforeinput` 都认锁；`submit(fromEnter)` 见锁直接 return；菜单在该记 Enter 的 `keyup` 才关，避免同一记回车落到发送。芯片高度跟所在行行高对齐：`.cs-mention-wrap` / `.cs-mention-chip` 继承正文的 `font-size` 和 `line-height`，再 `height: 1lh`。上次写成芯片自己 `font-size: 11px` + `line-height: 1`，`1lh` 就变成 11px，视觉上塌成字高。标签仍 11px，内容 `align-items: center`。padding `0 12px 0 16px`（左比右多 4px）。选中后用芯片替换光标前的那个 `@`。点芯片时 `mousedown` `preventDefault`，caret 放到 wrap 后的 zwsp；`.cs-mention-wrap` / `.cs-mention-chip` 及子孙 `user-select: none`，`selectstart` 也拦住，避免光标进芯片或划词。
 
@@ -368,10 +368,10 @@ Host 是 ACP Client，`clientCapabilities` 关闭 `fs` / `terminal`，让 Agent 
 
 未打包扩展的 ID 必须稳定，Native Messaging 的 `allowed_origins` 才能写死。`manifest.json` 带固定 `key`，ID 为 `gcblddgaifebccglndkaccmibhechimj`。
 
-Host 注册名：`com.cursor.sidebar.host`  
-macOS 清单路径：`~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.cursor.sidebar.host.json`
+Host 注册名：`com.opensider.host`  
+macOS 清单路径：`~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.opensider.host.json`
 
-`pnpm install-host`（`pnpm build` 也会跑）把 `packages/host` 和 `packages/shared` 的源码拷到 `~/.cursor-sidebar/runtime/`，再生成带本机 Node 绝对路径的启动脚本。Chrome 的 Native Messaging 清单 `path` 指向这份副本，而不是 Desktop 仓库里的脚本：macOS TCC 会拦 Chrome 执行 Desktop / Documents / Downloads 下的文件，Chrome 只报 `Native host has exited`，宿主日志也不会出现。nvm 的 `node` 也必须写绝对路径，因为 Chrome 拉起 Host 时 PATH 很瘦。Host 日志只写 `~/.cursor-sidebar/host.log`，不写 stderr，避免 Chrome 把 stderr 当成协议失败。
+`pnpm install-host`（`pnpm build` 也会跑）把 `packages/host` 和 `packages/shared` 的源码拷到 `~/.opensider/runtime/`，再生成带本机 Node 绝对路径的启动脚本。Chrome 的 Native Messaging 清单 `path` 指向这份副本，而不是 Desktop 仓库里的脚本：macOS TCC 会拦 Chrome 执行 Desktop / Documents / Downloads 下的文件，Chrome 只报 `Native host has exited`，宿主日志也不会出现。nvm 的 `node` 也必须写绝对路径，因为 Chrome 拉起 Host 时 PATH 很瘦。Host 日志只写 `~/.opensider/host.log`，不写 stderr，避免 Chrome 把 stderr 当成协议失败。
 
 ## UI
 
@@ -408,7 +408,7 @@ pnpm workspace。扩展用 Vite + `@crxjs/vite-plugin` 打包。
 | 风险 | 处理 |
 |---|---|
 | Native Messaging 环境 PATH 很瘦 | 默认调用 `~/.local/bin/agent`，可覆盖 |
-| macOS 拦 Chrome 执行 Desktop 上的 Host | `install-host` 把运行副本放到 `~/.cursor-sidebar/runtime` |
+| macOS 拦 Chrome 执行 Desktop 上的 Host | `install-host` 把运行副本放到 `~/.opensider/runtime` |
 | 未登录 | 侧栏提示先跑 `agent login` |
 | `session/load` 不支持或失败 | 新建 ACP 会话，界面历史保留，下一条消息带前文 |
 | `session/fork` 不可用或不支持指定消息 | 新会话 + 首条 prompt 前缀截断记录 |

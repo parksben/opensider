@@ -10,7 +10,7 @@ importers:
 
   packages/extension:
     dependencies:
-      '@cursor-sidebar/shared':
+      '@opensider/shared':
         specifier: workspace:*
         version: link:../shared
       '@dagrejs/dagre':

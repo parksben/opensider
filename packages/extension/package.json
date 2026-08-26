@@ -1,5 +1,5 @@
 {
-  "name": "@cursor-sidebar/extension",
+  "name": "@opensider/extension",
   "private": true,
   "type": "module",
   "scripts": {
@@ -7,7 +7,7 @@
     "build": "vite build"
   },
   "dependencies": {
-    "@cursor-sidebar/shared": "workspace:*",
+    "@opensider/shared": "workspace:*",
     "@dagrejs/dagre": "^3.1.1",
     "lucide-react": "^0.542.0",
     "react": "^19.1.1",

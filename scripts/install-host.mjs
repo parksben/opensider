@@ -1,16 +1,26 @@
 import { spawnSync } from "node:child_process";
-import { chmodSync, cpSync, existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const EXTENSION_ID = "gcblddgaifebccglndkaccmibhechimj";
-const HOST_NAME = "com.cursor.sidebar.host";
+const HOST_NAME = "com.opensider.host";
+const PREVIOUS_HOST_NAME = "com.cursor.sidebar.host";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const home = homedir();
-const workspace = resolve(home, ".cursor-sidebar/workspace");
-const runtimeRoot = resolve(home, ".cursor-sidebar/runtime");
+const previousHome = resolve(home, ".cursor-sidebar");
+const nextHome = resolve(home, ".opensider");
+if (!existsSync(nextHome) && existsSync(previousHome)) {
+  try {
+    renameSync(previousHome, nextHome);
+  } catch {
+    // keep going with the new path
+  }
+}
+const workspace = resolve(home, ".opensider/workspace");
+const runtimeRoot = resolve(home, ".opensider/runtime");
 const runtimeHost = resolve(runtimeRoot, "packages/host");
 const hostSh = resolve(runtimeHost, "bin/host.sh");
 const nodePath = process.execPath;
@@ -57,16 +67,16 @@ writeFileSync(
 export HOME="\${HOME:-${home}}"
 export PATH="/bin:/usr/bin:\${HOME}/.local/bin:/opt/homebrew/bin:/usr/local/bin:\${PATH:-}"
 export NODE_NO_WARNINGS=1
-mkdir -p "\${HOME}/.cursor-sidebar" /tmp
+mkdir -p "\${HOME}/.opensider" /tmp
 {
   echo "\$(/bin/date -u +%Y-%m-%dT%H:%M:%SZ) launch pid=\$\$ id=${EXTENSION_ID} runtime=${runtimeRoot}"
-} >> "\${HOME}/.cursor-sidebar/host.log" 2>/dev/null || true
+} >> "\${HOME}/.opensider/host.log" 2>/dev/null || true
 {
   echo "\$(/bin/date -u +%Y-%m-%dT%H:%M:%SZ) launch pid=\$\$"
-} >> /tmp/cursor-sidebar-host.log 2>/dev/null || true
+} >> /tmp/opensider-host.log 2>/dev/null || true
 cd "${runtimeHost}"
 if [[ ! -x "${nodePath}" ]]; then
-  echo "\$(/bin/date -u +%Y-%m-%dT%H:%M:%SZ) missing node ${nodePath}" >> "\${HOME}/.cursor-sidebar/host.log" 2>/dev/null || true
+  echo "\$(/bin/date -u +%Y-%m-%dT%H:%M:%SZ) missing node ${nodePath}" >> "\${HOME}/.opensider/host.log" 2>/dev/null || true
   exit 1
 fi
 exec "${nodePath}" --no-warnings src/index.ts
@@ -83,9 +93,9 @@ writeFileSync(
 <plist version="1.0">
 <dict>
   <key>CFBundleIdentifier</key>
-  <string>com.cursor.sidebar.pick</string>
+  <string>com.opensider.pick</string>
   <key>CFBundleName</key>
-  <string>Cursor Sidebar Pick</string>
+  <string>OpenSider Pick</string>
   <key>CFBundleExecutable</key>
   <string>pick-files</string>
   <key>CFBundlePackageType</key>
@@ -112,7 +122,7 @@ const destDirs = collectManifestDirs();
 const manifest = `${JSON.stringify(
   {
     name: HOST_NAME,
-    description: "Cursor Sidebar native host",
+    description: "OpenSider native host",
     path: hostSh,
     type: "stdio",
     allowed_origins: [`chrome-extension://${EXTENSION_ID}/`],
@@ -124,6 +134,11 @@ const manifest = `${JSON.stringify(
 for (const destDir of destDirs) {
   mkdirSync(destDir, { recursive: true });
   writeFileSync(resolve(destDir, `${HOST_NAME}.json`), manifest);
+  try {
+    unlinkSync(resolve(destDir, `${PREVIOUS_HOST_NAME}.json`));
+  } catch {
+    // old manifest may not exist
+  }
 }
 
 console.log(`Registered ${HOST_NAME}`);

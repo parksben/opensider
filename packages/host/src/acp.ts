@@ -93,7 +93,7 @@ export class AcpClient {
         session: { configOptions: { boolean: {} } },
         _meta: { parameterizedModelPicker: true },
       },
-      clientInfo: { name: "cursor-sidebar", version: "0.1.0" },
+      clientInfo: { name: "opensider", version: "0.1.0" },
     });
     await this.request("authenticate", { methodId: "cursor_login" });
   }

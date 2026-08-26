@@ -1,8 +1,8 @@
 import { uniqueCssSelector } from "./selector";
 
-const ROOT_ID = "cursor-sidebar-picker";
-const HIGHLIGHT_ID = "cursor-sidebar-picker-box";
-const BANNER_ID = "cursor-sidebar-picker-banner";
+const ROOT_ID = "opensider-picker";
+const HIGHLIGHT_ID = "opensider-picker-box";
+const BANNER_ID = "opensider-picker-banner";
 
 let activeRequest: string | undefined;
 let previousCursor = "";

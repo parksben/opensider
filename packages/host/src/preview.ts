@@ -36,7 +36,7 @@ const BROWSER_OK = new Set([
 ]);
 
 async function sipsJpeg(src: string, edge: number, quality: number): Promise<Buffer> {
-  const out = join(tmpdir(), `cursor-sidebar-preview-${process.pid}-${Date.now()}.jpg`);
+  const out = join(tmpdir(), `opensider-preview-${process.pid}-${Date.now()}.jpg`);
   try {
     await execFileAsync(
       SIPS,
