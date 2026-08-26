@@ -78,8 +78,18 @@ body {
 }
 
 button,
-textarea {
+textarea,
+input {
   font: inherit;
+}
+
+.cs-model-filter,
+.cs-model-filter:focus,
+.cs-model-filter:focus-visible {
+  border: none;
+  outline: none;
+  box-shadow: none;
+  appearance: none;
 }
 
 @property --cs-spin {

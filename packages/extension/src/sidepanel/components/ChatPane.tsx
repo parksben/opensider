@@ -439,6 +439,12 @@ function kindIcon(kind: AttachmentKind) {
   return File;
 }
 
+function matchesModel(model: AgentModel, query: string): boolean {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return true;
+  return model.name.toLowerCase().includes(needle) || model.id.toLowerCase().includes(needle);
+}
+
 function ModelSelect({
   locale,
   models,
@@ -453,13 +459,22 @@ function ModelSelect({
   onModel: (modelId: string) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
   const rootRef = useRef<HTMLDivElement>(null);
+  const filterRef = useRef<HTMLInputElement>(null);
   const { ripples, spawn, done } = useRipple();
   const current = models.find((model) => model.id === modelId) ?? models[0];
   const label = current?.name || modelId || t(locale, "model");
+  const visible = models.filter((model) => matchesModel(model, query));
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setQuery("");
+      return;
+    }
+    const focusFilter = () => filterRef.current?.focus();
+    focusFilter();
+    const frame = requestAnimationFrame(focusFilter);
     const onPointer = (event: PointerEvent) => {
       if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
     };
@@ -469,6 +484,7 @@ function ModelSelect({
     document.addEventListener("pointerdown", onPointer);
     document.addEventListener("keydown", onKey);
     return () => {
+      cancelAnimationFrame(frame);
       document.removeEventListener("pointerdown", onPointer);
       document.removeEventListener("keydown", onKey);
     };
@@ -500,25 +516,46 @@ function ModelSelect({
         ))}
       </button>
       {open ? (
-        <div className="absolute right-0 bottom-full z-30 mb-1.5 max-h-56 w-56 overflow-y-auto rounded-lg border border-[var(--line)] bg-[var(--panel)] py-1 shadow-xl">
-          {models.map((model) => {
-            const active = model.id === (current?.id ?? modelId);
-            return (
-              <RippleButton
-                key={model.id}
-                title={model.name}
-                onClick={() => {
-                  onModel(model.id);
-                  setOpen(false);
-                }}
-                className={`flex w-full px-2.5 py-1.5 text-left text-[12px] ${
-                  active ? "bg-[var(--hover-strong)] text-[var(--text)]" : "text-[var(--muted)] hover:text-[var(--text)]"
-                }`}
-              >
-                <span className="truncate">{model.name}</span>
-              </RippleButton>
-            );
-          })}
+        <div className="absolute right-0 bottom-full z-30 mb-1.5 flex w-56 flex-col overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--panel)] shadow-xl">
+          <input
+            ref={filterRef}
+            type="text"
+            value={query}
+            autoComplete="off"
+            spellCheck={false}
+            aria-label={t(locale, "filterModels")}
+            placeholder={t(locale, "filterModels")}
+            className="cs-model-filter shrink-0 bg-transparent px-2.5 py-1.5 text-[12px] text-[var(--text)] placeholder:text-[var(--muted)]"
+            onChange={(event) => setQuery(event.target.value)}
+            onPaste={(event) => event.stopPropagation()}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") event.preventDefault();
+            }}
+          />
+          <div className="max-h-56 overflow-y-auto py-1">
+            {visible.length === 0 ? (
+              <p className="px-2.5 py-1.5 text-[12px] text-[var(--muted)]">{t(locale, "noMatchingModels")}</p>
+            ) : (
+              visible.map((model) => {
+                const active = model.id === (current?.id ?? modelId);
+                return (
+                  <RippleButton
+                    key={model.id}
+                    title={model.name}
+                    onClick={() => {
+                      onModel(model.id);
+                      setOpen(false);
+                    }}
+                    className={`flex w-full px-2.5 py-1.5 text-left text-[12px] ${
+                      active ? "bg-[var(--hover-strong)] text-[var(--text)]" : "text-[var(--muted)] hover:text-[var(--text)]"
+                    }`}
+                  >
+                    <span className="truncate">{model.name}</span>
+                  </RippleButton>
+                );
+              })
+            )}
+          </div>
         </div>
       ) : null}
     </div>
