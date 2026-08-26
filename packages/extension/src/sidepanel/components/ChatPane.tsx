@@ -414,6 +414,7 @@ export function ChatPane({
           />
           <div className="flex items-center justify-between gap-2">
             <div className="relative flex items-center gap-1">
+              <div className="flex items-center gap-0">
               <IconButton
                 side="top"
                 label={label("attach")}
@@ -454,6 +455,7 @@ export function ChatPane({
                   <AtSign size={14} />
                 </IconButton>
               </span>
+              </div>
               <AtMenu
                 open={atOpen}
                 locale={locale}
