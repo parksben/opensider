@@ -1,5 +1,33 @@
 export type Locale = "en" | "zh";
 
+export const LOCALE_CACHE_KEY = "cursor-sidebar/locale";
+
+export function isLocale(value: unknown): value is Locale {
+  return value === "en" || value === "zh";
+}
+
+export function readCachedLocale(): Locale | undefined {
+  try {
+    const value = window.localStorage.getItem(LOCALE_CACHE_KEY);
+    return isLocale(value) ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function writeCachedLocale(locale: Locale): void {
+  try {
+    window.localStorage.setItem(LOCALE_CACHE_KEY, locale);
+  } catch {
+    // quota / private mode
+  }
+}
+
+export function applyLocale(locale: Locale): void {
+  writeCachedLocale(locale);
+  document.documentElement.lang = locale === "zh" ? "zh-CN" : "en";
+}
+
 const copy = {
   en: {
     emptyHint: "Send a message to start chatting with Cursor about this page",

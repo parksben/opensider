@@ -17,8 +17,7 @@ import { ChatPane } from "./components/ChatPane";
 import { Header } from "./components/Header";
 import { PermissionBar } from "./components/PermissionBar";
 import { SessionModal } from "./components/SessionModal";
-import type { Locale } from "./i18n";
-import { t } from "./i18n";
+import { applyLocale, readCachedLocale, t, type Locale } from "./i18n";
 import {
   applyResolvedTheme,
   resolveTheme,
@@ -43,7 +42,7 @@ import {
 
 export function App() {
   const [hydrated, setHydrated] = useState(false);
-  const [locale, setLocale] = useState<Locale>("en");
+  const [locale, setLocale] = useState<Locale>(() => readCachedLocale() ?? "en");
   const [theme, setTheme] = useState<ThemePreference>(() => readCachedTheme() ?? "dark");
   const [sessions, setSessions] = useState<Session[]>([]);
   const [selectedId, setSelectedId] = useState("");
@@ -314,6 +313,7 @@ export function App() {
       const selectedId = sessions.some((session) => session.id === state.selectedId)
         ? state.selectedId
         : sessions[0].id;
+      applyLocale(state.locale);
       setLocale(state.locale);
       applyThemePreference(state.theme);
       setTheme(state.theme);
@@ -325,8 +325,8 @@ export function App() {
     });
   }, []);
 
-  useEffect(() => {
-    document.documentElement.lang = locale === "zh" ? "zh-CN" : "en";
+  useLayoutEffect(() => {
+    applyLocale(locale);
   }, [locale]);
 
   useEffect(() => {
@@ -648,7 +648,10 @@ export function App() {
         sessionTitle={selected.title || t(locale, "untitled")}
         sessionsOpen={sessionsOpen}
         theme={theme}
-        onLocale={setLocale}
+        onLocale={(next) => {
+          applyLocale(next);
+          setLocale(next);
+        }}
         onTheme={(next) => {
           applyThemePreference(next);
           setTheme(next);

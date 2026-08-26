@@ -9,5 +9,9 @@
           : "light"
         : pref;
     document.documentElement.dataset.theme = resolved;
+    var locale = localStorage.getItem("cursor-sidebar/locale");
+    if (locale === "zh" || locale === "en") {
+      document.documentElement.lang = locale === "zh" ? "zh-CN" : "en";
+    }
   } catch (e) {}
 })();

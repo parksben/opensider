@@ -1,6 +1,6 @@
 import type { AttachmentItem } from "@shared";
 import type { ChatMessage, ChatPart, TodoItem } from "./chat-types";
-import type { Locale } from "./i18n";
+import { readCachedLocale, type Locale } from "./i18n";
 import { isThemePreference, readCachedTheme, type ThemePreference } from "./theme";
 
 export const STATE_KEY = "cursor-sidebar/state";
@@ -162,14 +162,21 @@ export async function loadState(): Promise<{
   const raw = await chrome.storage.local.get(STATE_KEY);
   const data = raw[STATE_KEY] as PersistedState | undefined;
   if (!data || data.version !== 1 || !Array.isArray(data.sessions)) {
-    return { locale: "en", theme: "dark", selectedId: "", selectedModelId: "", agentMode: "ask", sessions: [] };
+    return {
+      locale: readCachedLocale() ?? "en",
+      theme: readCachedTheme() ?? "dark",
+      selectedId: "",
+      selectedModelId: "",
+      agentMode: "ask",
+      sessions: [],
+    };
   }
   const sessions = data.sessions.map(hydrateSession);
   const selectedId = sessions.some((session) => session.id === data.selectedId)
     ? data.selectedId
     : (sessions[0]?.id ?? "");
   return {
-    locale: data.locale === "zh" ? "zh" : "en",
+    locale: data.locale === "zh" || data.locale === "en" ? data.locale : (readCachedLocale() ?? "en"),
     theme: isThemePreference(data.theme) ? data.theme : (readCachedTheme() ?? "dark"),
     selectedId,
     selectedModelId: data.selectedModelId || "",

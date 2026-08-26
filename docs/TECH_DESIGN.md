@@ -233,7 +233,7 @@ chrome.storage.local
 
 ## 语言
 
-`packages/extension/src/sidepanel/i18n.ts` 提供 `en` / `zh` 词条。默认 `en`。切换后立刻写 `chrome.storage.local`，并设 `document.documentElement.lang`。连接错误原文（Host / Chrome `lastError`）不翻译。
+`packages/extension/src/sidepanel/i18n.ts` 提供 `en` / `zh` 词条。默认 `en`。完整 state 仍写 `chrome.storage.local`；切换时同步镜像 `localStorage` 的 `cursor-sidebar/locale`。`theme-boot.js` 同时读这份镜像并设 `document.documentElement.lang`，避免每次打开先闪英文。React 初始 state 也从镜像读。连接错误原文（Host / Chrome `lastError`）不翻译。
 
 ## 主题
 
