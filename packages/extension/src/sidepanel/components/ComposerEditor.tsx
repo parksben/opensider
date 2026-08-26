@@ -114,6 +114,98 @@ function consumeAtBeforeCaret(range: Range): void {
   range.deleteContents();
 }
 
+function isPadSpace(ch: string | undefined): boolean {
+  return ch === " " || ch === "\u00a0";
+}
+
+function lastCharOfNode(node: Node | null): string | undefined {
+  if (!node) return undefined;
+  if (node.nodeType === Node.TEXT_NODE) {
+    const text = node.textContent ?? "";
+    for (let i = text.length - 1; i >= 0; i -= 1) {
+      if (text[i] !== "\u200b") return text[i];
+    }
+    return undefined;
+  }
+  if (node instanceof HTMLElement && node.classList.contains(CHIP_WRAP)) return "\0";
+  if (node.nodeName === "BR") return "\n";
+  for (let i = node.childNodes.length - 1; i >= 0; i -= 1) {
+    const ch = lastCharOfNode(node.childNodes[i] ?? null);
+    if (ch !== undefined) return ch;
+  }
+  return undefined;
+}
+
+function firstCharOfNode(node: Node | null): string | undefined {
+  if (!node) return undefined;
+  if (node.nodeType === Node.TEXT_NODE) {
+    const text = node.textContent ?? "";
+    for (let i = 0; i < text.length; i += 1) {
+      if (text[i] !== "\u200b") return text[i];
+    }
+    return undefined;
+  }
+  if (node instanceof HTMLElement && node.classList.contains(CHIP_WRAP)) return "\0";
+  if (node.nodeName === "BR") return "\n";
+  for (let i = 0; i < node.childNodes.length; i += 1) {
+    const ch = firstCharOfNode(node.childNodes[i] ?? null);
+    if (ch !== undefined) return ch;
+  }
+  return undefined;
+}
+
+function charBeforeRange(range: Range, editor: HTMLElement): string | undefined {
+  const container = range.startContainer;
+  const offset = range.startOffset;
+  if (container.nodeType === Node.TEXT_NODE) {
+    const text = container.textContent ?? "";
+    for (let i = offset - 1; i >= 0; i -= 1) {
+      if (text[i] !== "\u200b") return text[i];
+    }
+    let node: Node | null = container;
+    while (node && node !== editor) {
+      const prev = node.previousSibling;
+      if (prev) return lastCharOfNode(prev);
+      node = node.parentNode;
+    }
+    return undefined;
+  }
+  if (offset > 0) return lastCharOfNode(container.childNodes[offset - 1] ?? null);
+  let node: Node | null = container;
+  while (node && node !== editor) {
+    const prev = node.previousSibling;
+    if (prev) return lastCharOfNode(prev);
+    node = node.parentNode;
+  }
+  return undefined;
+}
+
+function charAfterRange(range: Range, editor: HTMLElement): string | undefined {
+  const container = range.startContainer;
+  const offset = range.startOffset;
+  if (container.nodeType === Node.TEXT_NODE) {
+    const text = container.textContent ?? "";
+    for (let i = offset; i < text.length; i += 1) {
+      if (text[i] !== "\u200b") return text[i];
+    }
+    let node: Node | null = container;
+    while (node && node !== editor) {
+      const next = node.nextSibling;
+      if (next) return firstCharOfNode(next);
+      node = node.parentNode;
+    }
+    return undefined;
+  }
+  if (offset < container.childNodes.length) return firstCharOfNode(container.childNodes[offset] ?? null);
+  let node: Node | null = container;
+  while (node && node !== editor) {
+    const next = node.nextSibling;
+    if (next) return firstCharOfNode(next);
+    node = node.parentNode;
+  }
+  return undefined;
+}
+
 function placeCaret(node: Node, offset: number): void {
   const selection = window.getSelection();
   if (!selection) return;
@@ -336,10 +428,16 @@ export const ComposerEditor = forwardRef<
       if (!editor || !range) return;
       consumeAtBeforeCaret(range);
       range.deleteContents();
+      const needLeft = !isPadSpace(charBeforeRange(range, editor));
+      const needRight = !isPadSpace(charAfterRange(range, editor));
       const wrap = createChipWrap(mention);
       const zwsp = document.createTextNode("\u200b");
-      range.insertNode(zwsp);
-      range.insertNode(wrap);
+      const fragment = document.createDocumentFragment();
+      if (needLeft) fragment.appendChild(document.createTextNode(" "));
+      fragment.appendChild(wrap);
+      if (needRight) fragment.appendChild(document.createTextNode(" "));
+      fragment.appendChild(zwsp);
+      range.insertNode(fragment);
       mountChip(wrap, parseMentionToken(wrap.dataset.token ?? "") ?? mention);
       placeCaret(zwsp, 1);
       saveRange();
