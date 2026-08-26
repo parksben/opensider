@@ -1,5 +1,5 @@
-import { Globe, MessageSquarePlus, Monitor, Moon, MousePointerClick, PanelLeftClose, PlugZap, RotateCw, Sun, Unplug } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Globe, MessageCirclePlus, Monitor, Moon, MousePointerClick, PanelLeftClose, PlugZap, RotateCw, Sun, Unplug } from "lucide-react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { BrowserCommand, BrowserResult, CurrentPage } from "@shared";
 import type { TodoItem } from "../chat-types";
 import type { Locale } from "../i18n";
@@ -37,20 +37,38 @@ export function Header({
   onToggleSessions: () => void;
 }) {
   const label = (key: Parameters<typeof t>[1]) => t(locale, key);
-  const ToggleIcon = sessionsOpen ? PanelLeftClose : MessageSquarePlus;
+  const title = sessionTitle || label("untitled");
+  const ToggleIcon = sessionsOpen ? PanelLeftClose : MessageCirclePlus;
+  const rowRef = useRef<HTMLDivElement>(null);
+  const leftRef = useRef<HTMLDivElement>(null);
+  const rightRef = useRef<HTMLDivElement>(null);
+  const [titleMaxWidth, setTitleMaxWidth] = useState<number>();
+
+  useLayoutEffect(() => {
+    const row = rowRef.current;
+    const left = leftRef.current;
+    const right = rightRef.current;
+    if (!row || !left || !right) return;
+    const update = () => {
+      const rowBox = row.getBoundingClientRect();
+      const leftBox = left.getBoundingClientRect();
+      const rightBox = right.getBoundingClientRect();
+      const center = rowBox.left + rowBox.width / 2;
+      const half = Math.min(center - leftBox.right - 32, rightBox.left - center - 32);
+      setTitleMaxWidth(Math.max(0, half * 2));
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(row);
+    observer.observe(left);
+    observer.observe(right);
+    return () => observer.disconnect();
+  }, [title, locale, status, page?.favIconUrl]);
+
   return (
     <header className="border-b border-[var(--line)] bg-[color-mix(in_oklab,var(--panel)_88%,transparent)] px-3 py-2.5 backdrop-blur">
-      <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
-        <div className="flex items-center gap-1.5">
-          <IconButton
-            ripple={false}
-            label={sessionsOpen ? label("collapseSessions") : label("expandSessions")}
-            onClick={onToggleSessions}
-            aria-expanded={sessionsOpen}
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-[var(--line)] text-[var(--text)]"
-          >
-            <ToggleIcon size={14} />
-          </IconButton>
+      <div ref={rowRef} className="relative flex items-center justify-between gap-2">
+        <div ref={leftRef} className="flex items-center gap-1.5">
           <IconButton
             ripple={false}
             label={label("switchLanguage")}
@@ -68,10 +86,29 @@ export function Header({
             {theme === "light" ? <Sun size={14} /> : theme === "dark" ? <Moon size={14} /> : <Monitor size={14} />}
           </IconButton>
         </div>
-        <div className="max-w-[46vw] truncate text-center text-[14px] font-medium tracking-tight">
-          {sessionTitle || label("untitled")}
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+          <div
+            className="pointer-events-auto flex min-w-0 items-center gap-1.5"
+            style={{ maxWidth: titleMaxWidth }}
+          >
+            <div
+              title={title}
+              className="min-w-0 truncate whitespace-nowrap text-[14px] font-medium tracking-tight"
+            >
+              {title}
+            </div>
+            <IconButton
+              ripple={false}
+              label={sessionsOpen ? label("collapseSessions") : label("expandSessions")}
+              onClick={onToggleSessions}
+              aria-expanded={sessionsOpen}
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-[var(--line)] text-[var(--text)]"
+            >
+              <ToggleIcon size={14} />
+            </IconButton>
+          </div>
         </div>
-        <div className="flex items-center justify-end gap-1.5">
+        <div ref={rightRef} className="flex items-center justify-end gap-1.5">
           <div className="flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px]" title={error}>
             {status === "ready" ? (
               <PlugZap size={13} className="text-[var(--ok)]" />
