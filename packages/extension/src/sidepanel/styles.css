@@ -114,6 +114,19 @@ input {
   user-select: none;
 }
 
+.cs-mention-wrap,
+.cs-mention-chip {
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: default;
+}
+
+.cs-mention-wrap *,
+.cs-mention-chip * {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
 .cs-mention-wrap {
   display: inline-flex;
   align-items: center;
@@ -121,7 +134,6 @@ input {
   max-width: 200px;
   height: 1lh;
   vertical-align: middle;
-  user-select: none;
 }
 
 .cs-mention-chip {
@@ -141,7 +153,6 @@ input {
   line-height: 1;
   color: var(--muted);
   vertical-align: middle;
-  user-select: none;
 }
 
 @property --cs-spin {

@@ -118,6 +118,27 @@ function placeCaret(node: Node, offset: number): void {
   selection.addRange(range);
 }
 
+function placeCaretAfterChip(wrap: HTMLElement): Range {
+  const range = document.createRange();
+  const next = wrap.nextSibling;
+  if (next?.nodeType === Node.TEXT_NODE) {
+    range.setStart(next, Math.min(1, next.textContent?.length ?? 0));
+  } else {
+    range.setStartAfter(wrap);
+  }
+  range.collapse(true);
+  const selection = window.getSelection();
+  selection?.removeAllRanges();
+  selection?.addRange(range);
+  return range;
+}
+
+function chipWrapFromEvent(target: EventTarget | null, editor: HTMLElement | null): HTMLElement | null {
+  if (!(target instanceof Element) || !editor) return null;
+  const wrap = target.closest(`.${CHIP_WRAP}`);
+  return wrap instanceof HTMLElement && editor.contains(wrap) ? wrap : null;
+}
+
 function scrollCaret(editor: HTMLElement): void {
   const selection = window.getSelection();
   if (!selection || selection.rangeCount === 0) return;
@@ -428,7 +449,24 @@ export const ComposerEditor = forwardRef<
       }}
       onKeyDown={onKeyDown}
       onKeyUp={saveRange}
-      onMouseUp={saveRange}
+      onMouseDown={(event) => {
+        const wrap = chipWrapFromEvent(event.target, editorRef.current);
+        if (!wrap) return;
+        event.preventDefault();
+        editorRef.current?.focus();
+        lastRangeRef.current = placeCaretAfterChip(wrap);
+      }}
+      onSelectStart={(event) => {
+        if (chipWrapFromEvent(event.target, editorRef.current)) event.preventDefault();
+      }}
+      onMouseUp={(event) => {
+        const wrap = chipWrapFromEvent(event.target, editorRef.current);
+        if (wrap) {
+          lastRangeRef.current = placeCaretAfterChip(wrap);
+          return;
+        }
+        saveRange();
+      }}
       onPaste={onPaste}
       onBlur={saveRange}
     />
