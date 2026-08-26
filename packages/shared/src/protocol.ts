@@ -148,6 +148,7 @@ export type CurrentPage = {
   title: string;
   updatedAt: string;
   readable?: string;
+  favIconUrl?: string;
 };
 
 export type BrowserCommand = {

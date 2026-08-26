@@ -241,20 +241,30 @@ async function dispatchCommand(command: BrowserCommand): Promise<void> {
 }
 
 async function requestPage(tabId: number): Promise<void> {
+  let tab: chrome.tabs.Tab;
   try {
-    const page = (await chrome.tabs.sendMessage(tabId, {
-      type: "page.snapshot",
-      tabId,
-    })) as CurrentPage;
+    tab = await chrome.tabs.get(tabId);
+  } catch {
+    return;
+  }
+  const favIconUrl = tab.favIconUrl;
+  try {
+    const page = {
+      ...(await chrome.tabs.sendMessage(tabId, {
+        type: "page.snapshot",
+        tabId,
+      })) as CurrentPage,
+      favIconUrl,
+    };
     sendNative({ type: "page.update", page });
     broadcast({ type: "page", page });
   } catch {
-    const tab = await chrome.tabs.get(tabId);
     const page: CurrentPage = {
       tabId,
       url: tab.url ?? "",
       title: tab.title ?? "",
       updatedAt: new Date().toISOString(),
+      favIconUrl,
     };
     sendNative({ type: "page.update", page });
     broadcast({ type: "page", page });
@@ -404,7 +414,8 @@ chrome.tabs.onActivated.addListener((info) => {
 });
 
 chrome.tabs.onUpdated.addListener((tabId, change, tab) => {
-  if (change.status === "complete" && tab.active) {
+  if (!tab.active) return;
+  if (change.status === "complete" || change.favIconUrl) {
     void requestPage(tabId);
   }
 });

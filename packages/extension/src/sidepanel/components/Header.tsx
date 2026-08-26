@@ -1,4 +1,5 @@
 import { Globe, MessageSquarePlus, Monitor, Moon, MousePointerClick, PanelLeftClose, PlugZap, RotateCw, Sun, Unplug } from "lucide-react";
+import { useEffect, useState } from "react";
 import type { BrowserCommand, BrowserResult, CurrentPage } from "@shared";
 import type { TodoItem } from "../chat-types";
 import type { Locale } from "../i18n";
@@ -35,7 +36,6 @@ export function Header({
   onTheme: (theme: ThemePreference) => void;
   onToggleSessions: () => void;
 }) {
-  const host = safeHost(page?.url);
   const label = (key: Parameters<typeof t>[1]) => t(locale, key);
   const ToggleIcon = sessionsOpen ? PanelLeftClose : MessageSquarePlus;
   return (
@@ -72,10 +72,7 @@ export function Header({
           {sessionTitle || label("untitled")}
         </div>
         <div className="flex items-center justify-end gap-1.5">
-          <div
-            className="flex items-center gap-1.5 rounded-full border border-[var(--line)] px-2 py-1 text-[11px]"
-            title={error}
-          >
+          <div className="flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px]" title={error}>
             {status === "ready" ? (
               <PlugZap size={13} className="text-[var(--ok)]" />
             ) : (
@@ -85,6 +82,7 @@ export function Header({
               {status === "ready" ? label("connected") : status === "starting" ? label("starting") : label("offline")}
             </span>
           </div>
+          <PageFavicon locale={locale} page={page} />
           {status === "error" && onRetry ? (
             <button
               type="button"
@@ -95,14 +93,6 @@ export function Header({
               {label("retry")}
             </button>
           ) : null}
-        </div>
-      </div>
-
-      <div className="mt-2 flex items-center gap-2 rounded-md border border-[var(--line)] bg-[var(--panel-2)] px-2 py-1.5">
-        <Globe size={13} className="shrink-0 text-[var(--brass)]" />
-        <div className="min-w-0">
-          <div className="truncate text-[12px]">{page?.title || label("noPage")}</div>
-          <div className="truncate text-[11px] text-[var(--muted)]">{host || label("switchTab")}</div>
         </div>
       </div>
 
@@ -145,11 +135,32 @@ function targetLabel(command: BrowserCommand): string {
   return bit ? ` ${bit}` : "";
 }
 
-function safeHost(url?: string): string {
-  if (!url) return "";
-  try {
-    return new URL(url).host;
-  } catch {
-    return url;
-  }
+function PageFavicon({ locale, page }: { locale: Locale; page?: CurrentPage }) {
+  const [broken, setBroken] = useState(false);
+  useEffect(() => {
+    setBroken(false);
+  }, [page?.favIconUrl]);
+  const title = page?.title?.trim() || t(locale, "noPage");
+  const url = page?.url?.trim() || t(locale, "switchTab");
+  const src = page?.favIconUrl;
+  return (
+    <IconButton
+      ripple={false}
+      side="bottom"
+      label={`${title}\n${url}`}
+      tooltip={
+        <span className="flex flex-col gap-0.5">
+          <span>{title}</span>
+          <span className="break-all text-[var(--muted)]">{url}</span>
+        </span>
+      }
+      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--text)]"
+    >
+      {src && !broken ? (
+        <img src={src} alt="" className="h-3.5 w-3.5" onError={() => setBroken(true)} />
+      ) : (
+        <Globe size={14} className="text-[var(--muted)]" />
+      )}
+    </IconButton>
+  );
 }

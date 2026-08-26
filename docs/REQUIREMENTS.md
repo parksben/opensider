@@ -23,7 +23,7 @@
 
 1. 用户完成本机 Cursor CLI 登录（`agent login`）。
 2. 用户安装 Native Messaging Host（由浏览器按需拉起，不是常驻服务），并以未打包方式加载本扩展。Host 的可执行副本装在 `~/.cursor-sidebar/runtime`，不从 Desktop 上的仓库直接拉起：macOS 会拦 Chrome 执行 Desktop / Documents / Downloads 里的脚本，表现为「Native host has exited」。
-3. 点击工具栏图标打开 Side Panel。顶栏左侧是会话列表开关、语言切换（圆角描边按钮：英文界面显示「中」，中文界面显示「EN」）、开关灯（三态：浅色 / 深色 / 跟随设备，点一下切下一个；Lucide `Sun` / `Moon` / `Monitor`）。正中央是当前会话名；右侧是连接状态，offline 时旁有「重连 / Connection」（旋转箭头 icon 已表示重试，英文不再写 Retry）。不放插件名和 slogan。未连接时说明原因。重连必须真正重连 Native Host，不能因为端口已断开就静默失败。两套主题的正文、次要文案与背景对比度都要够读，不能在某一主题下糊成一团。
+3. 点击工具栏图标打开 Side Panel。顶栏左侧是会话列表开关、语言切换（圆角描边按钮：英文界面显示「中」，中文界面显示「EN」）、开关灯（三态：浅色 / 深色 / 跟随设备，点一下切下一个；Lucide `Sun` / `Moon` / `Monitor`）。正中央是当前会话名；右侧是无边框的连接状态，offline 时旁有「重连 / Connection」（旋转箭头 icon 已表示重试，英文不再写 Retry）。连接状态右侧只放当前页 favicon（取不到则用 Globe）；hover 弹出两行详情：第一行网页标题，第二行完整 URL。不再单独铺一条当前页 banner。不放插件名和 slogan。未连接时说明原因。重连必须真正重连 Native Host，不能因为端口已断开就静默失败。两套主题的正文、次要文案与背景对比度都要够读，不能在某一主题下糊成一团。
 4. 会话列表收起时，左上角是中间带加号的消息气泡 icon，tooltip 为「会话 / Sessions」；点它后左侧栏展开，同一按钮换成收起 icon，tooltip 为「收起列表 / Collapse list」。列表里包含「新建会话」。再点收起 icon 关闭左侧栏。
 5. 连接成功后，Host 拉起 `agent acp`，复用已有登录，进入 Agent 模式（完整本地工具）。关掉再打开侧栏时，应回放最近一次连接状态，而不是一直停在离线。侧栏与 Service Worker 之间的端口断开时，不得抛未捕获异常（Chrome 扩展页里那种 `disconnected port object`），并应自动重连；不要停在「Lost connection to the extension service worker」就不再试。
 6. 用户发送后，侧栏立刻出现用户气泡和进行中指示，并可将发送钮换成停止。离线时发送会留下可见错误，而不是没有任何反馈。
@@ -67,7 +67,7 @@
 ### 页面感知与操作
 
 1. 用户切换 Chrome 标签或当前页 URL 变化时，扩展更新「当前页」状态。
-2. 侧栏顶部显示当前页标题与 URL；Agent 正在执行页面命令时，顶栏显示该方法名和结果。
+2. 侧栏不再用 banner 展示当前页标题与 URL；顶栏右侧连接状态旁只显示 favicon，hover 看标题和完整 URL。Agent 正在执行页面命令时，顶栏仍显示该方法名和结果。
 3. 每条用户消息在发给 Agent 时附带一行当前页上下文（标题 + URL），界面里只显示用户自己输入的文字。
 4. 内容脚本向页面注入一套白名单方法。Agent 通过工作区命令文件调用，不走 MCP。
 5. **读取**：元信息、正文、选区、链接、标题大纲、按选择器取文本 / 属性 / 值、列出匹配元素、判断元素是否存在。

@@ -45,7 +45,7 @@ Cursor Agent 在 ACP 模式下仍然自己执行本地工具（读文件、写�
 - 会话列表、当前选中会话、语言也由 App state 驱动，写入 `chrome.storage.local`
 - 工具调用、思考、markdown 由侧栏自己的折叠行 / Markdown 组件展示
 - 发出用户输入（可带本机附件路径）、取消、权限决定、提问/计划回答、新建 / 切换 / fork 会话、选模型
-- 展示当前页、进行中的页面命令、连接状态、todo、权限条、输入栏附件芯片、元素拾取蒙层与模型下拉
+- 展示当前页 favicon（hover 看标题 + 完整 URL）、进行中的页面命令、无边框连接状态、todo、权限条、输入栏附件芯片、元素拾取蒙层与模型下拉
 - 离线发送会立刻报错；Service Worker 断开时显示原因（含扩展 ID / `lastError`）并允许重试
 - 侧栏先 `sendMessage({ type: "ping" })` 唤醒 SW，再 `connect`。React StrictMode 卸载只摘监听器，不拆端口。端口若在 SW 还在加载时空断，自动重连，避免永远停在 Lost connection
 - 不再挂载 assistant-ui runtime；旧的 `ExternalStoreThreadRuntimeCore` 会在端口断开后抛错，把扩展标红
@@ -279,7 +279,7 @@ on them with page tools using args.selector.
 2. 向该 tab 的内容脚本要 `getMeta` + `getReadable`
 3. 发给 Host：`page.update`
 4. Host 写 `browser/current.json` 和 `browser/snapshot.md`
-5. Side Panel 更新顶栏
+5. Side Panel 更新顶栏右侧 favicon（`favIconUrl` 由 SW 从 `chrome.tabs` 并进 `CurrentPage`，不写进 workspace）
 6. 下一条 `session/prompt` 在用户文本前加一行 `[Current tab] {title} — {url}`（UI 不显示这行）
 7. 若有文件附件，再追加 `[Attachments]` 绝对路径；若有拾取的元素，再追加 `[Picked page elements]` 和 CSS selector，并写明用页面工具的 `args.selector` 去查看或操作（UI 气泡里只显示用户正文和芯片）
 
@@ -316,7 +316,7 @@ macOS 清单路径：`~/Library/Application Support/Google/Chrome/NativeMessagin
 
 - Agent 回复链接：`Markdown` 自定义 `a`，一律 `preventDefault`（侧栏是扩展页，默认点击会把面板自己导航走）。解析 `href`（相对地址相对当前页），只放行 `http(s)`。把主机名小写、去掉末尾 `.`、剥一层前导 `www.` 后和当前标签 `page.url` 比；相同且 `page.tabId` 仍在则 `chrome.tabs.update`，否则 `chrome.tabs.create`。`www.example.com` 与 `example.com` 算同域，`docs.example.com` 与 `example.com` 不算。侧栏已有 `tabs` 权限，不经 Host。计划条里的 Markdown 同一套逻辑。
 - 聊天：`ChatPane` 由当前会话的 `messages` / `isRunning` 驱动；消息列表滚动容器 `flex-col-reverse` + 内层正序消息（工业界贴底：`scrollTop === 0` 就是底部，流式长高不必每帧 `scrollTo`；用户上翻后 `scrollTop` 变负，不再被新内容拽走；滚回距底 &lt; 96px 又贴住）。`column-reverse` 会把唯一子项吸在底：在消息块**之前**插一个 `flex-1 min-h-0` 占位（DOM 里先写占位、后写消息，视觉上占位在下、消息在上），内容不够高时把第一条顶到消息区顶部；撑满后占位收成 0，恢复贴底滚动。离开底部才在输入区上方绝对定位一层 `ArrowDown` 圆钮（约 39px，原 56 的 0.7）：外包一层 `absolute inset-x-0 bottom-full` 居中，避免 `IconButton` 自带的 `relative` 把 `absolute` 顶掉、占满一行。半透明 `--panel` 底、轻投影，hover 提高不透明度，沿用 `IconButton` 涟漪。用户气泡 `w-fit max-w-[80%] ml-auto`，相对消息列表内容区收缩；工具调用和思考不再用带边框的 `details` 卡片，与过程收起同一套 `TextFold`：灰字 + 可选 lucide 图标（`text-[var(--muted)]`）+ 紧挨着的箭头。点开后 `FadeScroll` 用 `max-height` 限高、内容不够则贴内容（过程区 `max-h-[min(36vh,16rem)]`，工具 / 思考 `max-height: 5lh`，约 5 行 11px 灰字），`mix-blend-mode` 上下遮罩。`flex-col-reverse` 下展开用 `scrollTop` 把灰字钉住。markdown 仍是现有组件。`Markdown` 对 ` ```mermaid ` 围栏动态加载 `mermaid` 再 `render` 成 SVG（`securityLevel: strict`、`suppressErrorRendering: true`、暗色黄铜主题），约 160ms 防抖。先 `parse`，通过才 `render`；失败或流式半截仍走原来的 `pre > code`，并清掉 mermaid 挂到 `body` 上的 error SVG（默认会插「Syntax error in text」炸弹图，把输入框顶上去）。`body` 也 `overflow: hidden`，漏网节点不能撑高侧栏。输入区：可选附件芯片 → textarea → 第二行左 Lucide `MousePointer2` 拾取 + `Plus`、右模型下拉（仅 `ready` 且列表非空；顶部固定筛选框，打开即聚焦，不区分大小写过滤已加载列表）+ `Send` 小飞机 / 停止（14px，与顶栏 icon 同大；hover 半透明白圆）。`isRunning` 时 `.cs-composer` 用 `@property --cs-spin`：圆锥渐变经 mask 只画 1px 描边，opacity 淡入铺满 360°，再 4s linear 转一圈；结束只淡出 opacity，sweep 保持满圈以免描边收起。`prefers-reduced-motion` 时只铺满不转。工具卡片标题用 `toolTitle(locale, part)`：按 `kind` 与常见英文前缀映射到 i18n，后面的路径/查询不翻译。拾取时 `App` 全栏模糊遮罩 + 居中提示，完成或 Esc 才收。`IconButton` 的 tooltip 用 `position: fixed` 挂到 `document.body`，按锚点测量后翻边/平移，与视口保持 8px。除顶栏外，按钮统一 `hover:bg-[var(--hover)]` + CSS 涟漪（`RippleButton` / `IconButton`）。芯片统一 `max-width: 200px`（文件 / 文件夹 / 图片 / 拾取元素相同），文案 `truncate`，`title` 为完整路径或 selector。
-- 顶栏：左会话开关（收起时 Lucide `MessageSquarePlus` 气泡加号，tooltip「会话 / Sessions」；展开时 `PanelLeftClose`，tooltip「收起列表 / Collapse list」）+ 语言按钮（英显示「中」、中显示「EN」）+ 开关灯（`Sun` / `Moon` / `Monitor`，tooltip 浅色 / 深色 / 跟随设备）；正中会话名；右连接状态与 offline「Connection / 重连」（icon 已是重试语义）。顶栏按钮不加涟漪。
+- 顶栏：左会话开关（收起时 Lucide `MessageSquarePlus` 气泡加号，tooltip「会话 / Sessions」；展开时 `PanelLeftClose`，tooltip「收起列表 / Collapse list」）+ 语言按钮（英显示「中」、中显示「EN」）+ 开关灯（`Sun` / `Moon` / `Monitor`，tooltip 浅色 / 深色 / 跟随设备）；正中会话名；右无边框连接状态与 offline「Connection / 重连」（icon 已是重试语义），再跟当前页 favicon（无 banner）。favicon 用 `IconButton` 两行 tooltip：标题 + 完整 URL；取不到图标时用 `Globe`。顶栏按钮不加涟漪。
 - 会话列表是主区域左侧栏：新建、卡片上 Pencil / Trash2 重命名与删除；`titleManual` 为真时不再用首条消息改标题
 - 空会话：消息区垂直居中，Lucide `MessageCircle` 约 120px + 一行淡灰提示，不抢视觉。提示不再 `max-w-16rem`，而是 `w-full` + `padding-inline: min(200px, max(1rem, 50% - 12rem))`：宽时两侧约 200px、一句不折；窄侧栏再收 padding 并允许换行
 - 一轮开始记 `turnStartedAt`；`turn.end` / 停止 / 连接报错结束时，若末尾 assistant 的 `createdAt` 不早于开始时间，写入 `durationMs` 并持久化。`AssistantMessage`：找最后一段 `type=text`，它之前是过程。`isRunning` 且该条是最后一条时不收成耗时行：`liveVisibleParts` 把连续的 `reasoning` / `tool-call`（中间没有 `text`）收成只渲最后一条，同一行被新步骤替换。结束后默认收起过程，只留正文；用户展开耗时行时再按原顺序把每一步各占一行。耗时行、思考、工具调用共用 `TextFold`：无底透明全宽 `button`，muted 12px 文案 + 可选 kind 图标 + 紧挨着的箭头（`inline-flex`，不要 `justify-between`）。收起时 `ChevronRight` 仅该行 hover 出现（`group/fold`，避免吃到 `MessageFrame` 的 `group`）；展开后换成 `ChevronDown`。过程区走 `.cs-process-scroll`（只设 `max-height`），思考 / 工具内容走 `max-height: 5lh` 的 `.cs-fold-scroll`。线程是 `flex-col-reverse` 贴底，展开会长高把灰字顶上去：toggle 前记下 `getBoundingClientRect().top`，`useLayoutEffect` 里给 `.cs-thread` 的 `scrollTop` 加上位移，把灰字钉回原处，看起来是向下展开。滚动盒由 `FadeScroll` 包一层 `isolation: isolate`，上下各一条 `mix-blend-mode` 渐变（深色 `multiply`、浅色 `lighten`，色用 `--ink`）；`scrollTop>2` 才显示顶遮罩，距底 `>2` 才显示底遮罩。没有过程（只有正文）不渲染这一行。
