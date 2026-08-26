@@ -1,7 +1,7 @@
 import type { AttachmentItem } from "@shared";
 import type { ChatMessage, ChatPart, TodoItem } from "./chat-types";
 import type { Locale } from "./i18n";
-import { isThemePreference, type ThemePreference } from "./theme";
+import { isThemePreference, readCachedTheme, type ThemePreference } from "./theme";
 
 export const STATE_KEY = "cursor-sidebar/state";
 
@@ -52,7 +52,7 @@ export function autoPermissionOptionId(
 export type PersistedState = {
   version: 1;
   locale: Locale;
-  theme?: ThemePreference;
+  theme: ThemePreference;
   selectedId: string;
   selectedModelId?: string;
   agentMode?: AgentMode;
@@ -170,7 +170,7 @@ export async function loadState(): Promise<{
     : (sessions[0]?.id ?? "");
   return {
     locale: data.locale === "zh" ? "zh" : "en",
-    theme: isThemePreference(data.theme) ? data.theme : "dark",
+    theme: isThemePreference(data.theme) ? data.theme : (readCachedTheme() ?? "dark"),
     selectedId,
     selectedModelId: data.selectedModelId || "",
     agentMode: isAgentMode(data.agentMode) ? data.agentMode : "ask",

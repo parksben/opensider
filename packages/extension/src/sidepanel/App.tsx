@@ -8,7 +8,7 @@ import type {
   HostToExt,
 } from "@shared";
 import { MousePointer2 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { encodeImageBlob } from "../image-encode";
 import { applyAcpUpdate, createUserMessage } from "./acp-messages";
 import { connectSidebar } from "./bridge";
@@ -23,6 +23,8 @@ import {
   applyResolvedTheme,
   resolveTheme,
   watchSystemTheme,
+  applyThemePreference,
+  readCachedTheme,
   type ThemePreference,
 } from "./theme";
 import {
@@ -42,7 +44,7 @@ import {
 export function App() {
   const [hydrated, setHydrated] = useState(false);
   const [locale, setLocale] = useState<Locale>("en");
-  const [theme, setTheme] = useState<ThemePreference>("dark");
+  const [theme, setTheme] = useState<ThemePreference>(() => readCachedTheme() ?? "dark");
   const [sessions, setSessions] = useState<Session[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [models, setModels] = useState<AgentModel[]>([]);
@@ -313,6 +315,7 @@ export function App() {
         ? state.selectedId
         : sessions[0].id;
       setLocale(state.locale);
+      applyThemePreference(state.theme);
       setTheme(state.theme);
       setSessions(sessions);
       setSelectedId(selectedId);
@@ -331,8 +334,8 @@ export function App() {
     void saveState({ locale, theme, selectedId, selectedModelId, agentMode, sessions });
   }, [hydrated, locale, theme, selectedId, selectedModelId, agentMode, sessions]);
 
-  useEffect(() => {
-    applyResolvedTheme(resolveTheme(theme));
+  useLayoutEffect(() => {
+    applyThemePreference(theme);
     if (theme !== "system") return;
     return watchSystemTheme(() => applyResolvedTheme(resolveTheme("system")));
   }, [theme]);
@@ -646,7 +649,10 @@ export function App() {
         sessionsOpen={sessionsOpen}
         theme={theme}
         onLocale={setLocale}
-        onTheme={setTheme}
+        onTheme={(next) => {
+          applyThemePreference(next);
+          setTheme(next);
+        }}
         onToggleSessions={() => setSessionsOpen((open) => !open)}
         onRetry={() => {
           boundRef.current = false;

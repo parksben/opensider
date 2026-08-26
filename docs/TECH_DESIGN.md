@@ -237,7 +237,7 @@ chrome.storage.local
 
 ## 主题
 
-`theme.ts`：偏好 `light | dark | system`，解析后给 `document.documentElement.dataset.theme`。`system` 时听 `prefers-color-scheme`。颜色全走 CSS 变量：`:root` / `[data-theme=dark]` 是现有橄榄黑；`[data-theme=light]` 是暖纸底 + 近黑正文（muted 用深橄榄，不用深色那套浅灰字）。`--hover` / `--code` / `--user` / `--on-brass` / `--overlay` 两套分开，组件不再写死 `#161910` 这类只适合深色的底。Mermaid 按解析后的主题重 `initialize`。顶栏 `Sun` / `Moon` / `Monitor` 循环三态。
+`theme.ts`：偏好 `light | dark | system`，解析后给 `document.documentElement.dataset.theme`。`system` 时听 `prefers-color-scheme`。完整 state 仍写 `chrome.storage.local`（`theme` 必填）；切换时同步镜像 `localStorage` 的 `cursor-sidebar/theme`。`index.html` 用 `public/theme-boot.js`（非 inline，避免 MV3 CSP；Vite 拷到扩展根）在 React 之前读这份镜像并设 `data-theme`，避免每次打开先闪默认深色。React 初始 state 也从镜像读，`useLayoutEffect` 再 apply。颜色全走 CSS 变量：`:root` / `[data-theme=dark]` 是现有橄榄黑；`[data-theme=light]` 是暖纸底 + 近黑正文（muted 用深橄榄，不用深色那套浅灰字）。`--hover` / `--code` / `--user` / `--on-brass` / `--overlay` 两套分开，组件不再写死 `#161910` 这类只适合深色的底。Mermaid 按解析后的主题重 `initialize`。顶栏 `Sun` / `Moon` / `Monitor` 循环三态。
 
 ## 附件（只传路径）
 

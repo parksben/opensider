@@ -1,6 +1,7 @@
 export type ThemePreference = "light" | "dark" | "system";
 export type ResolvedTheme = "light" | "dark";
 
+export const THEME_CACHE_KEY = "cursor-sidebar/theme";
 export const THEME_ORDER: ThemePreference[] = ["light", "dark", "system"];
 
 export function isThemePreference(value: unknown): value is ThemePreference {
@@ -21,8 +22,30 @@ export function resolveTheme(preference: ThemePreference): ResolvedTheme {
   return preference;
 }
 
+export function readCachedTheme(): ThemePreference | undefined {
+  try {
+    const value = window.localStorage.getItem(THEME_CACHE_KEY);
+    return isThemePreference(value) ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function writeCachedTheme(preference: ThemePreference): void {
+  try {
+    window.localStorage.setItem(THEME_CACHE_KEY, preference);
+  } catch {
+    // quota / private mode
+  }
+}
+
 export function applyResolvedTheme(resolved: ResolvedTheme): void {
   document.documentElement.dataset.theme = resolved;
+}
+
+export function applyThemePreference(preference: ThemePreference): void {
+  writeCachedTheme(preference);
+  applyResolvedTheme(resolveTheme(preference));
 }
 
 export function watchSystemTheme(onChange: () => void): () => void {
