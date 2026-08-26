@@ -38,7 +38,7 @@ export function MentionChip({ mention, className = "" }: { mention: Mention; cla
   return (
     <span title={mentionTitle(mention)} className={`cs-mention-chip ${className}`}>
       <MentionIcon mention={mention} />
-      <span className="min-w-0 truncate">{mentionLabel(mention)}</span>
+      <span className="cs-mention-chip-label truncate">{mentionLabel(mention)}</span>
     </span>
   );
 }

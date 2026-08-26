@@ -129,10 +129,13 @@ input {
 
 .cs-mention-wrap {
   display: inline-flex;
-  align-items: center;
+  align-items: stretch;
+  box-sizing: border-box;
   min-width: 0;
   max-width: 200px;
   height: 1lh;
+  font-size: inherit;
+  line-height: inherit;
   vertical-align: middle;
 }
 
@@ -143,16 +146,23 @@ input {
   min-width: 0;
   max-width: 200px;
   height: 1lh;
+  min-height: 1lh;
   gap: 0.25rem;
-  padding: 0 12px;
+  padding: 0 12px 0 16px;
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 999px;
   background: var(--panel-2);
-  font-size: 11px;
-  line-height: 1;
+  font-size: inherit;
+  line-height: inherit;
   color: var(--muted);
   vertical-align: middle;
+}
+
+.cs-mention-chip-label {
+  min-width: 0;
+  font-size: 11px;
+  line-height: 1;
 }
 
 @property --cs-spin {
