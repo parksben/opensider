@@ -18,9 +18,9 @@ export type SessionOpen = {
 };
 
 export type AcpHandlers = {
-  onUpdate: (update: Record<string, unknown>) => void;
-  onPermission: (id: number, params: Record<string, unknown>) => void;
-  onCursor: (id: number | undefined, method: string, params: Record<string, unknown>) => void;
+  onUpdate: (update: Record<string, unknown>, sessionId?: string) => void;
+  onPermission: (id: number, params: Record<string, unknown>, sessionId?: string) => void;
+  onCursor: (id: number | undefined, method: string, params: Record<string, unknown>, sessionId?: string) => void;
 };
 
 export class AcpClient {
@@ -233,20 +233,21 @@ export class AcpClient {
 
     const method = String(msg.method ?? "");
     const params = (msg.params ?? {}) as Record<string, unknown>;
+    const sessionId = typeof params.sessionId === "string" ? params.sessionId : this.sessionId;
 
     if (method === "session/update") {
       const update = (params.update ?? params) as Record<string, unknown>;
-      this.handlers.onUpdate(update);
+      this.handlers.onUpdate(update, sessionId);
       return;
     }
 
     if (method === "session/request_permission" && id !== undefined) {
-      this.handlers.onPermission(Number(id), params);
+      this.handlers.onPermission(Number(id), params, sessionId);
       return;
     }
 
     if (method.startsWith("cursor/")) {
-      this.handlers.onCursor(id === undefined ? undefined : Number(id), method, params);
+      this.handlers.onCursor(id === undefined ? undefined : Number(id), method, params, sessionId);
       return;
     }
 

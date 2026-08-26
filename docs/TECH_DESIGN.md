@@ -108,7 +108,9 @@ Cursor Agent 在 ACP 模式下仍然自己执行本地工具（读文件、写�
 - 解析 Chrome Native Messaging 长度前缀帧（**禁止往 stdout 打日志**）
 - spawn `~/.local/bin/agent acp`（PATH 不足时用绝对路径）
 - 作为 ACP Client：`initialize`（声明 `parameterizedModelPicker`）→ `authenticate(cursor_login)` → 按侧栏指令 `session/load`、`session/new` 或尝试 `session/fork`
-- 把 Side Panel 的 prompt/cancel/permission、会话新建 / 切换 / fork、模型切换转成 ACP
+- 每个 `AcpClient` 是一条 `agent acp` 进程，同一时刻只能跑一轮 `session/prompt`。要并行跑多个会话时，Host 再拉一条进程（initialize + authenticate），按 ACP `sessionId` 把 `update` / 权限 / Cursor 方法 / `turn.end` 标回去。空闲进程复用，不在一轮结束后立刻杀掉。
+- 禁止对正在 prompt 的进程再发 `session/load` / `session/new` / `session/fork`：切走或新建时用空闲进程（没有就新开）。
+- 把 Side Panel 的 prompt/cancel/permission、会话新建 / 切换 / fork、模型切换转成 ACP；`cancel` / `permission.reply` / `cursor.reply` 打到发出该请求的那条进程
 - 用本机系统对话框选出文件/文件夹的绝对路径（Chrome `<input type=file>` 给不出真路径）
 - 用 `agent models` 列出账号可选模型，并结合 `session/new` 的 `configOptions`
 - 把 Agent 的 `session/update`、权限请求、Cursor 扩展方法推给扩展
@@ -197,10 +199,12 @@ chrome.storage.local
 
 | 侧栏 → Host | Host 行为 |
 |---|---|
-| `session.new` | `session/new`，设为当前，回 `session` |
-| `session.use` + `sessionId` | 已是当前则 noop；否则 `session/load`，失败则 `session/new` |
-| `session.fork` + `sessionId` | 先试不稳定的 `session/fork`（整段历史）；失败则 `session/new` |
-| `prompt` 可带 `sessionId` | 先切到该 ACP 会话再 prompt，避免切换竞态 |
+| `session.new` | 在空闲（或新开的）ACP 进程上 `session/new`，回 `session`。不打断正在跑的进程 |
+| `session.use` + `sessionId` | 该会话已在某进程上且正在跑则只回 `session`（replay），不 `session/load`；否则在空闲进程上 `session/load`，失败则 `session/new` |
+| `session.fork` + `sessionId` | 在空闲进程上先试不稳定的 `session/fork`（整段历史）；失败则 `session/new` |
+| `prompt` 可带 `sessionId` | 绑到已持有该会话的进程，或空闲进程 `session/load` 后再 prompt。同一会话已有一轮在跑则拒绝；不同会话并行 |
+| `cancel` 可带 `sessionId` | 只取消该 ACP 会话所在进程的一轮 |
+| `update` / `turn.end` / `permission` / `cursor` 带 `sessionId` | 侧栏按 ACP id 映射到本地会话，不按当前选中项 |
 | `fs.pick` | Host 弹出本机选文件/文件夹对话框，回 `fs.picked`（绝对路径 + kind） |
 | `fs.save` | Host 把侧栏压好的 JPEG 写到 `browser/pasted/`，回 `fs.saved`（绝对路径 + kind=image） |
 | `page.pick` | SW 让当前标签内容脚本拾取元素，回 `page.picked`（CSS selector，kind=element）；不转发 Host |
@@ -212,7 +216,7 @@ chrome.storage.local
 2. 若 fork 的是**最后一条**且 Agent 支持 `session/fork`，用 ACP fork，Agent 历史与 UI 对齐，不必再灌上下文。
 3. 否则 `session/new`。Agent 是空会话，把截断后的对话写成 `pendingForkContext`，**下一条用户消息**前缀带上（UI 不显示这段包装）。这样 Agent 不会为了灌上下文先回一嘴。
 
-`isRunning` 时拒绝 new / switch / fork / regenerate。流式 `update` 只写进当前选中会话。
+侧栏用 `runningIds`（不持久化）记哪些本地会话有一轮在飞，不再用全局一把锁。`isRunning` 只表示**当前选中**会话在跑（输入框描边、停止钮、该会话的 fork / 重生成 / 改历史）。新建和切换始终允许；流式 `update` / `turn.end` / HITL 按消息上的 ACP `sessionId` 写回对应本地会话。切到别的会话时，若目标自己正在跑则不要再 `session.use`。权限 / 提问 / 计划按会话存放，只在看着该会话时画出来；「全部允许」仍会自动回掉所有会话里待批的权限。页面工具仍共用一个工作区，两条 Agent 同时改页面时可能打架，这是并行的取舍。会话列表里进行中的卡片旁转圈提示。
 
 重新生成（同一会话抽卡）：
 
@@ -227,7 +231,7 @@ chrome.storage.local
 1. 点用户气泡（`isRunning` 时忽略）把 `textOf` + `attachments` 填回 composer，并记住 `editingId`。若输入栏里已有未发送草稿，先 stash，取消时还原。
 2. composer 顶部一行：左 muted 提示，右 `RippleButton` 黄铜字「取消修改 / Cancel edit」。
 3. 再发送走同一套 `startReplayTurn`：用新正文/附件替换该 user，截掉其后，`session/new` + 前文再 prompt。不另开本地会话。
-4. 切会话时退出编辑态；进行中不允许进入。
+4. 切会话时退出编辑态；当前会话进行中不允许进入。
 
 旧的 `session.json` `{ sessionId }` 在侧栏还没有本地目录时，迁成第一条会话。
 
@@ -304,7 +308,7 @@ Host 是 ACP Client，`clientCapabilities` 关闭 `fs` / `terminal`，让 Agent 
 | `cursor/create_plan` | 计划审批 |
 | `cursor/update_todos` | 输入框上方可折叠 TodoList |
 | `cursor/task` | 子任务卡片 |
-| `session/prompt` 结束 | 本轮 `isRunning=false`，给末尾 assistant 打上 `durationMs` |
+| `session/prompt` 结束 | 对应本地会话移出 `runningIds`，给**该会话**末尾 assistant 打上 `durationMs` |
 
 消息状态由 Side Panel 持有并持久化。Host 重启后 `session/load` 只负责恢复 Agent 侧上下文；Panel 以本地存储的消息为准，不因为 `replay` 清空界面。
 

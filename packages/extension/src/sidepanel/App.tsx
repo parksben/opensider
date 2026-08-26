@@ -53,10 +53,10 @@ export function App() {
   const [status, setStatus] = useState<"starting" | "ready" | "error">("starting");
   const [error, setError] = useState<string>();
   const [page, setPage] = useState<CurrentPage>();
-  const [isRunning, setIsRunning] = useState(false);
-  const [permission, setPermission] = useState<PermissionRequest>();
-  const [question, setQuestion] = useState<QuestionPrompt>();
-  const [plan, setPlan] = useState<PlanPrompt>();
+  const [runningIds, setRunningIds] = useState<string[]>([]);
+  const [permissions, setPermissions] = useState<Record<string, PermissionRequest>>({});
+  const [questions, setQuestions] = useState<Record<string, QuestionPrompt>>({});
+  const [plans, setPlans] = useState<Record<string, PlanPrompt>>({});
   const [activity, setActivity] = useState<{ command: BrowserCommand; result?: BrowserResult }>();
   const [pickingElement, setPickingElement] = useState(false);
 
@@ -66,21 +66,21 @@ export function App() {
   const statusRef = useRef(status);
   const selectedIdRef = useRef(selectedId);
   const sessionsRef = useRef(sessions);
-  const pendingBind = useRef<{ localId: string; kind: "new" | "use" | "fork" } | null>(null);
+  const pendingBinds = useRef<Array<{ localId: string; kind: "new" | "use" | "fork" }>>([]);
   const pendingRegen = useRef<{
     localId: string;
     text: string;
     attachments: AttachmentItem[];
     context?: string;
   } | null>(null);
-  const boundRef = useRef(false);
   const localeRef = useRef(locale);
   const selectedModelRef = useRef(selectedModelId);
   const agentModeRef = useRef(agentMode);
   const pickWaiters = useRef(new Map<string, (items: AttachmentItem[]) => void>());
   const appliedModelRef = useRef("");
   const elementPickId = useRef("");
-  const turnStartedAt = useRef<number | undefined>(undefined);
+  const runningIdsRef = useRef<Set<string>>(new Set());
+  const turnStartedAt = useRef(new Map<string, number>());
   pageRef.current = page;
   statusRef.current = status;
   selectedIdRef.current = selectedId;
@@ -89,21 +89,59 @@ export function App() {
   selectedModelRef.current = selectedModelId;
   agentModeRef.current = agentMode;
 
+  const enqueueBind = (item: { localId: string; kind: "new" | "use" | "fork" }) => {
+    pendingBinds.current.push(item);
+  };
+
   const tryBindCurrent = () => {
     if (statusRef.current !== "ready") return;
-    if (pendingBind.current || boundRef.current) return;
+    if (pendingBinds.current.length > 0) return;
     const list = sessionsRef.current;
     const id = selectedIdRef.current || list[0]?.id;
     const session = list.find((item) => item.id === id);
     if (!session) return;
+    if (runningIdsRef.current.has(session.id)) return;
     if (session.acpSessionId) {
-      pendingBind.current = { localId: session.id, kind: "use" };
+      enqueueBind({ localId: session.id, kind: "use" });
       sendRef.current({ type: "session.use", sessionId: session.acpSessionId });
     } else {
-      pendingBind.current = { localId: session.id, kind: "new" };
+      enqueueBind({ localId: session.id, kind: "new" });
       sendRef.current({ type: "session.new" });
     }
-    boundRef.current = true;
+  };
+
+  const syncRunning = (next: Set<string>) => {
+    runningIdsRef.current = next;
+    setRunningIds([...next]);
+  };
+
+  const localIdForAcp = (acpId?: string) => {
+    if (acpId) {
+      const found = sessionsRef.current.find((item) => item.acpSessionId === acpId);
+      if (found) return found.id;
+    }
+    return selectedIdRef.current;
+  };
+
+  const clearHitl = (id: string) => {
+    setPermissions((current) => {
+      if (!(id in current)) return current;
+      const next = { ...current };
+      delete next[id];
+      return next;
+    });
+    setQuestions((current) => {
+      if (!(id in current)) return current;
+      const next = { ...current };
+      delete next[id];
+      return next;
+    });
+    setPlans((current) => {
+      if (!(id in current)) return current;
+      const next = { ...current };
+      delete next[id];
+      return next;
+    });
   };
 
   const selected = useMemo(
@@ -115,9 +153,11 @@ export function App() {
     setSessions((current) => current.map((session) => (session.id === id ? updater(session) : session)));
   };
 
-  const beginTurn = () => {
-    turnStartedAt.current = Date.now();
-    setIsRunning(true);
+  const beginTurn = (id: string) => {
+    turnStartedAt.current.set(id, Date.now());
+    const next = new Set(runningIdsRef.current);
+    next.add(id);
+    syncRunning(next);
   };
 
   const replyPermission = (id: number, options: PermissionRequest["options"]): boolean => {
@@ -131,22 +171,7 @@ export function App() {
     return true;
   };
 
-  const finishTurn = () => {
-    const started = turnStartedAt.current;
-    turnStartedAt.current = undefined;
-    setIsRunning(false);
-    if (started == null) return;
-    const durationMs = Math.max(0, Date.now() - started);
-    updateSelectedMessages((messages) => {
-      const last = messages[messages.length - 1];
-      if (last?.role !== "assistant" || last.durationMs != null) return messages;
-      if (last.createdAt.getTime() < started - 2000) return messages;
-      return [...messages.slice(0, -1), { ...last, durationMs }];
-    });
-  };
-
-  const updateSelectedMessages = (updater: (messages: ChatMessage[]) => ChatMessage[]) => {
-    const id = selectedIdRef.current;
+  const updateSessionMessages = (id: string, updater: (messages: ChatMessage[]) => ChatMessage[]) => {
     setSessions((current) =>
       current.map((session) => {
         if (session.id !== id) return session;
@@ -161,20 +186,44 @@ export function App() {
     );
   };
 
+  const finishTurn = (id?: string) => {
+    const target = id ?? selectedIdRef.current;
+    if (!target) return;
+    const started = turnStartedAt.current.get(target);
+    turnStartedAt.current.delete(target);
+    if (!runningIdsRef.current.has(target) && started == null) return;
+    const next = new Set(runningIdsRef.current);
+    next.delete(target);
+    syncRunning(next);
+    if (started == null) return;
+    const durationMs = Math.max(0, Date.now() - started);
+    updateSessionMessages(target, (messages) => {
+      const last = messages[messages.length - 1];
+      if (last?.role !== "assistant" || last.durationMs != null) return messages;
+      if (last.createdAt.getTime() < started - 2000) return messages;
+      return [...messages.slice(0, -1), { ...last, durationMs }];
+    });
+  };
+
+  const finishAllTurns = () => {
+    for (const id of [...runningIdsRef.current]) finishTurn(id);
+  };
+
   const handleHost = (msg: HostToExt) => {
     if (msg.type === "status") {
       setStatus(msg.state);
       setError(msg.error);
       if (msg.state === "error") {
         pendingRegen.current = null;
-        finishTurn();
+        pendingBinds.current = [];
+        finishAllTurns();
       }
       if (msg.state !== "ready") appliedModelRef.current = "";
       if (msg.state === "ready") tryBindCurrent();
       return;
     }
     if (msg.type === "session") {
-      const pending = pendingBind.current;
+      const pending = pendingBinds.current.shift();
       const current = sessionsRef.current.find((item) => item.id === selectedIdRef.current);
       const targetId = pending?.localId ?? (current && !current.acpSessionId ? current.id : undefined);
       if (targetId) {
@@ -186,14 +235,12 @@ export function App() {
               ? (session.pendingForkContext ?? buildForkContext(session.messages))
               : session.pendingForkContext,
         }));
-        boundRef.current = true;
       }
-      pendingBind.current = null;
       const regen = pendingRegen.current;
       if (regen && regen.localId === targetId) {
         pendingRegen.current = null;
         const body = wrapAttachments(regen.text, regen.attachments);
-        beginTurn();
+        beginTurn(regen.localId);
         setError(undefined);
         sendRef.current({
           type: "prompt",
@@ -248,58 +295,80 @@ export function App() {
       return;
     }
     if (msg.type === "update") {
+      const localId = localIdForAcp(msg.sessionId);
+      if (!localId) return;
       const modelId = selectedModelRef.current;
       const modelName =
         models.find((item) => item.id === modelId)?.name ||
         (!modelId || modelId === "auto" ? "Auto" : modelId);
-      updateSelectedMessages((current) => applyAcpUpdate(current, msg.update, { modelId, modelName }));
+      updateSessionMessages(localId, (current) => applyAcpUpdate(current, msg.update, { modelId, modelName }));
       return;
     }
     if (msg.type === "turn.end") {
-      finishTurn();
-      if (msg.stopReason === "error") setError(t(localeRef.current, "turnError"));
+      const localId = localIdForAcp(msg.sessionId);
+      finishTurn(localId);
+      if (msg.stopReason === "error" && localId === selectedIdRef.current) {
+        setError(t(localeRef.current, "turnError"));
+      }
       return;
     }
     if (msg.type === "permission") {
+      const localId = localIdForAcp(msg.sessionId);
+      if (!localId) return;
       const toolCall = msg.params.toolCall as { title?: string } | undefined;
       const options = (msg.params.options as PermissionRequest["options"]) ?? [];
       if (agentModeRef.current === "auto" && replyPermission(msg.id, options)) {
-        setPermission(undefined);
+        setPermissions((current) => {
+          if (!(localId in current)) return current;
+          const next = { ...current };
+          delete next[localId];
+          return next;
+        });
         return;
       }
-      setPermission({
-        id: msg.id,
-        title: toolCall?.title ?? t(localeRef.current, "wantsTool"),
-        options,
-      });
+      setPermissions((current) => ({
+        ...current,
+        [localId]: {
+          id: msg.id,
+          title: toolCall?.title ?? t(localeRef.current, "wantsTool"),
+          options,
+        },
+      }));
       return;
     }
     if (msg.type === "cursor") {
+      const localId = localIdForAcp(msg.sessionId);
       if (msg.method === "cursor/update_todos") {
+        if (!localId) return;
         const incoming = (msg.params.todos as TodoItem[]) ?? [];
         const merge = Boolean(msg.params.merge);
-        const id = selectedIdRef.current;
-        patchSession(id, (session) => ({
+        patchSession(localId, (session) => ({
           ...session,
           todos: merge ? mergeTodos(session.todos, incoming) : incoming,
         }));
         return;
       }
-      if (msg.method === "cursor/ask_question" && msg.id !== undefined) {
-        setQuestion({
-          id: msg.id,
-          title: msg.params.title as string | undefined,
-          questions: (msg.params.questions as QuestionPrompt["questions"]) ?? [],
-        });
+      if (msg.method === "cursor/ask_question" && msg.id !== undefined && localId) {
+        setQuestions((current) => ({
+          ...current,
+          [localId]: {
+            id: msg.id,
+            title: msg.params.title as string | undefined,
+            questions: (msg.params.questions as QuestionPrompt["questions"]) ?? [],
+          },
+        }));
         return;
       }
-      if (msg.method === "cursor/create_plan" && msg.id !== undefined) {
-        setPlan({
-          id: msg.id,
-          name: msg.params.name as string | undefined,
-          overview: msg.params.overview as string | undefined,
-          plan: String(msg.params.plan ?? ""),
-        });
+      if (msg.method === "cursor/create_plan" && msg.id !== undefined && localId) {
+        setPlans((current) => ({
+          ...current,
+          [localId]: {
+            id: msg.id,
+            name: msg.params.name as string | undefined,
+            overview: msg.params.overview as string | undefined,
+            plan: String(msg.params.plan ?? ""),
+          },
+        }));
       }
     }
   };
@@ -357,25 +426,34 @@ export function App() {
 
   const onSend = (text: string, attachments: AttachmentItem[] = []) => {
     const session = sessionsRef.current.find((item) => item.id === selectedIdRef.current);
+    const localId = session?.id ?? selectedIdRef.current;
+    if (!localId) return;
     const user = createUserMessage(text, attachments);
-    updateSelectedMessages((current) => [...current, user]);
+    updateSessionMessages(localId, (current) => [...current, user]);
     if (statusRef.current !== "ready") {
       setError(t(locale, "offlineSend"));
       setStatus("error");
-      setIsRunning(false);
       return;
     }
     const context = session?.pendingForkContext;
-    if (context) {
+    if (context && session) {
       patchSession(session.id, (item) => ({ ...item, pendingForkContext: undefined }));
     }
     const body = wrapAttachments(text, attachments);
-    beginTurn();
+    beginTurn(localId);
     setError(undefined);
+    if (!session?.acpSessionId) {
+      pendingRegen.current = { localId, text, attachments, context };
+      if (pendingBinds.current.every((item) => item.localId !== localId)) {
+        enqueueBind({ localId, kind: "new" });
+        sendRef.current({ type: "session.new" });
+      }
+      return;
+    }
     sendRef.current({
       type: "prompt",
       text: context ? `${wrapForkContext(context)}\n\n${body}` : body,
-      sessionId: session?.acpSessionId,
+      sessionId: session.acpSessionId,
       currentPage: pageRef.current
         ? { title: pageRef.current.title, url: pageRef.current.url }
         : undefined,
@@ -458,39 +536,34 @@ export function App() {
   const onModel = (modelId: string) => {
     setSelectedModelId(modelId);
     appliedModelRef.current = modelId;
+    const session = sessionsRef.current.find((item) => item.id === selectedIdRef.current);
     if (statusRef.current === "ready" && modelId !== "auto") {
-      sendRef.current({ type: "model.set", modelId });
+      sendRef.current({ type: "model.set", modelId, sessionId: session?.acpSessionId });
     }
   };
 
   const onCancel = () => {
-    sendRef.current({ type: "cancel" });
-    finishTurn();
+    const session = sessionsRef.current.find((item) => item.id === selectedIdRef.current);
+    sendRef.current({ type: "cancel", sessionId: session?.acpSessionId });
+    if (session) finishTurn(session.id);
   };
 
   const switchSession = (id: string) => {
-    if (isRunning) return;
     if (id === selectedIdRef.current) return;
-    boundRef.current = false;
     setSelectedId(id);
-    setPermission(undefined);
-    setQuestion(undefined);
-    setPlan(undefined);
     const session = sessionsRef.current.find((item) => item.id === id);
     if (!session) return;
+    if (runningIdsRef.current.has(id)) return;
     if (session.acpSessionId) {
-      pendingBind.current = { localId: id, kind: "use" };
+      enqueueBind({ localId: id, kind: "use" });
       sendRef.current({ type: "session.use", sessionId: session.acpSessionId });
-      boundRef.current = true;
     } else if (statusRef.current === "ready") {
-      pendingBind.current = { localId: id, kind: "new" };
+      enqueueBind({ localId: id, kind: "new" });
       sendRef.current({ type: "session.new" });
-      boundRef.current = true;
     }
   };
 
   const renameSession = (id: string, title: string) => {
-    if (isRunning) return;
     patchSession(id, (session) => ({
       ...session,
       title: title.trim(),
@@ -500,7 +573,14 @@ export function App() {
   };
 
   const deleteSession = (id: string) => {
-    if (isRunning) return;
+    const doomed = sessionsRef.current.find((session) => session.id === id);
+    if (doomed && runningIdsRef.current.has(id)) {
+      sendRef.current({ type: "cancel", sessionId: doomed.acpSessionId });
+      finishTurn(id);
+    }
+    clearHitl(id);
+    pendingBinds.current = pendingBinds.current.filter((item) => item.localId !== id);
+    if (pendingRegen.current?.localId === id) pendingRegen.current = null;
     const remaining = sessionsRef.current.filter((session) => session.id !== id);
     if (remaining.length > 0) {
       setSessions(remaining);
@@ -509,33 +589,29 @@ export function App() {
     }
     const created = emptySession();
     setSessions([created]);
-    boundRef.current = false;
     setSelectedId(created.id);
     if (statusRef.current === "ready") {
-      pendingBind.current = { localId: created.id, kind: "new" };
+      enqueueBind({ localId: created.id, kind: "new" });
       sendRef.current({ type: "session.new" });
-      boundRef.current = true;
     }
   };
 
   const newSession = () => {
-    if (isRunning) return;
     const created = emptySession();
     setSessions((current) => [created, ...current]);
-    boundRef.current = false;
     setSelectedId(created.id);
     setSessionsOpen(true);
     if (statusRef.current === "ready") {
-      pendingBind.current = { localId: created.id, kind: "new" };
+      enqueueBind({ localId: created.id, kind: "new" });
       sendRef.current({ type: "session.new" });
-      boundRef.current = true;
     }
   };
 
+  const sessionBusy = (id: string) => runningIdsRef.current.has(id);
+
   const forkFromMessage = (messageId: string) => {
-    if (isRunning) return;
     const source = sessionsRef.current.find((item) => item.id === selectedIdRef.current);
-    if (!source) return;
+    if (!source || sessionBusy(source.id)) return;
     const index = source.messages.findIndex((message) => message.id === messageId);
     if (index < 0) return;
     const sliced = source.messages.slice(0, index + 1).map((message) => ({
@@ -551,18 +627,16 @@ export function App() {
       pendingForkContext: atTip ? undefined : buildForkContext(sliced),
     });
     setSessions((current) => [created, ...current]);
-    boundRef.current = false;
     setSelectedId(created.id);
     setSessionsOpen(true);
     if (statusRef.current !== "ready") return;
     if (atTip && source.acpSessionId) {
-      pendingBind.current = { localId: created.id, kind: "fork" };
+      enqueueBind({ localId: created.id, kind: "fork" });
       sendRef.current({ type: "session.fork", sessionId: source.acpSessionId });
     } else {
-      pendingBind.current = { localId: created.id, kind: "new" };
+      enqueueBind({ localId: created.id, kind: "new" });
       sendRef.current({ type: "session.new" });
     }
-    boundRef.current = true;
   };
 
   const startReplayTurn = (source: Session, userIndex: number, user: ChatMessage) => {
@@ -583,27 +657,22 @@ export function App() {
       title: session.titleManual ? session.title : titleFromMessages(kept) || session.title,
       updatedAt: new Date().toISOString(),
     }));
-    setPermission(undefined);
-    setQuestion(undefined);
-    setPlan(undefined);
+    clearHitl(source.id);
     if (statusRef.current !== "ready") {
       pendingRegen.current = null;
       setError(t(localeRef.current, "offlineSend"));
       setStatus("error");
-      setIsRunning(false);
       return;
     }
     appliedModelRef.current = "";
-    boundRef.current = false;
-    pendingBind.current = { localId: source.id, kind: "new" };
-    beginTurn();
+    enqueueBind({ localId: source.id, kind: "new" });
+    beginTurn(source.id);
     setError(undefined);
     sendRef.current({ type: "session.new" });
-    boundRef.current = true;
   };
 
   const regenerateFromMessage = (messageId: string) => {
-    if (isRunning) return;
+    if (sessionBusy(selectedIdRef.current)) return;
     const source = sessionsRef.current.find((item) => item.id === selectedIdRef.current);
     if (!source) return;
     const assistantIndex = source.messages.findIndex((message) => message.id === messageId);
@@ -620,7 +689,7 @@ export function App() {
   };
 
   const reviseFromMessage = (messageId: string, text: string, attachments: AttachmentItem[]) => {
-    if (isRunning) return;
+    if (sessionBusy(selectedIdRef.current)) return;
     const source = sessionsRef.current.find((item) => item.id === selectedIdRef.current);
     if (!source) return;
     const userIndex = source.messages.findIndex((message) => message.id === messageId);
@@ -658,7 +727,7 @@ export function App() {
         }}
         onToggleSessions={() => setSessionsOpen((open) => !open)}
         onRetry={() => {
-          boundRef.current = false;
+          pendingBinds.current = [];
           setStatus("starting");
           setError(t(locale, "reconnecting"));
           reconnectRef.current();
@@ -671,7 +740,7 @@ export function App() {
               locale={locale}
               sessionId={selected.id}
               messages={selected.messages}
-              isRunning={isRunning}
+              isRunning={runningIds.includes(selected.id)}
               pickingElement={pickingElement}
               models={models}
               modelId={selectedModelId}
@@ -690,9 +759,12 @@ export function App() {
               onAgentMode={(mode) => {
                 setAgentMode(mode);
                 if (mode !== "auto") return;
-                setPermission((current) => {
-                  if (!current) return current;
-                  return replyPermission(current.id, current.options) ? undefined : current;
+                setPermissions((current) => {
+                  const kept: Record<string, PermissionRequest> = {};
+                  for (const [id, request] of Object.entries(current)) {
+                    if (!replyPermission(request.id, request.options)) kept[id] = request;
+                  }
+                  return kept;
                 });
               }}
               page={page}
@@ -700,38 +772,53 @@ export function App() {
               hitl={
                 <PermissionBar
                   locale={locale}
-                  permission={permission}
-                  question={question}
-                  plan={plan}
+                  permission={permissions[selected.id]}
+                  question={questions[selected.id]}
+                  plan={plans[selected.id]}
                   onPermission={(optionId) => {
-                    if (!permission) return;
+                    const current = permissions[selected.id];
+                    if (!current) return;
                     sendRef.current({
                       type: "permission.reply",
-                      id: permission.id,
+                      id: current.id,
                       outcome: { outcome: "selected", optionId },
                     });
-                    setPermission(undefined);
+                    setPermissions((items) => {
+                      const next = { ...items };
+                      delete next[selected.id];
+                      return next;
+                    });
                   }}
                   onQuestion={(answers) => {
-                    if (!question) return;
+                    const current = questions[selected.id];
+                    if (!current) return;
                     sendRef.current({
                       type: "cursor.reply",
-                      id: question.id,
+                      id: current.id,
                       result: { outcome: { outcome: "answered", answers } },
                     });
-                    setQuestion(undefined);
+                    setQuestions((items) => {
+                      const next = { ...items };
+                      delete next[selected.id];
+                      return next;
+                    });
                   }}
                   page={page}
                   onPlan={(accepted) => {
-                    if (!plan) return;
+                    const current = plans[selected.id];
+                    if (!current) return;
                     sendRef.current({
                       type: "cursor.reply",
-                      id: plan.id,
+                      id: current.id,
                       result: accepted
                         ? { outcome: { outcome: "accepted" } }
                         : { outcome: { outcome: "rejected", reason: "User rejected the plan" } },
                     });
-                    setPlan(undefined);
+                    setPlans((items) => {
+                      const next = { ...items };
+                      delete next[selected.id];
+                      return next;
+                    });
                   }}
                 />
               }
@@ -744,7 +831,7 @@ export function App() {
           locale={locale}
           sessions={sessions}
           selectedId={selected.id}
-          locked={isRunning}
+          runningIds={runningIds}
           onSelect={(id) => {
             switchSession(id);
             setSessionsOpen(false);

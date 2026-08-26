@@ -1,4 +1,4 @@
-import { GitFork, MessageSquarePlus, Pencil, Trash2 } from "lucide-react";
+import { GitFork, LoaderCircle, MessageSquarePlus, Pencil, Trash2 } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Locale, MessageKey } from "../i18n";
 import { t } from "../i18n";
@@ -20,7 +20,7 @@ export function SessionModal({
   locale,
   sessions,
   selectedId,
-  locked,
+  runningIds,
   onSelect,
   onNew,
   onRename,
@@ -30,7 +30,7 @@ export function SessionModal({
   locale: Locale;
   sessions: Session[];
   selectedId: string;
-  locked: boolean;
+  runningIds: string[];
   onSelect: (id: string) => void;
   onNew: () => void;
   onRename: (id: string, title: string) => void;
@@ -51,7 +51,6 @@ export function SessionModal({
   }, [locale, query, sessions]);
 
   const pick = (id: string) => {
-    if (locked && id !== selectedId) return;
     onSelect(id);
     onClose();
   };
@@ -107,7 +106,7 @@ export function SessionModal({
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [editingId, highlightId, locked, onClose, selectedId, visible]);
+  }, [editingId, highlightId, onClose, selectedId, visible]);
 
   useLayoutEffect(() => {
     if (!highlightId) return;
@@ -125,7 +124,6 @@ export function SessionModal({
       >
         <div className="flex shrink-0 items-center gap-1.5 px-2 py-1.5">
           <RippleButton
-            disabled={locked}
             onClick={() => {
               onNew();
               onClose();
@@ -147,7 +145,6 @@ export function SessionModal({
             onChange={(event) => onFilterChange(event.target.value)}
           />
         </div>
-        {locked ? <p className="px-2.5 pb-1 text-[11px] text-[var(--warn)]">{label("runningLock")}</p> : null}
         <ul ref={listRef} className="min-h-0 flex-1 overflow-y-auto py-1">
           {visible.length === 0 ? (
             <li className="px-2.5 py-1.5 text-[12px] text-[var(--muted)]">{label("noMatchingSessions")}</li>
@@ -156,6 +153,7 @@ export function SessionModal({
               const active = session.id === selectedId;
               const highlighted = session.id === highlightId;
               const editing = editingId === session.id;
+              const running = runningIds.includes(session.id);
               return (
                 <li key={session.id} className="group/session" data-session-id={session.id}>
                   <div
@@ -182,13 +180,21 @@ export function SessionModal({
                     ) : (
                       <button
                         type="button"
-                        disabled={locked && !active}
                         onClick={() => pick(session.id)}
-                        className="flex min-w-0 flex-1 items-start gap-2 px-1 text-left disabled:opacity-40"
+                        className="flex min-w-0 flex-1 items-start gap-2 px-1 text-left"
                       >
                         <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${active ? "bg-[var(--brass)]" : "bg-[var(--line)]"}`} />
                         <span className="min-w-0 flex-1">
-                          <span className="block truncate text-[12.5px]">{displayTitle(session, locale)}</span>
+                          <span className="flex items-center gap-1.5">
+                            <span className="min-w-0 truncate text-[12.5px]">{displayTitle(session, locale)}</span>
+                            {running ? (
+                              <LoaderCircle
+                                size={11}
+                                className="shrink-0 animate-spin text-[var(--muted)]"
+                                aria-label={label("sessionRunning")}
+                              />
+                            ) : null}
+                          </span>
                           <SessionMeta locale={locale} session={session} />
                         </span>
                       </button>
@@ -201,7 +207,6 @@ export function SessionModal({
                       <IconButton
                         side="top"
                         label={label("rename")}
-                        disabled={locked}
                         onClick={() => setEditingId(session.id)}
                         className="flex h-6 w-6 items-center justify-center rounded-full text-[var(--muted)] disabled:opacity-40"
                       >
@@ -210,7 +215,6 @@ export function SessionModal({
                       <IconButton
                         side="top"
                         label={label("deleteSession")}
-                        disabled={locked}
                         onClick={() => onDelete(session.id)}
                         className="flex h-6 w-6 items-center justify-center rounded-full text-[var(--muted)] disabled:opacity-40"
                       >

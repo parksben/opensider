@@ -19,9 +19,15 @@ import { ensureWorkspace, readSessionId, WORKSPACE_DIR, writeCurrentPage, writeS
 log("node host starting");
 ensureWorkspace();
 
+type AcpRuntime = {
+  client: AcpClient;
+  prompting: boolean;
+};
+
 const agentPath = defaultAgentPath();
-let client: AcpClient | undefined;
-let promptInFlight = false;
+const runtimes: AcpRuntime[] = [];
+const rpcClients = new Map<number, AcpClient>();
+let bindTail = Promise.resolve();
 let catalog: ModelCatalog = {
   models: [],
   currentId: "",
@@ -55,11 +61,65 @@ function absorbSessionOptions(opened: SessionOpen): void {
   catalog = mergeCatalog(catalog, catalogFromConfigOptions(options));
 }
 
-async function openAndAnnounce(open: () => Promise<SessionOpen>): Promise<void> {
+function enqueueSessionOp<T>(work: () => Promise<T>): Promise<T> {
+  const run = bindTail.then(work, work);
+  bindTail = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
+}
+
+function createClient(): AcpClient {
+  const client = new AcpClient(agentPath, WORKSPACE_DIR, {
+    onUpdate: (update, sessionId) => {
+      const sid = sessionId ?? client.getSessionId();
+      if (update.sessionUpdate === "config_option_update") {
+        catalog = mergeCatalog(catalog, catalogFromConfigOptions(update.configOptions as ConfigOption[]));
+        sendModels();
+      }
+      send({ type: "update", update, sessionId: sid });
+    },
+    onPermission: (id, params, sessionId) => {
+      rpcClients.set(id, client);
+      send({ type: "permission", id, params, sessionId: sessionId ?? client.getSessionId() });
+    },
+    onCursor: (id, method, params, sessionId) => {
+      if (id !== undefined) rpcClients.set(id, client);
+      send({ type: "cursor", id, method, params, sessionId: sessionId ?? client.getSessionId() });
+    },
+  });
+  return client;
+}
+
+async function spawnRuntime(): Promise<AcpRuntime> {
+  const client = createClient();
+  client.start();
+  await client.initialize();
+  const runtime: AcpRuntime = { client, prompting: false };
+  runtimes.push(runtime);
+  log(`acp runtime ready count=${runtimes.length}`);
+  return runtime;
+}
+
+function runtimeBySession(sessionId: string | undefined): AcpRuntime | undefined {
+  if (!sessionId) return undefined;
+  return runtimes.find((runtime) => runtime.client.getSessionId() === sessionId);
+}
+
+async function acquireRuntime(preferSessionId?: string): Promise<AcpRuntime> {
+  const owned = runtimeBySession(preferSessionId);
+  if (owned && !owned.prompting) return owned;
+  const idle = runtimes.find((runtime) => !runtime.prompting);
+  if (idle) return idle;
+  return spawnRuntime();
+}
+
+async function openAndAnnounce(runtime: AcpRuntime, open: () => Promise<SessionOpen>): Promise<SessionOpen> {
   const opened = await open();
   writeSessionId(opened.sessionId);
   absorbSessionOptions(opened);
-  await applyPendingModel();
+  await applyPendingModel(runtime);
   send({
     type: "session",
     sessionId: opened.sessionId,
@@ -68,29 +128,34 @@ async function openAndAnnounce(open: () => Promise<SessionOpen>): Promise<void> 
     forked: opened.forked,
   });
   sendModels();
+  return opened;
 }
 
-async function applyPendingModel(): Promise<void> {
-  if (!pendingModelId || isUnsetModel(pendingModelId) || !client?.getSessionId()) return;
+async function applyPendingModel(runtime: AcpRuntime): Promise<void> {
+  if (!pendingModelId || isUnsetModel(pendingModelId) || !runtime.client.getSessionId()) return;
+  if (runtime.prompting) return;
   try {
-    await applyModel(pendingModelId);
+    await applyModel(runtime, pendingModelId);
   } catch (error) {
     log(`apply model skipped: ${String(error)}`);
   }
 }
 
-async function applyModel(modelId: string): Promise<void> {
-  if (!client) throw new Error("agent is not ready");
+async function applyModel(runtime: AcpRuntime, modelId: string): Promise<void> {
   if (isUnsetModel(modelId)) {
     catalog = { ...catalog, currentId: modelId };
     return;
   }
-  const result = await client.setModel(modelId, catalog.modelConfigId);
+  const result = await runtime.client.setModel(modelId, catalog.modelConfigId);
   const options = (result as { configOptions?: ConfigOption[] } | undefined)?.configOptions;
   catalog = mergeCatalog(catalog, {
     ...catalogFromConfigOptions(options),
     currentId: modelId,
   });
+}
+
+function replyClient(id: number): AcpClient | undefined {
+  return rpcClients.get(id) ?? runtimes[0]?.client;
 }
 
 async function handleExt(msg: ExtToHost): Promise<void> {
@@ -112,21 +177,32 @@ async function handleExt(msg: ExtToHost): Promise<void> {
       return;
     }
     if (msg.type === "session.new") {
-      if (!client) throw new Error("agent is not ready");
-      if (promptInFlight) throw new Error("a turn is already running");
-      await openAndAnnounce(() => client!.createSession());
+      if (runtimes.length === 0) throw new Error("agent is not ready");
+      await enqueueSessionOp(async () => {
+        const runtime = await acquireRuntime();
+        await openAndAnnounce(runtime, () => runtime.client.createSession());
+      });
       return;
     }
     if (msg.type === "session.use") {
-      if (!client) throw new Error("agent is not ready");
-      if (promptInFlight) throw new Error("a turn is already running");
-      await openAndAnnounce(() => client!.useSession(msg.sessionId));
+      if (runtimes.length === 0) throw new Error("agent is not ready");
+      await enqueueSessionOp(async () => {
+        const running = runtimeBySession(msg.sessionId);
+        if (running?.prompting) {
+          send({ type: "session", sessionId: msg.sessionId, replay: true });
+          return;
+        }
+        const runtime = await acquireRuntime(msg.sessionId);
+        await openAndAnnounce(runtime, () => runtime.client.useSession(msg.sessionId));
+      });
       return;
     }
     if (msg.type === "session.fork") {
-      if (!client) throw new Error("agent is not ready");
-      if (promptInFlight) throw new Error("a turn is already running");
-      await openAndAnnounce(() => client!.forkSession(msg.sessionId));
+      if (runtimes.length === 0) throw new Error("agent is not ready");
+      await enqueueSessionOp(async () => {
+        const runtime = await acquireRuntime();
+        await openAndAnnounce(runtime, () => runtime.client.forkSession(msg.sessionId));
+      });
       return;
     }
     if (msg.type === "fs.pick") {
@@ -167,13 +243,20 @@ async function handleExt(msg: ExtToHost): Promise<void> {
     if (msg.type === "model.set") {
       pendingModelId = msg.modelId;
       catalog = { ...catalog, currentId: msg.modelId };
-      if (!client?.getSessionId() || isUnsetModel(msg.modelId)) {
+      const runtime = runtimeBySession(msg.sessionId) ?? runtimes.find((item) => !item.prompting && item.client.getSessionId());
+      if (!runtime?.client.getSessionId() || isUnsetModel(msg.modelId)) {
         sendModels();
         return;
       }
-      if (msg.sessionId) await client.useSession(msg.sessionId);
+      if (runtime.prompting) {
+        sendModels();
+        return;
+      }
+      if (msg.sessionId && runtime.client.getSessionId() !== msg.sessionId) {
+        await runtime.client.useSession(msg.sessionId);
+      }
       try {
-        await applyModel(msg.modelId);
+        await applyModel(runtime, msg.modelId);
       } catch (error) {
         log(`apply model skipped: ${String(error)}`);
       }
@@ -181,74 +264,95 @@ async function handleExt(msg: ExtToHost): Promise<void> {
       return;
     }
     if (msg.type === "prompt") {
-      if (!client) throw new Error("agent is not ready");
-      if (promptInFlight) throw new Error("a turn is already running");
-      if (msg.sessionId) {
-        const opened = await client.useSession(msg.sessionId);
-        writeSessionId(opened.sessionId);
-        if (opened.created) {
-          send({
-            type: "session",
-            sessionId: opened.sessionId,
-            replay: opened.replay,
-            created: opened.created,
-            forked: opened.forked,
-          });
+      if (runtimes.length === 0) throw new Error("agent is not ready");
+      const runtime = await enqueueSessionOp(async () => {
+        if (msg.sessionId) {
+          const owned = runtimeBySession(msg.sessionId);
+          if (owned?.prompting) {
+            log(`prompt ignored, session already running ${msg.sessionId}`);
+            return undefined;
+          }
+          const next = owned ?? (await acquireRuntime(msg.sessionId));
+          if (next.client.getSessionId() !== msg.sessionId) {
+            const opened = await next.client.useSession(msg.sessionId);
+            writeSessionId(opened.sessionId);
+            if (opened.created) {
+              send({
+                type: "session",
+                sessionId: opened.sessionId,
+                replay: opened.replay,
+                created: opened.created,
+                forked: opened.forked,
+              });
+            }
+          }
+          next.prompting = true;
+          return next;
         }
-      }
+        const next = await acquireRuntime();
+        const opened = await next.client.createSession();
+        writeSessionId(opened.sessionId);
+        absorbSessionOptions(opened);
+        send({
+          type: "session",
+          sessionId: opened.sessionId,
+          replay: opened.replay,
+          created: opened.created,
+          forked: opened.forked,
+        });
+        sendModels();
+        next.prompting = true;
+        return next;
+      });
+      if (!runtime) return;
       const prefix = msg.currentPage
         ? `[Current tab] ${msg.currentPage.title} — ${msg.currentPage.url}\n\n`
         : "";
-      promptInFlight = true;
       try {
-        const result = await client.prompt(`${prefix}${msg.text}`);
-        send({ type: "turn.end", stopReason: result.stopReason });
+        const result = await runtime.client.prompt(`${prefix}${msg.text}`);
+        send({
+          type: "turn.end",
+          stopReason: result.stopReason,
+          sessionId: runtime.client.getSessionId(),
+        });
       } finally {
-        promptInFlight = false;
+        runtime.prompting = false;
       }
       return;
     }
     if (msg.type === "cancel") {
-      client?.cancel();
+      const runtime = runtimeBySession(msg.sessionId) ?? runtimes.find((item) => item.prompting);
+      runtime?.client.cancel();
       return;
     }
     if (msg.type === "permission.reply") {
-      client?.respond(msg.id, { outcome: msg.outcome });
+      replyClient(msg.id)?.respond(msg.id, { outcome: msg.outcome });
+      rpcClients.delete(msg.id);
       return;
     }
     if (msg.type === "cursor.reply") {
-      client?.respond(msg.id, msg.result);
+      replyClient(msg.id)?.respond(msg.id, msg.result);
+      rpcClients.delete(msg.id);
     }
   } catch (error) {
     log(`handle ext error: ${String(error)}`);
-    send({ type: "status", state: "error", error: String(error) });
     if (msg.type === "prompt") {
-      send({ type: "turn.end", stopReason: "error" });
+      send({ type: "turn.end", stopReason: "error", sessionId: msg.sessionId });
+      return;
     }
+    send({ type: "status", state: "error", error: String(error) });
   }
 }
 
 async function main(): Promise<void> {
   send({ type: "status", state: "starting" });
   try {
-    client = new AcpClient(agentPath, WORKSPACE_DIR, {
-      onUpdate: (update) => {
-        if (update.sessionUpdate === "config_option_update") {
-          catalog = mergeCatalog(catalog, catalogFromConfigOptions(update.configOptions as ConfigOption[]));
-          sendModels();
-        }
-        send({ type: "update", update });
-      },
-      onPermission: (id, params) => send({ type: "permission", id, params }),
-      onCursor: (id, method, params) => send({ type: "cursor", id, method, params }),
-    });
-    client.start();
+    const runtime = await spawnRuntime();
     await refreshModels();
-    await client.initialize();
-    const opened = await client.openSession(readSessionId());
+    const opened = await runtime.client.openSession(readSessionId());
     writeSessionId(opened.sessionId);
     absorbSessionOptions(opened);
-    await applyPendingModel();
+    await applyPendingModel(runtime);
     send({
       type: "session",
       sessionId: opened.sessionId,
@@ -270,7 +374,7 @@ async function main(): Promise<void> {
 }
 
 process.stdin.on("end", () => {
-  client?.stop();
+  for (const runtime of runtimes) runtime.client.stop();
   process.exit(0);
 });
 

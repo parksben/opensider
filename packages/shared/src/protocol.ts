@@ -193,7 +193,7 @@ export type AgentModel = {
 export type ExtToHost =
   | { type: "hello" }
   | { type: "prompt"; text: string; sessionId?: string; currentPage?: { title: string; url: string } }
-  | { type: "cancel" }
+  | { type: "cancel"; sessionId?: string }
   | { type: "session.new" }
   | { type: "session.use"; sessionId: string }
   | { type: "session.fork"; sessionId: string }
@@ -215,10 +215,10 @@ export type HostToExt =
   | { type: "hello"; workspace: string; agentPath: string }
   | { type: "status"; state: "starting" | "ready" | "error"; error?: string }
   | { type: "session"; sessionId: string; replay?: boolean; created?: boolean; forked?: boolean }
-  | { type: "update"; update: Record<string, unknown> }
-  | { type: "permission"; id: number; params: Record<string, unknown> }
-  | { type: "cursor"; id?: number; method: string; params: Record<string, unknown> }
-  | { type: "turn.end"; stopReason: string }
+  | { type: "update"; update: Record<string, unknown>; sessionId?: string }
+  | { type: "permission"; id: number; params: Record<string, unknown>; sessionId?: string }
+  | { type: "cursor"; id?: number; method: string; params: Record<string, unknown>; sessionId?: string }
+  | { type: "turn.end"; stopReason: string; sessionId?: string }
   | { type: "page"; page: CurrentPage }
   | { type: "browser.command"; command: BrowserCommand }
   | { type: "browser.result"; result: BrowserResult }
