@@ -14,6 +14,100 @@ import { TodoList } from "./TodoList";
 import { ToolCard } from "./ToolCard";
 
 const STICKY_PX = 96;
+const COMPOSER_MIN_LINES = 2;
+const COMPOSER_MAX_LINES = 10;
+
+function composerLineHeight(node: HTMLTextAreaElement): number {
+  const style = getComputedStyle(node);
+  const lineHeight = parseFloat(style.lineHeight);
+  if (Number.isFinite(lineHeight) && lineHeight > 0) return lineHeight;
+  const fontSize = parseFloat(style.fontSize);
+  return (Number.isFinite(fontSize) ? fontSize : 13.5) * 1.5;
+}
+
+function composerBounds(node: HTMLTextAreaElement): { min: number; max: number; lineHeight: number } {
+  const style = getComputedStyle(node);
+  const lineHeight = composerLineHeight(node);
+  const pad = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+  const padY = Number.isFinite(pad) ? pad : 0;
+  return {
+    lineHeight,
+    min: lineHeight * COMPOSER_MIN_LINES + padY,
+    max: lineHeight * COMPOSER_MAX_LINES + padY,
+  };
+}
+
+function scrollComposerCaret(node: HTMLTextAreaElement | null): void {
+  if (!node) return;
+  const style = getComputedStyle(node);
+  const mirror = document.createElement("div");
+  mirror.setAttribute("aria-hidden", "true");
+  const copy = [
+    "boxSizing",
+    "font",
+    "fontSize",
+    "fontFamily",
+    "fontWeight",
+    "fontStyle",
+    "letterSpacing",
+    "lineHeight",
+    "textTransform",
+    "wordSpacing",
+    "textIndent",
+    "padding",
+    "paddingTop",
+    "paddingRight",
+    "paddingBottom",
+    "paddingLeft",
+    "borderWidth",
+    "whiteSpace",
+    "wordBreak",
+    "overflowWrap",
+    "tabSize",
+  ] as const;
+  for (const prop of copy) {
+    mirror.style[prop] = style[prop];
+  }
+  Object.assign(mirror.style, {
+    position: "absolute",
+    visibility: "hidden",
+    overflow: "hidden",
+    top: "0",
+    left: "0",
+    width: `${node.clientWidth}px`,
+    whiteSpace: "pre-wrap",
+    pointerEvents: "none",
+  });
+  mirror.textContent = node.value.slice(0, node.selectionEnd);
+  const caret = document.createElement("span");
+  caret.textContent = "\u200b";
+  mirror.appendChild(caret);
+  document.body.appendChild(mirror);
+  const top = caret.offsetTop;
+  const lineHeight = composerLineHeight(node);
+  document.body.removeChild(mirror);
+  const viewTop = node.scrollTop;
+  const viewBottom = viewTop + node.clientHeight;
+  if (top < viewTop) node.scrollTop = top;
+  else if (top + lineHeight > viewBottom) node.scrollTop = top + lineHeight - node.clientHeight;
+}
+
+function fitComposer(node: HTMLTextAreaElement | null): void {
+  if (!node) return;
+  const { min, max } = composerBounds(node);
+  node.style.overflowY = "hidden";
+  node.style.height = "auto";
+  let next = Math.min(max, Math.max(min, node.scrollHeight));
+  node.style.height = `${next}px`;
+  if (node.scrollHeight > max + 1) {
+    node.style.overflowY = "auto";
+    node.style.height = "auto";
+    next = Math.min(max, Math.max(min, node.scrollHeight));
+    node.style.height = `${next}px`;
+    node.style.overflowY = "auto";
+  }
+  scrollComposerCaret(node);
+}
 
 function distanceFromBottom(node: HTMLElement): number {
   if (node.scrollTop <= 0) return Math.abs(node.scrollTop);
@@ -142,8 +236,13 @@ export function ChatPane({
       if (!node) return;
       node.selectionStart = node.value.length;
       node.selectionEnd = node.value.length;
+      fitComposer(node);
     });
   };
+
+  useLayoutEffect(() => {
+    fitComposer(inputRef.current);
+  }, [draft]);
 
   useEffect(() => {
     const wasEditing = editingRef.current;
@@ -198,6 +297,7 @@ export function ChatPane({
         const cursor = start + text.length;
         node.selectionStart = cursor;
         node.selectionEnd = cursor;
+        fitComposer(node);
       });
     }
     void addPastedImages(images);
@@ -330,9 +430,10 @@ export function ChatPane({
             ref={inputRef}
             value={draft}
             placeholder={label("placeholder")}
-            className="max-h-32 min-h-10 w-full resize-none bg-transparent px-1 py-1.5 text-[13.5px] outline-none placeholder:text-[var(--muted)]"
             rows={2}
+            className="cs-composer-input w-full resize-none bg-transparent px-1 text-[13.5px] outline-none placeholder:text-[var(--muted)]"
             onChange={(event) => setDraft(event.target.value)}
+            onSelect={() => scrollComposerCaret(inputRef.current)}
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.shiftKey) {
                 event.preventDefault();
