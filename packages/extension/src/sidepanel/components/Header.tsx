@@ -1,4 +1,4 @@
-import { Globe, MessageCirclePlus, Monitor, Moon, MousePointerClick, PlugZap, RotateCw, Sun, Unplug } from "lucide-react";
+import { Check, Globe, MessageSquarePlus, MessagesSquare, Monitor, Moon, MousePointerClick, Pencil, RotateCw, Sun, Unplug } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { BrowserCommand, BrowserResult, CurrentPage } from "@shared";
 import type { Locale } from "../i18n";
@@ -19,6 +19,8 @@ export function Header({
   onLocale,
   onTheme,
   onToggleSessions,
+  onNewSession,
+  onRename,
 }: {
   locale: Locale;
   status: "starting" | "ready" | "error";
@@ -32,13 +34,30 @@ export function Header({
   onLocale: (locale: Locale) => void;
   onTheme: (theme: ThemePreference) => void;
   onToggleSessions: () => void;
+  onNewSession: () => void;
+  onRename: (title: string) => void;
 }) {
   const label = (key: Parameters<typeof t>[1]) => t(locale, key);
-  const title = sessionTitle || label("untitled");
+  const title = sessionTitle.trim() || label("untitled");
   const rowRef = useRef<HTMLDivElement>(null);
   const leftRef = useRef<HTMLDivElement>(null);
   const rightRef = useRef<HTMLDivElement>(null);
+  const titleInputRef = useRef<HTMLInputElement>(null);
   const [titleMaxWidth, setTitleMaxWidth] = useState<number>();
+  const [renaming, setRenaming] = useState(false);
+  const [draft, setDraft] = useState(sessionTitle);
+
+  useEffect(() => {
+    setRenaming(false);
+    setDraft(sessionTitle);
+  }, [sessionTitle]);
+
+  useLayoutEffect(() => {
+    if (!renaming) return;
+    const node = titleInputRef.current;
+    node?.focus();
+    node?.select();
+  }, [renaming]);
 
   useLayoutEffect(() => {
     const row = rowRef.current;
@@ -59,63 +78,30 @@ export function Header({
     observer.observe(left);
     observer.observe(right);
     return () => observer.disconnect();
-  }, [title, locale, status, page?.favIconUrl]);
+  }, [title, locale, status, page?.favIconUrl, renaming]);
+
+  const commitRename = () => {
+    onRename(draft);
+    setRenaming(false);
+  };
+
+  const cancelRename = () => {
+    setDraft(sessionTitle);
+    setRenaming(false);
+  };
 
   return (
     <header className="border-b border-[var(--line)] bg-[color-mix(in_oklab,var(--panel)_88%,transparent)] px-3 py-2.5 backdrop-blur">
       <div ref={rowRef} className="relative flex items-center justify-between gap-2">
         <div ref={leftRef} className="flex items-center gap-1.5">
-          <IconButton
-            ripple={false}
-            label={label("switchLanguage")}
-            onClick={() => onLocale(locale === "en" ? "zh" : "en")}
-            className="flex h-7 min-w-7 shrink-0 items-center justify-center rounded-md border border-[var(--line)] px-1 text-[11px] font-medium text-[var(--text)]"
-          >
-            {locale === "en" ? "中" : "EN"}
-          </IconButton>
-          <IconButton
-            ripple={false}
-            label={theme === "light" ? label("themeLight") : theme === "dark" ? label("themeDark") : label("themeSystem")}
-            onClick={() => onTheme(nextTheme(theme))}
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-[var(--line)] text-[var(--text)]"
-          >
-            {theme === "light" ? <Sun size={14} /> : theme === "dark" ? <Moon size={14} /> : <Monitor size={14} />}
-          </IconButton>
-        </div>
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <div
-            className="pointer-events-auto flex min-w-0 items-center gap-1.5"
-            style={{ maxWidth: titleMaxWidth }}
-          >
-            <div
-              title={title}
-              className="min-w-0 truncate whitespace-nowrap text-[14px] font-medium tracking-tight"
-            >
-              {title}
-            </div>
-            <IconButton
-              ripple={false}
-              label={label("expandSessions")}
-              onClick={onToggleSessions}
-              aria-expanded={sessionsOpen}
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-[var(--line)] text-[var(--text)]"
-            >
-              <MessageCirclePlus size={14} />
-            </IconButton>
-          </div>
-        </div>
-        <div ref={rightRef} className="flex items-center justify-end gap-1.5">
-          <div className="flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px]" title={error}>
-            {status === "ready" ? (
-              <PlugZap size={13} className="text-[var(--ok)]" />
-            ) : (
+          {status !== "ready" ? (
+            <div className="flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px]" title={error}>
               <Unplug size={13} className={status === "error" ? "text-[var(--bad)]" : "text-[var(--warn)]"} />
-            )}
-            <span className="text-[var(--muted)]">
-              {status === "ready" ? label("connected") : status === "starting" ? label("starting") : label("offline")}
-            </span>
-          </div>
-          <PageFavicon locale={locale} page={page} />
+              <span className="text-[var(--muted)]">
+                {status === "starting" ? label("starting") : label("offline")}
+              </span>
+            </div>
+          ) : null}
           {status === "error" && onRetry ? (
             <button
               type="button"
@@ -126,6 +112,84 @@ export function Header({
               {label("retry")}
             </button>
           ) : null}
+          <PageFavicon locale={locale} page={page} />
+        </div>
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+          <div
+            className="pointer-events-auto flex min-w-0 items-center gap-0.5"
+            style={{ maxWidth: titleMaxWidth }}
+          >
+            {renaming ? (
+              <input
+                ref={titleInputRef}
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    commitRename();
+                  }
+                  if (event.key === "Escape") {
+                    event.preventDefault();
+                    cancelRename();
+                  }
+                }}
+                aria-label={label("rename")}
+                placeholder={label("untitled")}
+                className="min-w-0 flex-1 rounded border border-[var(--line)] bg-[var(--ink)] px-1.5 py-0.5 text-[14px] font-medium tracking-tight text-[var(--text)] outline-none"
+              />
+            ) : (
+              <div
+                title={title}
+                className="min-w-0 truncate whitespace-nowrap text-[14px] font-medium tracking-tight"
+              >
+                {title}
+              </div>
+            )}
+            <IconButton
+              ripple={false}
+              label={renaming ? label("saveTitle") : label("rename")}
+              onClick={() => (renaming ? commitRename() : setRenaming(true))}
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--muted)] hover:text-[var(--text)]"
+            >
+              {renaming ? <Check size={14} /> : <Pencil size={14} />}
+            </IconButton>
+          </div>
+        </div>
+        <div ref={rightRef} className="flex items-center justify-end gap-1.5">
+          <IconButton
+            ripple={false}
+            label={label("newChat")}
+            onClick={onNewSession}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-[var(--line)] text-[var(--text)]"
+          >
+            <MessageSquarePlus size={14} />
+          </IconButton>
+          <IconButton
+            ripple={false}
+            label={sessionsOpen ? label("collapseSessions") : label("expandSessions")}
+            onClick={onToggleSessions}
+            aria-expanded={sessionsOpen}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-[var(--line)] text-[var(--text)]"
+          >
+            <MessagesSquare size={14} />
+          </IconButton>
+          <IconButton
+            ripple={false}
+            label={theme === "light" ? label("themeLight") : theme === "dark" ? label("themeDark") : label("themeSystem")}
+            onClick={() => onTheme(nextTheme(theme))}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-[var(--line)] text-[var(--text)]"
+          >
+            {theme === "light" ? <Sun size={14} /> : theme === "dark" ? <Moon size={14} /> : <Monitor size={14} />}
+          </IconButton>
+          <IconButton
+            ripple={false}
+            label={label("switchLanguage")}
+            onClick={() => onLocale(locale === "en" ? "zh" : "en")}
+            className="flex h-7 min-w-7 shrink-0 items-center justify-center rounded-md border border-[var(--line)] px-1 text-[11px] font-medium text-[var(--text)]"
+          >
+            {locale === "en" ? "中" : "EN"}
+          </IconButton>
         </div>
       </div>
 

@@ -606,7 +606,7 @@ export function App() {
     const created = emptySession();
     setSessions((current) => [created, ...current]);
     setSelectedId(created.id);
-    setSessionsOpen(true);
+    setSessionsOpen(false);
     if (statusRef.current === "ready") {
       enqueueBind({ localId: created.id, kind: "new" });
       sendRef.current({ type: "session.new" });
@@ -720,7 +720,7 @@ export function App() {
         error={error}
         page={page}
         activity={activity}
-        sessionTitle={selected.title || t(locale, "untitled")}
+        sessionTitle={selected.title}
         sessionsOpen={sessionsOpen}
         theme={theme}
         onLocale={(next) => {
@@ -731,6 +731,8 @@ export function App() {
           applyThemePreference(next);
           setTheme(next);
         }}
+        onNewSession={newSession}
+        onRename={(title) => renameSession(selected.id, title)}
         onToggleSessions={() => setSessionsOpen((open) => !open)}
         onRetry={() => {
           pendingBinds.current = [];
@@ -840,10 +842,6 @@ export function App() {
           runningIds={runningIds}
           onSelect={(id) => {
             switchSession(id);
-            setSessionsOpen(false);
-          }}
-          onNew={() => {
-            newSession();
             setSessionsOpen(false);
           }}
           onRename={renameSession}

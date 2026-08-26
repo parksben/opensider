@@ -1,10 +1,9 @@
-import { GitFork, LoaderCircle, MessageSquarePlus, Pencil, Trash2 } from "lucide-react";
+import { GitFork, LoaderCircle, Pencil, Trash2 } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Locale, MessageKey } from "../i18n";
 import { t } from "../i18n";
 import type { Session } from "../persist";
 import { IconButton } from "./IconButton";
-import { RippleButton } from "./RippleButton";
 
 function displayTitle(session: Session, locale: Locale): string {
   return session.title.trim() || t(locale, "untitled");
@@ -22,7 +21,6 @@ export function SessionModal({
   selectedId,
   runningIds,
   onSelect,
-  onNew,
   onRename,
   onDelete,
   onClose,
@@ -32,7 +30,6 @@ export function SessionModal({
   selectedId: string;
   runningIds: string[];
   onSelect: (id: string) => void;
-  onNew: () => void;
   onRename: (id: string, title: string) => void;
   onDelete: (id: string) => void;
   onClose: () => void;
@@ -122,17 +119,7 @@ export function SessionModal({
         className="flex w-[min(22rem,calc(100%-1.5rem))] max-h-[calc(100dvh-400px)] flex-col overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--panel)] shadow-xl"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="flex shrink-0 items-center gap-1.5 px-2 py-1.5">
-          <RippleButton
-            onClick={() => {
-              onNew();
-              onClose();
-            }}
-            className="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-1 text-[12px] text-[var(--text)] disabled:opacity-40"
-          >
-            <MessageSquarePlus size={14} />
-            {label("newChat")}
-          </RippleButton>
+        <div className="flex shrink-0 items-center px-2 py-1.5">
           <input
             ref={filterRef}
             type="text"
@@ -141,7 +128,7 @@ export function SessionModal({
             spellCheck={false}
             aria-label={label("filterSessions")}
             placeholder={label("filterSessions")}
-            className="cs-model-filter min-w-0 flex-1 bg-transparent py-1 text-[12px] text-[var(--text)] placeholder:text-[var(--muted)]"
+            className="cs-model-filter w-full min-w-0 bg-transparent py-1 text-[12px] text-[var(--text)] placeholder:text-[var(--muted)]"
             onChange={(event) => onFilterChange(event.target.value)}
           />
         </div>
