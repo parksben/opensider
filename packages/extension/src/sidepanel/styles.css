@@ -148,7 +148,7 @@ input {
   height: 1lh;
   min-height: 1lh;
   gap: 0.25rem;
-  padding: 0 12px 0 16px;
+  padding: 0 12px 0 8px;
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 999px;
