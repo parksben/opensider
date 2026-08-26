@@ -45,7 +45,7 @@ Cursor Agent 在 ACP 模式下仍然自己执行本地工具（读文件、写�
 - 会话列表、当前选中会话、语言也由 App state 驱动，写入 `chrome.storage.local`
 - 工具调用、思考、markdown 由侧栏自己的折叠行 / Markdown 组件展示
 - 发出用户输入（可带本机附件路径）、取消、权限决定、提问/计划回答、新建 / 切换 / fork 会话、选模型
-- 展示进行中的页面命令、无边框连接状态、输入框上方的 todo 与权限/提问/计划卡片、输入栏附件芯片、元素拾取蒙层与模型下拉。顶栏不放当前页 favicon。
+- 展示进行中的页面命令、无边框连接状态、输入框上方的 todo 与权限/提问/计划卡片、输入栏附件芯片、`@` 提及菜单、元素拾取蒙层与模型下拉。顶栏不放当前页 favicon。
 - 离线发送会立刻报错；Service Worker 断开时显示原因（含扩展 ID / `lastError`）并允许重试
 - 侧栏先 `sendMessage({ type: "ping" })` 唤醒 SW，再 `connect`。React StrictMode 卸载只摘监听器，不拆端口。端口若在 SW 还在加载时空断，自动重连，避免永远停在 Lost connection
 - 不再挂载 assistant-ui runtime；旧的 `ExternalStoreThreadRuntimeCore` 会在端口断开后抛错，把扩展标红
@@ -262,7 +262,38 @@ Local paths. Read these files or folders if needed.
 - /abs/path/src
 ```
 
-不把文件内容塞进 Native Messaging。用户气泡可带同样的芯片，方便回看。未发送的芯片只活在输入栏 state 里。
+不把文件内容塞进 Native Messaging。用户气泡可带同样的芯片，方便回看。未发送的芯片只活在输入栏 state 里。每次成功加入附件（选文件 / 粘贴图 / 拾取元素）同时写入 `chrome.storage.local` 的 `cursor-sidebar/attachment-history`：按 `path` 去重、最近的在前，最多 50 条，供 `@` 菜单再用。
+
+## 提及芯片（`@`）
+
+输入区不用 textarea，改成 contenteditable（对齐 `react-plug-editor` 的 Plug 节点思路，不引入该包）：正文和 `contentEditable=false` 的芯片流式混排。芯片 DOM 用 `data-token` 存序列化值，React root 渲 icon + 标题。
+
+本地 token（只存在用户气泡 / 草稿，UI 不展示原文）：
+
+```
+«@tab:<url-encoded JSON {id,title,url,icon?}>»
+«@att:<url-encoded JSON {path,name,kind}>»
+```
+
+`wrapUserPrompt` 在发给 Agent 之前把 token 展开：正文里的芯片变成 `@标题`，并追加 Agent 能读的块：
+
+```
+[Mentioned tabs]
+The user @-mentioned these browser tabs inline. @names match the titles below.
+If the tab is still in browser/tabs.json, switchTab with that tabId; otherwise openTab the URL.
+- React Docs — https://react.dev (tabId: 42)
+
+[Mentioned attachments]
+The user @-mentioned these previously attached items. @names match the names below.
+Read file/folder/image paths. For kind=element, use page tools with args.selector.
+- shot.jpg — /abs/path/shot.jpg (image)
+```
+
+`AGENTS.md` 同步写明这两块。用户气泡和改历史回填都走同一套 parse → 芯片。会话标题用去掉 token、换成 `@标题` 后的纯文本。
+
+历史标签存在 `cursor-sidebar/tab-history`：侧栏自己听 `chrome.tabs`（onCreated / onUpdated / onActivated）并启动时 `query`，按 URL 去重、最近见过的在前。关标签不删历史。菜单第一 tab 用这份列表（左 favicon，失败则 Lucide `Globe`）。
+
+`@` 按钮：focus 编辑器、caret 移到最前、插入 `@`、打开菜单。菜单挂在输入框上方；mousedown `preventDefault` 以免抢焦点，插入前恢复上次 range。键盘与模型下拉同一套循环高亮 + `scrollIntoView({ block: "nearest" })`；Tab / 左右键切「标签页 / 附件」两个页。选中后用芯片替换光标前的那个 `@`。
 
 拾取元素不经过 Host：侧栏 `page.pick` → SW → 当前标签内容脚本。侧栏遮罩挂在 `App` 根上（`fixed inset-0` + `backdrop-blur`），盖住顶栏和会话列表，不因 ChatPane 高度裁切；点遮罩不取消。SW 用 `lastFocusedWindow` 找普通 http(s) 标签，`sendMessage` 失败则 `chrome.scripting.executeScript` 注入 manifest 里的内容脚本再试（扩展重载后旧标签默认没有脚本）。点中后回 `page.picked`，芯片 `kind: element`，`path`/`name` 都是唯一 CSS selector。Prompt 另附：
 
@@ -294,7 +325,7 @@ on them with page tools using args.selector.
 4. Host 写 `browser/current.json` 和 `browser/snapshot.md`
 5. Side Panel 仍收 `CurrentPage`（`favIconUrl` 由 SW 从 `chrome.tabs` 并进，不写进 workspace），但顶栏不再画 favicon
 6. 下一条 `session/prompt` 在用户文本前加一行 `[Current tab] {title} — {url}`（UI 不显示这行）
-7. 若有文件附件，再追加 `[Attachments]` 绝对路径；若有拾取的元素，再追加 `[Picked page elements]` 和 CSS selector，并写明用页面工具的 `args.selector` 去查看或操作（UI 气泡里只显示用户正文和芯片）
+7. 若有文件附件，再追加 `[Attachments]` 绝对路径；若有拾取的元素，再追加 `[Picked page elements]` 和 CSS selector，并写明用页面工具的 `args.selector` 去查看或操作。正文里的 `@` 芯片先展开成 `@标题`，再按种类追加 `[Mentioned tabs]` / `[Mentioned attachments]`（UI 气泡里只显示用户正文和芯片，不显示这些块）
 8. 同时（及 `onCreated` / `onRemoved` / `onMoved` / `onAttached` / `onDetached` / 窗口焦点变化）防抖写 `browser/tabs.json`。Agent `switchTab` / `moveTabsToWindow` 成功后再抓当前页快照。
 
 不在切换时往会话里塞一条用户消息，以免污染对话。Agent 需要更多页面内容时，按 `AGENTS.md` 读 snapshot 或写命令文件。跨标签先读 `tabs.json`（或 `listTabs`）拿 `tabId`，再 `switchTab`，然后用原来的页面方法操作新的当前页。
@@ -335,7 +366,7 @@ macOS 清单路径：`~/Library/Application Support/Google/Chrome/NativeMessagin
 ## UI
 
 - Agent 回复链接：`Markdown` 自定义 `a`，一律 `preventDefault`（侧栏是扩展页，默认点击会把面板自己导航走）。解析 `href`（相对地址相对当前页），只放行 `http(s)`。把主机名小写、去掉末尾 `.`、剥一层前导 `www.` 后和当前标签 `page.url` 比；相同且 `page.tabId` 仍在则 `chrome.tabs.update`，否则 `chrome.tabs.create`。`www.example.com` 与 `example.com` 算同域，`docs.example.com` 与 `example.com` 不算。侧栏已有 `tabs` 权限，不经 Host。计划条里的 Markdown 同一套逻辑。
-- 聊天：`ChatPane` 由当前会话的 `messages` / `isRunning` 驱动；消息列表滚动容器 `flex-col-reverse` + 内层正序消息（工业界贴底：`scrollTop === 0` 就是底部，流式长高不必每帧 `scrollTo`；用户上翻后 `scrollTop` 变负，不再被新内容拽走；滚回距底 &lt; 96px 又贴住）。`column-reverse` 会把唯一子项吸在底：在消息块**之前**插一个 `flex-1 min-h-0` 占位（DOM 里先写占位、后写消息，视觉上占位在下、消息在上），内容不够高时把第一条顶到消息区顶部；撑满后占位收成 0，恢复贴底滚动。「回到底部」不读 `scrollTop` 正负（`col-reverse` 贴底是 0、上翻变负、外滚变正，经过 0 会先显后隐再显）。消息列末尾放 1px sentinel，`IntersectionObserver` 以 `.cs-thread` 为 root、`rootMargin` 底部扩 96px：相交则贴底附近，不相交才稳定显示按钮。离开底部才在输入区上方绝对定位一层 `ArrowDown` 圆钮（约 39px，原 56 的 0.7）：外包一层 `absolute inset-x-0 bottom-full` 居中，避免 `IconButton` 自带的 `relative` 把 `absolute` 顶掉、占满一行。半透明 `--panel` 底、轻投影，hover 提高不透明度，沿用 `IconButton` 涟漪。用户气泡 `w-fit max-w-[80%] ml-auto`，相对消息列表内容区收缩；工具调用和思考不再用带边框的 `details` 卡片，与过程收起同一套 `TextFold`：灰字 + 可选 lucide 图标（`text-[var(--muted)]`）+ 紧挨着的箭头。点开后 `FadeScroll` 用 `max-height` 限高、内容不够则贴内容（过程区 `max-h-[min(36vh,16rem)]`，工具 / 思考 `max-height: 5lh`，约 5 行 11px 灰字），`mix-blend-mode` 上下遮罩。`flex-col-reverse` 下展开用 `scrollTop` 把灰字钉住。markdown 仍是现有组件。`Markdown` 对 ` ```mermaid ` 围栏走自研 `flowchart-svg`：只认 `flowchart`/`graph`（含 TD/TB/BT/LR/RL），`@dagrejs/dagre` 算坐标，同步吐出带 CSS 变量的 SVG（`text` 节点、无 `foreignObject`、不往 `document` 插临时节点）。其它图种或解析失败仍走 `pre > code`。Tailwind preflight 会把 `table` 边框清掉，所以 GFM 表外包 `.cs-md-table`（`overflow-x: auto`），`th`/`td` 用 `color-mix(text 22%, line)` 画 1px 边框（浅色下纯 `--line` 几乎看不见）。`ChatPane` 把消息列抽成 `memo` 的 `MessageThread`，`draft` 只活在输入区，打字不重绘历史消息。`body` 仍 `overflow: hidden`。进行中不再在消息底插「Agent is working」转圈，只靠 `.cs-composer.is-running` 描边。权限 / 提问 / 计划走 `PermissionBar`，作为 `hitl` 插在消息列表和输入框之间（不在输入框下面）；正文 `max-height: 9.5lh` 可滚，按钮露在外面。`TodoList` 同样插在输入框上方（`hitl` 之上）：标题「Todo List - done/total」，整行切换折叠，右侧 `ChevronRight` / `ChevronDown`；完成项右侧 `CircleCheck`（`--ok`）。用 `id+content` 签名检测新规划，变化则 `open=true`，只改 status 不弹开。输入区：可选附件芯片 → textarea（默认 `2lh + padding`，`useLayoutEffect` 按 `scrollHeight` 长高，封顶 `10lh + padding` 后 `overflow-y: auto`；镜像节点量 caret `offsetTop`，编辑 / 粘贴 / 方向键都把光标行滚进视口）→ 第二行左 Lucide `MousePointer2` 拾取 + `Plus` + 权限模式（`ModeSelect`：`Shield` 确认 / `Zap` 无人值守，菜单项含灰色解释，`agentMode` 写入 storage）+ 右模型下拉（仅 `ready` 且列表非空；顶部固定筛选框，打开即聚焦，不区分大小写过滤已加载列表；上下键循环高亮并滚入视口，回车切换）+ `Send` 小飞机 / 停止（14px，与顶栏 icon 同大；hover 半透明白圆）。`isRunning` 时 `.cs-composer` 用 `@property --cs-spin`：圆锥渐变经 mask 只画 1px 描边，opacity 淡入铺满 360°，再 4s linear 转一圈；结束只淡出 opacity，sweep 保持满圈以免描边收起。`prefers-reduced-motion` 时只铺满不转。工具卡片标题用 `toolTitle(locale, part)`：按 `kind` 与常见英文前缀映射到 i18n，后面的路径/查询不翻译。拾取时 `App` 全栏模糊遮罩 + 居中提示，完成或 Esc 才收。`IconButton` 的 tooltip 用 `position: fixed` 挂到 `document.body`，按锚点测量后翻边/平移，与视口保持 8px。除顶栏外，按钮统一 `hover:bg-[var(--hover)]` + CSS 涟漪（`RippleButton` / `IconButton`）。芯片统一 `max-width: 200px`（文件 / 文件夹 / 图片 / 拾取元素相同），文案 `truncate`，`title` 为完整路径或 selector。
+- 聊天：`ChatPane` 由当前会话的 `messages` / `isRunning` 驱动；消息列表滚动容器 `flex-col-reverse` + 内层正序消息（工业界贴底：`scrollTop === 0` 就是底部，流式长高不必每帧 `scrollTo`；用户上翻后 `scrollTop` 变负，不再被新内容拽走；滚回距底 &lt; 96px 又贴住）。`column-reverse` 会把唯一子项吸在底：在消息块**之前**插一个 `flex-1 min-h-0` 占位（DOM 里先写占位、后写消息，视觉上占位在下、消息在上），内容不够高时把第一条顶到消息区顶部；撑满后占位收成 0，恢复贴底滚动。「回到底部」不读 `scrollTop` 正负（`col-reverse` 贴底是 0、上翻变负、外滚变正，经过 0 会先显后隐再显）。消息列末尾放 1px sentinel，`IntersectionObserver` 以 `.cs-thread` 为 root、`rootMargin` 底部扩 96px：相交则贴底附近，不相交才稳定显示按钮。离开底部才在输入区上方绝对定位一层 `ArrowDown` 圆钮（约 39px，原 56 的 0.7）：外包一层 `absolute inset-x-0 bottom-full` 居中，避免 `IconButton` 自带的 `relative` 把 `absolute` 顶掉、占满一行。半透明 `--panel` 底、轻投影，hover 提高不透明度，沿用 `IconButton` 涟漪。用户气泡 `w-fit max-w-[80%] ml-auto`，相对消息列表内容区收缩；工具调用和思考不再用带边框的 `details` 卡片，与过程收起同一套 `TextFold`：灰字 + 可选 lucide 图标（`text-[var(--muted)]`）+ 紧挨着的箭头。点开后 `FadeScroll` 用 `max-height` 限高、内容不够则贴内容（过程区 `max-h-[min(36vh,16rem)]`，工具 / 思考 `max-height: 5lh`，约 5 行 11px 灰字），`mix-blend-mode` 上下遮罩。`flex-col-reverse` 下展开用 `scrollTop` 把灰字钉住。markdown 仍是现有组件。`Markdown` 对 ` ```mermaid ` 围栏走自研 `flowchart-svg`：只认 `flowchart`/`graph`（含 TD/TB/BT/LR/RL），`@dagrejs/dagre` 算坐标，同步吐出带 CSS 变量的 SVG（`text` 节点、无 `foreignObject`、不往 `document` 插临时节点）。其它图种或解析失败仍走 `pre > code`。Tailwind preflight 会把 `table` 边框清掉，所以 GFM 表外包 `.cs-md-table`（`overflow-x: auto`），`th`/`td` 用 `color-mix(text 22%, line)` 画 1px 边框（浅色下纯 `--line` 几乎看不见）。`ChatPane` 把消息列抽成 `memo` 的 `MessageThread`，`draft` 只活在输入区，打字不重绘历史消息。`body` 仍 `overflow: hidden`。进行中不再在消息底插「Agent is working」转圈，只靠 `.cs-composer.is-running` 描边。权限 / 提问 / 计划走 `PermissionBar`，作为 `hitl` 插在消息列表和输入框之间（不在输入框下面）；正文 `max-height: 9.5lh` 可滚，按钮露在外面。`TodoList` 同样插在输入框上方（`hitl` 之上）：标题「Todo List - done/total」，整行切换折叠，右侧 `ChevronRight` / `ChevronDown`；完成项右侧 `CircleCheck`（`--ok`）。用 `id+content` 签名检测新规划，变化则 `open=true`，只改 status 不弹开。输入区：可选附件芯片 → `ComposerEditor` contenteditable（默认 `2lh + padding`，封顶 `10lh + padding` 后滚动；`@` 芯片 `height: 1lh`、`max-width: 200px`、与文字混排）→ 第二行左 Lucide `Paperclip` 附件 + `MousePointer2` 拾取 + `AtSign` 提及 + 权限模式（`ModeSelect`：`Shield` 确认 / `Zap` 无人值守，菜单项含灰色解释，`agentMode` 写入 storage）+ 右模型下拉（仅 `ready` 且列表非空；顶部固定筛选框，打开即聚焦，不区分大小写过滤已加载列表；上下键循环高亮并滚入视口，回车切换）+ `Send` 小飞机 / 停止（14px，与顶栏 icon 同大；hover 半透明白圆）。`AtMenu` 两 tab（历史标签 / 历史附件），点选项插入芯片；用户气泡 `UserRichText` 按同一 token 渲芯片。`isRunning` 时 `.cs-composer` 用 `@property --cs-spin`：圆锥渐变经 mask 只画 1px 描边，opacity 淡入铺满 360°，再 4s linear 转一圈；结束只淡出 opacity，sweep 保持满圈以免描边收起。`prefers-reduced-motion` 时只铺满不转。工具卡片标题用 `toolTitle(locale, part)`：按 `kind` 与常见英文前缀映射到 i18n，后面的路径/查询不翻译。拾取时 `App` 全栏模糊遮罩 + 居中提示，完成或 Esc 才收。`IconButton` 的 tooltip 用 `position: fixed` 挂到 `document.body`，按锚点测量后翻边/平移，与视口保持 8px。除顶栏外，按钮统一 `hover:bg-[var(--hover)]` + CSS 涟漪（`RippleButton` / `IconButton`）。芯片统一 `max-width: 200px`（文件 / 文件夹 / 图片 / 拾取元素 / `@` 提及相同），文案 `truncate`，`title` 为完整路径、selector 或标签标题。
 - 顶栏一行 `flex`：左簇 `flex-1 min-w-0` 为连接状态（`status !== "ready"` 才画 `Unplug` + 文案；`ready` 不画「已连接」）+ 居左标题 + 紧贴文本的无边框 `Pencil`（编辑中换成 `Check`）；右簇 `shrink-0` 为开关灯 → 语言（「中」/「EN」）→ `PanelRight` / `PanelRightClose`。两簇之间 `gap-12`（48px）。不再画 favicon，也不再绝对居中。`Pencil` 默认 `opacity-0`，`group-hover/header` 或编辑中才显示。点铅笔把标题换成 `input`，回车、点对勾或失焦 `onRename`，Esc 取消。编辑时标题簇 `flex-1`，`input` 用 `size=1` + `flex-1` 铺满可用槽位。失焦若焦点落到对勾上则交给 click。标题 `truncate`，过长省略。空/`新会话`/`New chat` 视为占位：`titleManual` 也不锁，发消息后走 `titleFromMessages`（首条用户正文首行压空白，或附件名，最长 42）。顶栏不再放 `MessageSquarePlus` / `History`。顶栏按钮不加涟漪。
 - 会话列表是右侧抽屉 `SessionDrawer`，不是遮罩模态。`App` 根节点 `flex` 横排：左侧 `flex-1 min-w-0` 是顶栏 + 聊天 + 输入，右侧抽屉 `shrink-0`，打开时把主体往左挤。宽度默认 248px，左缘 6px 拖拽条 `cursor-col-resize`，`pointermove` 时 `newWidth = startWidth + (startX - clientX)`，夹在 196px 与 `min(420, viewport-220)` 之间；拖的时候同样挤压主体。`sessionsOpen` 与 `sessionDrawerWidth` 写入 `PersistedState`。抽屉自上而下：全宽筛选 → 全宽「新会话」`RippleButton`（`MessageSquarePlus` + 文案）→ 分组列表。`groupSessions`：有 `pinnedAt` 的进 Pinned（按 `pinnedAt` 倒序）；其余按本地零点分成 Today / Last 7 days（今天之前、零点往回 6 天）/ Older；空组不渲染。组头左标题右计数，英文组名 `uppercase`。筛选按标题包含、组内 `updatedAt` 倒序。`ArrowUp`/`ArrowDown` 在摊平后的可见列表循环高亮并 `scrollIntoView({ block: "nearest" })`，`Enter` 切换且不关抽屉；Esc 在非输入框时收起。卡片第一行：左侧指示（空闲圆点 / 进行中 `.cs-braille-spin`）+ 标题 `flex-1 truncate` + hover 才 `flex` 出的 `Pin` / `Pencil` / `Trash2`（与标题 `items-center`）。未 hover 时按钮 `hidden`，标题吃满剩余宽度。置顶写 `pinnedAt`，取消则清掉，不改 `updatedAt`。`titleManual` 为真且标题不是占位时不再用首条消息改标题
 - 空会话：消息区垂直居中，Lucide `MessageSquareMore` 约 120px + 一行淡灰提示，不抢视觉。提示不再 `max-w-16rem`，而是 `w-full` + `padding-inline: min(200px, max(1rem, 50% - 12rem))`：宽时两侧约 200px、一句不折；窄侧栏再收 padding 并允许换行
