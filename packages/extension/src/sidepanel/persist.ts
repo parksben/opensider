@@ -276,8 +276,7 @@ function summarizeTitle(raw: string): string {
       .map((part) => part.trim())
       .find(Boolean) ?? "";
   const cleaned = line.replace(/^#{1,6}\s+/, "").replace(/\s+/g, " ").trim();
-  if (!cleaned) return "";
-  return cleaned.length > 42 ? `${cleaned.slice(0, 41)}…` : cleaned;
+  return cleaned;
 }
 
 export function textOf(content: ChatPart[]): string {

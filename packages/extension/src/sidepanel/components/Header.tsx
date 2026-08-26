@@ -91,7 +91,7 @@ export function Header({
           ) : null}
           <div
             ref={titleClusterRef}
-            className={`flex min-w-0 items-center gap-0.5 ${renaming ? "flex-1" : ""}`}
+            className={`flex min-w-0 items-center gap-0.5 ${renaming ? "w-full flex-1" : "w-max max-w-full"}`}
           >
             {renaming ? (
               <input
