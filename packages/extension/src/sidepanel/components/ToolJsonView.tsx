@@ -20,15 +20,19 @@ function coerceJson(value: unknown): unknown {
   }
 }
 
+function compactLines(text: string): string {
+  return text.replace(/\r\n/g, "\n").replace(/\n{2,}/g, "\n").replace(/^\n+|\n+$/g, "");
+}
+
 function formatScalar(value: unknown): string {
   if (value === null) return "null";
-  if (typeof value === "string") return value;
+  if (typeof value === "string") return compactLines(value);
   if (typeof value === "number" || typeof value === "boolean") return String(value);
   if (value === undefined) return "";
   try {
-    return JSON.stringify(value);
+    return compactLines(JSON.stringify(value));
   } catch {
-    return String(value);
+    return compactLines(String(value));
   }
 }
 
