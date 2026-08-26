@@ -245,6 +245,7 @@ function SessionTitleInput({
 }) {
   const ref = useRef<HTMLInputElement>(null);
   const [value, setValue] = useState(initial);
+  const skipBlur = useRef(false);
 
   useEffect(() => {
     ref.current?.focus();
@@ -256,16 +257,21 @@ function SessionTitleInput({
       ref={ref}
       value={value}
       onChange={(event) => setValue(event.target.value)}
-      onBlur={() => onCommit(value)}
+      onBlur={() => {
+        if (skipBlur.current) return;
+        onCommit(value);
+      }}
       onKeyDown={(event) => {
         if (event.key === "Enter") {
           event.preventDefault();
           event.stopPropagation();
+          skipBlur.current = true;
           onCommit(value);
         }
         if (event.key === "Escape") {
           event.preventDefault();
           event.stopPropagation();
+          skipBlur.current = true;
           onCancel();
         }
       }}

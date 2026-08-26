@@ -32,6 +32,8 @@ import {
   emptySession,
   loadState,
   saveState,
+  isPlaceholderTitle,
+  nextSessionTitle,
   titleFromMessages,
   wrapAttachments,
   wrapForkContext,
@@ -179,7 +181,7 @@ export function App() {
         return {
           ...session,
           messages,
-          title: session.titleManual ? session.title : titleFromMessages(messages) || session.title,
+          title: nextSessionTitle(session, messages),
           updatedAt: new Date().toISOString(),
         };
       }),
@@ -570,10 +572,12 @@ export function App() {
   };
 
   const renameSession = (id: string, title: string) => {
+    const next = title.trim();
+    const placeholder = isPlaceholderTitle(next);
     patchSession(id, (session) => ({
       ...session,
-      title: title.trim(),
-      titleManual: true,
+      title: placeholder ? "" : next,
+      titleManual: !placeholder,
       updatedAt: new Date().toISOString(),
     }));
   };
@@ -660,7 +664,7 @@ export function App() {
       pendingForkContext: undefined,
       messages: kept,
       todos: [],
-      title: session.titleManual ? session.title : titleFromMessages(kept) || session.title,
+      title: nextSessionTitle(session, kept),
       updatedAt: new Date().toISOString(),
     }));
     clearHitl(source.id);

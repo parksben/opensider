@@ -43,9 +43,14 @@ export function Header({
   const leftRef = useRef<HTMLDivElement>(null);
   const rightRef = useRef<HTMLDivElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
+  const titleClusterRef = useRef<HTMLDivElement>(null);
   const [titleMaxWidth, setTitleMaxWidth] = useState<number>();
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState(sessionTitle);
+  const renamingRef = useRef(false);
+  const draftRef = useRef(draft);
+  renamingRef.current = renaming;
+  draftRef.current = draft;
 
   useEffect(() => {
     setRenaming(false);
@@ -81,11 +86,15 @@ export function Header({
   }, [title, locale, status, page?.favIconUrl, renaming]);
 
   const commitRename = () => {
-    onRename(draft);
+    if (!renamingRef.current) return;
+    renamingRef.current = false;
+    onRename(draftRef.current);
     setRenaming(false);
   };
 
   const cancelRename = () => {
+    if (!renamingRef.current) return;
+    renamingRef.current = false;
     setDraft(sessionTitle);
     setRenaming(false);
   };
@@ -116,14 +125,21 @@ export function Header({
         </div>
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <div
-            className="pointer-events-auto flex min-w-0 items-center gap-0.5"
-            style={{ maxWidth: titleMaxWidth }}
+            ref={titleClusterRef}
+            className={`pointer-events-auto flex min-w-0 items-center gap-0.5 ${renaming ? "w-full" : ""}`}
+            style={{ maxWidth: titleMaxWidth, width: renaming ? titleMaxWidth : undefined }}
           >
             {renaming ? (
               <input
                 ref={titleInputRef}
+                size={1}
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
+                onBlur={(event) => {
+                  const next = event.relatedTarget;
+                  if (next instanceof Node && titleClusterRef.current?.contains(next)) return;
+                  commitRename();
+                }}
                 onKeyDown={(event) => {
                   if (event.key === "Enter") {
                     event.preventDefault();
@@ -136,7 +152,7 @@ export function Header({
                 }}
                 aria-label={label("rename")}
                 placeholder={label("untitled")}
-                className="min-w-0 flex-1 rounded border border-[var(--line)] bg-[var(--ink)] px-1.5 py-0.5 text-[14px] font-medium tracking-tight text-[var(--text)] outline-none"
+                className="min-w-0 w-full flex-1 rounded border border-[var(--line)] bg-[var(--ink)] px-1.5 py-0.5 text-[14px] font-medium tracking-tight text-[var(--text)] outline-none"
               />
             ) : (
               <div

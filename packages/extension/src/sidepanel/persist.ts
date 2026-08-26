@@ -180,7 +180,7 @@ export function hydrateSession(session: PersistedState["sessions"][number]): Ses
       createdAt: new Date(message.createdAt),
     })),
   );
-  const title = session.titleManual ? session.title : titleFromMessages(messages) || session.title;
+  const title = nextSessionTitle(session, messages);
   return {
     ...session,
     title: stripEnvPrompt(title) || title,
@@ -202,6 +202,20 @@ export function emptySession(partial?: Partial<Session>): Session {
   };
 }
 
+export function isPlaceholderTitle(title: string | undefined): boolean {
+  const value = title?.trim() ?? "";
+  if (!value) return true;
+  return /^(new chat|新会话)$/i.test(value);
+}
+
+export function nextSessionTitle(
+  session: Pick<Session, "title" | "titleManual">,
+  messages: ChatMessage[],
+): string {
+  if (session.titleManual && !isPlaceholderTitle(session.title)) return session.title;
+  return titleFromMessages(messages) || (isPlaceholderTitle(session.title) ? "" : session.title);
+}
+
 export function titleFromMessages(messages: ChatMessage[]): string {
   const first = messages.find((message) => message.role === "user");
   const text = stripEnvPrompt(
@@ -211,11 +225,20 @@ export function titleFromMessages(messages: ChatMessage[]): string {
       .join("")
       .trim() ?? "",
   );
-  if (!text) {
-    const firstFile = first?.attachments?.[0]?.name;
-    return firstFile ? (firstFile.length > 42 ? `${firstFile.slice(0, 41)}…` : firstFile) : "";
-  }
-  return text.length > 42 ? `${text.slice(0, 41)}…` : text;
+  const source = text || first?.attachments?.[0]?.name || "";
+  return summarizeTitle(source);
+}
+
+function summarizeTitle(raw: string): string {
+  const line =
+    raw
+      .replace(/\r\n/g, "\n")
+      .split("\n")
+      .map((part) => part.trim())
+      .find(Boolean) ?? "";
+  const cleaned = line.replace(/^#{1,6}\s+/, "").replace(/\s+/g, " ").trim();
+  if (!cleaned) return "";
+  return cleaned.length > 42 ? `${cleaned.slice(0, 41)}…` : cleaned;
 }
 
 export function textOf(content: ChatPart[]): string {
