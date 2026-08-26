@@ -1,6 +1,7 @@
 import type { AttachmentItem } from "@shared";
 import type { ChatMessage, ChatPart, TodoItem } from "./chat-types";
 import { readCachedLocale, type Locale } from "./i18n";
+import { displayMentionText, wrapUserMentions } from "./mentions";
 import { stampToolParts } from "./tool-label";
 import { isThemePreference, readCachedTheme, type ThemePreference } from "./theme";
 
@@ -263,7 +264,7 @@ export function titleFromMessages(messages: ChatMessage[]): string {
       .join("")
       .trim() ?? "",
   );
-  const source = text || first?.attachments?.[0]?.name || "";
+  const source = displayMentionText(text) || first?.attachments?.[0]?.name || "";
   return summarizeTitle(source);
 }
 
@@ -289,7 +290,7 @@ export function textOf(content: ChatPart[]): string {
 export function buildForkContext(messages: ChatMessage[]): string {
   const body = messages
     .map((message) => {
-      const text = textOf(message.content).trim();
+      const text = displayMentionText(textOf(message.content)).trim();
       const tools = message.content
         .filter((part) => part.type === "tool-call")
         .map((part) => `[${part.toolName} ${part.status ?? ""}]`)
@@ -389,4 +390,10 @@ export function wrapAttachments(text: string, items: AttachmentItem[]): string {
     );
   }
   return parts.join("\n\n");
+}
+
+export function wrapUserPrompt(text: string, items: AttachmentItem[]): string {
+  const { display, appendix } = wrapUserMentions(text);
+  const body = wrapAttachments(display, items);
+  return [body, appendix].filter(Boolean).join("\n\n");
 }

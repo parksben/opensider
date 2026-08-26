@@ -38,7 +38,7 @@ import {
   isPlaceholderTitle,
   nextSessionTitle,
   titleFromMessages,
-  wrapAttachments,
+  wrapUserPrompt,
   wrapForkContext,
   textOf,
   type AgentMode,
@@ -257,7 +257,7 @@ export function App() {
       const regen = pendingRegen.current;
       if (regen && regen.localId === targetId) {
         pendingRegen.current = null;
-        const body = wrapAttachments(regen.text, regen.attachments);
+        const body = wrapUserPrompt(regen.text, regen.attachments);
         beginTurn(regen.localId);
         setError(undefined);
         sendRef.current({
@@ -470,7 +470,7 @@ export function App() {
     if (context && session) {
       patchSession(session.id, (item) => ({ ...item, pendingForkContext: undefined }));
     }
-    const body = wrapAttachments(text, attachments);
+    const body = wrapUserPrompt(text, attachments);
     beginTurn(localId);
     setError(undefined);
     if (!session?.acpSessionId) {
