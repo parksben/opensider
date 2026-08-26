@@ -235,6 +235,31 @@ input {
   margin: 0.8em 0 0.35em;
 }
 
+.markdown .cs-md-table {
+  margin: 0.6em 0;
+  overflow-x: auto;
+}
+
+.markdown table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.markdown th,
+.markdown td {
+  border: 1px solid color-mix(in srgb, var(--text) 22%, var(--line));
+  padding: 0.35em 0.6em;
+  text-align: left;
+  vertical-align: top;
+}
+
+.markdown th {
+  background: var(--panel-2);
+  font-weight: 600;
+}
+
 .cs-mermaid {
   margin: 0.6em 0;
   overflow-x: auto;

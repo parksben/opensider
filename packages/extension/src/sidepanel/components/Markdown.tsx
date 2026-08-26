@@ -33,6 +33,13 @@ export const Markdown = memo(function Markdown({ text, page }: { text: string; p
               </a>
             );
           },
+          table({ children }) {
+            return (
+              <div className="cs-md-table">
+                <table>{children}</table>
+              </div>
+            );
+          },
           pre({ children }) {
             const code = Children.toArray(children).find((child) => isValidElement(child));
             if (
