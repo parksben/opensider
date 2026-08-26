@@ -658,44 +658,46 @@ export function App() {
               onCancelElementPick={onCancelElementPick}
               onModel={onModel}
               page={page}
+              hitl={
+                <PermissionBar
+                  locale={locale}
+                  permission={permission}
+                  question={question}
+                  plan={plan}
+                  onPermission={(optionId) => {
+                    if (!permission) return;
+                    sendRef.current({
+                      type: "permission.reply",
+                      id: permission.id,
+                      outcome: { outcome: "selected", optionId },
+                    });
+                    setPermission(undefined);
+                  }}
+                  onQuestion={(answers) => {
+                    if (!question) return;
+                    sendRef.current({
+                      type: "cursor.reply",
+                      id: question.id,
+                      result: { outcome: { outcome: "answered", answers } },
+                    });
+                    setQuestion(undefined);
+                  }}
+                  page={page}
+                  onPlan={(accepted) => {
+                    if (!plan) return;
+                    sendRef.current({
+                      type: "cursor.reply",
+                      id: plan.id,
+                      result: accepted
+                        ? { outcome: { outcome: "accepted" } }
+                        : { outcome: { outcome: "rejected", reason: "User rejected the plan" } },
+                    });
+                    setPlan(undefined);
+                  }}
+                />
+              }
             />
           </div>
-          <PermissionBar
-            locale={locale}
-            permission={permission}
-            question={question}
-            plan={plan}
-            onPermission={(optionId) => {
-              if (!permission) return;
-              sendRef.current({
-                type: "permission.reply",
-                id: permission.id,
-                outcome: { outcome: "selected", optionId },
-              });
-              setPermission(undefined);
-            }}
-            onQuestion={(answers) => {
-              if (!question) return;
-              sendRef.current({
-                type: "cursor.reply",
-                id: question.id,
-                result: { outcome: { outcome: "answered", answers } },
-              });
-              setQuestion(undefined);
-            }}
-            page={page}
-            onPlan={(accepted) => {
-              if (!plan) return;
-              sendRef.current({
-                type: "cursor.reply",
-                id: plan.id,
-                result: accepted
-                  ? { outcome: { outcome: "accepted" } }
-                  : { outcome: { outcome: "rejected", reason: "User rejected the plan" } },
-              });
-              setPlan(undefined);
-            }}
-          />
         </div>
       </div>
       {sessionsOpen ? (

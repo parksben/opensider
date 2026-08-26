@@ -57,6 +57,7 @@ export function ChatPane({
   onCancelElementPick,
   onModel,
   page,
+  hitl,
 }: {
   locale: Locale;
   sessionId: string;
@@ -66,6 +67,7 @@ export function ChatPane({
   models: AgentModel[];
   modelId: string;
   showModelPicker: boolean;
+  hitl?: ReactNode;
   onSend: (text: string, attachments: AttachmentItem[]) => void;
   onRevise: (messageId: string, text: string, attachments: AttachmentItem[]) => void;
   onCancel: () => void;
@@ -268,12 +270,6 @@ export function ChatPane({
                 </MessageFrame>
               );
             })}
-            {isRunning ? (
-              <div className="mt-3 flex items-center gap-2 text-[12px] text-[var(--brass)]">
-                <LoaderCircle size={14} className="animate-spin" />
-                {label("working")}
-              </div>
-            ) : null}
           </div>
         </div>
       )}
@@ -294,6 +290,7 @@ export function ChatPane({
               </IconButton>
             </div>
           ) : null}
+        {hitl}
         <div
           className={`cs-composer rounded-xl bg-[var(--panel)] px-2 py-2 ${isRunning ? "is-running" : ""}`}
           onPaste={onComposerPaste}

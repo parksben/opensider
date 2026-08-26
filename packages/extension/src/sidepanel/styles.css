@@ -92,6 +92,10 @@ input {
   appearance: none;
 }
 
+.cs-hitl-scroll {
+  max-height: 9.5lh;
+}
+
 @property --cs-spin {
   syntax: "<angle>";
   inherits: false;
