@@ -276,7 +276,7 @@ on them with page tools using args.selector.
 
 ## 权限模式
 
-`agentMode`：`ask`（默认）弹 HITL 卡片；`auto` 在收到 `permission` 时按 option 文案/id 打分，优先 always / 其次 once，立刻 `permission.reply`，不渲染卡片。提问和计划仍走 HITL。切到 `auto` 时若已有待确认权限，同一套逻辑马上回。输入栏 `ModeSelect` 向上弹出，每项标题 + `text-[11px] text-[var(--muted)]` 解释；点选后关闭。
+`agentMode`：`ask`（默认）弹 HITL 卡片；`auto` 在收到 `permission` 时按 option 文案/id 打分，优先 always / 其次 once，立刻 `permission.reply`，不渲染卡片。提问和计划仍走 HITL。切到 `auto` 时若已有待确认权限，同一套逻辑马上回。输入栏 `ModeSelect` 向上弹出，每项标题 + `text-[11px] text-[var(--muted)]` 解释（文案对齐 Copilot 前两项：Default permissions / Allow all）；点选后关闭。
 
 ## 标签切换
 
