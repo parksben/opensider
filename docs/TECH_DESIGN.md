@@ -266,7 +266,7 @@ Local paths. Read these files or folders if needed.
 
 ## 提及芯片（`@`）
 
-输入区不用 textarea，改成 contenteditable（对齐 `react-plug-editor` 的 Plug 节点思路，不引入该包）：正文和 `contentEditable=false` 的芯片流式混排。芯片 DOM 用 `data-token` 存序列化值，React root 渲 icon + 标题。
+输入区不用 textarea，改成 contenteditable（对齐 `react-plug-editor` 的 Plug 节点思路，不引入该包）：正文和 `contentEditable=false` 的芯片流式混排。芯片 DOM 用 `data-token` 存序列化值，React root 渲 icon + 标题。占位用 `::before` 绝对定位叠在空编辑器上（不进文档流），避免 caret 落到占位文案后面；删到空时清掉残留 `br` / zwsp，caret 重置到内容区开头。
 
 本地 token（只存在用户气泡 / 草稿，UI 不展示原文）：
 

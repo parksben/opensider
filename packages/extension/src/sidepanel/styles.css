@@ -92,6 +92,7 @@ input {
 }
 
 .cs-composer-input {
+  position: relative;
   display: block;
   min-height: calc(2lh + 0.75rem);
   max-height: calc(10lh + 0.75rem);
@@ -104,8 +105,13 @@ input {
 
 .cs-composer-input[data-empty="true"]::before {
   content: attr(data-placeholder);
+  position: absolute;
+  top: 0.375rem;
+  right: 0.25rem;
+  left: 0.25rem;
   color: var(--muted);
   pointer-events: none;
+  user-select: none;
 }
 
 .cs-mention-wrap {

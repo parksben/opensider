@@ -71,6 +71,22 @@ function isEditorEmpty(serialized: string): boolean {
   return serialized.replace(/\u200b/g, "").trim().length === 0;
 }
 
+function placeCaretAtStart(editor: HTMLElement): void {
+  const selection = window.getSelection();
+  if (!selection) return;
+  const range = document.createRange();
+  range.setStart(editor, 0);
+  range.collapse(true);
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
+function resetEmptyEditor(editor: HTMLElement): void {
+  editor.innerHTML = "";
+  editor.dataset.empty = "true";
+  placeCaretAtStart(editor);
+}
+
 function createChipWrap(mention: MentionChip): HTMLSpanElement {
   const wrap = document.createElement("span");
   wrap.className = CHIP_WRAP;
@@ -158,7 +174,18 @@ export const ComposerEditor = forwardRef<
     unmountDetached();
     const next = serializeEditor(editor);
     const normalized = isEditorEmpty(next) ? "" : next;
-    editor.dataset.empty = normalized ? "false" : "true";
+    if (!normalized) {
+      resetEmptyEditor(editor);
+      lastRangeRef.current = (() => {
+        const range = document.createRange();
+        range.setStart(editor, 0);
+        range.collapse(true);
+        return range;
+      })();
+      if (valueRef.current) onChange("");
+      return;
+    }
+    editor.dataset.empty = "false";
     if (normalized !== valueRef.current) onChange(normalized);
     scrollCaret(editor);
   };
@@ -202,7 +229,7 @@ export const ComposerEditor = forwardRef<
     editor.innerHTML = "";
     const segments = parseMentionSegments(next);
     if (segments.length === 0) {
-      editor.dataset.empty = "true";
+      resetEmptyEditor(editor);
       return;
     }
     for (const segment of segments) {
@@ -360,6 +387,18 @@ export const ComposerEditor = forwardRef<
       event.preventDefault();
       document.execCommand("insertLineBreak");
       emit();
+      return;
+    }
+    if (event.key === "Backspace" || event.key === "Delete") {
+      const editor = editorRef.current;
+      if (editor && isEditorEmpty(serializeEditor(editor))) {
+        event.preventDefault();
+        resetEmptyEditor(editor);
+        lastRangeRef.current = document.createRange();
+        lastRangeRef.current.setStart(editor, 0);
+        lastRangeRef.current.collapse(true);
+        if (valueRef.current) onChange("");
+      }
     }
   };
 
