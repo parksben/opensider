@@ -44,8 +44,8 @@ GREEN = (52, 168, 83)  # #34A853
 _BASE_CENTERS = {270.0: RED, 30.0: YELLOW, 150.0: GREEN}
 # 交界（相邻中心角平分线）：起点色 → 顺时针下一色
 _BASE_BOUNDARIES = [(330.0, RED, YELLOW), (90.0, YELLOW, GREEN), (210.0, GREEN, RED)]
-# 渐变风车整体旋转角度（图形本体不动；SVG 坐标系角度增大 = 顺时针）。定稿：不旋转
-GRADIENT_ROTATE_DEG = 0.0
+# 渐变风车整体顺时针旋转 30°（图形本体不动；SVG 坐标系角度增大 = 顺时针）
+GRADIENT_ROTATE_DEG = 30.0
 
 CENTERS = {(c + GRADIENT_ROTATE_DEG) % 360: col for c, col in _BASE_CENTERS.items()}
 BOUNDARIES = [((b + GRADIENT_ROTATE_DEG) % 360, c0, c1) for b, c0, c1 in _BASE_BOUNDARIES]

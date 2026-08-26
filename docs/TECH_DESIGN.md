@@ -344,7 +344,7 @@ macOS 清单路径：`~/Library/Application Support/Google/Chrome/NativeMessagin
 
 ## 品牌图标
 
-- 源文件 `packages/extension/assets/icon.svg` 由 `scripts/generate_icon.py` 生成，勿手改：Cursor 官方 CUBE_2D 六边形路径做 clipPath 外轮廓；镂空为圆角等腰三角形（`TRI_VERTICES` + `CORNER_R`，经 `ARROW_SCALE`=√3/2 缩放、净逆时针 90° 旋转）；360 个 1° 扇形逼近 conic 渐变，红→黄→绿顺时针风车、交界 40° smoothstep 平滑过渡（`GRADIENT_ROTATE_DEG` 可整体旋转，定稿为 0）
+- 源文件 `packages/extension/assets/icon.svg` 由 `scripts/generate_icon.py` 生成，勿手改：Cursor 官方 CUBE_2D 六边形路径做 clipPath 外轮廓；镂空为圆角等腰三角形（`TRI_VERTICES` + `CORNER_R`，经 `ARROW_SCALE`=√3/2 缩放、净逆时针 90° 旋转）；360 个 1° 扇形逼近 conic 渐变，红→黄→绿顺时针风车、交界 40° smoothstep 平滑过渡，整体 `GRADIENT_ROTATE_DEG`=30° 顺时针旋转
 - PNG 用 `rsvg-convert` 从 SVG 导出（16/32/48/128，保留透明），放 `packages/extension/public/icons/`，crxjs 构建时拷到 `dist/icons/`
 - manifest 的 `icons` 与 `action.default_icon` 都指向这四张图
 
