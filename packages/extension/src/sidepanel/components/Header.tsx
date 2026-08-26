@@ -1,4 +1,4 @@
-import { Check, Globe, MessageSquarePlus, MessagesSquare, Monitor, Moon, MousePointerClick, Pencil, RotateCw, Sun, Unplug } from "lucide-react";
+import { Check, Globe, History, MessageSquarePlus, Monitor, Moon, MousePointerClick, Pencil, RotateCw, Sun, Unplug } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { BrowserCommand, BrowserResult, CurrentPage } from "@shared";
 import type { Locale } from "../i18n";
@@ -172,7 +172,7 @@ export function Header({
             aria-expanded={sessionsOpen}
             className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-[var(--line)] text-[var(--text)]"
           >
-            <MessagesSquare size={14} />
+            <History size={14} />
           </IconButton>
           <IconButton
             ripple={false}
