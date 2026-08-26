@@ -42,6 +42,7 @@ export function ChatPane({
   onEnqueue,
   onUpdateQueued,
   onDeleteQueued,
+  onSendQueuedNow,
   onEditingQueued,
   onRevise,
   onCancel,
@@ -74,6 +75,7 @@ export function ChatPane({
   onEnqueue: (text: string, attachments: AttachmentItem[]) => void;
   onUpdateQueued: (id: string, text: string, attachments: AttachmentItem[]) => void;
   onDeleteQueued: (id: string) => void;
+  onSendQueuedNow: (id: string) => void;
   onEditingQueued: (id?: string) => void;
   onPreviewImage: (path: string) => Promise<string>;
   onRevise: (messageId: string, text: string, attachments: AttachmentItem[]) => void;
@@ -232,6 +234,14 @@ export function ChatPane({
     onDeleteQueued(id);
   };
 
+  const sendQueuedNow = (id: string) => {
+    if (editingQueueId === id) {
+      restoreStash();
+      setEditingQueueId(undefined);
+    }
+    onSendQueuedNow(id);
+  };
+
   useEffect(() => {
     installAtMenuGuard();
   }, []);
@@ -351,6 +361,7 @@ export function ChatPane({
           locale={locale}
           items={queue}
           editingId={editingQueueId}
+          onSendNow={sendQueuedNow}
           onEdit={startQueueEdit}
           onDelete={removeQueued}
         />

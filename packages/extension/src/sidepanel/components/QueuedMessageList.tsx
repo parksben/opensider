@@ -1,4 +1,4 @@
-import { Paperclip, Pencil, Trash2 } from "lucide-react";
+import { CornerDownLeft, Paperclip, Pencil, Trash2 } from "lucide-react";
 import type { QueuedMessage } from "../queued-message";
 import type { Locale } from "../i18n";
 import { t } from "../i18n";
@@ -9,12 +9,14 @@ export function QueuedMessageList({
   locale,
   items,
   editingId,
+  onSendNow,
   onEdit,
   onDelete,
 }: {
   locale: Locale;
   items: QueuedMessage[];
   editingId?: string;
+  onSendNow: (id: string) => void;
   onEdit: (item: QueuedMessage) => void;
   onDelete: (id: string) => void;
 }) {
@@ -44,6 +46,14 @@ export function QueuedMessageList({
                 ) : null}
               </span>
             ) : null}
+            <IconButton
+              side="top"
+              label={t(locale, "sendQueuedNow")}
+              onClick={() => onSendNow(item.id)}
+              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[var(--muted)] hover:text-[var(--text)]"
+            >
+              <CornerDownLeft size={12} />
+            </IconButton>
             <IconButton
               side="top"
               label={t(locale, "editQueuedMessage")}

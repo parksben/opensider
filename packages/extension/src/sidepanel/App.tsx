@@ -91,7 +91,11 @@ export function App() {
   const runningIdsRef = useRef<Set<string>>(new Set());
   const queuesRef = useRef<Record<string, QueuedMessage[]>>({});
   const editingQueueRef = useRef<{ sessionId: string; id: string } | null>(null);
+  const pendingForceSend = useRef<Record<string, QueuedMessage[]>>({});
   const flushQueueRef = useRef<(sessionId: string) => void>(() => undefined);
+  const sendToSessionRef = useRef<(localId: string, text: string, attachments?: AttachmentItem[]) => void>(
+    () => undefined,
+  );
   const turnStartedAt = useRef(new Map<string, number>());
   pageRef.current = page;
   statusRef.current = status;
@@ -241,6 +245,7 @@ export function App() {
       if (msg.state === "error") {
         pendingRegen.current = null;
         pendingBinds.current = [];
+        pendingForceSend.current = {};
         finishAllTurns();
       }
       if (msg.state !== "ready") appliedModelRef.current = "";
@@ -343,7 +348,17 @@ export function App() {
     if (msg.type === "turn.end") {
       const localId = localIdForAcp(msg.sessionId);
       finishTurn(localId);
-      if (localId) flushQueueRef.current(localId);
+      if (localId) {
+        const forced = pendingForceSend.current[localId];
+        const next = forced?.[0];
+        if (next) {
+          pendingForceSend.current[localId] = forced.slice(1);
+          if (pendingForceSend.current[localId].length === 0) delete pendingForceSend.current[localId];
+          sendToSessionRef.current(localId, next.text, next.attachments);
+        } else {
+          flushQueueRef.current(localId);
+        }
+      }
       if (msg.stopReason === "error" && localId === selectedIdRef.current) {
         setError(t(localeRef.current, "turnError"));
       }
@@ -514,6 +529,7 @@ export function App() {
         : undefined,
     });
   };
+  sendToSessionRef.current = sendToSession;
 
   const flushQueue = (sessionId: string) => {
     if (!sessionId || runningIdsRef.current.has(sessionId)) return;
@@ -564,6 +580,29 @@ export function App() {
       editingQueueRef.current = null;
     }
     flushQueue(sessionId);
+  };
+
+  const onSendQueuedNow = (id: string) => {
+    const sessionId = selectedIdRef.current;
+    if (!sessionId) return;
+    const list = queuesRef.current[sessionId] ?? [];
+    const item = list.find((entry) => entry.id === id);
+    if (!item) return;
+    setSessionQueue(
+      sessionId,
+      list.filter((entry) => entry.id !== id),
+    );
+    if (editingQueueRef.current?.sessionId === sessionId && editingQueueRef.current.id === id) {
+      editingQueueRef.current = null;
+    }
+    if (runningIdsRef.current.has(sessionId)) {
+      const session = sessionsRef.current.find((entry) => entry.id === sessionId);
+      sendRef.current({ type: "cancel", sessionId: session?.acpSessionId });
+      finishTurn(sessionId);
+      pendingForceSend.current[sessionId] = [...(pendingForceSend.current[sessionId] ?? []), item];
+      return;
+    }
+    sendToSession(sessionId, item.text, item.attachments);
   };
 
   const onEditingQueued = (id?: string) => {
@@ -722,6 +761,7 @@ export function App() {
     clearHitl(id);
     if (queuesRef.current[id]) setSessionQueue(id, []);
     if (editingQueueRef.current?.sessionId === id) editingQueueRef.current = null;
+    delete pendingForceSend.current[id];
     pendingBinds.current = pendingBinds.current.filter((item) => item.localId !== id);
     if (pendingRegen.current?.localId === id) pendingRegen.current = null;
     const remaining = sessionsRef.current.filter((session) => session.id !== id);
@@ -922,6 +962,7 @@ export function App() {
               onEnqueue={onEnqueue}
               onUpdateQueued={onUpdateQueued}
               onDeleteQueued={onDeleteQueued}
+              onSendQueuedNow={onSendQueuedNow}
               onEditingQueued={onEditingQueued}
               hitl={
                 <PermissionBar
