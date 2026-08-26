@@ -274,7 +274,7 @@ export function SessionDrawer({
                   return (
                     <li key={session.id} className="group/session" data-session-id={session.id}>
                       <div
-                        className={`flex w-full items-start gap-1.5 px-1.5 py-1.5 ${
+                        className={`flex w-full items-start gap-1.5 px-1.5 py-3.5 ${
                           highlighted ? "bg-[var(--hover-strong)]" : ""
                         } ${active && !highlighted ? "bg-[color-mix(in_oklab,var(--brass)_16%,transparent)]" : ""}`}
                         onPointerEnter={() => setHighlightId(session.id)}
