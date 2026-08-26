@@ -31,7 +31,7 @@ export function applyLocale(locale: Locale): void {
 
 const copy = {
   en: {
-    emptyHint: "Send a message to start chatting with Cursor about this page",
+    emptyHint: "Send a message to start chatting with Agent about this page",
     connected: "connected",
     starting: "starting",
     offline: "offline",
@@ -133,7 +133,7 @@ const copy = {
     toolOther: "Tool",
   },
   zh: {
-    emptyHint: "发送消息，开始与 Cursor 就网页内容聊天",
+    emptyHint: "发送消息，开始与 Agent 就网页内容聊天",
     connected: "已连接",
     starting: "启动中",
     offline: "离线",

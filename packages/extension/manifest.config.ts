@@ -5,7 +5,7 @@ export default defineManifest({
   manifest_version: 3,
   name: "OpenSider",
   version: "0.1.0",
-  description: "Chat with your local Cursor Agent from the OpenSider side panel.",
+  description: "Chat with your local Agent from the OpenSider side panel.",
   key: EXTENSION_KEY,
   icons: {
     "16": "icons/icon16.png",
