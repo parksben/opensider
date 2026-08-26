@@ -1,12 +1,17 @@
-import type { AgentModel, AttachmentItem, AttachmentKind, CurrentPage } from "@shared";
-import { ArrowDown, Check, ChevronDown, Copy, File, Folder, GitFork, Image, LoaderCircle, MessageSquareMore, MousePointer2, Plus, RefreshCw, Send, Shield, Square, X, Zap } from "lucide-react";
-import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from "react";
+import type { AgentModel, AttachmentItem, CurrentPage } from "@shared";
+import { ArrowDown, AtSign, Check, ChevronDown, Copy, GitFork, LoaderCircle, MessageSquareMore, MousePointer2, Paperclip, RefreshCw, Send, Shield, Square, X, Zap } from "lucide-react";
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import type { ChatMessage, ChatPart, TodoItem } from "../chat-types";
+import { useComposerHistory } from "../composer-history";
 import type { Locale } from "../i18n";
 import { t } from "../i18n";
+import { composerHasContent } from "../mentions";
 import { stripEnvPrompt, textOf, type AgentMode } from "../persist";
 import { useRipple } from "../useRipple";
+import { AtMenu } from "./AtMenu";
+import { ComposerEditor, type ComposerHandle } from "./ComposerEditor";
 import { IconButton } from "./IconButton";
+import { kindIcon, UserRichText } from "./MentionChip";
 import { Markdown } from "./Markdown";
 import { RippleButton } from "./RippleButton";
 import { TextFold } from "./TextFold";
@@ -14,117 +19,10 @@ import { TodoList } from "./TodoList";
 import { ToolCard } from "./ToolCard";
 
 const STICKY_PX = 96;
-const COMPOSER_MIN_LINES = 2;
-const COMPOSER_MAX_LINES = 10;
-
-function composerLineHeight(node: HTMLTextAreaElement): number {
-  const style = getComputedStyle(node);
-  const lineHeight = parseFloat(style.lineHeight);
-  if (Number.isFinite(lineHeight) && lineHeight > 0) return lineHeight;
-  const fontSize = parseFloat(style.fontSize);
-  return (Number.isFinite(fontSize) ? fontSize : 13.5) * 1.5;
-}
-
-function composerBounds(node: HTMLTextAreaElement): { min: number; max: number; lineHeight: number } {
-  const style = getComputedStyle(node);
-  const lineHeight = composerLineHeight(node);
-  const pad = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
-  const padY = Number.isFinite(pad) ? pad : 0;
-  return {
-    lineHeight,
-    min: lineHeight * COMPOSER_MIN_LINES + padY,
-    max: lineHeight * COMPOSER_MAX_LINES + padY,
-  };
-}
-
-function scrollComposerCaret(node: HTMLTextAreaElement | null): void {
-  if (!node) return;
-  const style = getComputedStyle(node);
-  const mirror = document.createElement("div");
-  mirror.setAttribute("aria-hidden", "true");
-  const copy = [
-    "boxSizing",
-    "font",
-    "fontSize",
-    "fontFamily",
-    "fontWeight",
-    "fontStyle",
-    "letterSpacing",
-    "lineHeight",
-    "textTransform",
-    "wordSpacing",
-    "textIndent",
-    "padding",
-    "paddingTop",
-    "paddingRight",
-    "paddingBottom",
-    "paddingLeft",
-    "borderWidth",
-    "whiteSpace",
-    "wordBreak",
-    "overflowWrap",
-    "tabSize",
-  ] as const;
-  for (const prop of copy) {
-    mirror.style[prop] = style[prop];
-  }
-  Object.assign(mirror.style, {
-    position: "absolute",
-    visibility: "hidden",
-    overflow: "hidden",
-    top: "0",
-    left: "0",
-    width: `${node.clientWidth}px`,
-    whiteSpace: "pre-wrap",
-    pointerEvents: "none",
-  });
-  mirror.textContent = node.value.slice(0, node.selectionEnd);
-  const caret = document.createElement("span");
-  caret.textContent = "\u200b";
-  mirror.appendChild(caret);
-  document.body.appendChild(mirror);
-  const top = caret.offsetTop;
-  const lineHeight = composerLineHeight(node);
-  document.body.removeChild(mirror);
-  const viewTop = node.scrollTop;
-  const viewBottom = viewTop + node.clientHeight;
-  if (top < viewTop) node.scrollTop = top;
-  else if (top + lineHeight > viewBottom) node.scrollTop = top + lineHeight - node.clientHeight;
-}
-
-function fitComposer(node: HTMLTextAreaElement | null): void {
-  if (!node) return;
-  const { min, max } = composerBounds(node);
-  node.style.overflowY = "hidden";
-  node.style.height = "auto";
-  let next = Math.min(max, Math.max(min, node.scrollHeight));
-  node.style.height = `${next}px`;
-  if (node.scrollHeight > max + 1) {
-    node.style.overflowY = "auto";
-    node.style.height = "auto";
-    next = Math.min(max, Math.max(min, node.scrollHeight));
-    node.style.height = `${next}px`;
-    node.style.overflowY = "auto";
-  }
-  scrollComposerCaret(node);
-}
 
 function stickToBottom(node: HTMLElement | null, smooth = false): void {
   if (!node) return;
   node.scrollTo({ top: 0, behavior: smooth ? "smooth" : "auto" });
-}
-
-function clipboardImages(data: DataTransfer | null): File[] {
-  if (!data) return [];
-  const images = (files: File[]) => files.filter((file) => file.type.startsWith("image/"));
-  const fromFiles = images(Array.from(data.files));
-  if (fromFiles.length > 0) return fromFiles;
-  return images(
-    Array.from(data.items)
-      .filter((item) => item.kind === "file")
-      .map((item) => item.getAsFile())
-      .filter((file): file is File => file != null),
-  );
 }
 
 export function ChatPane({
@@ -182,8 +80,11 @@ export function ChatPane({
   const [savingPaste, setSavingPaste] = useState(false);
   const [editingId, setEditingId] = useState<string>();
   const [stash, setStash] = useState<{ draft: string; attachments: AttachmentItem[] } | null>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const [atOpen, setAtOpen] = useState(false);
+  const composerRef = useRef<ComposerHandle>(null);
+  const atButtonRef = useRef<HTMLSpanElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const { tabs: historyTabs, attachments: historyAttachments, rememberAttachments } = useComposerHistory();
   const threadEndRef = useRef<HTMLDivElement>(null);
   const editingRef = useRef<string | undefined>(undefined);
   const [awayFromBottom, setAwayFromBottom] = useState(false);
@@ -193,10 +94,11 @@ export function ChatPane({
   }, []);
   editingRef.current = editingId;
   const label = (key: Parameters<typeof t>[1]) => t(locale, key);
-  const canSend = Boolean(draft.trim() || attachments.length);
+  const canSend = Boolean(composerHasContent(draft) || attachments.length);
   const busy = pickingFiles || pickingElement || isRunning || savingPaste;
 
   const mergeAttachments = (items: AttachmentItem[]) => {
+    if (items.length > 0) rememberAttachments(items);
     setAttachments((current) => {
       const seen = new Set(current.map((item) => item.path));
       return [...current, ...items.filter((item) => !seen.has(item.path))];
@@ -212,6 +114,7 @@ export function ChatPane({
     setAttachments([]);
     setEditingId(undefined);
     setStash(null);
+    setAtOpen(false);
     if (reviseId) onRevise(reviseId, text, files);
     else onSend(text, files);
     requestAnimationFrame(() => stickToBottom(listRef.current));
@@ -231,24 +134,17 @@ export function ChatPane({
     setDraft(stripEnvPrompt(textOf(message.content)));
     setAttachments(message.attachments ? [...message.attachments] : []);
     requestAnimationFrame(() => {
-      inputRef.current?.focus();
-      const node = inputRef.current;
-      if (!node) return;
-      node.selectionStart = node.value.length;
-      node.selectionEnd = node.value.length;
-      fitComposer(node);
+      composerRef.current?.focus();
+      composerRef.current?.moveCaretToEnd();
     });
   };
   startEditRef.current = startEdit;
-
-  useLayoutEffect(() => {
-    fitComposer(inputRef.current);
-  }, [draft]);
 
   useEffect(() => {
     const wasEditing = editingRef.current;
     setEditingId(undefined);
     setStash(null);
+    setAtOpen(false);
     if (wasEditing) {
       setDraft("");
       setAttachments([]);
@@ -290,27 +186,6 @@ export function ChatPane({
     } finally {
       setSavingPaste(false);
     }
-  };
-
-  const onComposerPaste = (event: ClipboardEvent<HTMLElement>) => {
-    const images = clipboardImages(event.clipboardData);
-    if (images.length === 0) return;
-    event.preventDefault();
-    const text = event.clipboardData.getData("text/plain");
-    if (text) {
-      const node = inputRef.current;
-      const start = node?.selectionStart ?? draft.length;
-      const end = node?.selectionEnd ?? draft.length;
-      setDraft((current) => current.slice(0, start) + text + current.slice(end));
-      requestAnimationFrame(() => {
-        if (!node) return;
-        const cursor = start + text.length;
-        node.selectionStart = cursor;
-        node.selectionEnd = cursor;
-        fitComposer(node);
-      });
-    }
-    void addPastedImages(images);
   };
 
   const startElementPick = async () => {
@@ -372,10 +247,7 @@ export function ChatPane({
           ) : null}
         <TodoList locale={locale} todos={todos ?? []} />
         {hitl}
-        <div
-          className={`cs-composer rounded-xl bg-[var(--panel)] px-2 py-2 ${isRunning ? "is-running" : ""}`}
-          onPaste={onComposerPaste}
-        >
+        <div className={`cs-composer rounded-xl bg-[var(--panel)] px-2 py-2 ${isRunning ? "is-running" : ""}`}>
           {editingId ? (
             <div className="mb-1.5 flex items-start justify-between gap-2 px-1">
               <p className="min-w-0 flex-1 text-[11px] leading-snug text-[var(--muted)]">
@@ -398,23 +270,27 @@ export function ChatPane({
               className="mb-1.5 px-1"
             />
           ) : null}
-          <textarea
-            ref={inputRef}
+          <ComposerEditor
+            ref={composerRef}
             value={draft}
             placeholder={label("placeholder")}
-            rows={2}
-            className="cs-composer-input w-full resize-none bg-transparent px-1 text-[13.5px] outline-none placeholder:text-[var(--muted)]"
-            onChange={(event) => setDraft(event.target.value)}
-            onSelect={() => scrollComposerCaret(inputRef.current)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault();
-                submit();
-              }
-            }}
+            menuOpen={atOpen}
+            onChange={setDraft}
+            onSubmit={submit}
+            onPasteImages={(files) => void addPastedImages(files)}
+            onAtTyped={() => setAtOpen(true)}
           />
           <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-1">
+            <div className="relative flex items-center gap-1">
+              <IconButton
+                side="top"
+                label={label("attach")}
+                onClick={() => void addAttachments()}
+                disabled={busy}
+                className="flex h-7 w-7 items-center justify-center rounded-full text-[var(--text)] hover:bg-[var(--hover)] disabled:opacity-30 disabled:hover:bg-transparent"
+              >
+                {pickingFiles || savingPaste ? <LoaderCircle size={14} className="animate-spin" /> : <Paperclip size={14} />}
+              </IconButton>
               <IconButton
                 side="top"
                 label={label("pickElement")}
@@ -426,15 +302,38 @@ export function ChatPane({
               >
                 <MousePointer2 size={14} />
               </IconButton>
-              <IconButton
-                side="top"
-                label={label("attach")}
-                onClick={() => void addAttachments()}
-                disabled={busy}
-                className="flex h-7 w-7 items-center justify-center rounded-full text-[var(--text)] hover:bg-[var(--hover)] disabled:opacity-30 disabled:hover:bg-transparent"
-              >
-                {pickingFiles || savingPaste ? <LoaderCircle size={14} className="animate-spin" /> : <Plus size={14} />}
-              </IconButton>
+              <span ref={atButtonRef}>
+                <IconButton
+                  side="top"
+                  label={label("mention")}
+                  onClick={() => {
+                    if (atOpen) {
+                      setAtOpen(false);
+                      return;
+                    }
+                    composerRef.current?.insertAtStart("@");
+                    setAtOpen(true);
+                  }}
+                  disabled={isRunning}
+                  className={`flex h-7 w-7 items-center justify-center rounded-full hover:bg-[var(--hover)] disabled:opacity-30 disabled:hover:bg-transparent ${
+                    atOpen ? "bg-[var(--hover)] text-[var(--brass)]" : "text-[var(--text)]"
+                  }`}
+                >
+                  <AtSign size={14} />
+                </IconButton>
+              </span>
+              <AtMenu
+                open={atOpen}
+                locale={locale}
+                tabs={historyTabs}
+                attachments={historyAttachments}
+                ignoreRef={atButtonRef}
+                onSelect={(mention) => {
+                  composerRef.current?.insertMention(mention);
+                  setAtOpen(false);
+                }}
+                onClose={() => setAtOpen(false)}
+              />
               <ModeSelect locale={locale} mode={agentMode} onMode={onAgentMode} />
             </div>
             <div className="flex min-w-0 items-center justify-end gap-1.5">
@@ -508,7 +407,7 @@ const MessageThread = memo(function MessageThread({
               }`}
             >
               {stripEnvPrompt(textOf(message.content)) ? (
-                <div>{stripEnvPrompt(textOf(message.content))}</div>
+                <UserRichText text={stripEnvPrompt(textOf(message.content))} />
               ) : null}
               {message.attachments?.length ? (
                 <AttachmentChips
@@ -588,13 +487,6 @@ function AttachmentChips({
       })}
     </div>
   );
-}
-
-function kindIcon(kind: AttachmentKind) {
-  if (kind === "image") return Image;
-  if (kind === "folder") return Folder;
-  if (kind === "element") return MousePointer2;
-  return File;
 }
 
 function ModeSelect({
