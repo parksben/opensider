@@ -110,8 +110,8 @@ function fitComposer(node: HTMLTextAreaElement | null): void {
 }
 
 function distanceFromBottom(node: HTMLElement): number {
-  if (node.scrollTop <= 0) return Math.abs(node.scrollTop);
-  return node.scrollHeight - node.clientHeight - node.scrollTop;
+  if (node.scrollTop >= 0) return 0;
+  return Math.abs(node.scrollTop);
 }
 
 function stickToBottom(node: HTMLElement | null, smooth = false): void {
