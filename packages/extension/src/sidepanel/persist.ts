@@ -30,12 +30,36 @@ export type Session = {
   todos: TodoItem[];
 };
 
+export type AgentMode = "ask" | "auto";
+
+export function isAgentMode(value: unknown): value is AgentMode {
+  return value === "ask" || value === "auto";
+}
+
+export function nextAgentMode(mode: AgentMode): AgentMode {
+  return mode === "ask" ? "auto" : "ask";
+}
+
+export function autoPermissionOptionId(
+  options: Array<{ optionId: string; name: string; kind?: string }>,
+): string | undefined {
+  const score = (option: { optionId: string; name: string; kind?: string }) => {
+    const text = `${option.optionId} ${option.name} ${option.kind ?? ""}`.toLowerCase();
+    if (/(reject|deny|cancel|拒绝)/.test(text)) return 0;
+    if (/(always|unrestricted|始终)/.test(text)) return 3;
+    if (/(once|allow|approve|yes|允许)/.test(text)) return 2;
+    return 1;
+  };
+  return [...options].sort((a, b) => score(b) - score(a))[0]?.optionId;
+}
+
 export type PersistedState = {
   version: 1;
   locale: Locale;
   theme?: ThemePreference;
   selectedId: string;
   selectedModelId?: string;
+  agentMode?: AgentMode;
   sessions: Array<Omit<Session, "messages"> & { messages: StoredMessage[] }>;
 };
 
@@ -136,12 +160,13 @@ export async function loadState(): Promise<{
   theme: ThemePreference;
   selectedId: string;
   selectedModelId: string;
+  agentMode: AgentMode;
   sessions: Session[];
 }> {
   const raw = await chrome.storage.local.get(STATE_KEY);
   const data = raw[STATE_KEY] as PersistedState | undefined;
   if (!data || data.version !== 1 || !Array.isArray(data.sessions)) {
-    return { locale: "en", theme: "dark", selectedId: "", selectedModelId: "", sessions: [] };
+    return { locale: "en", theme: "dark", selectedId: "", selectedModelId: "", agentMode: "ask", sessions: [] };
   }
   const sessions = data.sessions.map(hydrateSession);
   const selectedId = sessions.some((session) => session.id === data.selectedId)
@@ -152,6 +177,7 @@ export async function loadState(): Promise<{
     theme: isThemePreference(data.theme) ? data.theme : "dark",
     selectedId,
     selectedModelId: data.selectedModelId || "",
+    agentMode: isAgentMode(data.agentMode) ? data.agentMode : "ask",
     sessions,
   };
 }
@@ -161,6 +187,7 @@ export async function saveState(state: {
   theme: ThemePreference;
   selectedId: string;
   selectedModelId: string;
+  agentMode: AgentMode;
   sessions: Session[];
 }): Promise<void> {
   const payload: PersistedState = {
@@ -169,6 +196,7 @@ export async function saveState(state: {
     theme: state.theme,
     selectedId: state.selectedId,
     selectedModelId: state.selectedModelId,
+    agentMode: state.agentMode,
     sessions: state.sessions.map(serializeSession),
   };
   await chrome.storage.local.set({ [STATE_KEY]: payload });

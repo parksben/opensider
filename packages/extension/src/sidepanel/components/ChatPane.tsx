@@ -1,10 +1,10 @@
 import type { AgentModel, AttachmentItem, AttachmentKind, CurrentPage } from "@shared";
-import { ArrowDown, ChevronDown, File, Folder, GitFork, Image, LoaderCircle, MessageSquareMore, MousePointer2, Plus, RefreshCw, Send, Square, X } from "lucide-react";
+import { ArrowDown, ChevronDown, File, Folder, GitFork, Image, LoaderCircle, MessageSquareMore, MousePointer2, Plus, RefreshCw, Send, Shield, Square, X, Zap } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from "react";
 import type { ChatMessage, ChatPart } from "../chat-types";
 import type { Locale } from "../i18n";
 import { t } from "../i18n";
-import { textOf } from "../persist";
+import { nextAgentMode, textOf, type AgentMode } from "../persist";
 import { useRipple } from "../useRipple";
 import { IconButton } from "./IconButton";
 import { Markdown } from "./Markdown";
@@ -56,6 +56,8 @@ export function ChatPane({
   onPickElement,
   onCancelElementPick,
   onModel,
+  agentMode,
+  onAgentMode,
   page,
   hitl,
 }: {
@@ -78,6 +80,8 @@ export function ChatPane({
   onPickElement: () => Promise<AttachmentItem[]>;
   onCancelElementPick: () => void;
   onModel: (modelId: string) => void;
+  agentMode: AgentMode;
+  onAgentMode: (mode: AgentMode) => void;
   page?: CurrentPage;
 }) {
   const [draft, setDraft] = useState("");
@@ -352,6 +356,17 @@ export function ChatPane({
                 className="flex h-7 w-7 items-center justify-center rounded-full text-[var(--text)] hover:bg-[var(--hover)] disabled:opacity-30 disabled:hover:bg-transparent"
               >
                 {pickingFiles || savingPaste ? <LoaderCircle size={14} className="animate-spin" /> : <Plus size={14} />}
+              </IconButton>
+              <IconButton
+                side="top"
+                label={agentMode === "auto" ? label("modeAutoHint") : label("modeAskHint")}
+                onClick={() => onAgentMode(nextAgentMode(agentMode))}
+                className={`flex h-7 items-center gap-1 rounded-full px-2 text-[11px] hover:bg-[var(--hover)] ${
+                  agentMode === "auto" ? "text-[var(--brass)]" : "text-[var(--muted)]"
+                }`}
+              >
+                {agentMode === "auto" ? <Zap size={14} /> : <Shield size={14} />}
+                <span>{agentMode === "auto" ? label("modeAuto") : label("modeAsk")}</span>
               </IconButton>
             </div>
             <div className="flex min-w-0 items-center justify-end gap-1.5">

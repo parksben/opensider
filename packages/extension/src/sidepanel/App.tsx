@@ -27,6 +27,7 @@ import {
 } from "./theme";
 import {
   buildForkContext,
+  autoPermissionOptionId,
   emptySession,
   loadState,
   saveState,
@@ -34,6 +35,7 @@ import {
   wrapAttachments,
   wrapForkContext,
   textOf,
+  type AgentMode,
   type Session,
 } from "./persist";
 
@@ -45,6 +47,7 @@ export function App() {
   const [selectedId, setSelectedId] = useState("");
   const [models, setModels] = useState<AgentModel[]>([]);
   const [selectedModelId, setSelectedModelId] = useState("");
+  const [agentMode, setAgentMode] = useState<AgentMode>("ask");
   const [sessionsOpen, setSessionsOpen] = useState(false);
   const [status, setStatus] = useState<"starting" | "ready" | "error">("starting");
   const [error, setError] = useState<string>();
@@ -72,6 +75,7 @@ export function App() {
   const boundRef = useRef(false);
   const localeRef = useRef(locale);
   const selectedModelRef = useRef(selectedModelId);
+  const agentModeRef = useRef(agentMode);
   const pickWaiters = useRef(new Map<string, (items: AttachmentItem[]) => void>());
   const appliedModelRef = useRef("");
   const elementPickId = useRef("");
@@ -82,6 +86,7 @@ export function App() {
   sessionsRef.current = sessions;
   localeRef.current = locale;
   selectedModelRef.current = selectedModelId;
+  agentModeRef.current = agentMode;
 
   const tryBindCurrent = () => {
     if (statusRef.current !== "ready") return;
@@ -112,6 +117,17 @@ export function App() {
   const beginTurn = () => {
     turnStartedAt.current = Date.now();
     setIsRunning(true);
+  };
+
+  const replyPermission = (id: number, options: PermissionRequest["options"]): boolean => {
+    const optionId = autoPermissionOptionId(options);
+    if (!optionId) return false;
+    sendRef.current({
+      type: "permission.reply",
+      id,
+      outcome: { outcome: "selected", optionId },
+    });
+    return true;
   };
 
   const finishTurn = () => {
@@ -246,6 +262,10 @@ export function App() {
     if (msg.type === "permission") {
       const toolCall = msg.params.toolCall as { title?: string } | undefined;
       const options = (msg.params.options as PermissionRequest["options"]) ?? [];
+      if (agentModeRef.current === "auto" && replyPermission(msg.id, options)) {
+        setPermission(undefined);
+        return;
+      }
       setPermission({
         id: msg.id,
         title: toolCall?.title ?? t(localeRef.current, "wantsTool"),
@@ -297,6 +317,7 @@ export function App() {
       setSessions(sessions);
       setSelectedId(selectedId);
       setSelectedModelId(state.selectedModelId);
+      setAgentMode(state.agentMode);
       setHydrated(true);
     });
   }, []);
@@ -307,8 +328,8 @@ export function App() {
 
   useEffect(() => {
     if (!hydrated) return;
-    void saveState({ locale, theme, selectedId, selectedModelId, sessions });
-  }, [hydrated, locale, theme, selectedId, selectedModelId, sessions]);
+    void saveState({ locale, theme, selectedId, selectedModelId, agentMode, sessions });
+  }, [hydrated, locale, theme, selectedId, selectedModelId, agentMode, sessions]);
 
   useEffect(() => {
     applyResolvedTheme(resolveTheme(theme));
@@ -657,6 +678,15 @@ export function App() {
               onPickElement={onPickElement}
               onCancelElementPick={onCancelElementPick}
               onModel={onModel}
+              agentMode={agentMode}
+              onAgentMode={(mode) => {
+                setAgentMode(mode);
+                if (mode !== "auto") return;
+                setPermission((current) => {
+                  if (!current) return current;
+                  return replyPermission(current.id, current.options) ? undefined : current;
+                });
+              }}
               page={page}
               hitl={
                 <PermissionBar
