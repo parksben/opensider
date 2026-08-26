@@ -211,6 +211,7 @@ chrome.storage.local
 | `update` / `turn.end` / `permission` / `cursor` 带 `sessionId` | 侧栏按 ACP id 映射到本地会话，不按当前选中项 |
 | `fs.pick` | Host 弹出本机选文件/文件夹对话框，回 `fs.picked`（绝对路径 + kind） |
 | `fs.save` | Host 把侧栏压好的 JPEG 写到 `browser/pasted/`，回 `fs.saved`（绝对路径 + kind=image） |
+| `fs.preview` + `path` | Host 读本机图片，回 `fs.preview`（`mime` + `imageBase64`）。侧栏不能 `file://`。原文件 base64 ≤ 700KB 且浏览器能渲则原样回；否则 `sips` 压成 JPEG（长边 ≤ 2560），仍超则再降边/质量。只给预览用，不改附件路径 |
 | `page.pick` | SW 让当前标签内容脚本拾取元素，回 `page.picked`（CSS selector，kind=element）；不转发 Host |
 | `model.set` | 非 `auto` 时 `session/set_config_option`（`category: model`）；失败再试 `session/set_model` |
 
@@ -270,7 +271,7 @@ Local paths. Read these files or folders if needed.
 - /abs/path/src
 ```
 
-不把文件内容塞进 Native Messaging。用户气泡可带同样的芯片，方便回看。未发送的芯片只活在输入栏 state 里。每次成功加入附件（选文件 / 粘贴图 / 拾取元素）同时写入 `chrome.storage.local` 的 `cursor-sidebar/attachment-history`：按 `path` 去重、最近的在前，最多 50 条，供 `@` 菜单再用。
+发给 Agent 仍只传路径，不把附件字节塞进 prompt。预览是例外：侧栏 `fs.preview` 向 Host 要一份 data URL，按 `path` 缓存在内存里。`ImagePreview` portal 到 `document.body`：`fixed inset-0`、`--overlay` + `backdrop-filter: blur(2px)`，点遮罩 / Esc 关闭。图 `max-width: 80vw`（左右各 10%）、`max-height: 100vh`、`width/height: auto`，小于上限则按自身像素居中。用户气泡改成外层 `div` 点空白处改历史，图片芯片 `stopPropagation`，进行中也能预览。未发送的芯片只活在输入栏 state 里。每次成功加入附件（选文件 / 粘贴图 / 拾取元素）同时写入 `chrome.storage.local` 的 `cursor-sidebar/attachment-history`：按 `path` 去重、最近的在前，最多 50 条，供 `@` 菜单再用。
 
 ## 提及芯片（`@`）
 

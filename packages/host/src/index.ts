@@ -12,6 +12,7 @@ import {
 import { createNativeIo } from "./native.ts";
 import { defaultAgentPath } from "./paths.ts";
 import { pickLocalPaths } from "./pick.ts";
+import { readImagePreview } from "./preview.ts";
 import { savePastedJpeg } from "./save.ts";
 import { watchCommands, writeCommandResult } from "./watch.ts";
 import { ensureWorkspace, readSessionId, WORKSPACE_DIR, writeCurrentPage, writeSessionId, writeTabsSnapshot } from "./workspace.ts";
@@ -258,6 +259,26 @@ async function handleExt(msg: ExtToHost): Promise<void> {
           type: "fs.saved",
           requestId: msg.requestId,
           items: [],
+          error: String(error),
+        });
+      }
+      return;
+    }
+    if (msg.type === "fs.preview") {
+      try {
+        const preview = await readImagePreview(msg.path);
+        send({
+          type: "fs.preview",
+          requestId: msg.requestId,
+          path: msg.path,
+          mime: preview.mime,
+          imageBase64: preview.imageBase64,
+        });
+      } catch (error) {
+        send({
+          type: "fs.preview",
+          requestId: msg.requestId,
+          path: msg.path,
           error: String(error),
         });
       }

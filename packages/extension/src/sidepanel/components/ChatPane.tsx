@@ -15,6 +15,7 @@ import { ComposerEditor, type ComposerHandle } from "./ComposerEditor";
 import { IconButton } from "./IconButton";
 import { kindIcon, UserRichText } from "./MentionChip";
 import { Markdown } from "./Markdown";
+import { ImagePreview } from "./ImagePreview";
 import { QueuedMessageList } from "./QueuedMessageList";
 import { RippleButton } from "./RippleButton";
 import { TextFold } from "./TextFold";
@@ -46,6 +47,7 @@ export function ChatPane({
   onCancel,
   onFork,
   onRegenerate,
+  onPreviewImage,
   onPickAttachments,
   onPasteImages,
   onPickElement,
@@ -73,6 +75,7 @@ export function ChatPane({
   onUpdateQueued: (id: string, text: string, attachments: AttachmentItem[]) => void;
   onDeleteQueued: (id: string) => void;
   onEditingQueued: (id?: string) => void;
+  onPreviewImage: (path: string) => Promise<string>;
   onRevise: (messageId: string, text: string, attachments: AttachmentItem[]) => void;
   onCancel: () => void;
   onFork: (messageId: string) => void;
@@ -103,6 +106,8 @@ export function ChatPane({
   const editingRef = useRef<string | undefined>(undefined);
   const editingQueueRef = useRef<string | undefined>(undefined);
   const onEditingQueuedRef = useRef(onEditingQueued);
+  const onPreviewImageRef = useRef(onPreviewImage);
+  const [preview, setPreview] = useState<{ name: string; path: string; src?: string; error?: boolean }>();
   const [awayFromBottom, setAwayFromBottom] = useState(false);
   const startEditRef = useRef<(message: ChatMessage) => void>(() => {});
   const onStartEdit = useCallback((message: ChatMessage) => {
@@ -111,6 +116,7 @@ export function ChatPane({
   editingRef.current = editingId;
   editingQueueRef.current = editingQueueId;
   onEditingQueuedRef.current = onEditingQueued;
+  onPreviewImageRef.current = onPreviewImage;
   const label = (key: Parameters<typeof t>[1]) => t(locale, key);
   const canSend = Boolean(composerHasContent(draft) || attachments.length);
   const locking = pickingFiles || pickingElement || savingPaste;
@@ -190,6 +196,19 @@ export function ChatPane({
     });
   };
   startEditRef.current = startEdit;
+
+  const openPreview = useCallback((item: AttachmentItem) => {
+    if (item.kind !== "image") return;
+    setPreview({ name: item.name, path: item.path });
+    void onPreviewImageRef.current(item.path).then(
+      (src) => {
+        setPreview((current) => (current?.path === item.path ? { ...current, src } : current));
+      },
+      () => {
+        setPreview((current) => (current?.path === item.path ? { ...current, error: true } : current));
+      },
+    );
+  }, []);
 
   const startQueueEdit = (item: QueuedMessage) => {
     if (pickingElement) return;
@@ -301,6 +320,7 @@ export function ChatPane({
               models={models}
               page={page}
               onStartEdit={onStartEdit}
+              onPreview={openPreview}
               onFork={onFork}
               onRegenerate={onRegenerate}
             />
@@ -365,6 +385,8 @@ export function ChatPane({
               items={attachments}
               removable
               removeLabel={label("removeAttachment")}
+              previewLabel={label("previewImage")}
+              onPreview={openPreview}
               onRemove={(path) => setAttachments((current) => current.filter((item) => item.path !== path))}
               className="mb-1.5 px-1"
             />
@@ -463,6 +485,15 @@ export function ChatPane({
         </div>
         </div>
       </div>
+      {preview ? (
+        <ImagePreview
+          locale={locale}
+          name={preview.name}
+          src={preview.src}
+          error={preview.error}
+          onClose={() => setPreview(undefined)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -475,6 +506,7 @@ const MessageThread = memo(function MessageThread({
   models,
   page,
   onStartEdit,
+  onPreview,
   onFork,
   onRegenerate,
 }: {
@@ -485,6 +517,7 @@ const MessageThread = memo(function MessageThread({
   models: AgentModel[];
   page?: CurrentPage;
   onStartEdit: (message: ChatMessage) => void;
+  onPreview: (item: AttachmentItem) => void;
   onFork: (messageId: string) => void;
   onRegenerate: (messageId: string) => void;
 }) {
@@ -494,14 +527,25 @@ const MessageThread = memo(function MessageThread({
         const gap = index === 0 ? "" : message.role === "user" ? "mt-6" : "mt-3";
         return message.role === "user" ? (
           <div key={message.id} className={`flex justify-end ${gap}`}>
-            <button
-              type="button"
-              disabled={isRunning}
-              onClick={() => onStartEdit(message)}
-              className={`cs-user-bubble ml-auto w-fit max-w-[80%] break-words rounded-2xl rounded-br-sm bg-[var(--user)] px-3 py-2 text-left text-[13.5px] leading-[1.5] disabled:cursor-default ${
+            <div
+              role={isRunning ? undefined : "button"}
+              tabIndex={isRunning ? undefined : 0}
+              onClick={() => {
+                if (!isRunning) onStartEdit(message);
+              }}
+              onKeyDown={(event) => {
+                if (isRunning) return;
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  onStartEdit(message);
+                }
+              }}
+              className={`cs-user-bubble ml-auto w-fit max-w-[80%] break-words rounded-2xl rounded-br-sm bg-[var(--user)] px-3 py-2 text-left text-[13.5px] leading-[1.5] ${
                 editingId === message.id
                   ? "ring-1 ring-[var(--brass)]"
-                  : "cursor-pointer hover:bg-[var(--user-hover)]"
+                  : isRunning
+                    ? "cursor-default"
+                    : "cursor-pointer hover:bg-[var(--user-hover)]"
               }`}
             >
               {stripEnvPrompt(textOf(message.content)) ? (
@@ -510,10 +554,12 @@ const MessageThread = memo(function MessageThread({
               {message.attachments?.length ? (
                 <AttachmentChips
                   items={message.attachments}
+                  previewLabel={t(locale, "previewImage")}
+                  onPreview={onPreview}
                   className={stripEnvPrompt(textOf(message.content)) ? "mt-2" : ""}
                 />
               ) : null}
-            </button>
+            </div>
           </div>
         ) : (
           <MessageFrame
@@ -549,12 +595,16 @@ function AttachmentChips({
   items,
   removable,
   removeLabel,
+  previewLabel,
+  onPreview,
   onRemove,
   className = "",
 }: {
   items: AttachmentItem[];
   removable?: boolean;
   removeLabel?: string;
+  previewLabel?: string;
+  onPreview?: (item: AttachmentItem) => void;
   onRemove?: (path: string) => void;
   className?: string;
 }) {
@@ -562,19 +612,37 @@ function AttachmentChips({
     <div className={`flex flex-wrap gap-1.5 ${className}`}>
       {items.map((item) => {
         const Icon = kindIcon(item.kind);
+        const previewable = item.kind === "image" && Boolean(onPreview);
         return (
           <span
             key={item.path}
             title={item.path}
             className="inline-flex max-w-[200px] items-center gap-1 rounded-full border border-[var(--line)] bg-[var(--panel-2)] py-0.5 pl-1.5 pr-1 text-[11px] text-[var(--muted)]"
           >
-            <Icon size={12} className="shrink-0 opacity-80" />
-            <span className="min-w-0 flex-1 truncate">{item.name}</span>
+            <button
+              type="button"
+              disabled={!previewable}
+              title={previewable ? previewLabel : item.path}
+              aria-label={previewable ? previewLabel : undefined}
+              onClick={(event) => {
+                event.stopPropagation();
+                if (previewable && onPreview) onPreview(item);
+              }}
+              className={`inline-flex min-w-0 flex-1 items-center gap-1 bg-transparent text-left ${
+                previewable ? "cursor-pointer hover:text-[var(--text)]" : "cursor-default"
+              }`}
+            >
+              <Icon size={12} className="shrink-0 opacity-80" />
+              <span className="min-w-0 flex-1 truncate">{item.name}</span>
+            </button>
             {removable && onRemove ? (
               <RippleButton
                 title={removeLabel}
                 aria-label={removeLabel}
-                onClick={() => onRemove(item.path)}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onRemove(item.path);
+                }}
                 className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[var(--muted)] hover:text-[var(--text)]"
               >
                 <X size={10} />
