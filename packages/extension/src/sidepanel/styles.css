@@ -28,11 +28,11 @@
 
 [data-theme="light"] {
   color-scheme: light;
-  --ink: #e4eaf2;
-  --ink-top: #eef2f7;
-  --panel: #f7f9fc;
-  --panel-2: #e6edf5;
-  --line: #c3cedb;
+  --ink: #f3f4f6;
+  --ink-top: #f6f7f8;
+  --panel: #fbfbfc;
+  --panel-2: #eef0f3;
+  --line: #d4d7dc;
   --text: #1a2330;
   --muted: #5a6876;
   --brass: #3a6d9a;
@@ -40,15 +40,15 @@
   --ok: #2d7a62;
   --warn: #9a6f2e;
   --bad: #b63d45;
-  --user: #d4deeb;
-  --user-hover: #c4d2e3;
-  --code: #dce4ee;
-  --code-inline: #e4ebf3;
+  --user: #e8eaee;
+  --user-hover: #dfe2e7;
+  --code: #eef0f3;
+  --code-inline: #f1f3f5;
   --hover: rgb(26 35 48 / 0.07);
   --hover-strong: rgb(26 35 48 / 0.05);
   --on-brass: #f4f8fc;
-  --overlay: rgb(228 234 242 / 0.64);
-  --glow: rgb(58 109 154 / 0.08);
+  --overlay: rgb(243 244 246 / 0.64);
+  --glow: rgb(80 86 96 / 0.04);
 }
 
 * {
