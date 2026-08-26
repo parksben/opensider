@@ -1,4 +1,4 @@
-import { Check, Globe, History, MessageSquarePlus, Monitor, Moon, Pencil, RotateCw, Sun, Unplug } from "lucide-react";
+import { Check, Globe, Monitor, Moon, PanelRight, PanelRightClose, Pencil, RotateCw, Sun, Unplug } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { CurrentPage } from "@shared";
 import type { Locale } from "../i18n";
@@ -18,7 +18,6 @@ export function Header({
   onLocale,
   onTheme,
   onToggleSessions,
-  onNewSession,
   onRename,
 }: {
   locale: Locale;
@@ -32,7 +31,6 @@ export function Header({
   onLocale: (locale: Locale) => void;
   onTheme: (theme: ThemePreference) => void;
   onToggleSessions: () => void;
-  onNewSession: () => void;
   onRename: (title: string) => void;
 }) {
   const label = (key: Parameters<typeof t>[1]) => t(locale, key);
@@ -173,23 +171,6 @@ export function Header({
         <div ref={rightRef} className="flex items-center justify-end gap-1.5">
           <IconButton
             ripple={false}
-            label={label("newChat")}
-            onClick={onNewSession}
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-[var(--line)] text-[var(--text)]"
-          >
-            <MessageSquarePlus size={14} />
-          </IconButton>
-          <IconButton
-            ripple={false}
-            label={sessionsOpen ? label("collapseSessions") : label("expandSessions")}
-            onClick={onToggleSessions}
-            aria-expanded={sessionsOpen}
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-[var(--line)] text-[var(--text)]"
-          >
-            <History size={14} />
-          </IconButton>
-          <IconButton
-            ripple={false}
             label={theme === "light" ? label("themeLight") : theme === "dark" ? label("themeDark") : label("themeSystem")}
             onClick={() => onTheme(nextTheme(theme))}
             className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-[var(--line)] text-[var(--text)]"
@@ -203,6 +184,15 @@ export function Header({
             className="flex h-7 min-w-7 shrink-0 items-center justify-center rounded-md border border-[var(--line)] px-1 text-[11px] font-medium text-[var(--text)]"
           >
             {locale === "en" ? "中" : "EN"}
+          </IconButton>
+          <IconButton
+            ripple={false}
+            label={sessionsOpen ? label("collapseSessions") : label("expandSessions")}
+            onClick={onToggleSessions}
+            aria-expanded={sessionsOpen}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-[var(--line)] text-[var(--text)]"
+          >
+            {sessionsOpen ? <PanelRightClose size={14} /> : <PanelRight size={14} />}
           </IconButton>
         </div>
       </div>

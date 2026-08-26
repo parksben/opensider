@@ -24,12 +24,28 @@ export type Session = {
   titleManual?: boolean;
   createdAt: string;
   updatedAt: string;
+  pinnedAt?: string;
   parentId?: string;
   forkedFromMessageId?: string;
   pendingForkContext?: string;
   messages: ChatMessage[];
   todos: TodoItem[];
 };
+
+export const SESSION_DRAWER_MIN = 196;
+export const SESSION_DRAWER_MAX = 420;
+export const SESSION_DRAWER_DEFAULT = 248;
+export const SESSION_DRAWER_MAIN_MIN = 220;
+
+export function clampSessionDrawerWidth(width: number, viewportWidth?: number): number {
+  const viewport = viewportWidth ?? (typeof window === "undefined" ? 800 : window.innerWidth);
+  const max = Math.min(
+    SESSION_DRAWER_MAX,
+    Math.max(SESSION_DRAWER_MIN, viewport - SESSION_DRAWER_MAIN_MIN),
+  );
+  if (!Number.isFinite(width)) return Math.min(max, SESSION_DRAWER_DEFAULT);
+  return Math.min(max, Math.max(SESSION_DRAWER_MIN, Math.round(width)));
+}
 
 export type AgentMode = "ask" | "auto";
 
@@ -57,6 +73,8 @@ export type PersistedState = {
   selectedId: string;
   selectedModelId?: string;
   agentMode?: AgentMode;
+  sessionsOpen?: boolean;
+  sessionDrawerWidth?: number;
   sessions: Array<Omit<Session, "messages"> & { messages: StoredMessage[] }>;
 };
 
@@ -293,6 +311,8 @@ export async function loadState(): Promise<{
   selectedId: string;
   selectedModelId: string;
   agentMode: AgentMode;
+  sessionsOpen: boolean;
+  sessionDrawerWidth: number;
   sessions: Session[];
 }> {
   const raw = await chrome.storage.local.get(STATE_KEY);
@@ -304,6 +324,8 @@ export async function loadState(): Promise<{
       selectedId: "",
       selectedModelId: "",
       agentMode: "ask",
+      sessionsOpen: false,
+      sessionDrawerWidth: SESSION_DRAWER_DEFAULT,
       sessions: [],
     };
   }
@@ -317,6 +339,8 @@ export async function loadState(): Promise<{
     selectedId,
     selectedModelId: data.selectedModelId || "",
     agentMode: isAgentMode(data.agentMode) ? data.agentMode : "ask",
+    sessionsOpen: data.sessionsOpen === true,
+    sessionDrawerWidth: clampSessionDrawerWidth(data.sessionDrawerWidth ?? SESSION_DRAWER_DEFAULT),
     sessions,
   };
 }
@@ -327,6 +351,8 @@ export async function saveState(state: {
   selectedId: string;
   selectedModelId: string;
   agentMode: AgentMode;
+  sessionsOpen: boolean;
+  sessionDrawerWidth: number;
   sessions: Session[];
 }): Promise<void> {
   const payload: PersistedState = {
@@ -336,6 +362,8 @@ export async function saveState(state: {
     selectedId: state.selectedId,
     selectedModelId: state.selectedModelId,
     agentMode: state.agentMode,
+    sessionsOpen: state.sessionsOpen,
+    sessionDrawerWidth: clampSessionDrawerWidth(state.sessionDrawerWidth),
     sessions: state.sessions.map(serializeSession),
   };
   await chrome.storage.local.set({ [STATE_KEY]: payload });

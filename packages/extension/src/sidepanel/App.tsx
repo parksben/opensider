@@ -16,7 +16,7 @@ import type { ChatMessage, PermissionRequest, PlanPrompt, QuestionPrompt, TodoIt
 import { ChatPane } from "./components/ChatPane";
 import { Header } from "./components/Header";
 import { PermissionBar } from "./components/PermissionBar";
-import { SessionModal } from "./components/SessionModal";
+import { SessionDrawer } from "./components/SessionDrawer";
 import { applyLocale, readCachedLocale, t, type Locale } from "./i18n";
 import {
   applyResolvedTheme,
@@ -29,9 +29,11 @@ import {
 import {
   buildForkContext,
   autoPermissionOptionId,
+  clampSessionDrawerWidth,
   emptySession,
   loadState,
   saveState,
+  SESSION_DRAWER_DEFAULT,
   settleFinishedContent,
   isPlaceholderTitle,
   nextSessionTitle,
@@ -53,6 +55,7 @@ export function App() {
   const [selectedModelId, setSelectedModelId] = useState("");
   const [agentMode, setAgentMode] = useState<AgentMode>("ask");
   const [sessionsOpen, setSessionsOpen] = useState(false);
+  const [drawerWidth, setDrawerWidth] = useState(SESSION_DRAWER_DEFAULT);
   const [status, setStatus] = useState<"starting" | "ready" | "error">("starting");
   const [error, setError] = useState<string>();
   const [page, setPage] = useState<CurrentPage>();
@@ -407,6 +410,8 @@ export function App() {
       setSelectedId(selectedId);
       setSelectedModelId(state.selectedModelId);
       setAgentMode(state.agentMode);
+      setSessionsOpen(state.sessionsOpen);
+      setDrawerWidth(state.sessionDrawerWidth);
       setHydrated(true);
     });
   }, []);
@@ -417,8 +422,17 @@ export function App() {
 
   useEffect(() => {
     if (!hydrated) return;
-    void saveState({ locale, theme, selectedId, selectedModelId, agentMode, sessions });
-  }, [hydrated, locale, theme, selectedId, selectedModelId, agentMode, sessions]);
+    void saveState({
+      locale,
+      theme,
+      selectedId,
+      selectedModelId,
+      agentMode,
+      sessionsOpen,
+      sessionDrawerWidth: drawerWidth,
+      sessions,
+    });
+  }, [hydrated, locale, theme, selectedId, selectedModelId, agentMode, sessionsOpen, drawerWidth, sessions]);
 
   useLayoutEffect(() => {
     applyThemePreference(theme);
@@ -619,11 +633,17 @@ export function App() {
     const created = emptySession();
     setSessions((current) => [created, ...current]);
     setSelectedId(created.id);
-    setSessionsOpen(false);
     if (statusRef.current === "ready") {
       enqueueBind({ localId: created.id, kind: "new" });
       sendRef.current({ type: "session.new" });
     }
+  };
+
+  const pinSession = (id: string) => {
+    patchSession(id, (session) => ({
+      ...session,
+      pinnedAt: session.pinnedAt ? undefined : new Date().toISOString(),
+    }));
   };
 
   const sessionBusy = (id: string) => runningIdsRef.current.has(id);
@@ -726,34 +746,33 @@ export function App() {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <Header
-        locale={locale}
-        status={status}
-        error={error}
-        page={page}
-        sessionTitle={selected.title}
-        sessionsOpen={sessionsOpen}
-        theme={theme}
-        onLocale={(next) => {
-          applyLocale(next);
-          setLocale(next);
-        }}
-        onTheme={(next) => {
-          applyThemePreference(next);
-          setTheme(next);
-        }}
-        onNewSession={newSession}
-        onRename={(title) => renameSession(selected.id, title)}
-        onToggleSessions={() => setSessionsOpen((open) => !open)}
-        onRetry={() => {
-          pendingBinds.current = [];
-          setStatus("starting");
-          setError(t(locale, "reconnecting"));
-          reconnectRef.current();
-        }}
-      />
-      <div className="flex min-h-0 flex-1">
+    <div className="flex h-full min-h-0">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <Header
+          locale={locale}
+          status={status}
+          error={error}
+          page={page}
+          sessionTitle={selected.title}
+          sessionsOpen={sessionsOpen}
+          theme={theme}
+          onLocale={(next) => {
+            applyLocale(next);
+            setLocale(next);
+          }}
+          onTheme={(next) => {
+            applyThemePreference(next);
+            setTheme(next);
+          }}
+          onRename={(title) => renameSession(selected.id, title)}
+          onToggleSessions={() => setSessionsOpen((open) => !open)}
+          onRetry={() => {
+            pendingBinds.current = [];
+            setStatus("starting");
+            setError(t(locale, "reconnecting"));
+            reconnectRef.current();
+          }}
+        />
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <div className="min-h-0 flex-1">
             <ChatPane
@@ -847,17 +866,18 @@ export function App() {
         </div>
       </div>
       {sessionsOpen ? (
-        <SessionModal
+        <SessionDrawer
           locale={locale}
+          width={drawerWidth}
           sessions={sessions}
           selectedId={selected.id}
           runningIds={runningIds}
-          onSelect={(id) => {
-            switchSession(id);
-            setSessionsOpen(false);
-          }}
+          onWidth={(next) => setDrawerWidth(clampSessionDrawerWidth(next))}
+          onSelect={switchSession}
           onRename={renameSession}
           onDelete={deleteSession}
+          onPin={pinSession}
+          onNewSession={newSession}
           onClose={() => setSessionsOpen(false)}
         />
       ) : null}
