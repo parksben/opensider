@@ -1,5 +1,6 @@
 import type { AgentModel, AttachmentItem, CurrentPage } from "@shared";
-import { ArrowDown, AtSign, Check, ChevronDown, Copy, GitFork, LoaderCircle, MessageSquareMore, MousePointer2, Paperclip, RefreshCw, Send, Shield, Square, X, Zap } from "lucide-react";
+import { ArrowDown, AtSign, Check, ChevronDown, Copy, GitFork, LoaderCircle, MousePointer2, Paperclip, RefreshCw, Send, Shield, Square, X, Zap } from "lucide-react";
+import logoUrl from "../../../assets/icon.svg?url";
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import type { ChatMessage, ChatPart, TodoItem } from "../chat-types";
 import { useComposerHistory } from "../composer-history";
@@ -298,7 +299,7 @@ export function ChatPane({
     <div className="relative flex h-full min-h-0 flex-col">
       {messages.length === 0 ? (
         <div className="flex min-h-0 w-full flex-1 flex-col items-center justify-center">
-          <MessageSquareMore size={120} strokeWidth={1} className="text-[var(--muted)] opacity-25" />
+          <img src={logoUrl} alt="" width={120} height={120} aria-hidden="true" className="opacity-20" />
           <p className="mt-4 w-full px-[min(200px,max(1rem,calc(50%-12rem)))] text-center text-[12px] leading-relaxed text-[var(--muted)] opacity-55">
             {label("emptyHint")}
           </p>
