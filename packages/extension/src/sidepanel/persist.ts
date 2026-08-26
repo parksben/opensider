@@ -59,6 +59,18 @@ export type PersistedState = {
   sessions: Array<Omit<Session, "messages"> & { messages: StoredMessage[] }>;
 };
 
+export function settleFinishedContent(content: ChatPart[]): ChatPart[] {
+  let changed = false;
+  const next = content.map((part) => {
+    if (part.type !== "tool-call") return part;
+    const status = part.status ?? "pending";
+    if (status !== "pending" && status !== "in_progress") return part;
+    changed = true;
+    return { ...part, status: "completed" as const };
+  });
+  return changed ? next : content;
+}
+
 function truncatePart(part: ChatPart): ChatPart {
   if (part.type !== "tool-call") return part;
   const result = part.result;
@@ -175,10 +187,15 @@ export function repairCollapsedMessages(messages: ChatMessage[]): ChatMessage[] 
 
 export function hydrateSession(session: PersistedState["sessions"][number]): Session {
   const messages = repairCollapsedMessages(
-    session.messages.map((message) => ({
-      ...message,
-      createdAt: new Date(message.createdAt),
-    })),
+    session.messages.map((message) => {
+      const next = {
+        ...message,
+        createdAt: new Date(message.createdAt),
+      };
+      if (next.role !== "assistant" || next.durationMs == null) return next;
+      const content = settleFinishedContent(next.content);
+      return content === next.content ? next : { ...next, content };
+    }),
   );
   const title = nextSessionTitle(session, messages);
   return {

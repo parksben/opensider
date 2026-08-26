@@ -538,7 +538,7 @@ const MessageThread = memo(function MessageThread({
               locale={locale}
               content={message.content}
               page={page}
-              live={isRunning && message.id === messages[messages.length - 1]?.id}
+              live={isRunning && message.durationMs == null && message.id === messages[messages.length - 1]?.id}
               durationMs={message.durationMs}
             />
           </MessageFrame>

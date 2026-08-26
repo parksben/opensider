@@ -32,6 +32,7 @@ import {
   emptySession,
   loadState,
   saveState,
+  settleFinishedContent,
   isPlaceholderTitle,
   nextSessionTitle,
   titleFromMessages,
@@ -215,7 +216,7 @@ export function App() {
       const last = messages[messages.length - 1];
       if (last?.role !== "assistant" || last.durationMs != null) return messages;
       if (last.createdAt.getTime() < started - 2000) return messages;
-      return [...messages.slice(0, -1), { ...last, durationMs }];
+      return [...messages.slice(0, -1), { ...last, durationMs, content: settleFinishedContent(last.content) }];
     });
   };
 
