@@ -36,10 +36,6 @@ export function isAgentMode(value: unknown): value is AgentMode {
   return value === "ask" || value === "auto";
 }
 
-export function nextAgentMode(mode: AgentMode): AgentMode {
-  return mode === "ask" ? "auto" : "ask";
-}
-
 export function autoPermissionOptionId(
   options: Array<{ optionId: string; name: string; kind?: string }>,
 ): string | undefined {

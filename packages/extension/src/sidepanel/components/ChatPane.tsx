@@ -4,7 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type
 import type { ChatMessage, ChatPart } from "../chat-types";
 import type { Locale } from "../i18n";
 import { t } from "../i18n";
-import { nextAgentMode, textOf, type AgentMode } from "../persist";
+import { textOf, type AgentMode } from "../persist";
 import { useRipple } from "../useRipple";
 import { IconButton } from "./IconButton";
 import { Markdown } from "./Markdown";
@@ -358,17 +358,7 @@ export function ChatPane({
               >
                 {pickingFiles || savingPaste ? <LoaderCircle size={14} className="animate-spin" /> : <Plus size={14} />}
               </IconButton>
-              <IconButton
-                side="top"
-                label={agentMode === "auto" ? label("modeAutoHint") : label("modeAskHint")}
-                onClick={() => onAgentMode(nextAgentMode(agentMode))}
-                className={`flex h-7 items-center gap-1 rounded-full px-2 text-[11px] hover:bg-[var(--hover)] ${
-                  agentMode === "auto" ? "text-[var(--brass)]" : "text-[var(--muted)]"
-                }`}
-              >
-                {agentMode === "auto" ? <Zap size={14} /> : <Shield size={14} />}
-                <span>{agentMode === "auto" ? label("modeAuto") : label("modeAsk")}</span>
-              </IconButton>
+              <ModeSelect locale={locale} mode={agentMode} onMode={onAgentMode} />
             </div>
             <div className="flex min-w-0 items-center justify-end gap-1.5">
               {showModelPicker ? (
@@ -450,6 +440,95 @@ function kindIcon(kind: AttachmentKind) {
   if (kind === "folder") return Folder;
   if (kind === "element") return MousePointer2;
   return File;
+}
+
+function ModeSelect({
+  locale,
+  mode,
+  onMode,
+}: {
+  locale: Locale;
+  mode: AgentMode;
+  onMode: (mode: AgentMode) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const { ripples, spawn, done } = useRipple();
+  const current = mode === "auto" ? { icon: Zap, name: t(locale, "modeAuto") } : { icon: Shield, name: t(locale, "modeAsk") };
+  const CurrentIcon = current.icon;
+  const options: Array<{ id: AgentMode; icon: typeof Shield; name: string; hint: string }> = [
+    { id: "ask", icon: Shield, name: t(locale, "modeAsk"), hint: t(locale, "modeAskHint") },
+    { id: "auto", icon: Zap, name: t(locale, "modeAuto"), hint: t(locale, "modeAutoHint") },
+  ];
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointer = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <div ref={rootRef} className="relative">
+      <button
+        type="button"
+        title={current.name}
+        aria-label={current.name}
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+        onPointerDown={(event) => spawn(event)}
+        className={`relative flex h-7 items-center gap-1 overflow-hidden rounded-full px-2 text-[11px] hover:bg-[var(--hover)] ${
+          mode === "auto" ? "text-[var(--brass)]" : "text-[var(--muted)]"
+        }`}
+      >
+        <CurrentIcon size={14} />
+        <span>{current.name}</span>
+        {ripples.map((ripple) => (
+          <span
+            key={ripple.id}
+            className="cs-ripple"
+            style={{ left: ripple.x, top: ripple.y, width: ripple.size, height: ripple.size }}
+            onAnimationEnd={() => done(ripple.id)}
+          />
+        ))}
+      </button>
+      {open ? (
+        <div className="absolute bottom-full left-0 z-30 mb-1.5 w-52 overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--panel)] py-1 shadow-xl">
+          {options.map((option) => {
+            const Icon = option.icon;
+            const active = option.id === mode;
+            return (
+              <RippleButton
+                key={option.id}
+                onClick={() => {
+                  onMode(option.id);
+                  setOpen(false);
+                }}
+                className={`flex w-full flex-col items-start gap-0.5 px-2.5 py-1.5 text-left ${
+                  active ? "bg-[var(--hover-strong)]" : ""
+                }`}
+              >
+                <span className={`flex items-center gap-1.5 text-[12px] ${active ? "text-[var(--text)]" : "text-[var(--muted)]"}`}>
+                  <Icon size={14} />
+                  {option.name}
+                </span>
+                <span className="pl-[22px] text-[11px] leading-snug text-[var(--muted)]">{option.hint}</span>
+              </RippleButton>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 function matchesModel(model: AgentModel, query: string): boolean {
