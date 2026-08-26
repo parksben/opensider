@@ -1,7 +1,7 @@
 import type { AgentModel, AttachmentItem, AttachmentKind, CurrentPage } from "@shared";
 import { ArrowDown, Check, ChevronDown, Copy, File, Folder, GitFork, Image, LoaderCircle, MessageSquareMore, MousePointer2, Plus, RefreshCw, Send, Shield, Square, X, Zap } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from "react";
-import type { ChatMessage, ChatPart } from "../chat-types";
+import type { ChatMessage, ChatPart, TodoItem } from "../chat-types";
 import type { Locale } from "../i18n";
 import { t } from "../i18n";
 import { textOf, type AgentMode } from "../persist";
@@ -10,6 +10,7 @@ import { IconButton } from "./IconButton";
 import { Markdown } from "./Markdown";
 import { RippleButton } from "./RippleButton";
 import { TextFold } from "./TextFold";
+import { TodoList } from "./TodoList";
 import { ToolCard } from "./ToolCard";
 
 const STICKY_PX = 96;
@@ -60,6 +61,7 @@ export function ChatPane({
   onAgentMode,
   page,
   hitl,
+  todos,
 }: {
   locale: Locale;
   sessionId: string;
@@ -83,6 +85,7 @@ export function ChatPane({
   agentMode: AgentMode;
   onAgentMode: (mode: AgentMode) => void;
   page?: CurrentPage;
+  todos?: TodoItem[];
 }) {
   const [draft, setDraft] = useState("");
   const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
@@ -295,6 +298,7 @@ export function ChatPane({
               </IconButton>
             </div>
           ) : null}
+        <TodoList locale={locale} todos={todos ?? []} />
         {hitl}
         <div
           className={`cs-composer rounded-xl bg-[var(--panel)] px-2 py-2 ${isRunning ? "is-running" : ""}`}

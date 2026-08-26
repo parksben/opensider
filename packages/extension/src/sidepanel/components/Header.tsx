@@ -1,7 +1,6 @@
 import { Globe, MessageCirclePlus, Monitor, Moon, MousePointerClick, PlugZap, RotateCw, Sun, Unplug } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { BrowserCommand, BrowserResult, CurrentPage } from "@shared";
-import type { TodoItem } from "../chat-types";
 import type { Locale } from "../i18n";
 import { t } from "../i18n";
 import { nextTheme, type ThemePreference } from "../theme";
@@ -12,7 +11,6 @@ export function Header({
   status,
   error,
   page,
-  todos,
   activity,
   sessionTitle,
   sessionsOpen,
@@ -26,7 +24,6 @@ export function Header({
   status: "starting" | "ready" | "error";
   error?: string;
   page?: CurrentPage;
-  todos: TodoItem[];
   activity?: { command: BrowserCommand; result?: BrowserResult };
   sessionTitle: string;
   sessionsOpen: boolean;
@@ -149,17 +146,6 @@ export function Header({
 
       {error && status !== "ready" ? (
         <p className="mt-2 text-[11.5px] leading-relaxed text-[var(--bad)]">{error}</p>
-      ) : null}
-
-      {todos.length > 0 ? (
-        <ol className="mt-2 space-y-1">
-          {todos.map((todo) => (
-            <li key={todo.id} className="flex items-start gap-2 text-[11.5px] text-[var(--muted)]">
-              <span className="mt-[2px] inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--brass)]" />
-              <span className={todo.status === "completed" ? "line-through opacity-60" : ""}>{todo.content}</span>
-            </li>
-          ))}
-        </ol>
       ) : null}
     </header>
   );

@@ -641,7 +641,6 @@ export function App() {
         status={status}
         error={error}
         page={page}
-        todos={selected.todos}
         activity={activity}
         sessionTitle={selected.title || t(locale, "untitled")}
         sessionsOpen={sessionsOpen}
@@ -688,6 +687,7 @@ export function App() {
                 });
               }}
               page={page}
+              todos={selected.todos}
               hitl={
                 <PermissionBar
                   locale={locale}
