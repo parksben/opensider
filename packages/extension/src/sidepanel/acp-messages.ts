@@ -1,5 +1,6 @@
 import type { BrowserCommand, BrowserResult } from "@shared";
 import type { ChatMessage, ChatPart, ToolPart, ToolStatus } from "./chat-types";
+import { withPrimaryArg } from "./tool-label";
 
 function id(): string {
   return crypto.randomUUID();
@@ -84,7 +85,7 @@ export function applyAcpUpdate(
   }
 
   if (kind === "tool_call") {
-    const tool: ToolPart = {
+    const tool = withPrimaryArg({
       type: "tool-call",
       toolCallId: String(update.toolCallId ?? id()),
       toolName: String(update.title ?? update.kind ?? "tool"),
@@ -92,7 +93,7 @@ export function applyAcpUpdate(
       result: update.rawOutput,
       status: (update.status as ToolStatus | undefined) ?? "pending",
       kind: update.kind ? String(update.kind) : undefined,
-    };
+    });
     const next = lastAssistant(messages, model);
     const message = next.messages[next.index];
     next.messages[next.index] = { ...message, content: [...message.content, tool] };
@@ -107,14 +108,14 @@ export function applyAcpUpdate(
     }
     const message = messages[found.messageIndex];
     const current = message.content[found.partIndex] as ToolPart;
-    const patched: ToolPart = {
+    const patched = withPrimaryArg({
       ...current,
       toolName: update.title ? String(update.title) : current.toolName,
       args: update.rawInput ?? update.input ?? current.args,
       result: update.rawOutput ?? update.content ?? current.result,
       status: (update.status as ToolStatus | undefined) ?? current.status,
       kind: update.kind ? String(update.kind) : current.kind,
-    };
+    });
     const copy = messages.slice();
     copy[found.messageIndex] = replacePart(message, found.partIndex, patched);
     return copy;
@@ -145,7 +146,7 @@ export function applyBrowserTool(
 ): ChatMessage[] {
   const toolCallId = `browser:${command.id}`;
   const found = findTool(messages, toolCallId);
-  const part: ToolPart = {
+  const part = withPrimaryArg({
     type: "tool-call",
     toolCallId,
     toolName: browserTitle(command),
@@ -153,16 +154,17 @@ export function applyBrowserTool(
     result: result ? (result.ok ? result.data ?? result.error : result.error) : undefined,
     status: result ? (result.ok ? "completed" : "failed") : "in_progress",
     kind: browserKind(command.method),
-  };
+  });
   if (found) {
     const message = messages[found.messageIndex];
     const current = message.content[found.partIndex] as ToolPart;
-    const patched: ToolPart = {
+    const patched = withPrimaryArg({
       ...part,
       toolName: command.args ? part.toolName : current.toolName,
       args: command.args ?? current.args,
       kind: current.kind ?? part.kind,
-    };
+      primaryArg: current.primaryArg,
+    });
     const copy = messages.slice();
     copy[found.messageIndex] = replacePart(message, found.partIndex, patched);
     return copy;

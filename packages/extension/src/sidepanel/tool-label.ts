@@ -1,4 +1,4 @@
-import type { ToolPart } from "./chat-types";
+import type { ChatPart, ToolPart } from "./chat-types";
 import type { Locale, MessageKey } from "./i18n";
 import { t } from "./i18n";
 
@@ -114,7 +114,7 @@ function firstString(record: Record<string, unknown>, keys: string[]): string {
   return "";
 }
 
-export function toolPrimaryArg(part: ToolPart): string {
+function derivePrimaryArg(part: ToolPart): string {
   if (typeof part.args === "string" && part.args.trim()) return part.args.trim();
   const record = asRecord(part.args);
   if (!record) return fromTitle(part.toolName?.trim() ?? "")?.detail ?? "";
@@ -123,10 +123,45 @@ export function toolPrimaryArg(part: ToolPart): string {
   if (fromKind) return fromKind;
   const fromCommon = firstString(record, COMMON_ARG_KEYS);
   if (fromCommon) return fromCommon;
+  const locations = record.locations;
+  if (Array.isArray(locations)) {
+    for (const item of locations) {
+      const nested = asRecord(item);
+      const found = nested ? firstString(nested, COMMON_ARG_KEYS) : "";
+      if (found) return found;
+    }
+  }
   for (const value of Object.values(record)) {
     if (typeof value === "string" && value.trim()) return value.trim();
+    const nested = asRecord(value);
+    if (!nested) continue;
+    const found = firstString(nested, COMMON_ARG_KEYS);
+    if (found) return found;
   }
   return fromTitle(part.toolName?.trim() ?? "")?.detail ?? "";
+}
+
+export function toolPrimaryArg(part: ToolPart): string {
+  if (part.primaryArg?.trim()) return part.primaryArg.trim();
+  return derivePrimaryArg(part);
+}
+
+export function withPrimaryArg(part: ToolPart): ToolPart {
+  const derived = derivePrimaryArg(part);
+  const primary = derived || part.primaryArg?.trim() || "";
+  if (!primary || part.primaryArg === primary) return part;
+  return { ...part, primaryArg: primary };
+}
+
+export function stampToolParts(content: ChatPart[]): ChatPart[] {
+  let changed = false;
+  const next = content.map((part) => {
+    if (part.type !== "tool-call") return part;
+    const stamped = withPrimaryArg(part);
+    if (stamped !== part) changed = true;
+    return stamped;
+  });
+  return changed ? next : content;
 }
 
 export function toolLiveHeadline(locale: Locale, part: ToolPart): string {

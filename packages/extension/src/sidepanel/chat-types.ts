@@ -14,6 +14,7 @@ export type ToolPart = {
   result?: unknown;
   status?: ToolStatus;
   kind?: string;
+  primaryArg?: string;
 };
 
 export type ChatPart = TextPart | ReasoningPart | ToolPart;

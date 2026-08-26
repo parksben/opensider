@@ -1,6 +1,7 @@
 import type { AttachmentItem } from "@shared";
 import type { ChatMessage, ChatPart, TodoItem } from "./chat-types";
 import { readCachedLocale, type Locale } from "./i18n";
+import { stampToolParts } from "./tool-label";
 import { isThemePreference, readCachedTheme, type ThemePreference } from "./theme";
 
 export const STATE_KEY = "cursor-sidebar/state";
@@ -60,8 +61,9 @@ export type PersistedState = {
 };
 
 export function settleFinishedContent(content: ChatPart[]): ChatPart[] {
-  let changed = false;
-  const next = content.map((part) => {
+  const stamped = stampToolParts(content);
+  let changed = stamped !== content;
+  const next = stamped.map((part) => {
     if (part.type !== "tool-call") return part;
     const status = part.status ?? "pending";
     if (status !== "pending" && status !== "in_progress") return part;
@@ -192,9 +194,10 @@ export function hydrateSession(session: PersistedState["sessions"][number]): Ses
         ...message,
         createdAt: new Date(message.createdAt),
       };
-      if (next.role !== "assistant" || next.durationMs == null) return next;
-      const content = settleFinishedContent(next.content);
-      return content === next.content ? next : { ...next, content };
+      const stamped = stampToolParts(next.content);
+      const settled =
+        next.role === "assistant" && next.durationMs != null ? settleFinishedContent(stamped) : stamped;
+      return settled === next.content ? next : { ...next, content: settled };
     }),
   );
   const title = nextSessionTitle(session, messages);
