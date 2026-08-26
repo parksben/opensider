@@ -33,9 +33,14 @@ export const PAGE_METHODS = [
   "reload",
   "screenshot",
   "screenshotElement",
+  "listTabs",
+  "switchTab",
+  "openTab",
+  "moveTabsToWindow",
 ] as const;
 
 export const TAB_METHODS = ["navigate", "goBack", "goForward", "reload"] as const;
+export const WINDOW_METHODS = ["listTabs", "switchTab", "openTab", "moveTabsToWindow"] as const;
 export const CAPTURE_METHODS = ["screenshot", "screenshotElement"] as const;
 
 export const ACTION_METHODS = [
@@ -55,13 +60,21 @@ export const ACTION_METHODS = [
   "goBack",
   "goForward",
   "reload",
+  "switchTab",
+  "openTab",
+  "moveTabsToWindow",
 ] as const;
 
 export type PageMethod = (typeof PAGE_METHODS)[number];
 export type TabMethod = (typeof TAB_METHODS)[number];
+export type WindowMethod = (typeof WINDOW_METHODS)[number];
 
 export function isTabMethod(method: PageMethod): method is TabMethod {
   return (TAB_METHODS as readonly string[]).includes(method);
+}
+
+export function isWindowMethod(method: PageMethod): method is WindowMethod {
+  return (WINDOW_METHODS as readonly string[]).includes(method);
 }
 
 export function isActionMethod(method: PageMethod): boolean {
@@ -86,6 +99,32 @@ export type BrowserCommandArgs = {
   checked?: boolean;
   width?: number;
   height?: number;
+  tabId?: number;
+  tabIds?: number[];
+  windowId?: number;
+};
+
+export type TabRecord = {
+  tabId: number;
+  windowId: number;
+  index: number;
+  title: string;
+  url: string;
+  active: boolean;
+  pinned: boolean;
+  restricted: boolean;
+};
+
+export type WindowRecord = {
+  windowId: number;
+  focused: boolean;
+  state?: string;
+  tabs: TabRecord[];
+};
+
+export type TabsSnapshot = {
+  updatedAt: string;
+  windows: WindowRecord[];
 };
 
 export type ClipRect = {
@@ -140,6 +179,10 @@ export const TOOL_CATALOG: Array<{
   { name: "reload", kind: "act", args: "", summary: "reload tab" },
   { name: "screenshot", kind: "vision", args: "x?,y?,width?,height?", summary: "JPEG of the visible viewport or a region" },
   { name: "screenshotElement", kind: "vision", args: "selector|text, nth?", summary: "JPEG of one element; Read the file at data.path" },
+  { name: "listTabs", kind: "read", args: "", summary: "all normal windows and tabs; same shape as browser/tabs.json" },
+  { name: "switchTab", kind: "act", args: "tabId", summary: "activate a tab and focus its window" },
+  { name: "openTab", kind: "act", args: "url, windowId?", summary: "open http(s) in a new tab; optional windowId" },
+  { name: "moveTabsToWindow", kind: "act", args: "tabIds, windowId?", summary: "pull tabs into a new window, or into windowId" },
 ];
 
 export type CurrentPage = {
@@ -203,6 +246,7 @@ export type ExtToHost =
   | { type: "page.pick.cancel"; requestId?: string }
   | { type: "model.set"; modelId: string; sessionId?: string }
   | { type: "page.update"; page: CurrentPage }
+  | { type: "tabs.update"; snapshot: TabsSnapshot }
   | { type: "browser.result"; result: BrowserResult }
   | {
       type: "permission.reply";

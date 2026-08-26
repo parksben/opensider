@@ -370,6 +370,10 @@ async function invoke(method: PageMethod, args: BrowserCommandArgs): Promise<unk
     case "reload":
     case "screenshot":
     case "screenshotElement":
+    case "listTabs":
+    case "switchTab":
+    case "openTab":
+    case "moveTabsToWindow":
       throw new Error(`${method} is handled by the extension service worker`);
     default:
       throw new Error(`unknown method ${method}`);

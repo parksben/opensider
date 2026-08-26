@@ -125,7 +125,7 @@ export function applyAcpUpdate(
 
 function browserKind(method: string): string {
   if (/^(get|query|exists|listTabs)/.test(method)) return "read";
-  if (/^(navigate|goBack|goForward|reload|switchTab|moveTabsToWindow)/.test(method)) return "fetch";
+  if (/^(navigate|goBack|goForward|reload|switchTab|openTab|moveTabsToWindow)/.test(method)) return "fetch";
   return "other";
 }
 

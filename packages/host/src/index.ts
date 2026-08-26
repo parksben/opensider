@@ -14,7 +14,7 @@ import { defaultAgentPath } from "./paths.ts";
 import { pickLocalPaths } from "./pick.ts";
 import { savePastedJpeg } from "./save.ts";
 import { watchCommands, writeCommandResult } from "./watch.ts";
-import { ensureWorkspace, readSessionId, WORKSPACE_DIR, writeCurrentPage, writeSessionId } from "./workspace.ts";
+import { ensureWorkspace, readSessionId, WORKSPACE_DIR, writeCurrentPage, writeSessionId, writeTabsSnapshot } from "./workspace.ts";
 
 log("node host starting");
 ensureWorkspace();
@@ -189,6 +189,10 @@ async function handleExt(msg: ExtToHost): Promise<void> {
     if (msg.type === "page.update") {
       writeCurrentPage(msg.page);
       send({ type: "page", page: msg.page });
+      return;
+    }
+    if (msg.type === "tabs.update") {
+      writeTabsSnapshot(msg.snapshot);
       return;
     }
     if (msg.type === "browser.result") {

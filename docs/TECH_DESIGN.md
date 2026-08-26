@@ -101,7 +101,7 @@ Cursor Agent 在 ACP 模式下仍然自己执行本地工具（读文件、写�
 
 `chrome.tabs.captureVisibleTab` 得到 JPEG，按 devicePixelRatio 裁切，最长边压到约 1280，质量约 0.72，保证 Native Messaging 帧小于 1MB。Host 把 base64 落成 `browser/screenshots/<id>.jpg`，结果 JSON 只保留绝对路径、宽高、mime。Agent 用已有 Read 打开该图片做视觉分析。v1 不拼整页长截图。
 
-标签级操作由 Service Worker 执行：`navigate`（仅 http(s)）、`goBack`、`goForward`、`reload`。窗口级也走 SW（不经内容脚本）：`listTabs`、`switchTab`（`args.tabId` + 聚焦窗口）、`moveTabsToWindow`（`args.tabIds`，可选 `args.windowId`；没有则 `chrome.windows.create` 再 `tabs.move`）。完成后刷新 `current.json`，并重写 `browser/tabs.json`。manifest 加 `windows`。
+标签级操作由 Service Worker 执行：`navigate`（仅 http(s)）、`goBack`、`goForward`、`reload`。窗口级也走 SW（不经内容脚本）：`listTabs`、`switchTab`（`args.tabId` + 聚焦窗口）、`openTab`（`args.url` 新开标签，仅 http(s)）、`moveTabsToWindow`（`args.tabIds`，可选 `args.windowId`；没有则 `chrome.windows.create` 再 `tabs.move`）。完成后刷新 `current.json`，并重写 `browser/tabs.json`。manifest 加 `windows`。
 
 ### Native Host
 

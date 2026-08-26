@@ -10,6 +10,7 @@ export const SCREENSHOTS_DIR = join(BROWSER_DIR, "screenshots");
 export const PASTED_DIR = join(BROWSER_DIR, "pasted");
 export const TOOLS_PATH = join(BROWSER_DIR, "tools.json");
 export const CURRENT_PAGE_PATH = join(BROWSER_DIR, "current.json");
+export const TABS_PATH = join(BROWSER_DIR, "tabs.json");
 export const SNAPSHOT_PATH = join(BROWSER_DIR, "snapshot.md");
 export const AGENTS_MD_PATH = join(WORKSPACE_DIR, "AGENTS.md");
 export const SESSION_PATH = join(SIDEBAR_HOME, "session.json");

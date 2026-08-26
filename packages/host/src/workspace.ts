@@ -1,5 +1,5 @@
 import { mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
-import { TOOL_CATALOG, type CurrentPage } from "../../shared/src/protocol.ts";
+import { TOOL_CATALOG, type CurrentPage, type TabsSnapshot } from "../../shared/src/protocol.ts";
 import {
   AGENTS_MD_PATH,
   BROWSER_DIR,
@@ -11,6 +11,7 @@ import {
   SESSION_PATH,
   SIDEBAR_HOME,
   SNAPSHOT_PATH,
+  TABS_PATH,
   TOOLS_PATH,
   WORKSPACE_DIR,
 } from "./paths.ts";
@@ -25,7 +26,15 @@ Read \`browser/tools.json\` now. It lists every page method available in this se
 
 When the user talks about "this page", "the current tab", or the site they are looking at, read \`browser/current.json\` first. \`browser/snapshot.md\` is the latest readable extract of that page.
 
-The current tab also changes while you work. Re-read those files after navigation or if the user says they changed pages.
+The current tab also changes while you work. Re-read those files after navigation, after \`switchTab\`, or if the user says they changed pages.
+
+## Open tabs and windows
+
+Read \`browser/tabs.json\` for every normal Chrome window and tab (\`tabId\`, \`windowId\`, \`index\`, \`title\`, \`url\`, \`active\`, \`pinned\`, \`restricted\`). It updates when tabs move. Call \`listTabs\` if you need the same list in a command result.
+
+Do not invent tab IDs. To switch tabs, call \`switchTab\` with \`args.tabId\` from that file — it also focuses the tab's window. To open a site without replacing the current page, call \`openTab\` with \`args.url\` (http(s) only). To pull one or more tabs into their own window, call \`moveTabsToWindow\` with \`args.tabIds\`. Pass \`args.windowId\` to move them into an existing window instead of creating one.
+
+\`restricted: true\` means chrome://, chrome-extension://, or the Web Store. You may \`switchTab\` to those, but do not run page read / act / screenshot on them.
 
 If the user message includes \`[Picked page elements]\`, those CSS selectors were chosen by the user in the sidebar picker. Inspect or operate on that exact node with page tools and \`args.selector\`. Do not treat those lines as file paths.
 
@@ -51,6 +60,7 @@ Find elements with \`args.selector\` (CSS), \`args.text\` (visible text contains
 - \`getAttribute\` — requires \`args.attribute\`
 - \`getValue\` — input/textarea/select value
 - \`exists\` — whether a match exists
+- \`listTabs\` — all normal windows and tabs (same shape as \`browser/tabs.json\`)
 
 ### Act
 
@@ -66,6 +76,9 @@ Find elements with \`args.selector\` (CSS), \`args.text\` (visible text contains
 - \`waitFor\` — poll until the element exists (\`args.timeoutMs\`, max 20000)
 - \`navigate\` — \`args.url\`, http(s) only
 - \`goBack\` / \`goForward\` / \`reload\`
+- \`switchTab\` — \`args.tabId\`
+- \`openTab\` — \`args.url\` (http(s)), optional \`args.windowId\`
+- \`moveTabsToWindow\` — \`args.tabIds\`, optional \`args.windowId\`
 
 ### Vision
 
@@ -76,7 +89,7 @@ Use screenshots when the DOM text is not enough to understand layout, pick a tar
 
 The result JSON has \`data.path\` (absolute file). **Read that JPEG** to inspect the page visually. Do not expect base64 in the JSON.
 
-Do not invent other methods. Do not try to run arbitrary JavaScript. After acting, re-read \`browser/current.json\` if the page may have changed.
+Do not invent other methods. Do not try to run arbitrary JavaScript. After acting, re-read \`browser/current.json\` and \`browser/tabs.json\` if the page or tab set may have changed.
 `;
 
 export function ensureWorkspace(): void {
@@ -90,7 +103,7 @@ export function ensureWorkspace(): void {
     TOOLS_PATH,
     `${JSON.stringify(
       {
-        version: 2,
+        version: 3,
         transport: "workspace-files",
         commandsDir: "browser/commands",
         resultsDir: "browser/results",
@@ -116,6 +129,11 @@ export function writeCurrentPage(page: CurrentPage): void {
     ? `# ${page.title}\n\n${page.url}\n\n${page.readable.trim()}\n`
     : `# ${page.title}\n\n${page.url}\n\n_No readable extract available._\n`;
   writeFileSync(SNAPSHOT_PATH, body);
+}
+
+export function writeTabsSnapshot(snapshot: TabsSnapshot): void {
+  mkdirSync(BROWSER_DIR, { recursive: true });
+  writeFileSync(TABS_PATH, `${JSON.stringify(snapshot, null, 2)}\n`);
 }
 
 export function readSessionId(): string | undefined {

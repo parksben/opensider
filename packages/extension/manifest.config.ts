@@ -36,6 +36,6 @@ export default defineManifest({
       run_at: "document_idle",
     },
   ],
-  permissions: ["sidePanel", "nativeMessaging", "tabs", "storage", "scripting"],
+  permissions: ["sidePanel", "nativeMessaging", "tabs", "windows", "storage", "scripting"],
   host_permissions: ["http://*/*", "https://*/*"],
 });

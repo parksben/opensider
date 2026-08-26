@@ -1,5 +1,15 @@
-import type { AttachmentItem, BrowserCommand, BrowserResult, ClipRect, CurrentPage, ExtToHost, HostToExt } from "@shared";
-import { HOST_NAME, isActionMethod, isCaptureMethod, isTabMethod } from "@shared";
+import type {
+  AttachmentItem,
+  BrowserCommand,
+  BrowserResult,
+  ClipRect,
+  CurrentPage,
+  ExtToHost,
+  HostToExt,
+  TabRecord,
+  TabsSnapshot,
+} from "@shared";
+import { HOST_NAME, isActionMethod, isCaptureMethod, isTabMethod, isWindowMethod } from "@shared";
 import { captureViewport } from "./screenshot";
 
 let nativePort: chrome.runtime.Port | null = null;
@@ -87,6 +97,7 @@ function connectNative(force = false): void {
 
   try {
     nativePort.postMessage({ type: "hello" } satisfies ExtToHost);
+    void publishTabs();
   } catch (error) {
     nativePort = null;
     broadcast({
@@ -205,7 +216,145 @@ async function runCapture(tab: { id?: number; windowId?: number }, command: Brow
   return { id: command.id, ok: true, method: command.method, data: payload };
 }
 
+function toTabRecord(tab: chrome.tabs.Tab): TabRecord | undefined {
+  if (tab.id == null || tab.windowId == null) return undefined;
+  return {
+    tabId: tab.id,
+    windowId: tab.windowId,
+    index: tab.index,
+    title: tab.title ?? "",
+    url: tab.url ?? "",
+    active: Boolean(tab.active),
+    pinned: Boolean(tab.pinned),
+    restricted: isRestrictedUrl(tab.url),
+  };
+}
+
+async function collectTabsSnapshot(): Promise<TabsSnapshot> {
+  const windows = await chrome.windows.getAll({ populate: true, windowTypes: ["normal"] });
+  return {
+    updatedAt: new Date().toISOString(),
+    windows: windows
+      .filter((win) => win.id != null)
+      .map((win) => ({
+        windowId: win.id as number,
+        focused: Boolean(win.focused),
+        state: win.state,
+        tabs: (win.tabs ?? []).map(toTabRecord).filter((tab): tab is TabRecord => tab != null),
+      })),
+  };
+}
+
+let tabsTimer = 0;
+function scheduleTabsPublish(): void {
+  clearTimeout(tabsTimer);
+  tabsTimer = setTimeout(() => void publishTabs(), 250) as unknown as number;
+}
+
+async function publishTabs(): Promise<void> {
+  try {
+    sendNative({ type: "tabs.update", snapshot: await collectTabsSnapshot() });
+  } catch {
+    // host may be down
+  }
+}
+
+function commandTabIds(args?: BrowserCommand["args"]): number[] {
+  if (Array.isArray(args?.tabIds) && args.tabIds.length > 0) {
+    return args.tabIds.filter((id) => Number.isInteger(id) && id > 0);
+  }
+  if (args?.tabId != null && Number.isInteger(args.tabId) && args.tabId > 0) return [args.tabId];
+  return [];
+}
+
+function httpUrl(raw: string | undefined, base?: string): URL | undefined {
+  if (!raw) return undefined;
+  try {
+    const parsed = new URL(raw, base);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return undefined;
+    return parsed;
+  } catch {
+    return undefined;
+  }
+}
+
+async function runWindowMethod(command: BrowserCommand): Promise<BrowserResult> {
+  if (command.method === "listTabs") {
+    return { id: command.id, ok: true, method: command.method, data: await collectTabsSnapshot() };
+  }
+
+  if (command.method === "switchTab") {
+    const tabId = command.args?.tabId;
+    if (tabId == null || !Number.isInteger(tabId)) return fail(command, "switchTab requires args.tabId");
+    const tab = await chrome.tabs.update(tabId, { active: true });
+    if (tab.windowId != null) await chrome.windows.update(tab.windowId, { focused: true });
+    return {
+      id: command.id,
+      ok: true,
+      method: command.method,
+      data: { tabId, windowId: tab.windowId, ...(await collectTabsSnapshot()) },
+    };
+  }
+
+  if (command.method === "openTab") {
+    const parsed = httpUrl(command.args?.url);
+    if (!parsed) return fail(command, "openTab requires args.url as http(s)");
+    const created = await chrome.tabs.create({
+      url: parsed.toString(),
+      windowId: command.args?.windowId,
+      active: true,
+    });
+    if (created.id == null) return fail(command, "could not open tab");
+    if (created.windowId != null) await chrome.windows.update(created.windowId, { focused: true });
+    await waitTabComplete(created.id, Math.min(command.args?.timeoutMs ?? 15_000, 20_000)).catch(() => undefined);
+    return {
+      id: command.id,
+      ok: true,
+      method: command.method,
+      data: { tabId: created.id, windowId: created.windowId, url: parsed.toString(), ...(await collectTabsSnapshot()) },
+    };
+  }
+
+  const ids = commandTabIds(command.args);
+  if (ids.length === 0) return fail(command, "moveTabsToWindow requires args.tabIds or args.tabId");
+  const [first, ...rest] = ids;
+  let windowId = command.args?.windowId;
+  if (windowId == null) {
+    const created = await chrome.windows.create({ tabId: first, focused: true, type: "normal" });
+    windowId = created.id;
+    if (windowId == null) return fail(command, "could not create window");
+  } else {
+    await chrome.tabs.move(first, { windowId, index: -1 });
+    await chrome.windows.update(windowId, { focused: true });
+    await chrome.tabs.update(first, { active: true });
+  }
+  if (rest.length > 0) await chrome.tabs.move(rest, { windowId, index: -1 });
+  return {
+    id: command.id,
+    ok: true,
+    method: command.method,
+    data: { tabId: first, windowId, tabIds: ids, ...(await collectTabsSnapshot()) },
+  };
+}
+
 async function dispatchCommand(command: BrowserCommand): Promise<void> {
+  if (isWindowMethod(command.method)) {
+    let result: BrowserResult;
+    try {
+      result = await runWindowMethod(command);
+    } catch (error) {
+      result = fail(command, String(error));
+    }
+    sendNative({ type: "browser.result", result });
+    broadcast({ type: "browser.result", result });
+    if (result.ok) {
+      void publishTabs();
+      const tabId = (result.data as { tabId?: number } | undefined)?.tabId;
+      if (command.method !== "listTabs" && tabId != null) void requestPage(tabId);
+    }
+    return;
+  }
+
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   if (!tab?.id) {
     const result = fail(command, "No active tab");
@@ -237,6 +386,7 @@ async function dispatchCommand(command: BrowserCommand): Promise<void> {
   broadcast({ type: "browser.result", result });
   if (result.ok && isActionMethod(command.method)) {
     void requestPage(tab.id);
+    void publishTabs();
   }
 }
 
@@ -411,11 +561,23 @@ connectNative();
 
 chrome.tabs.onActivated.addListener((info) => {
   void requestPage(info.tabId);
+  scheduleTabsPublish();
 });
 
 chrome.tabs.onUpdated.addListener((tabId, change, tab) => {
-  if (!tab.active) return;
-  if (change.status === "complete" || change.favIconUrl) {
+  if (tab.active && (change.status === "complete" || change.favIconUrl)) {
     void requestPage(tabId);
   }
+  if (change.status || change.title || change.url || change.favIconUrl || change.pinned) {
+    scheduleTabsPublish();
+  }
 });
+
+chrome.tabs.onCreated.addListener(scheduleTabsPublish);
+chrome.tabs.onRemoved.addListener(scheduleTabsPublish);
+chrome.tabs.onMoved.addListener(scheduleTabsPublish);
+chrome.tabs.onAttached.addListener(scheduleTabsPublish);
+chrome.tabs.onDetached.addListener(scheduleTabsPublish);
+chrome.windows.onCreated.addListener(scheduleTabsPublish);
+chrome.windows.onRemoved.addListener(scheduleTabsPublish);
+chrome.windows.onFocusChanged.addListener(scheduleTabsPublish);
