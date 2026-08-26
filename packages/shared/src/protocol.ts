@@ -242,7 +242,6 @@ export type ExtToHost =
   | { type: "session.fork"; sessionId: string }
   | { type: "fs.pick"; requestId: string }
   | { type: "fs.save"; requestId: string; name?: string; imageBase64: string; mime: "image/jpeg" }
-  | { type: "fs.preview"; requestId: string; path: string }
   | { type: "page.pick"; requestId: string; hint?: string }
   | { type: "page.pick.cancel"; requestId?: string }
   | { type: "model.set"; modelId: string; sessionId?: string }
@@ -278,14 +277,6 @@ export type HostToExt =
       type: "fs.saved";
       requestId: string;
       items: AttachmentItem[];
-      error?: string;
-    }
-  | {
-      type: "fs.preview";
-      requestId: string;
-      path: string;
-      mime?: string;
-      imageBase64?: string;
       error?: string;
     }
   | { type: "models"; models: AgentModel[]; currentId: string }

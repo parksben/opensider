@@ -84,8 +84,6 @@ export function App() {
   const selectedModelRef = useRef(selectedModelId);
   const agentModeRef = useRef(agentMode);
   const pickWaiters = useRef(new Map<string, (items: AttachmentItem[]) => void>());
-  const previewWaiters = useRef(new Map<string, (result: { src?: string; error?: string }) => void>());
-  const previewCache = useRef(new Map<string, string>());
   const appliedModelRef = useRef("");
   const elementPickId = useRef("");
   const runningIdsRef = useRef<Set<string>>(new Set());
@@ -301,15 +299,6 @@ export function App() {
       } else {
         setSelectedModelId(autoId || msg.currentId || incoming[0]?.id || "");
       }
-      return;
-    }
-    if (msg.type === "fs.preview") {
-      const waiter = previewWaiters.current.get(msg.requestId);
-      previewWaiters.current.delete(msg.requestId);
-      const src =
-        msg.mime && msg.imageBase64 ? `data:${msg.mime};base64,${msg.imageBase64}` : undefined;
-      if (src && msg.path) previewCache.current.set(msg.path, src);
-      waiter?.({ src, error: msg.error });
       return;
     }
     if (msg.type === "fs.picked" || msg.type === "fs.saved" || msg.type === "page.picked") {
@@ -619,25 +608,6 @@ export function App() {
     if (prev) flushQueue(prev.sessionId);
   };
 
-  const onPreviewImage = (path: string) =>
-    new Promise<string>((resolve, reject) => {
-      const cached = previewCache.current.get(path);
-      if (cached) {
-        resolve(cached);
-        return;
-      }
-      if (statusRef.current !== "ready") {
-        reject(new Error(t(localeRef.current, "previewImageFailed")));
-        return;
-      }
-      const requestId = crypto.randomUUID();
-      previewWaiters.current.set(requestId, (result) => {
-        if (result.src) resolve(result.src);
-        else reject(new Error(result.error || t(localeRef.current, "previewImageFailed")));
-      });
-      sendRef.current({ type: "fs.preview", requestId, path });
-    });
-
   const onPickAttachments = () =>
     new Promise<AttachmentItem[]>((resolve) => {
       if (statusRef.current !== "ready") {
@@ -938,7 +908,6 @@ export function App() {
               onCancel={onCancel}
               onFork={forkFromMessage}
               onRegenerate={regenerateFromMessage}
-              onPreviewImage={onPreviewImage}
               onPickAttachments={onPickAttachments}
               onPasteImages={onPasteImages}
               onPickElement={onPickElement}

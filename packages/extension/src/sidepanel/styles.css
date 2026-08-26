@@ -220,6 +220,16 @@ input {
   }
 }
 
+.cs-preview-spin {
+  animation: cs-preview-spin 0.7s linear infinite;
+}
+
+@keyframes cs-preview-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .cs-composer.is-running::before {
     animation: none;

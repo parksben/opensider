@@ -1,23 +1,25 @@
-import { LoaderCircle, X } from "lucide-react";
-import { useEffect } from "react";
+import { LoaderCircle } from "lucide-react";
+import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { toFileUrl } from "../file-url";
 import type { Locale } from "../i18n";
 import { t } from "../i18n";
-import { IconButton } from "./IconButton";
 
 export function ImagePreview({
   locale,
   name,
-  src,
-  error,
+  path,
   onClose,
 }: {
   locale: Locale;
   name: string;
-  src?: string;
-  error?: boolean;
+  path: string;
   onClose: () => void;
 }) {
+  const src = toFileUrl(path);
+  const [ready, setReady] = useState(false);
+  const [failed, setFailed] = useState(!src);
+
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -37,28 +39,19 @@ export function ImagePreview({
       onClick={onClose}
       className="fixed inset-0 z-[90] flex items-center justify-center bg-[var(--overlay)] backdrop-blur-[2px]"
     >
-      <IconButton
-        side="bottom"
-        label={t(locale, "closePreview")}
-        onClick={(event) => {
-          event.stopPropagation();
-          onClose();
-        }}
-        className="absolute top-3 right-3 flex h-8 w-8 items-center justify-center rounded-full text-[var(--text)] hover:bg-[var(--hover)]"
-      >
-        <X size={16} />
-      </IconButton>
-      {error ? (
+      {failed ? (
         <p className="max-w-[80vw] px-4 text-center text-[13px] text-[var(--text)]">{t(locale, "previewImageFailed")}</p>
-      ) : src ? (
-        <img
-          src={src}
-          alt={name}
-          onClick={(event) => event.stopPropagation()}
-          className="max-h-[100vh] max-w-[80vw] bg-transparent object-contain"
-        />
       ) : (
-        <LoaderCircle size={22} className="animate-spin text-[var(--muted)]" />
+        <>
+          <img
+            src={src}
+            alt={name}
+            onLoad={() => setReady(true)}
+            onError={() => setFailed(true)}
+            className={`max-h-[100vh] max-w-[80vw] bg-transparent object-contain ${ready ? "" : "hidden"}`}
+          />
+          {ready ? null : <LoaderCircle size={28} strokeWidth={2} className="cs-preview-spin text-[var(--text)]" />}
+        </>
       )}
     </div>,
     document.body,

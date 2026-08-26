@@ -48,7 +48,6 @@ export function ChatPane({
   onCancel,
   onFork,
   onRegenerate,
-  onPreviewImage,
   onPickAttachments,
   onPasteImages,
   onPickElement,
@@ -77,7 +76,6 @@ export function ChatPane({
   onDeleteQueued: (id: string) => void;
   onSendQueuedNow: (id: string) => void;
   onEditingQueued: (id?: string) => void;
-  onPreviewImage: (path: string) => Promise<string>;
   onRevise: (messageId: string, text: string, attachments: AttachmentItem[]) => void;
   onCancel: () => void;
   onFork: (messageId: string) => void;
@@ -108,8 +106,7 @@ export function ChatPane({
   const editingRef = useRef<string | undefined>(undefined);
   const editingQueueRef = useRef<string | undefined>(undefined);
   const onEditingQueuedRef = useRef(onEditingQueued);
-  const onPreviewImageRef = useRef(onPreviewImage);
-  const [preview, setPreview] = useState<{ name: string; path: string; src?: string; error?: boolean }>();
+  const [preview, setPreview] = useState<{ name: string; path: string }>();
   const [awayFromBottom, setAwayFromBottom] = useState(false);
   const startEditRef = useRef<(message: ChatMessage) => void>(() => {});
   const onStartEdit = useCallback((message: ChatMessage) => {
@@ -118,7 +115,6 @@ export function ChatPane({
   editingRef.current = editingId;
   editingQueueRef.current = editingQueueId;
   onEditingQueuedRef.current = onEditingQueued;
-  onPreviewImageRef.current = onPreviewImage;
   const label = (key: Parameters<typeof t>[1]) => t(locale, key);
   const canSend = Boolean(composerHasContent(draft) || attachments.length);
   const locking = pickingFiles || pickingElement || savingPaste;
@@ -202,14 +198,6 @@ export function ChatPane({
   const openPreview = useCallback((item: AttachmentItem) => {
     if (item.kind !== "image") return;
     setPreview({ name: item.name, path: item.path });
-    void onPreviewImageRef.current(item.path).then(
-      (src) => {
-        setPreview((current) => (current?.path === item.path ? { ...current, src } : current));
-      },
-      () => {
-        setPreview((current) => (current?.path === item.path ? { ...current, error: true } : current));
-      },
-    );
   }, []);
 
   const startQueueEdit = (item: QueuedMessage) => {
@@ -502,8 +490,7 @@ export function ChatPane({
         <ImagePreview
           locale={locale}
           name={preview.name}
-          src={preview.src}
-          error={preview.error}
+          path={preview.path}
           onClose={() => setPreview(undefined)}
         />
       ) : null}
