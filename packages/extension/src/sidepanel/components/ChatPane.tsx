@@ -818,6 +818,23 @@ function replyMarkdown(content: ChatPart[]): string {
     .trim();
 }
 
+async function writeClipboard(text: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    const field = document.createElement("textarea");
+    field.value = text;
+    field.setAttribute("readonly", "");
+    field.style.position = "fixed";
+    field.style.left = "-9999px";
+    document.body.appendChild(field);
+    field.select();
+    const ok = document.execCommand("copy");
+    field.remove();
+    if (!ok) throw new Error("copy failed");
+  }
+}
+
 function MessageFrame({
   locale,
   locked,
@@ -840,12 +857,15 @@ function MessageFrame({
   children: ReactNode;
 }) {
   const [copied, setCopied] = useState(false);
+  const copiedTimer = useRef<number>(0);
+  useEffect(() => () => window.clearTimeout(copiedTimer.current), []);
   const copyReply = async () => {
     if (!markdown) return;
     try {
-      await navigator.clipboard.writeText(markdown);
+      await writeClipboard(markdown);
       setCopied(true);
-      window.setTimeout(() => setCopied(false), 1500);
+      window.clearTimeout(copiedTimer.current);
+      copiedTimer.current = window.setTimeout(() => setCopied(false), 1500);
     } catch {
       setCopied(false);
     }
@@ -854,7 +874,11 @@ function MessageFrame({
     <div className={`group/msg relative ${className}`}>
       {children}
       {hideActions ? null : (
-        <div className="mt-1 flex items-center justify-between gap-2 opacity-0 transition-opacity group-hover/msg:opacity-100">
+        <div
+          className={`mt-1 flex items-center justify-between gap-2 transition-opacity ${
+            copied ? "opacity-100" : "opacity-0 group-hover/msg:opacity-100"
+          }`}
+        >
           {modelLabel ? (
             <span className="min-w-0 truncate text-[11px] text-[var(--muted)]">
               {t(locale, "generatedBy").replace("{name}", modelLabel)}
@@ -867,7 +891,9 @@ function MessageFrame({
               label={copied ? t(locale, "copiedReply") : t(locale, "copyReply")}
               disabled={locked || !markdown}
               onClick={() => void copyReply()}
-              className="rounded p-1 text-[var(--muted)] hover:text-[var(--text)] disabled:opacity-40"
+              className={`rounded p-1 disabled:opacity-40 ${
+                copied ? "text-[var(--ok)]" : "text-[var(--muted)] hover:text-[var(--text)]"
+              }`}
             >
               {copied ? <Check size={12} /> : <Copy size={12} />}
             </IconButton>
