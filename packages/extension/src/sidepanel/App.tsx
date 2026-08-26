@@ -297,6 +297,12 @@ export function App() {
     if (msg.type === "update") {
       const localId = localIdForAcp(msg.sessionId);
       if (!localId) return;
+      if (!runningIdsRef.current.has(localId)) {
+        const session = sessionsRef.current.find((item) => item.id === localId);
+        const last = session?.messages[session.messages.length - 1];
+        const live = last?.role === "assistant" && last.durationMs == null;
+        if (!live) return;
+      }
       const modelId = selectedModelRef.current;
       const modelName =
         models.find((item) => item.id === modelId)?.name ||

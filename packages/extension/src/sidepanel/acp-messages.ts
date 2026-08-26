@@ -9,7 +9,7 @@ function lastAssistant(
   model?: { modelId?: string; modelName?: string },
 ): { messages: ChatMessage[]; index: number } {
   const last = messages[messages.length - 1];
-  if (last?.role === "assistant") {
+  if (last?.role === "assistant" && last.durationMs == null) {
     const hasOwn = Boolean(last.modelId || last.modelName);
     const hasIncoming = Boolean(model?.modelId || model?.modelName);
     const stamped = hasOwn || !hasIncoming ? last : { ...last, modelId: model?.modelId, modelName: model?.modelName };
@@ -61,19 +61,7 @@ export function applyAcpUpdate(
   const kind = String(update.sessionUpdate ?? "");
 
   if (kind === "user_message_chunk") {
-    const text = String((update.content as { text?: string } | undefined)?.text ?? "");
-    const last = messages[messages.length - 1];
-    if (last?.role === "user") {
-      const part = last.content[0];
-      if (part?.type === "text") {
-        return [...messages.slice(0, -1), { ...last, content: [{ type: "text", text: part.text + text }] }];
-      }
-    }
-    if (last?.role === "assistant") return messages;
-    return [
-      ...messages,
-      { id: id(), role: "user", content: [{ type: "text", text }], createdAt: new Date() },
-    ];
+    return messages;
   }
 
   if (kind === "agent_message_chunk") {

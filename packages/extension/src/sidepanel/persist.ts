@@ -87,13 +87,104 @@ export function serializeSession(session: Session): PersistedState["sessions"][n
   };
 }
 
+const CURRENT_TAB_PREFIX = /^\[Current tab\] [^\n]*(?:\n\n)?/;
+const FORK_WRAP_PREFIX = /^\[Forked thread context[^\]]*\]\s*(?:\n\n)?/;
+
+export function stripEnvPrompt(text: string): string {
+  return text.replace(CURRENT_TAB_PREFIX, "").replace(FORK_WRAP_PREFIX, "").trimStart();
+}
+
+function looksCollapsed(text: string): boolean {
+  return (
+    CURRENT_TAB_PREFIX.test(text) ||
+    FORK_WRAP_PREFIX.test(text) ||
+    (/\n\nUser: /.test(text) && /\n(?:\n)?Assistant: /.test(text))
+  );
+}
+
+function trySplitForkTranscript(text: string): ChatMessage[] | undefined {
+  const body = stripEnvPrompt(text);
+  const chunks = body.split(/\n\n(?=(?:User|Assistant): )/);
+  if (chunks.length < 2) return undefined;
+  const messages: ChatMessage[] = [];
+  const now = Date.now();
+  for (const [index, chunk] of chunks.entries()) {
+    const match = chunk.match(/^(User|Assistant):\s*/);
+    if (!match) {
+      const leftover = chunk.trim();
+      if (!leftover) continue;
+      const last = messages[messages.length - 1];
+      if (last?.role === "assistant") {
+        messages.push({
+          id: crypto.randomUUID(),
+          role: "user",
+          content: [{ type: "text", text: leftover }],
+          createdAt: new Date(now + index),
+        });
+      } else if (last) {
+        const part = last.content[0];
+        if (part?.type === "text") {
+          messages[messages.length - 1] = {
+            ...last,
+            content: [{ type: "text", text: `${part.text}\n\n${leftover}` }],
+          };
+        }
+      }
+      continue;
+    }
+    messages.push({
+      id: crypto.randomUUID(),
+      role: match[1] === "User" ? "user" : "assistant",
+      content: [{ type: "text", text: chunk.slice(match[0].length).trim() }],
+      createdAt: new Date(now + index),
+    });
+  }
+  return messages.length >= 2 ? messages : undefined;
+}
+
+export function repairCollapsedMessages(messages: ChatMessage[]): ChatMessage[] {
+  if (messages.length === 0) return messages;
+  const firstUser = messages.find((message) => message.role === "user");
+  const raw = firstUser ? textOf(firstUser.content) : "";
+  if (firstUser && looksCollapsed(raw)) {
+    const split = trySplitForkTranscript(raw);
+    if (split) {
+      const rest = messages.filter((message) => message.id !== firstUser.id);
+      const lastSplit = split[split.length - 1];
+      const lastRest = rest[rest.length - 1];
+      if (lastRest?.role === "assistant" && lastSplit?.role === "assistant") {
+        return [...split.slice(0, -1), lastRest];
+      }
+      if (lastRest?.role === "assistant" && lastSplit?.role === "user") {
+        return [...split, lastRest];
+      }
+      return split;
+    }
+  }
+  return messages.map((message) => {
+    if (message.role !== "user") return message;
+    const rawText = textOf(message.content);
+    const stripped = stripEnvPrompt(rawText);
+    if (!stripped || stripped === rawText) return message;
+    return {
+      ...message,
+      content: [{ type: "text", text: stripped }, ...message.content.filter((part) => part.type !== "text")],
+    };
+  });
+}
+
 export function hydrateSession(session: PersistedState["sessions"][number]): Session {
-  return {
-    ...session,
-    messages: session.messages.map((message) => ({
+  const messages = repairCollapsedMessages(
+    session.messages.map((message) => ({
       ...message,
       createdAt: new Date(message.createdAt),
     })),
+  );
+  const title = session.titleManual ? session.title : titleFromMessages(messages) || session.title;
+  return {
+    ...session,
+    title: stripEnvPrompt(title) || title,
+    messages,
     todos: session.todos ?? [],
   };
 }
@@ -113,11 +204,13 @@ export function emptySession(partial?: Partial<Session>): Session {
 
 export function titleFromMessages(messages: ChatMessage[]): string {
   const first = messages.find((message) => message.role === "user");
-  const text = first?.content
-    .filter((part) => part.type === "text")
-    .map((part) => part.text)
-    .join("")
-    .trim();
+  const text = stripEnvPrompt(
+    first?.content
+      .filter((part) => part.type === "text")
+      .map((part) => part.text)
+      .join("")
+      .trim() ?? "",
+  );
   if (!text) {
     const firstFile = first?.attachments?.[0]?.name;
     return firstFile ? (firstFile.length > 42 ? `${firstFile.slice(0, 41)}…` : firstFile) : "";

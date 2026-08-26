@@ -310,7 +310,13 @@ Host 是 ACP Client，`clientCapabilities` 关闭 `fs` / `terminal`，让 Agent 
 | `cursor/task` | 子任务卡片 |
 | `session/prompt` 结束 | 对应本地会话移出 `runningIds`，给**该会话**末尾 assistant 打上 `durationMs` |
 
-消息状态由 Side Panel 持有并持久化。Host 重启后 `session/load` 只负责恢复 Agent 侧上下文；Panel 以本地存储的消息为准，不因为 `replay` 清空界面。
+消息状态由 Side Panel 持有并持久化。Host 重启后 `session/load` 只负责恢复 Agent 侧上下文；Panel 以本地存储的消息为准，不因为 `replay` 清空界面。`session/load` / `session/new` / `session/fork` 以及为了切会话而做的 `session/load` 期间，Agent 会把历史当 `session/update` 回放（常常是一整段带 `[Current tab]` 前缀的 `user_message_chunk`）。三层拦住：
+
+1. Host 在该进程 `binding` 且未 `prompting` 时丢掉这些 update（`config_option_update` 除外）。
+2. 侧栏只在该本地会话 `runningIds` 有一轮、或末尾 assistant 还没有 `durationMs`（重连赶上直播）时才 `applyAcpUpdate`。`user_message_chunk` 一律忽略：气泡是发送时自己加的。
+3. `lastAssistant` 只续写没有 `durationMs` 的末尾 assistant，避免回放把多轮 Agent 正文叠进上一条。
+
+`hydrateSession` 对已落盘的坍缩记录跑 `repairCollapsedMessages`：去掉 `[Current tab]` / fork 包装，能按 `User:` / `Assistant:` 切开的就拆回多轮。展示和 `titleFromMessages` 走 `stripEnvPrompt`。
 
 ## 扩展身份
 

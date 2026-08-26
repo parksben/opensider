@@ -22,6 +22,7 @@ ensureWorkspace();
 type AcpRuntime = {
   client: AcpClient;
   prompting: boolean;
+  binding: boolean;
 };
 
 const agentPath = defaultAgentPath();
@@ -70,9 +71,16 @@ function enqueueSessionOp<T>(work: () => Promise<T>): Promise<T> {
   return run;
 }
 
-function createClient(): AcpClient {
+function attachClient(runtime: AcpRuntime): void {
   const client = new AcpClient(agentPath, WORKSPACE_DIR, {
     onUpdate: (update, sessionId) => {
+      if (runtime.binding && !runtime.prompting) {
+        if (update.sessionUpdate === "config_option_update") {
+          catalog = mergeCatalog(catalog, catalogFromConfigOptions(update.configOptions as ConfigOption[]));
+          sendModels();
+        }
+        return;
+      }
       const sid = sessionId ?? client.getSessionId();
       if (update.sessionUpdate === "config_option_update") {
         catalog = mergeCatalog(catalog, catalogFromConfigOptions(update.configOptions as ConfigOption[]));
@@ -81,25 +89,36 @@ function createClient(): AcpClient {
       send({ type: "update", update, sessionId: sid });
     },
     onPermission: (id, params, sessionId) => {
+      if (runtime.binding && !runtime.prompting) return;
       rpcClients.set(id, client);
       send({ type: "permission", id, params, sessionId: sessionId ?? client.getSessionId() });
     },
     onCursor: (id, method, params, sessionId) => {
+      if (runtime.binding && !runtime.prompting) return;
       if (id !== undefined) rpcClients.set(id, client);
       send({ type: "cursor", id, method, params, sessionId: sessionId ?? client.getSessionId() });
     },
   });
-  return client;
+  runtime.client = client;
 }
 
 async function spawnRuntime(): Promise<AcpRuntime> {
-  const client = createClient();
-  client.start();
-  await client.initialize();
-  const runtime: AcpRuntime = { client, prompting: false };
+  const runtime: AcpRuntime = { client: undefined as unknown as AcpClient, prompting: false, binding: false };
+  attachClient(runtime);
+  runtime.client.start();
+  await runtime.client.initialize();
   runtimes.push(runtime);
   log(`acp runtime ready count=${runtimes.length}`);
   return runtime;
+}
+
+async function withBinding<T>(runtime: AcpRuntime, work: () => Promise<T>): Promise<T> {
+  runtime.binding = true;
+  try {
+    return await work();
+  } finally {
+    runtime.binding = false;
+  }
 }
 
 function runtimeBySession(sessionId: string | undefined): AcpRuntime | undefined {
@@ -116,7 +135,7 @@ async function acquireRuntime(preferSessionId?: string): Promise<AcpRuntime> {
 }
 
 async function openAndAnnounce(runtime: AcpRuntime, open: () => Promise<SessionOpen>): Promise<SessionOpen> {
-  const opened = await open();
+  const opened = await withBinding(runtime, open);
   writeSessionId(opened.sessionId);
   absorbSessionOptions(opened);
   await applyPendingModel(runtime);
@@ -253,7 +272,7 @@ async function handleExt(msg: ExtToHost): Promise<void> {
         return;
       }
       if (msg.sessionId && runtime.client.getSessionId() !== msg.sessionId) {
-        await runtime.client.useSession(msg.sessionId);
+        await withBinding(runtime, () => runtime.client.useSession(msg.sessionId));
       }
       try {
         await applyModel(runtime, msg.modelId);
@@ -274,7 +293,7 @@ async function handleExt(msg: ExtToHost): Promise<void> {
           }
           const next = owned ?? (await acquireRuntime(msg.sessionId));
           if (next.client.getSessionId() !== msg.sessionId) {
-            const opened = await next.client.useSession(msg.sessionId);
+            const opened = await withBinding(next, () => next.client.useSession(msg.sessionId));
             writeSessionId(opened.sessionId);
             if (opened.created) {
               send({
@@ -290,7 +309,7 @@ async function handleExt(msg: ExtToHost): Promise<void> {
           return next;
         }
         const next = await acquireRuntime();
-        const opened = await next.client.createSession();
+        const opened = await withBinding(next, () => next.client.createSession());
         writeSessionId(opened.sessionId);
         absorbSessionOptions(opened);
         send({
@@ -349,7 +368,7 @@ async function main(): Promise<void> {
   try {
     const runtime = await spawnRuntime();
     await refreshModels();
-    const opened = await runtime.client.openSession(readSessionId());
+    const opened = await withBinding(runtime, () => runtime.client.openSession(readSessionId()));
     writeSessionId(opened.sessionId);
     absorbSessionOptions(opened);
     await applyPendingModel(runtime);

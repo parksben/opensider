@@ -4,7 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type
 import type { ChatMessage, ChatPart, TodoItem } from "../chat-types";
 import type { Locale } from "../i18n";
 import { t } from "../i18n";
-import { textOf, type AgentMode } from "../persist";
+import { stripEnvPrompt, textOf, type AgentMode } from "../persist";
 import { useRipple } from "../useRipple";
 import { IconButton } from "./IconButton";
 import { Markdown } from "./Markdown";
@@ -224,7 +224,7 @@ export function ChatPane({
     if (isRunning || pickingElement) return;
     if (!editingId) setStash({ draft, attachments });
     setEditingId(message.id);
-    setDraft(textOf(message.content));
+    setDraft(stripEnvPrompt(textOf(message.content)));
     setAttachments(message.attachments ? [...message.attachments] : []);
     requestAnimationFrame(() => {
       inputRef.current?.focus();
@@ -347,11 +347,13 @@ export function ChatPane({
                         : "cursor-pointer hover:bg-[var(--user-hover)]"
                     }`}
                   >
-                    {textOf(message.content) ? <div>{textOf(message.content)}</div> : null}
+                    {stripEnvPrompt(textOf(message.content)) ? (
+                      <div>{stripEnvPrompt(textOf(message.content))}</div>
+                    ) : null}
                     {message.attachments?.length ? (
                       <AttachmentChips
                         items={message.attachments}
-                        className={textOf(message.content) ? "mt-2" : ""}
+                        className={stripEnvPrompt(textOf(message.content)) ? "mt-2" : ""}
                       />
                     ) : null}
                   </button>
