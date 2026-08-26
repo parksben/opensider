@@ -1,4 +1,4 @@
-import { GitFork, MessageSquarePlus, Pencil, Pin, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, GitFork, MessageSquarePlus, Pencil, Pin, Trash2 } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import type { Locale, MessageKey } from "../i18n";
 import { t } from "../i18n";
@@ -73,6 +73,7 @@ export function SessionDrawer({
   const [highlightId, setHighlightId] = useState(selectedId);
   const [editingId, setEditingId] = useState<string>();
   const [dragging, setDragging] = useState(false);
+  const [collapsed, setCollapsed] = useState<ReadonlySet<SessionGroupId>>(() => new Set());
   const filterRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const rootRef = useRef<HTMLElement>(null);
@@ -82,7 +83,19 @@ export function SessionDrawer({
     return groupSessions(sessions.filter((session) => matchesSession(session, query, locale)));
   }, [locale, query, sessions]);
 
-  const visible = useMemo(() => groups.flatMap((group) => group.sessions), [groups]);
+  const visible = useMemo(
+    () => groups.flatMap((group) => (collapsed.has(group.id) ? [] : group.sessions)),
+    [collapsed, groups],
+  );
+
+  const toggleGroup = (id: SessionGroupId) => {
+    setCollapsed((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   const moveHighlight = (delta: number) => {
     if (visible.length === 0) return;
@@ -249,21 +262,37 @@ export function SessionDrawer({
         </RippleButton>
       </div>
       <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto pb-2">
-        {visible.length === 0 ? (
+        {groups.length === 0 ? (
           <p className="px-2.5 py-1.5 text-[12px] text-[var(--muted)]">{label("noMatchingSessions")}</p>
         ) : (
-          groups.map((group) => (
+          groups.map((group) => {
+            const open = !collapsed.has(group.id);
+            return (
             <section key={group.id} className="pt-1">
-              <header className="flex items-center justify-between gap-2 px-2.5 pb-0.5 pt-1.5">
-                <h2
-                  className={`text-[10px] font-medium tracking-[0.08em] text-[var(--muted)] ${
-                    locale === "en" ? "uppercase" : ""
-                  }`}
-                >
-                  {label(GROUP_KEYS[group.id])}
-                </h2>
+              <button
+                type="button"
+                aria-expanded={open}
+                aria-label={`${label(GROUP_KEYS[group.id])}. ${open ? label("collapseSessionGroup") : label("expandSessionGroup")}`}
+                onClick={() => toggleGroup(group.id)}
+                className="flex w-full items-center justify-between gap-2 px-2.5 pb-1.5 pt-2.5 text-left hover:bg-[var(--hover)]"
+              >
+                <span className="flex min-w-0 items-center gap-0.5">
+                  <span
+                    className={`text-[10px] font-medium tracking-[0.08em] text-[var(--muted)] ${
+                      locale === "en" ? "uppercase" : ""
+                    }`}
+                  >
+                    {label(GROUP_KEYS[group.id])}
+                  </span>
+                  {open ? (
+                    <ChevronDown size={10} className="shrink-0 text-[var(--muted)]" />
+                  ) : (
+                    <ChevronRight size={10} className="shrink-0 text-[var(--muted)]" />
+                  )}
+                </span>
                 <span className="text-[10px] tabular-nums text-[var(--muted)]">{group.sessions.length}</span>
-              </header>
+              </button>
+              {open ? (
               <ul>
                 {group.sessions.map((session) => {
                   const active = session.id === selectedId;
@@ -350,8 +379,10 @@ export function SessionDrawer({
                   );
                 })}
               </ul>
+              ) : null}
             </section>
-          ))
+            );
+          })
         )}
       </div>
     </aside>
