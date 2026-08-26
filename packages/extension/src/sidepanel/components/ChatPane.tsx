@@ -109,11 +109,6 @@ function fitComposer(node: HTMLTextAreaElement | null): void {
   scrollComposerCaret(node);
 }
 
-function distanceFromBottom(node: HTMLElement): number {
-  if (node.scrollTop >= 0) return 0;
-  return Math.abs(node.scrollTop);
-}
-
 function stickToBottom(node: HTMLElement | null, smooth = false): void {
   if (!node) return;
   node.scrollTo({ top: 0, behavior: smooth ? "smooth" : "auto" });
@@ -189,6 +184,7 @@ export function ChatPane({
   const [stash, setStash] = useState<{ draft: string; attachments: AttachmentItem[] } | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const threadEndRef = useRef<HTMLDivElement>(null);
   const editingRef = useRef<string | undefined>(undefined);
   const [awayFromBottom, setAwayFromBottom] = useState(false);
   editingRef.current = editingId;
@@ -256,11 +252,20 @@ export function ChatPane({
     requestAnimationFrame(() => stickToBottom(listRef.current));
   }, [sessionId]);
 
-  const onThreadScroll = () => {
-    const node = listRef.current;
-    if (!node) return;
-    setAwayFromBottom(distanceFromBottom(node) > STICKY_PX);
-  };
+  useEffect(() => {
+    const root = listRef.current;
+    const target = threadEndRef.current;
+    if (!root || !target) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry) return;
+        setAwayFromBottom(!entry.isIntersecting);
+      },
+      { root, rootMargin: `0px 0px ${STICKY_PX}px 0px`, threshold: 0 },
+    );
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [sessionId, messages.length]);
 
   const addAttachments = async () => {
     if (busy) return;
@@ -324,7 +329,6 @@ export function ChatPane({
       ) : (
         <div
           ref={listRef}
-          onScroll={onThreadScroll}
           className="cs-thread flex min-h-0 flex-1 flex-col-reverse overflow-y-auto px-3"
         >
           <div aria-hidden className="min-h-0 flex-1" />
@@ -378,6 +382,7 @@ export function ChatPane({
                 </MessageFrame>
               );
             })}
+            <div ref={threadEndRef} aria-hidden className="h-px w-full" />
           </div>
         </div>
       )}
