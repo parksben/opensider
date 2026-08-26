@@ -39,11 +39,13 @@ export function TextFold({
         ref={toggleRef}
         type="button"
         onClick={toggle}
-        className="group/fold flex w-full items-center bg-transparent py-0.5 text-left"
+        className="group/fold flex w-full min-w-0 items-center bg-transparent py-0.5 text-left"
       >
-        <span className="inline-flex min-w-0 items-center gap-1 text-[12px] text-[var(--muted)]">
+        <span className="flex min-w-0 w-full flex-nowrap items-center gap-1 text-[12px] text-[var(--muted)]">
           {icon}
-          <span className="min-w-0 truncate">{label}</span>
+          <span className="min-w-0 flex-1 truncate whitespace-nowrap" title={label}>
+            {label}
+          </span>
           {open ? (
             <ChevronDown size={12} className="shrink-0" />
           ) : (

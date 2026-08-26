@@ -1,7 +1,7 @@
 import { FilePenLine, Globe, LoaderCircle, Search, SquareTerminal, Wrench } from "lucide-react";
 import type { ToolPart } from "../chat-types";
 import type { Locale } from "../i18n";
-import { toolTitle } from "../tool-label";
+import { toolLiveHeadline, toolTitle } from "../tool-label";
 import { TextFold } from "./TextFold";
 
 const kindIcon = {
@@ -31,8 +31,8 @@ export function ToolCard({ locale, part }: { locale: Locale; part: ToolPart }) {
   const status = part.status ?? "pending";
   const result = preview(part.result);
   const args = preview(part.args);
-  const title = toolTitle(locale, part);
   const running = status === "pending" || status === "in_progress";
+  const title = running ? toolLiveHeadline(locale, part) : toolTitle(locale, part);
 
   return (
     <TextFold

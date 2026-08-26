@@ -29,6 +29,7 @@ const TITLE_PREFIXES: Array<[RegExp, MessageKey]> = [
   [/^run(?:ning)?\s+/i, "toolExecute"],
   [/^shell\s*/i, "toolExecute"],
   [/^execut(?:e|ed|ing)\s+/i, "toolExecute"],
+  [/^web\s*fetch(?:ing)?\s*/i, "toolFetch"],
   [/^fetch(?:ed)?\s+/i, "toolFetch"],
   [/^think(?:ing)?\s*/i, "toolThink"],
 ];
@@ -60,4 +61,76 @@ export function toolTitle(locale: Locale, part: ToolPart): string {
   if (detail) return `${label} ${detail}`;
   if (raw && raw.toLowerCase() !== "tool") return raw;
   return label;
+}
+
+export function toolLabel(locale: Locale, part: ToolPart): string {
+  const raw = part.toolName?.trim() ?? "";
+  const parsed = fromTitle(raw);
+  const key = parsed?.key ?? kindKey(part.kind) ?? "toolOther";
+  if (key === "toolOther" && raw && raw.toLowerCase() !== "tool") {
+    return raw.split(/\s+/)[0] || raw;
+  }
+  return t(locale, key);
+}
+
+const KIND_ARG_KEYS: Record<string, string[]> = {
+  fetch: ["url", "uri", "href", "endpoint"],
+  read: ["path", "file", "filePath", "file_path", "targetFile", "target_file", "filename"],
+  edit: ["path", "file", "filePath", "file_path", "targetFile", "target_file", "filename"],
+  delete: ["path", "file", "filePath", "file_path", "targetFile", "filename"],
+  move: ["path", "from", "source", "file", "filePath"],
+  search: ["query", "pattern", "q", "search", "glob"],
+  execute: ["command", "cmd", "script"],
+};
+
+const COMMON_ARG_KEYS = [
+  "url",
+  "uri",
+  "href",
+  "path",
+  "file",
+  "filePath",
+  "file_path",
+  "targetFile",
+  "target_file",
+  "command",
+  "cmd",
+  "query",
+  "pattern",
+  "selector",
+];
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  return value as Record<string, unknown>;
+}
+
+function firstString(record: Record<string, unknown>, keys: string[]): string {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+    if (typeof value === "number" || typeof value === "boolean") return String(value);
+  }
+  return "";
+}
+
+export function toolPrimaryArg(part: ToolPart): string {
+  if (typeof part.args === "string" && part.args.trim()) return part.args.trim();
+  const record = asRecord(part.args);
+  if (!record) return fromTitle(part.toolName?.trim() ?? "")?.detail ?? "";
+  const kind = (part.kind ?? "").toLowerCase();
+  const fromKind = firstString(record, KIND_ARG_KEYS[kind] ?? []);
+  if (fromKind) return fromKind;
+  const fromCommon = firstString(record, COMMON_ARG_KEYS);
+  if (fromCommon) return fromCommon;
+  for (const value of Object.values(record)) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return fromTitle(part.toolName?.trim() ?? "")?.detail ?? "";
+}
+
+export function toolLiveHeadline(locale: Locale, part: ToolPart): string {
+  const name = toolLabel(locale, part);
+  const primary = toolPrimaryArg(part);
+  return primary ? `${name}：${primary}` : name;
 }
