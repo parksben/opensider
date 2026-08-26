@@ -1,4 +1,4 @@
-import { Globe, MessageCirclePlus, Monitor, Moon, MousePointerClick, PanelLeftClose, PlugZap, RotateCw, Sun, Unplug } from "lucide-react";
+import { Globe, MessageCirclePlus, Monitor, Moon, MousePointerClick, PlugZap, RotateCw, Sun, Unplug } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { BrowserCommand, BrowserResult, CurrentPage } from "@shared";
 import type { TodoItem } from "../chat-types";
@@ -38,7 +38,6 @@ export function Header({
 }) {
   const label = (key: Parameters<typeof t>[1]) => t(locale, key);
   const title = sessionTitle || label("untitled");
-  const ToggleIcon = sessionsOpen ? PanelLeftClose : MessageCirclePlus;
   const rowRef = useRef<HTMLDivElement>(null);
   const leftRef = useRef<HTMLDivElement>(null);
   const rightRef = useRef<HTMLDivElement>(null);
@@ -99,12 +98,12 @@ export function Header({
             </div>
             <IconButton
               ripple={false}
-              label={sessionsOpen ? label("collapseSessions") : label("expandSessions")}
+              label={label("expandSessions")}
               onClick={onToggleSessions}
               aria-expanded={sessionsOpen}
               className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-[var(--line)] text-[var(--text)]"
             >
-              <ToggleIcon size={14} />
+              <MessageCirclePlus size={14} />
             </IconButton>
           </div>
         </div>

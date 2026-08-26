@@ -16,7 +16,7 @@ import type { ChatMessage, PermissionRequest, PlanPrompt, QuestionPrompt, TodoIt
 import { ChatPane } from "./components/ChatPane";
 import { Header } from "./components/Header";
 import { PermissionBar } from "./components/PermissionBar";
-import { SessionDrawer } from "./components/SessionDrawer";
+import { SessionModal } from "./components/SessionModal";
 import type { Locale } from "./i18n";
 import { t } from "./i18n";
 import {
@@ -636,18 +636,6 @@ export function App() {
         }}
       />
       <div className="flex min-h-0 flex-1">
-        {sessionsOpen ? (
-          <SessionDrawer
-            locale={locale}
-            sessions={sessions}
-            selectedId={selected.id}
-            locked={isRunning}
-            onSelect={switchSession}
-            onNew={newSession}
-            onRename={renameSession}
-            onDelete={deleteSession}
-          />
-        ) : null}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <div className="min-h-0 flex-1">
             <ChatPane
@@ -710,6 +698,25 @@ export function App() {
           />
         </div>
       </div>
+      {sessionsOpen ? (
+        <SessionModal
+          locale={locale}
+          sessions={sessions}
+          selectedId={selected.id}
+          locked={isRunning}
+          onSelect={(id) => {
+            switchSession(id);
+            setSessionsOpen(false);
+          }}
+          onNew={() => {
+            newSession();
+            setSessionsOpen(false);
+          }}
+          onRename={renameSession}
+          onDelete={deleteSession}
+          onClose={() => setSessionsOpen(false)}
+        />
+      ) : null}
       {pickingElement ? (
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[var(--overlay)] px-5 backdrop-blur-md">
           <div className="flex max-w-[17rem] flex-col items-center gap-2.5 rounded-2xl border border-[var(--line)] bg-[var(--panel)]/92 px-5 py-4 text-center shadow-2xl">
