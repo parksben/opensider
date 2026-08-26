@@ -235,7 +235,7 @@ export function SessionDrawer({
           spellCheck={false}
           aria-label={label("filterSessions")}
           placeholder={label("filterSessions")}
-          className="cs-model-filter w-full min-w-0 bg-transparent py-1 text-[12px] text-[var(--text)] placeholder:text-[var(--muted)]"
+          className="cs-model-filter w-full min-w-0 bg-transparent py-3 text-[12px] text-[var(--text)] placeholder:text-[var(--muted)]"
           onChange={(event) => onFilterChange(event.target.value)}
         />
       </div>

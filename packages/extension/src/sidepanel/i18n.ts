@@ -179,7 +179,7 @@ const copy = {
     cancelEdit: "取消修改",
     sessions: "会话",
     newChat: "新会话",
-    filterSessions: "筛选...",
+    filterSessions: "筛选会话",
     noMatchingSessions: "没有匹配的会话",
     sessionGroupPinned: "置顶",
     sessionGroupToday: "今天",
