@@ -752,7 +752,6 @@ export function App() {
           locale={locale}
           status={status}
           error={error}
-          page={page}
           sessionTitle={selected.title}
           sessionsOpen={sessionsOpen}
           theme={theme}

@@ -1,6 +1,5 @@
-import { Check, Globe, Monitor, Moon, PanelRight, PanelRightClose, Pencil, RotateCw, Sun, Unplug } from "lucide-react";
+import { Check, Monitor, Moon, PanelRight, PanelRightClose, Pencil, RotateCw, Sun, Unplug } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { CurrentPage } from "@shared";
 import type { Locale } from "../i18n";
 import { t } from "../i18n";
 import { nextTheme, type ThemePreference } from "../theme";
@@ -10,7 +9,6 @@ export function Header({
   locale,
   status,
   error,
-  page,
   sessionTitle,
   sessionsOpen,
   theme,
@@ -23,7 +21,6 @@ export function Header({
   locale: Locale;
   status: "starting" | "ready" | "error";
   error?: string;
-  page?: CurrentPage;
   sessionTitle: string;
   sessionsOpen: boolean;
   theme: ThemePreference;
@@ -35,12 +32,8 @@ export function Header({
 }) {
   const label = (key: Parameters<typeof t>[1]) => t(locale, key);
   const title = sessionTitle.trim() || label("untitled");
-  const rowRef = useRef<HTMLDivElement>(null);
-  const leftRef = useRef<HTMLDivElement>(null);
-  const rightRef = useRef<HTMLDivElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
   const titleClusterRef = useRef<HTMLDivElement>(null);
-  const [titleMaxWidth, setTitleMaxWidth] = useState<number>();
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState(sessionTitle);
   const renamingRef = useRef(false);
@@ -60,27 +53,6 @@ export function Header({
     node?.select();
   }, [renaming]);
 
-  useLayoutEffect(() => {
-    const row = rowRef.current;
-    const left = leftRef.current;
-    const right = rightRef.current;
-    if (!row || !left || !right) return;
-    const update = () => {
-      const rowBox = row.getBoundingClientRect();
-      const leftBox = left.getBoundingClientRect();
-      const rightBox = right.getBoundingClientRect();
-      const center = rowBox.left + rowBox.width / 2;
-      const half = Math.min(center - leftBox.right - 32, rightBox.left - center - 32);
-      setTitleMaxWidth(Math.max(0, half * 2));
-    };
-    update();
-    const observer = new ResizeObserver(update);
-    observer.observe(row);
-    observer.observe(left);
-    observer.observe(right);
-    return () => observer.disconnect();
-  }, [title, locale, status, page?.favIconUrl, renaming]);
-
   const commitRename = () => {
     if (!renamingRef.current) return;
     renamingRef.current = false;
@@ -96,11 +68,11 @@ export function Header({
   };
 
   return (
-    <header className="border-b border-[var(--line)] bg-[color-mix(in_oklab,var(--panel)_88%,transparent)] px-3 py-2.5 backdrop-blur">
-      <div ref={rowRef} className="relative flex items-center justify-between gap-2">
-        <div ref={leftRef} className="flex items-center gap-1.5">
+    <header className="group/header border-b border-[var(--line)] bg-[color-mix(in_oklab,var(--panel)_88%,transparent)] px-3 py-2.5 backdrop-blur">
+      <div className="flex items-center gap-12">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5">
           {status !== "ready" ? (
-            <div className="flex items-center gap-1.5 rounded-full px-2 py-1 text-[11px]" title={error}>
+            <div className="flex shrink-0 items-center gap-1.5 rounded-full px-2 py-1 text-[11px]" title={error}>
               <Unplug size={13} className={status === "error" ? "text-[var(--bad)]" : "text-[var(--warn)]"} />
               <span className="text-[var(--muted)]">
                 {status === "starting" ? label("starting") : label("offline")}
@@ -111,19 +83,15 @@ export function Header({
             <button
               type="button"
               onClick={onRetry}
-              className="inline-flex items-center gap-1 rounded-full border border-[var(--line)] px-2 py-1 text-[11px] text-[var(--text)]"
+              className="inline-flex shrink-0 items-center gap-1 rounded-full border border-[var(--line)] px-2 py-1 text-[11px] text-[var(--text)]"
             >
               <RotateCw size={12} />
               {label("retry")}
             </button>
           ) : null}
-          <PageFavicon locale={locale} page={page} />
-        </div>
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <div
             ref={titleClusterRef}
-            className={`pointer-events-auto flex min-w-0 items-center gap-0.5 ${renaming ? "w-full" : ""}`}
-            style={{ maxWidth: titleMaxWidth, width: renaming ? titleMaxWidth : undefined }}
+            className={`flex min-w-0 items-center gap-0.5 ${renaming ? "flex-1" : ""}`}
           >
             {renaming ? (
               <input
@@ -162,13 +130,17 @@ export function Header({
               ripple={false}
               label={renaming ? label("saveTitle") : label("rename")}
               onClick={() => (renaming ? commitRename() : setRenaming(true))}
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--muted)] hover:text-[var(--text)]"
+              className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--muted)] hover:text-[var(--text)] ${
+                renaming
+                  ? "opacity-100"
+                  : "opacity-0 group-hover/header:opacity-100 focus-visible:opacity-100"
+              }`}
             >
               {renaming ? <Check size={14} /> : <Pencil size={14} />}
             </IconButton>
           </div>
         </div>
-        <div ref={rightRef} className="flex items-center justify-end gap-1.5">
+        <div className="flex shrink-0 items-center justify-end gap-1.5">
           <IconButton
             ripple={false}
             label={theme === "light" ? label("themeLight") : theme === "dark" ? label("themeDark") : label("themeSystem")}
@@ -201,35 +173,5 @@ export function Header({
         <p className="mt-2 text-[11.5px] leading-relaxed text-[var(--bad)]">{error}</p>
       ) : null}
     </header>
-  );
-}
-
-function PageFavicon({ locale, page }: { locale: Locale; page?: CurrentPage }) {
-  const [broken, setBroken] = useState(false);
-  useEffect(() => {
-    setBroken(false);
-  }, [page?.favIconUrl]);
-  const title = page?.title?.trim() || t(locale, "noPage");
-  const url = page?.url?.trim() || t(locale, "switchTab");
-  const src = page?.favIconUrl;
-  return (
-    <IconButton
-      ripple={false}
-      side="bottom"
-      label={`${title}\n${url}`}
-      tooltip={
-        <span className="flex flex-col gap-0.5">
-          <span>{title}</span>
-          <span className="break-all text-[var(--muted)]">{url}</span>
-        </span>
-      }
-      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--text)]"
-    >
-      {src && !broken ? (
-        <img src={src} alt="" className="h-3.5 w-3.5" onError={() => setBroken(true)} />
-      ) : (
-        <Globe size={14} className="text-[var(--muted)]" />
-      )}
-    </IconButton>
   );
 }
