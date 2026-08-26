@@ -328,9 +328,10 @@ export function ChatPane({
                 tabs={historyTabs}
                 attachments={historyAttachments}
                 ignoreRef={atButtonRef}
+                getAnchorRect={() => composerRef.current?.getCaretRect()}
                 onSelect={(mention) => {
                   composerRef.current?.insertMention(mention);
-                  setAtOpen(false);
+                  requestAnimationFrame(() => setAtOpen(false));
                 }}
                 onClose={() => setAtOpen(false)}
               />
@@ -400,7 +401,7 @@ const MessageThread = memo(function MessageThread({
               type="button"
               disabled={isRunning}
               onClick={() => onStartEdit(message)}
-              className={`ml-auto w-fit max-w-[80%] break-words rounded-2xl rounded-br-sm bg-[var(--user)] px-3 py-2 text-left text-[13.5px] leading-relaxed disabled:cursor-default ${
+              className={`cs-user-bubble ml-auto w-fit max-w-[80%] break-words rounded-2xl rounded-br-sm bg-[var(--user)] px-3 py-2 text-left text-[13.5px] leading-[1.5] disabled:cursor-default ${
                 editingId === message.id
                   ? "ring-1 ring-[var(--brass)]"
                   : "cursor-pointer hover:bg-[var(--user-hover)]"

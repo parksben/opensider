@@ -47,7 +47,7 @@ export function UserRichText({ text }: { text: string }) {
   const segments = parseMentionSegments(text);
   if (segments.length === 0) return null;
   return (
-    <div className="whitespace-pre-wrap break-words">
+    <div className="whitespace-pre-wrap break-words leading-[1.5]">
       {segments.map((segment, index) =>
         segment.type === "text" ? (
           <span key={index}>{segment.text}</span>

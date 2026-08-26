@@ -1,5 +1,6 @@
 import type { AttachmentItem } from "@shared";
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { createPortal } from "react-dom";
 import { attachmentToMention, type MentionChip } from "../mentions";
 import type { Locale } from "../i18n";
 import { t } from "../i18n";
@@ -9,12 +10,37 @@ import { MentionChip as MentionChipView, TabFavicon } from "./MentionChip";
 
 export type AtPane = "tabs" | "attachments";
 
+const SAFE = 16;
+const GAP = 6;
+const MENU_WIDTH = 256;
+
+function placeMenu(
+  anchor: DOMRect,
+  menuHeight: number,
+  vw: number,
+  vh: number,
+): { top: number; left: number; maxHeight: number } {
+  const maxWidth = Math.max(80, vw - SAFE * 2);
+  const width = Math.min(MENU_WIDTH, maxWidth);
+  const spaceAbove = Math.max(0, anchor.top - SAFE - GAP);
+  const maxHeight = spaceAbove > 0 ? Math.min(spaceAbove, vh - SAFE * 2) : Math.max(72, vh - SAFE * 2);
+  const height = Math.min(menuHeight, maxHeight);
+  let top = spaceAbove > 0 ? anchor.top - GAP - height : SAFE;
+  if (top < SAFE) top = SAFE;
+  if (top + height > vh - SAFE) top = Math.max(SAFE, vh - SAFE - height);
+  let left = anchor.left;
+  if (left + width > vw - SAFE) left = vw - SAFE - width;
+  if (left < SAFE) left = SAFE;
+  return { top, left, maxHeight };
+}
+
 export function AtMenu({
   open,
   locale,
   tabs,
   attachments,
   ignoreRef,
+  getAnchorRect,
   onSelect,
   onClose,
 }: {
@@ -23,6 +49,7 @@ export function AtMenu({
   tabs: HistoryTab[];
   attachments: AttachmentItem[];
   ignoreRef?: RefObject<HTMLElement | null>;
+  getAnchorRect?: () => DOMRect | undefined;
   onSelect: (mention: MentionChip) => void;
   onClose: () => void;
 }) {
@@ -30,9 +57,16 @@ export function AtMenu({
   const listRef = useRef<HTMLDivElement>(null);
   const [pane, setPane] = useState<AtPane>("tabs");
   const [highlight, setHighlight] = useState(0);
+  const [pos, setPos] = useState({ top: 0, left: 0, maxHeight: 224, ready: false });
 
   const items = pane === "tabs" ? tabs : attachments;
   const count = items.length;
+  const getAnchorRectRef = useRef(getAnchorRect);
+  getAnchorRectRef.current = getAnchorRect;
+
+  const pick = (mention: MentionChip) => {
+    onSelect(mention);
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -50,6 +84,35 @@ export function AtMenu({
     node?.scrollIntoView({ block: "nearest" });
   }, [open, highlight, pane]);
 
+  useLayoutEffect(() => {
+    if (!open) {
+      setPos((current) => (current.ready ? { ...current, ready: false } : current));
+      return;
+    }
+    const update = () => {
+      const menu = rootRef.current;
+      const anchor = getAnchorRectRef.current?.();
+      if (!menu) return;
+      const fallback = new DOMRect(SAFE, window.innerHeight - 120, 0, 0);
+      const next = placeMenu(
+        anchor && (anchor.top || anchor.left) ? anchor : fallback,
+        menu.scrollHeight,
+        window.innerWidth,
+        window.innerHeight,
+      );
+      setPos({ ...next, ready: true });
+    };
+    update();
+    const frame = requestAnimationFrame(update);
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", update, true);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", update, true);
+    };
+  }, [open, pane, tabs, attachments]);
+
   useEffect(() => {
     if (!open) return;
     const onPointer = (event: PointerEvent) => {
@@ -60,33 +123,39 @@ export function AtMenu({
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
+        event.stopPropagation();
         onClose();
         return;
       }
       if (event.key === "Tab" || event.key === "ArrowLeft" || event.key === "ArrowRight") {
         event.preventDefault();
+        event.stopPropagation();
         setPane((current) => (current === "tabs" ? "attachments" : "tabs"));
         return;
       }
       if (event.key === "ArrowDown") {
         event.preventDefault();
+        event.stopPropagation();
         if (count === 0) return;
         setHighlight((index) => (index + 1) % count);
         return;
       }
       if (event.key === "ArrowUp") {
         event.preventDefault();
+        event.stopPropagation();
         if (count === 0) return;
         setHighlight((index) => (index - 1 + count) % count);
         return;
       }
       if (event.key === "Enter") {
         event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
         const chosen = items[highlight];
         if (!chosen) return;
         if (pane === "tabs") {
           const tab = chosen as HistoryTab;
-          onSelect({
+          pick({
             kind: "tab",
             tabId: tab.tabId,
             title: tab.title,
@@ -94,7 +163,7 @@ export function AtMenu({
             favIconUrl: tab.favIconUrl,
           });
         } else {
-          onSelect(attachmentToMention(chosen as AttachmentItem));
+          pick(attachmentToMention(chosen as AttachmentItem));
         }
       }
     };
@@ -108,10 +177,16 @@ export function AtMenu({
 
   if (!open) return null;
 
-  return (
+  return createPortal(
     <div
       ref={rootRef}
-      className="absolute bottom-full left-0 z-30 mb-1.5 flex w-64 flex-col overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--panel)] shadow-xl"
+      className="fixed z-[80] flex w-64 flex-col overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--panel)] shadow-xl"
+      style={{
+        top: pos.top,
+        left: pos.left,
+        maxHeight: pos.maxHeight,
+        opacity: pos.ready ? 1 : 0,
+      }}
       onMouseDown={(event) => event.preventDefault()}
     >
       <div className="flex shrink-0 border-b border-[var(--line)]">
@@ -131,7 +206,7 @@ export function AtMenu({
           );
         })}
       </div>
-      <div ref={listRef} className="max-h-56 overflow-y-auto py-1">
+      <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto py-1">
         {count === 0 ? (
           <p className="px-2.5 py-1.5 text-[12px] text-[var(--muted)]">
             {t(locale, pane === "tabs" ? "atNoTabs" : "atNoAttachments")}
@@ -147,7 +222,7 @@ export function AtMenu({
                 onMouseDown={(event) => event.preventDefault()}
                 onPointerEnter={() => setHighlight(index)}
                 onClick={() =>
-                  onSelect({
+                  pick({
                     kind: "tab",
                     tabId: tab.tabId,
                     title: tab.title,
@@ -174,7 +249,7 @@ export function AtMenu({
                 title={item.path}
                 onMouseDown={(event) => event.preventDefault()}
                 onPointerEnter={() => setHighlight(index)}
-                onClick={() => onSelect(attachmentToMention(item))}
+                onClick={() => pick(attachmentToMention(item))}
                 className={`flex w-full items-center px-2.5 py-1.5 text-left ${
                   active ? "bg-[var(--hover-strong)]" : ""
                 }`}
@@ -185,6 +260,7 @@ export function AtMenu({
           })
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

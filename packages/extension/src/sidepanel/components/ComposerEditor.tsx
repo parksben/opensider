@@ -25,6 +25,7 @@ export type ComposerHandle = {
   insertMention: (mention: MentionChip) => void;
   moveCaretToEnd: () => void;
   getSerialized: () => string;
+  getCaretRect: () => DOMRect | undefined;
 };
 
 function clipboardImages(data: DataTransfer | null): File[] {
@@ -127,7 +128,9 @@ export const ComposerEditor = forwardRef<
   const rootsRef = useRef(new Map<HTMLElement, Root>());
   const lastRangeRef = useRef<Range | null>(null);
   const valueRef = useRef(value);
+  const menuOpenRef = useRef(menuOpen);
   valueRef.current = value;
+  menuOpenRef.current = menuOpen;
 
   const mountChip = (wrap: HTMLSpanElement, mention: MentionChip) => {
     let root = rootsRef.current.get(wrap);
@@ -302,6 +305,22 @@ export const ComposerEditor = forwardRef<
       scrollCaret(editor);
     },
     getSerialized: () => (editorRef.current ? serializeEditor(editorRef.current) : ""),
+    getCaretRect: () => {
+      const saved = lastRangeRef.current;
+      if (saved) {
+        const rects = saved.getClientRects();
+        const rect = rects.item(rects.length - 1) ?? saved.getBoundingClientRect();
+        if (rect.top || rect.left || rect.height || rect.width) return rect;
+      }
+      const selection = window.getSelection();
+      if (selection && selection.rangeCount > 0) {
+        const range = selection.getRangeAt(0);
+        const rects = range.getClientRects();
+        const rect = rects.item(rects.length - 1) ?? range.getBoundingClientRect();
+        if (rect.top || rect.left || rect.height || rect.width) return rect;
+      }
+      return editorRef.current?.getBoundingClientRect();
+    },
   }));
 
   useLayoutEffect(() => {
@@ -327,7 +346,9 @@ export const ComposerEditor = forwardRef<
   }, []);
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (menuOpen && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Tab", "Enter", "Escape"].includes(event.key)) {
+    if (menuOpenRef.current && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Tab", "Enter", "Escape"].includes(event.key)) {
+      event.preventDefault();
+      event.stopPropagation();
       return;
     }
     if (event.key === "Enter" && !event.shiftKey) {
