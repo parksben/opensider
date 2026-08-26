@@ -1,6 +1,6 @@
 import type { AgentModel, AttachmentItem, AttachmentKind, CurrentPage } from "@shared";
 import { ArrowDown, ChevronDown, File, Folder, GitFork, Image, LoaderCircle, MessageCircle, MousePointer2, Plus, RefreshCw, Send, Square, X } from "lucide-react";
-import { useEffect, useRef, useState, type ClipboardEvent, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from "react";
 import type { ChatMessage, ChatPart } from "../chat-types";
 import type { Locale } from "../i18n";
 import { t } from "../i18n";
@@ -460,25 +460,64 @@ function ModelSelect({
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [highlightId, setHighlightId] = useState(modelId);
   const rootRef = useRef<HTMLDivElement>(null);
   const filterRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   const { ripples, spawn, done } = useRipple();
   const current = models.find((model) => model.id === modelId) ?? models[0];
   const label = current?.name || modelId || t(locale, "model");
   const visible = models.filter((model) => matchesModel(model, query));
+
+  const pick = (id: string) => {
+    onModel(id);
+    setOpen(false);
+  };
+
+  const moveHighlight = (delta: number) => {
+    if (visible.length === 0) return;
+    const idx = visible.findIndex((model) => model.id === highlightId);
+    const from = idx >= 0 ? idx : 0;
+    setHighlightId(visible[(from + delta + visible.length) % visible.length].id);
+  };
+
+  const onFilterKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      moveHighlight(1);
+      return;
+    }
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      moveHighlight(-1);
+      return;
+    }
+    if (event.key === "Enter") {
+      event.preventDefault();
+      const chosen = visible.find((model) => model.id === highlightId) ?? visible[0];
+      if (chosen) pick(chosen.id);
+    }
+  };
+
+  const onFilterChange = (value: string) => {
+    setQuery(value);
+    const next = models.filter((model) => matchesModel(model, value));
+    setHighlightId((id) => (next.some((model) => model.id === id) ? id : (next[0]?.id ?? "")));
+  };
 
   useEffect(() => {
     if (!open) {
       setQuery("");
       return;
     }
+    setHighlightId(current?.id ?? models[0]?.id ?? "");
     const focusFilter = () => filterRef.current?.focus();
     focusFilter();
     const frame = requestAnimationFrame(focusFilter);
     const onPointer = (event: PointerEvent) => {
       if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
     };
-    const onKey = (event: KeyboardEvent) => {
+    const onKey = (event: globalThis.KeyboardEvent) => {
       if (event.key === "Escape") setOpen(false);
     };
     document.addEventListener("pointerdown", onPointer);
@@ -489,6 +528,12 @@ function ModelSelect({
       document.removeEventListener("keydown", onKey);
     };
   }, [open]);
+
+  useLayoutEffect(() => {
+    if (!open || !highlightId) return;
+    const item = listRef.current?.querySelector<HTMLElement>(`[data-model-id="${CSS.escape(highlightId)}"]`);
+    item?.scrollIntoView({ block: "nearest" });
+  }, [open, highlightId]);
 
   return (
     <div ref={rootRef} className="relative min-w-0">
@@ -526,28 +571,25 @@ function ModelSelect({
             aria-label={t(locale, "filterModels")}
             placeholder={t(locale, "filterModels")}
             className="cs-model-filter shrink-0 bg-transparent px-2.5 py-1.5 text-[12px] text-[var(--text)] placeholder:text-[var(--muted)]"
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event) => onFilterChange(event.target.value)}
             onPaste={(event) => event.stopPropagation()}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") event.preventDefault();
-            }}
+            onKeyDown={onFilterKeyDown}
           />
-          <div className="max-h-56 overflow-y-auto py-1">
+          <div ref={listRef} className="max-h-56 overflow-y-auto py-1">
             {visible.length === 0 ? (
               <p className="px-2.5 py-1.5 text-[12px] text-[var(--muted)]">{t(locale, "noMatchingModels")}</p>
             ) : (
               visible.map((model) => {
-                const active = model.id === (current?.id ?? modelId);
+                const highlighted = model.id === highlightId;
                 return (
                   <RippleButton
                     key={model.id}
+                    data-model-id={model.id}
                     title={model.name}
-                    onClick={() => {
-                      onModel(model.id);
-                      setOpen(false);
-                    }}
+                    onPointerEnter={() => setHighlightId(model.id)}
+                    onClick={() => pick(model.id)}
                     className={`flex w-full px-2.5 py-1.5 text-left text-[12px] ${
-                      active ? "bg-[var(--hover-strong)] text-[var(--text)]" : "text-[var(--muted)] hover:text-[var(--text)]"
+                      highlighted ? "bg-[var(--hover-strong)] text-[var(--text)]" : "text-[var(--muted)] hover:text-[var(--text)]"
                     }`}
                   >
                     <span className="truncate">{model.name}</span>
