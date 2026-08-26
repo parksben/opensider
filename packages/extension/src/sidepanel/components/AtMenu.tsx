@@ -1,6 +1,15 @@
 import type { AttachmentItem } from "@shared";
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
+import {
+  atMenuLock,
+  armEnterSuppress,
+  blockEnterEvent,
+  closeAtMenuLock,
+  isEnterKey,
+  openAtMenuLock,
+  releaseEnterSuppress,
+} from "../at-menu-lock";
 import { attachmentToMention, type MentionChip } from "../mentions";
 import type { Locale } from "../i18n";
 import { t } from "../i18n";
@@ -62,11 +71,54 @@ export function AtMenu({
   const items = pane === "tabs" ? tabs : attachments;
   const count = items.length;
   const getAnchorRectRef = useRef(getAnchorRect);
+  const paneRef = useRef(pane);
+  const highlightRef = useRef(highlight);
+  const itemsRef = useRef(items);
+  const onSelectRef = useRef(onSelect);
+  const onCloseRef = useRef(onClose);
   getAnchorRectRef.current = getAnchorRect;
+  paneRef.current = pane;
+  highlightRef.current = highlight;
+  itemsRef.current = items;
+  onSelectRef.current = onSelect;
+  onCloseRef.current = onClose;
 
-  const pick = (mention: MentionChip) => {
-    onSelect(mention);
+  const pendingCloseRef = useRef(false);
+
+  const pick = (mention: MentionChip, fromKeyboard = false) => {
+    if (fromKeyboard) {
+      pendingCloseRef.current = true;
+      armEnterSuppress();
+    } else {
+      pendingCloseRef.current = false;
+      releaseEnterSuppress();
+      closeAtMenuLock();
+      onCloseRef.current();
+    }
+    onSelectRef.current(mention);
   };
+
+  const confirmHighlight = (event?: Event) => {
+    if (pendingCloseRef.current) return;
+    if (event && atMenuLock.lastEnter === event) return;
+    if (event) atMenuLock.lastEnter = event;
+    const chosen = itemsRef.current[highlightRef.current];
+    if (!chosen) return;
+    if (paneRef.current === "tabs") {
+      const tab = chosen as HistoryTab;
+      pick({
+        kind: "tab",
+        tabId: tab.tabId,
+        title: tab.title,
+        url: tab.url,
+        favIconUrl: tab.favIconUrl,
+      }, true);
+    } else {
+      pick(attachmentToMention(chosen as AttachmentItem), true);
+    }
+  };
+
+  if (open) atMenuLock.confirm = confirmHighlight;
 
   useEffect(() => {
     if (!open) return;
@@ -113,18 +165,26 @@ export function AtMenu({
     };
   }, [open, pane, tabs, attachments]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!open) return;
+    openAtMenuLock();
+    pendingCloseRef.current = false;
     const onPointer = (event: PointerEvent) => {
       const target = event.target as Node;
       if (rootRef.current?.contains(target) || ignoreRef?.current?.contains(target)) return;
-      onClose();
+      pendingCloseRef.current = false;
+      releaseEnterSuppress();
+      closeAtMenuLock();
+      onCloseRef.current();
     };
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
         event.stopPropagation();
-        onClose();
+        pendingCloseRef.current = false;
+        releaseEnterSuppress();
+        closeAtMenuLock();
+        onCloseRef.current();
         return;
       }
       if (event.key === "Tab" || event.key === "ArrowLeft" || event.key === "ArrowRight") {
@@ -136,44 +196,44 @@ export function AtMenu({
       if (event.key === "ArrowDown") {
         event.preventDefault();
         event.stopPropagation();
-        if (count === 0) return;
-        setHighlight((index) => (index + 1) % count);
+        const total = itemsRef.current.length;
+        if (total === 0) return;
+        setHighlight((index) => (index + 1) % total);
         return;
       }
       if (event.key === "ArrowUp") {
         event.preventDefault();
         event.stopPropagation();
-        if (count === 0) return;
-        setHighlight((index) => (index - 1 + count) % count);
+        const total = itemsRef.current.length;
+        if (total === 0) return;
+        setHighlight((index) => (index - 1 + total) % total);
         return;
       }
-      if (event.key === "Enter") {
-        event.preventDefault();
-        event.stopPropagation();
-        event.stopImmediatePropagation();
-        const chosen = items[highlight];
-        if (!chosen) return;
-        if (pane === "tabs") {
-          const tab = chosen as HistoryTab;
-          pick({
-            kind: "tab",
-            tabId: tab.tabId,
-            title: tab.title,
-            url: tab.url,
-            favIconUrl: tab.favIconUrl,
-          });
-        } else {
-          pick(attachmentToMention(chosen as AttachmentItem));
-        }
+      if (isEnterKey(event)) {
+        blockEnterEvent(event);
+        confirmHighlight(event);
       }
+    };
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (!isEnterKey(event) || !pendingCloseRef.current) return;
+      pendingCloseRef.current = false;
+      releaseEnterSuppress();
+      closeAtMenuLock();
+      onCloseRef.current();
     };
     document.addEventListener("pointerdown", onPointer);
     document.addEventListener("keydown", onKey, true);
+    document.addEventListener("keyup", onKeyUp, true);
     return () => {
       document.removeEventListener("pointerdown", onPointer);
       document.removeEventListener("keydown", onKey, true);
+      document.removeEventListener("keyup", onKeyUp, true);
+      if (!pendingCloseRef.current) {
+        atMenuLock.confirm = null;
+        if (!atMenuLock.suppressSubmit) closeAtMenuLock();
+      }
     };
-  }, [open, count, highlight, items, pane, ignoreRef, onClose, onSelect]);
+  }, [open]);
 
   if (!open) return null;
 

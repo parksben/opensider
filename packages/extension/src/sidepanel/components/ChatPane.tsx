@@ -5,6 +5,7 @@ import type { ChatMessage, ChatPart, TodoItem } from "../chat-types";
 import { useComposerHistory } from "../composer-history";
 import type { Locale } from "../i18n";
 import { t } from "../i18n";
+import { closeAtMenuLock, installAtMenuGuard, openAtMenuLock, shouldBlockSubmit } from "../at-menu-lock";
 import { composerHasContent } from "../mentions";
 import { stripEnvPrompt, textOf, type AgentMode } from "../persist";
 import { useRipple } from "../useRipple";
@@ -105,7 +106,18 @@ export function ChatPane({
     });
   };
 
-  const submit = () => {
+  const openAtMenu = () => {
+    openAtMenuLock();
+    setAtOpen(true);
+  };
+
+  const closeAtMenu = () => {
+    closeAtMenuLock();
+    setAtOpen(false);
+  };
+
+  const submit = (fromEnter = false) => {
+    if (fromEnter && shouldBlockSubmit()) return;
     if (!canSend || isRunning || savingPaste) return;
     const text = draft.trim();
     const files = attachments;
@@ -114,7 +126,7 @@ export function ChatPane({
     setAttachments([]);
     setEditingId(undefined);
     setStash(null);
-    setAtOpen(false);
+    closeAtMenu();
     if (reviseId) onRevise(reviseId, text, files);
     else onSend(text, files);
     requestAnimationFrame(() => stickToBottom(listRef.current));
@@ -141,10 +153,14 @@ export function ChatPane({
   startEditRef.current = startEdit;
 
   useEffect(() => {
+    installAtMenuGuard();
+  }, []);
+
+  useEffect(() => {
     const wasEditing = editingRef.current;
     setEditingId(undefined);
     setStash(null);
-    setAtOpen(false);
+    closeAtMenu();
     if (wasEditing) {
       setDraft("");
       setAttachments([]);
@@ -276,9 +292,9 @@ export function ChatPane({
             placeholder={label("placeholder")}
             menuOpen={atOpen}
             onChange={setDraft}
-            onSubmit={submit}
+            onSubmit={() => submit(true)}
             onPasteImages={(files) => void addPastedImages(files)}
-            onAtTyped={() => setAtOpen(true)}
+            onAtTyped={openAtMenu}
           />
           <div className="flex items-center justify-between gap-2">
             <div className="relative flex items-center gap-1">
@@ -308,11 +324,11 @@ export function ChatPane({
                   label={label("mention")}
                   onClick={() => {
                     if (atOpen) {
-                      setAtOpen(false);
+                      closeAtMenu();
                       return;
                     }
                     composerRef.current?.insertAtStart("@");
-                    setAtOpen(true);
+                    openAtMenu();
                   }}
                   disabled={isRunning}
                   className={`flex h-7 w-7 items-center justify-center rounded-full hover:bg-[var(--hover)] disabled:opacity-30 disabled:hover:bg-transparent ${
@@ -331,9 +347,8 @@ export function ChatPane({
                 getAnchorRect={() => composerRef.current?.getCaretRect()}
                 onSelect={(mention) => {
                   composerRef.current?.insertMention(mention);
-                  requestAnimationFrame(() => setAtOpen(false));
                 }}
-                onClose={() => setAtOpen(false)}
+                onClose={closeAtMenu}
               />
               <ModeSelect locale={locale} mode={agentMode} onMode={onAgentMode} />
             </div>

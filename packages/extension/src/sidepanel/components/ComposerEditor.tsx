@@ -10,6 +10,12 @@ import {
 import { createRoot, type Root } from "react-dom/client";
 import { flushSync } from "react-dom";
 import {
+  atMenuLock,
+  blockEnterEvent,
+  isEnterKey,
+  shouldBlockSubmit,
+} from "../at-menu-lock";
+import {
   parseMentionSegments,
   parseMentionToken,
   serializeMention,
@@ -393,15 +399,46 @@ export const ComposerEditor = forwardRef<
     };
   }, []);
 
-  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (menuOpenRef.current && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Tab", "Enter", "Escape"].includes(event.key)) {
+  useLayoutEffect(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const onKeyDownCapture = (event: globalThis.KeyboardEvent) => {
+      if (!isEnterKey(event)) return;
+      if (!shouldBlockSubmit() && !menuOpenRef.current) return;
+      blockEnterEvent(event);
+      if (!event.repeat) atMenuLock.confirm?.(event);
+    };
+    const onBeforeInput = (event: InputEvent) => {
+      if (event.inputType !== "insertParagraph" && event.inputType !== "insertLineBreak") return;
+      if (!shouldBlockSubmit() && !menuOpenRef.current) return;
       event.preventDefault();
       event.stopPropagation();
+    };
+    editor.addEventListener("keydown", onKeyDownCapture, true);
+    editor.addEventListener("beforeinput", onBeforeInput, true);
+    return () => {
+      editor.removeEventListener("keydown", onKeyDownCapture, true);
+      editor.removeEventListener("beforeinput", onBeforeInput, true);
+    };
+  }, []);
+
+  const requestSubmit = () => {
+    if (shouldBlockSubmit() || menuOpenRef.current) return;
+    onSubmit();
+  };
+
+  const menuKeysActive = () => shouldBlockSubmit() || Boolean(menuOpenRef.current);
+
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (menuKeysActive() && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Tab", "Enter", "Escape"].includes(event.key)) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (isEnterKey(event.nativeEvent)) atMenuLock.confirm?.(event.nativeEvent);
       return;
     }
-    if (event.key === "Enter" && !event.shiftKey) {
+    if (isEnterKey(event.nativeEvent)) {
       event.preventDefault();
-      onSubmit();
+      requestSubmit();
       return;
     }
     if (event.key === "Enter" && event.shiftKey) {
@@ -448,6 +485,12 @@ export const ComposerEditor = forwardRef<
         if (input.inputType?.startsWith("insert") && input.data === "@") onAtTyped?.();
       }}
       onKeyDown={onKeyDown}
+      onBeforeInput={(event) => {
+        const input = event.nativeEvent;
+        if (input.inputType !== "insertParagraph" && input.inputType !== "insertLineBreak") return;
+        if (!shouldBlockSubmit() && !menuOpenRef.current) return;
+        event.preventDefault();
+      }}
       onKeyUp={saveRange}
       onMouseDown={(event) => {
         const wrap = chipWrapFromEvent(event.target, editorRef.current);
