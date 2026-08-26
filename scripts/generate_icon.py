@@ -1,21 +1,25 @@
 #!/usr/bin/env python3
 """生成 OpenSider 扩展图标 packages/extension/assets/icon.svg。
 
-造型：Cursor 官方立方体轮廓（CUBE_2D 路径，nonzero 规则中央光标区域自动镂空透明），
-内部填 Google 三色顺时针渐变风车：红(上) → 黄(右下) → 绿(左下)。
+造型：圆角六边形外轮廓（官方 CUBE_2D 锐角顶点重建）+ 中央圆角等腰三角形镂空
+（nonzero 规则自动镂空透明），内部填 Google 三色顺时针渐变风车：红 → 黄 → 绿。
 渐变用 360 个 1° 扇形逼近 conic gradient；交界为直线，两侧各 20° 平滑过渡。
 """
 
 import math
 from pathlib import Path
 
-# Cursor CUBE_2D 官方路径：六边形外轮廓
-HEXAGON_PATH = (
-    "M457.43,125.94L244.42,2.96c-6.84-3.95-15.28-3.95-22.12,0L9.3,125.94"
-    "c-5.75,3.32-9.3,9.46-9.3,16.11v247.99c0,6.65,3.55,12.79,9.3,16.11"
-    "l213.01,122.98c6.84,3.95,15.28,3.95,22.12,0l213.01-122.98"
-    "c5.75-3.32,9.3-9.46,9.3-16.11v-247.99c0-6.65-3.55-12.79-9.3-16.11h-.01Z"
-)
+# 六边形外轮廓：Cursor CUBE_2D 官方路径的六个锐角顶点（边线延长交点），
+# 重建为统一圆角的六边形，比官方圆角更大
+HEX_VERTICES = [
+    (233.37, -3.44),   # 顶
+    (0.0, 131.31),     # 左上
+    (0.0, 400.78),     # 左下
+    (233.37, 535.54),  # 底
+    (466.74, 400.78),  # 右下
+    (466.74, 131.31),  # 右上
+]
+HEX_CORNER_R = 40.0  # 六边形圆角半径（官方约 19~22，加大到 40）
 
 # 镂空造型：等腰三角形（去掉原光标底部两条边、连成一条直边）。
 # 三个锐角顶点由原光标外轮廓边线延长相交得到（原始坐标系），顺序保持原子路径缠绕方向
@@ -24,8 +28,8 @@ TRI_VERTICES = [
     (238.23, 507.86),  # 原光标下尖端（旋转后显示为右侧角）
     (21.89, 140.61),   # 原光标左上顶点（旋转后显示为左下角）
 ]
-# 三个角统一圆角半径，与原光标圆角一致（原路径圆角：切距 13.14、内角约 60°，r ≈ 7.59）
-CORNER_R = 7.59
+# 三个角统一圆角半径（原光标圆角 r≈7.59，加大到 14）
+CORNER_R = 14.0
 
 # 镂空三角形变换（以六边形中心为基准）：先逆时针 120°、再顺时针 30°，净逆时针 90°；
 # 并等比缩放为原来的 √3/2（SVG 坐标系旋转正值为顺时针，故逆时针取负）
@@ -65,32 +69,39 @@ def transform_point(x: float, y: float) -> tuple[float, float]:
     )
 
 
-def cutout_path() -> str:
-    """圆角等腰三角形镂空路径：逐顶点算圆角切点，直线段 + 圆弧交替；
-    切点经旋转/缩放变换后输出，圆角半径随 ARROW_SCALE 同步缩放。"""
-    n = len(TRI_VERTICES)
+def rounded_polygon_path(vertices, radius: float, transform: bool = False) -> str:
+    """圆角多边形路径：逐顶点算圆角切点，直线段 + 圆弧交替。
+    transform=True 时套用镂空变换（缩放/旋转），半径随 ARROW_SCALE 同步缩放。
+    圆弧 sweep 标志按多边形缠绕方向自动选择，保证圆角向内。"""
+    n = len(vertices)
+    area = sum(
+        vertices[i][0] * vertices[(i + 1) % n][1] - vertices[(i + 1) % n][0] * vertices[i][1]
+        for i in range(n)
+    )
+    sweep = 1 if area > 0 else 0
     edges = []
     for i in range(n):
-        x1, y1 = TRI_VERTICES[i]
-        x2, y2 = TRI_VERTICES[(i + 1) % n]
+        x1, y1 = vertices[i]
+        x2, y2 = vertices[(i + 1) % n]
         d = math.hypot(x2 - x1, y2 - y1)
         edges.append(((x2 - x1) / d, (y2 - y1) / d))
     tangents = []
     for i in range(n):
-        x, y = TRI_VERTICES[i]
+        x, y = vertices[i]
         ui, uo = edges[(i - 1) % n], edges[i]
         cos_theta = -(ui[0] * uo[0] + ui[1] * uo[1])  # 内角余弦：-u_in · u_out
         theta = math.acos(max(-1.0, min(1.0, cos_theta)))
-        t = CORNER_R / math.tan(theta / 2)  # 圆角切距
+        t = radius / math.tan(theta / 2)  # 圆角切距
         tangents.append(((x - ui[0] * t, y - ui[1] * t), (x + uo[0] * t, y + uo[1] * t)))
-    r = CORNER_R * ARROW_SCALE
+    r = radius * ARROW_SCALE if transform else radius
+    xf = transform_point if transform else (lambda x, y: (x, y))
     parts = []
     for i in range(n):
         if i == 0:
-            parts.append("M{:.2f},{:.2f}".format(*transform_point(*tangents[0][1])))
+            parts.append("M{:.2f},{:.2f}".format(*xf(*tangents[0][1])))
         t_in, t_out = tangents[(i + 1) % n]
-        parts.append("L{:.2f},{:.2f}".format(*transform_point(*t_in)))
-        parts.append("A{:.2f} {:.2f} 0 0 1 {:.2f},{:.2f}".format(r, r, *transform_point(*t_out)))
+        parts.append("L{:.2f},{:.2f}".format(*xf(*t_in)))
+        parts.append("A{:.2f} {:.2f} 0 0 {} {:.2f},{:.2f}".format(r, r, sweep, *xf(*t_out)))
     parts.append("Z")
     return "".join(parts)
 
@@ -125,7 +136,7 @@ def build_svg() -> str:
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <defs>
     <clipPath id="cube-clip">
-      <path d="{HEXAGON_PATH}{cutout_path()}"/>
+      <path d="{rounded_polygon_path(HEX_VERTICES, HEX_CORNER_R)}{rounded_polygon_path(TRI_VERTICES, CORNER_R, transform=True)}"/>
     </clipPath>
   </defs>
 
