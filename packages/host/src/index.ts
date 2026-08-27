@@ -4,6 +4,7 @@ import { cachedResolved, detectAgents, rememberResolved, resolveProfile, type Re
 import { log } from "./log.ts";
 import {
   catalogFromConfigOptions,
+  catalogFromSessionModels,
   isUnsetModel,
   listAgentModels,
   mergeCatalog,
@@ -136,9 +137,19 @@ async function refreshModels(): Promise<void> {
   }
 }
 
+function absorbConfigUpdate(update: Record<string, unknown>): void {
+  catalog = mergeCatalog(catalog, catalogFromConfigOptions(update.configOptions as ConfigOption[] | undefined));
+  catalog = mergeCatalog(catalog, catalogFromSessionModels(update.models));
+  sendModels();
+}
+
 function absorbSessionOptions(opened: SessionOpen): void {
   const options = opened.configOptions as ConfigOption[] | undefined;
   catalog = mergeCatalog(catalog, catalogFromConfigOptions(options));
+  catalog = mergeCatalog(catalog, catalogFromSessionModels(opened.models));
+  if (catalog.models.length > 0) {
+    log(`models ${catalog.models.length} current=${catalog.currentId}`);
+  }
 }
 
 function enqueueSessionOp<T>(work: () => Promise<T>): Promise<T> {
@@ -165,15 +176,13 @@ function attachClient(runtime: AcpRuntime): void {
     onUpdate: (update, sessionId) => {
       if (runtime.binding && !runtime.prompting) {
         if (update.sessionUpdate === "config_option_update") {
-          catalog = mergeCatalog(catalog, catalogFromConfigOptions(update.configOptions as ConfigOption[]));
-          sendModels();
+          absorbConfigUpdate(update);
         }
         return;
       }
       const sid = sessionId ?? client.getSessionId();
       if (update.sessionUpdate === "config_option_update") {
-        catalog = mergeCatalog(catalog, catalogFromConfigOptions(update.configOptions as ConfigOption[]));
-        sendModels();
+        absorbConfigUpdate(update);
       }
       send({ type: "update", update, sessionId: sid });
     },
@@ -229,6 +238,9 @@ async function openAndAnnounce(runtime: AcpRuntime, open: () => Promise<SessionO
   const opened = await withBinding(runtime, open);
   writeSessionId(opened.sessionId);
   absorbSessionOptions(opened);
+  if (catalog.models.length === 0) {
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+  }
   await applyPendingModel(runtime);
   send({
     type: "session",

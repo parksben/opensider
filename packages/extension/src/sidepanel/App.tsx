@@ -1017,8 +1017,7 @@ export function App() {
                 connecting={status === "connecting"}
                 progress={progress}
                 error={error}
-                onSelect={setSelectedProviderId}
-                onConfirm={() => requestConnect(selectedProviderId)}
+                onSelect={requestConnect}
                 onRetry={() => {
                   sendRef.current({ type: "agents.detect" });
                   reconnectRef.current();

@@ -7,6 +7,8 @@ import { nextTheme, type ThemePreference } from "../theme";
 import { AgentSelect } from "./AgentSelect";
 import { IconButton } from "./IconButton";
 
+const TITLE_GAP = 56;
+
 export function Header({
   locale,
   status,
@@ -46,6 +48,10 @@ export function Header({
   const title = sessionTitle.trim() || label("untitled");
   const titleInputRef = useRef<HTMLInputElement>(null);
   const titleClusterRef = useRef<HTMLDivElement>(null);
+  const leftRef = useRef<HTMLDivElement>(null);
+  const rightRef = useRef<HTMLDivElement>(null);
+  const barRef = useRef<HTMLDivElement>(null);
+  const [sidePad, setSidePad] = useState({ left: TITLE_GAP, right: TITLE_GAP });
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState(sessionTitle);
   const renamingRef = useRef(false);
@@ -65,6 +71,25 @@ export function Header({
     node?.select();
   }, [renaming]);
 
+  useLayoutEffect(() => {
+    const bar = barRef.current;
+    const left = leftRef.current;
+    const right = rightRef.current;
+    if (!bar || !left || !right) return;
+    const measure = () => {
+      setSidePad({
+        left: left.offsetWidth + TITLE_GAP,
+        right: right.offsetWidth + TITLE_GAP,
+      });
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(bar);
+    observer.observe(left);
+    observer.observe(right);
+    return () => observer.disconnect();
+  }, [showAgentSelect, status, agents.length, selectedProviderId, error]);
+
   const commitRename = () => {
     if (!renamingRef.current) return;
     renamingRef.current = false;
@@ -80,9 +105,9 @@ export function Header({
   };
 
   return (
-    <header className="group/header border-b border-[var(--line)] bg-[color-mix(in_oklab,var(--panel)_88%,transparent)] px-3 py-2.5 backdrop-blur">
-      <div className="flex items-center gap-12">
-        <div className="flex min-w-0 flex-1 items-center gap-1.5">
+    <header className="group/header relative z-40 border-b border-[var(--line)] bg-[color-mix(in_oklab,var(--panel)_88%,transparent)] px-3 py-2.5 backdrop-blur">
+      <div ref={barRef} className="relative flex items-center justify-between">
+        <div ref={leftRef} className="flex shrink-0 items-center gap-1.5">
           {showAgentSelect && agents.length > 0 && status !== "connecting" && status !== "starting" ? (
             <AgentSelect
               locale={locale}
@@ -117,9 +142,15 @@ export function Header({
               {label("retry")}
             </button>
           ) : null}
+        </div>
+
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <div
             ref={titleClusterRef}
-            className={`flex min-w-0 items-center gap-0.5 ${renaming ? "w-full flex-1" : "w-max max-w-full"}`}
+            className={`pointer-events-auto flex min-w-0 items-center justify-center gap-0.5 ${
+              renaming ? "w-full" : "w-max"
+            }`}
+            style={{ maxWidth: `calc(100% - ${sidePad.left + sidePad.right}px)` }}
           >
             {renaming ? (
               <input
@@ -144,12 +175,12 @@ export function Header({
                 }}
                 aria-label={label("rename")}
                 placeholder={label("untitled")}
-                className="min-w-0 w-full flex-1 rounded border border-[var(--line)] bg-[var(--ink)] px-1.5 py-0.5 text-[14px] font-medium tracking-tight text-[var(--text)] outline-none"
+                className="min-w-0 w-full flex-1 rounded border border-[var(--line)] bg-[var(--ink)] px-1.5 py-0.5 text-center text-[14px] font-medium tracking-tight text-[var(--text)] outline-none"
               />
             ) : (
               <div
                 title={title}
-                className="min-w-0 truncate whitespace-nowrap text-[14px] font-medium tracking-tight"
+                className="min-w-0 truncate whitespace-nowrap text-center text-[14px] font-medium tracking-tight"
               >
                 {title}
               </div>
@@ -168,7 +199,8 @@ export function Header({
             </IconButton>
           </div>
         </div>
-        <div className="flex shrink-0 items-center justify-end gap-1.5">
+
+        <div ref={rightRef} className="flex shrink-0 items-center justify-end gap-1.5">
           <IconButton
             ripple={false}
             label={theme === "light" ? label("themeLight") : theme === "dark" ? label("themeDark") : label("themeSystem")}

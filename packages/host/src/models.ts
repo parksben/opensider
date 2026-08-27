@@ -60,7 +60,10 @@ export function parseAgentModels(stdout: string): ModelCatalog {
 }
 
 export function catalogFromConfigOptions(options: ConfigOption[] | undefined): Partial<ModelCatalog> {
-  const model = options?.find((option) => option.category === "model" || option.id === "model");
+  const model = options?.find((option) => {
+    const id = `${option.id ?? ""} ${(option as { configId?: string }).configId ?? ""}`.toLowerCase();
+    return option.category === "model" || id.includes("model");
+  });
   if (!model) return {};
   const models = uniqueModels(
     (model.options ?? [])
@@ -71,7 +74,27 @@ export function catalogFromConfigOptions(options: ConfigOption[] | undefined): P
   return {
     models: models.length > 0 ? models : undefined,
     currentId,
-    modelConfigId: model.id || "model",
+    modelConfigId: model.id || (model as { configId?: string }).configId || "model",
+  };
+}
+
+export function catalogFromSessionModels(models: unknown): Partial<ModelCatalog> {
+  if (!models || typeof models !== "object") return {};
+  const rec = models as {
+    currentModelId?: string;
+    availableModels?: Array<{ modelId?: string; id?: string; name?: string }>;
+  };
+  const mapped = uniqueModels(
+    (rec.availableModels ?? [])
+      .map((item) => {
+        const id = item.modelId || item.id || "";
+        return { id, name: item.name || id };
+      })
+      .filter((item) => item.id),
+  );
+  return {
+    models: mapped.length > 0 ? mapped : undefined,
+    currentId: rec.currentModelId,
   };
 }
 

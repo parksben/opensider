@@ -27,6 +27,7 @@ export type SessionOpen = {
   created: boolean;
   forked: boolean;
   configOptions?: unknown;
+  models?: unknown;
 };
 
 export type AcpHandlers = {
@@ -103,8 +104,7 @@ export class AcpClient {
   }
 
   async initialize(): Promise<void> {
-    const meta =
-      this.launch.profile.id === "cursor" ? { parameterizedModelPicker: true } : {};
+    const meta = { parameterizedModelPicker: true };
     await this.request("initialize", {
       protocolVersion: 1,
       clientCapabilities: {
@@ -128,7 +128,7 @@ export class AcpClient {
     const result = (await this.request("session/new", {
       cwd: this.launch.cwd,
       mcpServers: [],
-    })) as { sessionId: string; configOptions?: unknown };
+    })) as { sessionId: string; configOptions?: unknown; models?: unknown };
     this.sessionId = result.sessionId;
     await this.trySetPolicyMode(result.sessionId);
     return {
@@ -137,6 +137,7 @@ export class AcpClient {
       created: true,
       forked: false,
       configOptions: result.configOptions,
+      models: result.models,
     };
   }
 
@@ -157,7 +158,7 @@ export class AcpClient {
         sessionId: existingId,
         cwd: this.launch.cwd,
         mcpServers: [],
-      })) as { sessionId?: string; configOptions?: unknown };
+      })) as { sessionId?: string; configOptions?: unknown; models?: unknown };
       this.sessionId = existingId;
       await this.trySetPolicyMode(existingId);
       return {
@@ -166,6 +167,7 @@ export class AcpClient {
         created: false,
         forked: false,
         configOptions: result.configOptions,
+        models: result.models,
       };
     } catch (error) {
       log(`session/load failed, creating new: ${String(error)}`);
@@ -179,7 +181,7 @@ export class AcpClient {
         sessionId: existingId,
         cwd: this.launch.cwd,
         mcpServers: [],
-      })) as { sessionId: string; configOptions?: unknown };
+      })) as { sessionId: string; configOptions?: unknown; models?: unknown };
       this.sessionId = result.sessionId;
       await this.trySetPolicyMode(result.sessionId);
       return {
@@ -188,6 +190,7 @@ export class AcpClient {
         created: true,
         forked: true,
         configOptions: result.configOptions,
+        models: result.models,
       };
     } catch (error) {
       log(`session/fork failed, creating new: ${String(error)}`);

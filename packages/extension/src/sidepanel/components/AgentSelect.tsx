@@ -1,10 +1,11 @@
 import type { AgentInfo } from "@shared";
 import { ChevronDown } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { Locale } from "../i18n";
 import { t } from "../i18n";
 import { useRipple } from "../useRipple";
-import { AgentMark } from "./AgentMark";
+import { RippleButton } from "./RippleButton";
 
 export function AgentSelect({
   locale,
@@ -18,14 +19,31 @@ export function AgentSelect({
   onSelect: (id: string) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [menuBox, setMenuBox] = useState<{ top: number; left: number; width: number }>();
   const rootRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const { ripples, spawn, done } = useRipple();
   const current = agents.find((item) => item.id === selectedId) ?? agents[0];
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    const node = rootRef.current;
+    if (!node) return;
+    const place = () => {
+      const box = node.getBoundingClientRect();
+      setMenuBox({ top: box.bottom + 6, left: box.left, width: Math.max(box.width, 168) });
+    };
+    place();
+    window.addEventListener("resize", place);
+    return () => window.removeEventListener("resize", place);
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
     const onPointer = (event: PointerEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+      const target = event.target as Node;
+      if (rootRef.current?.contains(target) || menuRef.current?.contains(target)) return;
+      setOpen(false);
     };
     const onKey = (event: globalThis.KeyboardEvent) => {
       if (event.key === "Escape") setOpen(false);
@@ -49,9 +67,8 @@ export function AgentSelect({
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
         onPointerDown={(event) => spawn(event)}
-        className="relative flex h-7 max-w-[9.5rem] items-center gap-1.5 overflow-hidden rounded-full border border-[var(--line)] px-1.5 pr-2 text-[12px] text-[var(--text)] hover:bg-[var(--hover)]"
+        className="relative flex h-7 max-w-[9.5rem] items-center gap-1 overflow-hidden rounded-full border border-[var(--line)] px-2.5 text-[12px] text-[var(--text)] hover:bg-[var(--hover)]"
       >
-        <AgentMark mark={current.mark} name={current.name} size={18} />
         <span className="min-w-0 truncate font-medium">{current.name}</span>
         <ChevronDown size={12} className="shrink-0 text-[var(--muted)]" />
         {ripples.map((ripple) => (
@@ -63,29 +80,34 @@ export function AgentSelect({
           />
         ))}
       </button>
-      {open ? (
-        <div className="absolute left-0 top-full z-30 mt-1.5 max-h-64 w-52 overflow-y-auto rounded-lg border border-[var(--line)] bg-[var(--panel)] py-1 shadow-xl">
-          {agents.map((agent) => {
-            const active = agent.id === current.id;
-            return (
-              <button
-                key={agent.id}
-                type="button"
-                onClick={() => {
-                  onSelect(agent.id);
-                  setOpen(false);
-                }}
-                className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[12.5px] hover:bg-[var(--hover)] ${
-                  active ? "text-[var(--text)]" : "text-[var(--muted)]"
-                }`}
-              >
-                <AgentMark mark={agent.mark} name={agent.name} size={20} />
-                <span className="min-w-0 truncate font-medium">{agent.name}</span>
-              </button>
-            );
-          })}
-        </div>
-      ) : null}
+      {open && menuBox
+        ? createPortal(
+            <div
+              ref={menuRef}
+              style={{ top: menuBox.top, left: menuBox.left, minWidth: menuBox.width }}
+              className="fixed z-[70] max-h-64 overflow-y-auto rounded-lg border border-[var(--line)] bg-[var(--panel)] py-1 shadow-xl"
+            >
+              {agents.map((agent) => {
+                const active = agent.id === current.id;
+                return (
+                  <RippleButton
+                    key={agent.id}
+                    onClick={() => {
+                      onSelect(agent.id);
+                      setOpen(false);
+                    }}
+                    className={`flex w-full px-2.5 py-1.5 text-left text-[12.5px] ${
+                      active ? "text-[var(--text)]" : "text-[var(--muted)]"
+                    }`}
+                  >
+                    <span className="min-w-0 truncate font-medium">{agent.name}</span>
+                  </RippleButton>
+                );
+              })}
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }
