@@ -1,14 +1,20 @@
+import type { AgentInfo, AgentProgress } from "@shared";
 import { Check, Monitor, Moon, PanelRight, PanelRightClose, Pencil, RotateCw, Sun, Unplug } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Locale } from "../i18n";
 import { t } from "../i18n";
 import { nextTheme, type ThemePreference } from "../theme";
+import { AgentSelect } from "./AgentSelect";
 import { IconButton } from "./IconButton";
 
 export function Header({
   locale,
   status,
   error,
+  progress,
+  agents,
+  selectedProviderId,
+  showAgentSelect,
   sessionTitle,
   sessionsOpen,
   theme,
@@ -17,10 +23,15 @@ export function Header({
   onTheme,
   onToggleSessions,
   onRename,
+  onSelectAgent,
 }: {
   locale: Locale;
-  status: "starting" | "ready" | "error";
+  status: "starting" | "idle" | "connecting" | "ready" | "error";
   error?: string;
+  progress?: AgentProgress;
+  agents: AgentInfo[];
+  selectedProviderId: string;
+  showAgentSelect: boolean;
   sessionTitle: string;
   sessionsOpen: boolean;
   theme: ThemePreference;
@@ -29,6 +40,7 @@ export function Header({
   onTheme: (theme: ThemePreference) => void;
   onToggleSessions: () => void;
   onRename: (title: string) => void;
+  onSelectAgent: (id: string) => void;
 }) {
   const label = (key: Parameters<typeof t>[1]) => t(locale, key);
   const title = sessionTitle.trim() || label("untitled");
@@ -71,14 +83,30 @@ export function Header({
     <header className="group/header border-b border-[var(--line)] bg-[color-mix(in_oklab,var(--panel)_88%,transparent)] px-3 py-2.5 backdrop-blur">
       <div className="flex items-center gap-12">
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
-          {status !== "ready" ? (
+          {showAgentSelect && agents.length > 0 && status !== "connecting" && status !== "starting" ? (
+            <AgentSelect
+              locale={locale}
+              agents={agents}
+              selectedId={selectedProviderId}
+              onSelect={onSelectAgent}
+            />
+          ) : (
             <div className="flex shrink-0 items-center gap-1.5 rounded-full px-2 py-1 text-[11px]" title={error}>
-              <Unplug size={13} className={status === "error" ? "text-[var(--bad)]" : "text-[var(--warn)]"} />
+              <Unplug
+                size={13}
+                className={status === "error" ? "text-[var(--bad)]" : "text-[var(--warn)]"}
+              />
               <span className="text-[var(--muted)]">
-                {status === "starting" ? label("starting") : label("offline")}
+                {status === "starting"
+                  ? label("starting")
+                  : status === "connecting"
+                    ? progress
+                      ? `${progress.index}/${progress.total}`
+                      : label("connecting")
+                    : label("offline")}
               </span>
             </div>
-          ) : null}
+          )}
           {status === "error" && onRetry ? (
             <button
               type="button"
@@ -169,6 +197,19 @@ export function Header({
         </div>
       </div>
 
+      {status === "connecting" && progress ? (
+        <div className="mt-2">
+          <div className="h-0.5 overflow-hidden rounded-full bg-[var(--panel-2)]">
+            <div
+              className="h-full bg-[var(--brass)] transition-[width] duration-300"
+              style={{ width: `${Math.round((progress.index / progress.total) * 100)}%` }}
+            />
+          </div>
+          <p className="mt-1 text-[11px] text-[var(--muted)]">
+            {progress.index}/{progress.total} · {progress.label}
+          </p>
+        </div>
+      ) : null}
       {error && status !== "ready" ? (
         <p className="mt-2 text-[11.5px] leading-relaxed text-[var(--bad)]">{error}</p>
       ) : null}

@@ -2,7 +2,18 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createInterface } from "node:readline";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
+import type { AgentPolicy } from "../../shared/src/protocol.ts";
 import { log } from "./log.ts";
+import type { AgentProfile, AuthKind } from "./profiles.ts";
+
+export type AcpLaunch = {
+  command: string;
+  args: string[];
+  cwd: string;
+  env?: Record<string, string>;
+  auth: AuthKind;
+  profile: AgentProfile;
+};
 
 type Pending = {
   resolve: (value: unknown) => void;
@@ -28,27 +39,33 @@ export class AcpClient {
   private nextId = 1;
   private pending = new Map<number, Pending>();
   private sessionId: string | undefined;
-  private readonly agentPath: string;
-  private readonly cwd: string;
+  private policy: AgentPolicy = "ask";
+  private readonly launch: AcpLaunch;
   private readonly handlers: AcpHandlers;
 
-  constructor(agentPath: string, cwd: string, handlers: AcpHandlers) {
-    this.agentPath = agentPath;
-    this.cwd = cwd;
+  constructor(launch: AcpLaunch, handlers: AcpHandlers) {
+    this.launch = launch;
     this.handlers = handlers;
   }
 
+  setPolicy(policy: AgentPolicy): void {
+    this.policy = policy;
+    const sessionId = this.sessionId;
+    if (sessionId) void this.trySetPolicyMode(sessionId);
+  }
+
   start(): void {
-    if (!existsSync(this.agentPath)) {
-      throw new Error(`Cursor CLI not found at ${this.agentPath}. Install it and run \`agent login\`.`);
+    if (!existsSync(this.launch.command)) {
+      throw new Error(`${this.launch.profile.name} CLI not found at ${this.launch.command}. ${this.launch.profile.loginHint}`);
     }
 
     const path = `${homedir()}/.local/bin:/opt/homebrew/bin:/usr/local/bin:${process.env.PATH ?? ""}`;
-    this.child = spawn(this.agentPath, ["acp"], {
-      cwd: this.cwd,
+    this.child = spawn(this.launch.command, this.launch.args, {
+      cwd: this.launch.cwd,
       stdio: ["pipe", "pipe", "pipe"],
       env: {
         ...process.env,
+        ...this.launch.env,
         HOME: process.env.HOME ?? homedir(),
         PATH: path,
       },
@@ -85,26 +102,34 @@ export class AcpClient {
   }
 
   async initialize(): Promise<void> {
+    const meta =
+      this.launch.profile.id === "cursor" ? { parameterizedModelPicker: true } : {};
     await this.request("initialize", {
       protocolVersion: 1,
       clientCapabilities: {
         fs: { readTextFile: false, writeTextFile: false },
         terminal: false,
         session: { configOptions: { boolean: {} } },
-        _meta: { parameterizedModelPicker: true },
+        _meta: meta,
       },
       clientInfo: { name: "opensider", version: "0.1.0" },
     });
-    await this.request("authenticate", { methodId: "cursor_login" });
+    if (this.launch.auth.type === "method") {
+      try {
+        await this.request("authenticate", { methodId: this.launch.auth.methodId });
+      } catch (error) {
+        throw new Error(`${this.launch.profile.loginHint} (${String(error)})`);
+      }
+    }
   }
 
   async createSession(): Promise<SessionOpen> {
     const result = (await this.request("session/new", {
-      cwd: this.cwd,
+      cwd: this.launch.cwd,
       mcpServers: [],
     })) as { sessionId: string; configOptions?: unknown };
     this.sessionId = result.sessionId;
-    await this.trySetAgentMode(result.sessionId);
+    await this.trySetPolicyMode(result.sessionId);
     return {
       sessionId: result.sessionId,
       replay: false,
@@ -129,11 +154,11 @@ export class AcpClient {
     try {
       const result = (await this.request("session/load", {
         sessionId: existingId,
-        cwd: this.cwd,
+        cwd: this.launch.cwd,
         mcpServers: [],
       })) as { sessionId?: string; configOptions?: unknown };
       this.sessionId = existingId;
-      await this.trySetAgentMode(existingId);
+      await this.trySetPolicyMode(existingId);
       return {
         sessionId: existingId,
         replay: true,
@@ -151,11 +176,11 @@ export class AcpClient {
     try {
       const result = (await this.request("session/fork", {
         sessionId: existingId,
-        cwd: this.cwd,
+        cwd: this.launch.cwd,
         mcpServers: [],
       })) as { sessionId: string; configOptions?: unknown };
       this.sessionId = result.sessionId;
-      await this.trySetAgentMode(result.sessionId);
+      await this.trySetPolicyMode(result.sessionId);
       return {
         sessionId: result.sessionId,
         replay: false,
@@ -209,11 +234,15 @@ export class AcpClient {
     this.child?.kill();
   }
 
-  private async trySetAgentMode(sessionId: string): Promise<void> {
-    try {
-      await this.request("session/set_mode", { sessionId, modeId: "agent" });
-    } catch (error) {
-      log(`session/set_mode skipped: ${String(error)}`);
+  private async trySetPolicyMode(sessionId: string): Promise<void> {
+    const ids = this.launch.profile.modeMap[this.policy] ?? [];
+    for (const modeId of ids) {
+      try {
+        await this.request("session/set_mode", { sessionId, modeId });
+        return;
+      } catch (error) {
+        log(`session/set_mode ${modeId} skipped: ${String(error)}`);
+      }
     }
   }
 
@@ -246,7 +275,8 @@ export class AcpClient {
       return;
     }
 
-    if (method.startsWith("cursor/")) {
+    const prefixes = this.launch.profile.vendorPrefixes;
+    if (prefixes.some((prefix) => method.startsWith(prefix))) {
       this.handlers.onCursor(id === undefined ? undefined : Number(id), method, params, sessionId);
       return;
     }
@@ -255,7 +285,7 @@ export class AcpClient {
       this.write({
         jsonrpc: "2.0",
         id,
-        error: { code: -32601, message: `Unsupported method ${method}` },
+        result: {},
       });
     }
   }

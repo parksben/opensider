@@ -1,5 +1,7 @@
 import type {
+  AgentInfo,
   AgentModel,
+  AgentProgress,
   AttachmentItem,
   BrowserCommand,
   BrowserResult,
@@ -13,6 +15,7 @@ import { encodeImageBlob } from "../image-encode";
 import { applyAcpUpdate, applyBrowserTool, createUserMessage } from "./acp-messages";
 import { connectSidebar } from "./bridge";
 import type { ChatMessage, PermissionRequest, PlanPrompt, QuestionPrompt, TodoItem } from "./chat-types";
+import { AgentSetup } from "./components/AgentSetup";
 import { ChatPane } from "./components/ChatPane";
 import { Header } from "./components/Header";
 import { PermissionBar } from "./components/PermissionBar";
@@ -29,12 +32,17 @@ import {
 import type { QueuedMessage } from "./queued-message";
 import {
   buildForkContext,
+  applyProviderBinding,
   autoPermissionOptionId,
+  bindAcpSession,
+  boundAcpId,
   clampSessionDrawerWidth,
   emptySession,
+  isWorkspaceWritePermission,
   loadState,
   saveState,
   SESSION_DRAWER_DEFAULT,
+  sessionAcpIds,
   settleFinishedContent,
   isPlaceholderTitle,
   nextSessionTitle,
@@ -54,10 +62,15 @@ export function App() {
   const [selectedId, setSelectedId] = useState("");
   const [models, setModels] = useState<AgentModel[]>([]);
   const [selectedModelId, setSelectedModelId] = useState("");
+  const [selectedModelByProvider, setSelectedModelByProvider] = useState<Record<string, string>>({});
   const [agentMode, setAgentMode] = useState<AgentMode>("ask");
+  const [selectedProviderId, setSelectedProviderId] = useState("");
+  const [onboardingCompleted, setOnboardingCompleted] = useState(false);
+  const [agents, setAgents] = useState<AgentInfo[]>([]);
+  const [progress, setProgress] = useState<AgentProgress>();
   const [sessionsOpen, setSessionsOpen] = useState(false);
   const [drawerWidth, setDrawerWidth] = useState(SESSION_DRAWER_DEFAULT);
-  const [status, setStatus] = useState<"starting" | "ready" | "error">("starting");
+  const [status, setStatus] = useState<"starting" | "idle" | "connecting" | "ready" | "error">("starting");
   const [error, setError] = useState<string>();
   const [page, setPage] = useState<CurrentPage>();
   const [runningIds, setRunningIds] = useState<string[]>([]);
@@ -82,7 +95,12 @@ export function App() {
   } | null>(null);
   const localeRef = useRef(locale);
   const selectedModelRef = useRef(selectedModelId);
+  const selectedModelByProviderRef = useRef(selectedModelByProvider);
   const agentModeRef = useRef(agentMode);
+  const selectedProviderRef = useRef(selectedProviderId);
+  const onboardingRef = useRef(onboardingCompleted);
+  const pendingConnectRef = useRef("");
+  const connectedProviderRef = useRef("");
   const pickWaiters = useRef(new Map<string, (items: AttachmentItem[]) => void>());
   const appliedModelRef = useRef("");
   const elementPickId = useRef("");
@@ -101,7 +119,10 @@ export function App() {
   sessionsRef.current = sessions;
   localeRef.current = locale;
   selectedModelRef.current = selectedModelId;
+  selectedModelByProviderRef.current = selectedModelByProvider;
   agentModeRef.current = agentMode;
+  selectedProviderRef.current = selectedProviderId;
+  onboardingRef.current = onboardingCompleted;
 
   const enqueueBind = (item: { localId: string; kind: "new" | "use" | "fork" }) => {
     pendingBinds.current.push(item);
@@ -115,13 +136,35 @@ export function App() {
     const session = list.find((item) => item.id === id);
     if (!session) return;
     if (runningIdsRef.current.has(session.id)) return;
-    if (session.acpSessionId) {
+    const providerId = selectedProviderRef.current;
+    const acpId = boundAcpId(session, providerId);
+    if (acpId) {
       enqueueBind({ localId: session.id, kind: "use" });
-      sendRef.current({ type: "session.use", sessionId: session.acpSessionId });
-    } else {
-      enqueueBind({ localId: session.id, kind: "new" });
-      sendRef.current({ type: "session.new" });
+      sendRef.current({ type: "session.use", sessionId: acpId });
+      return;
     }
+    if (session.messages.length > 0 && !session.pendingForkContext) {
+      patchSession(session.id, (item) => ({
+        ...item,
+        pendingForkContext: item.pendingForkContext ?? buildForkContext(item.messages),
+      }));
+    }
+    enqueueBind({ localId: session.id, kind: "new" });
+    sendRef.current({ type: "session.new" });
+  };
+
+  const requestConnect = (providerId: string) => {
+    if (!providerId) return;
+    if (connectedProviderRef.current === providerId && statusRef.current === "ready") return;
+    if (pendingConnectRef.current === providerId && statusRef.current === "connecting") return;
+    pendingConnectRef.current = providerId;
+    setSelectedProviderId(providerId);
+    setSessions((list) => applyProviderBinding(list, providerId));
+    setSelectedModelId(selectedModelByProviderRef.current[providerId] || "");
+    appliedModelRef.current = "";
+    setModels([]);
+    setProgress(undefined);
+    sendRef.current({ type: "agent.connect", providerId, policy: agentModeRef.current });
   };
 
   const syncRunning = (next: Set<string>) => {
@@ -131,7 +174,7 @@ export function App() {
 
   const localIdForAcp = (acpId?: string) => {
     if (acpId) {
-      const found = sessionsRef.current.find((item) => item.acpSessionId === acpId);
+      const found = sessionsRef.current.find((item) => sessionAcpIds(item).includes(acpId));
       if (found) return found.id;
     }
     return selectedIdRef.current;
@@ -237,17 +280,50 @@ export function App() {
   };
 
   const handleHost = (msg: HostToExt) => {
+    if (msg.type === "agents") {
+      setAgents(msg.agents);
+      if (!selectedProviderRef.current && msg.agents[0]) {
+        setSelectedProviderId(msg.agents[0].id);
+      }
+      if (
+        onboardingRef.current &&
+        (selectedProviderRef.current || msg.agents[0]?.id) &&
+        (statusRef.current === "idle" || statusRef.current === "starting")
+      ) {
+        requestConnect(selectedProviderRef.current || msg.agents[0].id);
+      }
+      return;
+    }
+    if (msg.type === "agent.progress") {
+      setProgress(msg.progress);
+      return;
+    }
+    if (msg.type === "hello") {
+      if (msg.providerId) connectedProviderRef.current = msg.providerId;
+      return;
+    }
     if (msg.type === "status") {
       setStatus(msg.state);
       setError(msg.error);
       if (msg.state === "error") {
+        pendingConnectRef.current = "";
+        connectedProviderRef.current = "";
         pendingRegen.current = null;
         pendingBinds.current = [];
         pendingForceSend.current = {};
         finishAllTurns();
       }
       if (msg.state !== "ready") appliedModelRef.current = "";
-      if (msg.state === "ready") tryBindCurrent();
+      if (msg.state === "ready") {
+        connectedProviderRef.current = selectedProviderRef.current;
+        pendingConnectRef.current = "";
+        if (!onboardingRef.current) setOnboardingCompleted(true);
+        setProgress(undefined);
+        tryBindCurrent();
+      }
+      if (msg.state === "idle" && onboardingRef.current && selectedProviderRef.current) {
+        requestConnect(selectedProviderRef.current);
+      }
       return;
     }
     if (msg.type === "session") {
@@ -256,8 +332,7 @@ export function App() {
       const targetId = pending?.localId ?? (current && !current.acpSessionId ? current.id : undefined);
       if (targetId) {
         patchSession(targetId, (session) => ({
-          ...session,
-          acpSessionId: msg.sessionId,
+          ...bindAcpSession(session, selectedProviderRef.current, msg.sessionId),
           pendingForkContext:
             pending?.kind === "fork" && msg.forked === false
               ? (session.pendingForkContext ?? buildForkContext(session.messages))
@@ -358,7 +433,9 @@ export function App() {
       if (!localId) return;
       const toolCall = msg.params.toolCall as { title?: string } | undefined;
       const options = (msg.params.options as PermissionRequest["options"]) ?? [];
-      if (agentModeRef.current === "auto" && replyPermission(msg.id, options)) {
+      const workspaceWrite = isWorkspaceWritePermission(msg.params);
+      const mode = agentModeRef.current;
+      if ((mode === "auto" || (mode === "workspace" && workspaceWrite)) && replyPermission(msg.id, options)) {
         setPermissions((current) => {
           if (!(localId in current)) return current;
           const next = { ...current };
@@ -373,6 +450,7 @@ export function App() {
           id: msg.id,
           title: toolCall?.title ?? t(localeRef.current, "wantsTool"),
           options,
+          workspaceWrite,
         },
       }));
       return;
@@ -430,7 +508,10 @@ export function App() {
       setSessions(sessions);
       setSelectedId(selectedId);
       setSelectedModelId(state.selectedModelId);
+      setSelectedModelByProvider(state.selectedModelByProvider);
       setAgentMode(state.agentMode);
+      setSelectedProviderId(state.selectedProviderId);
+      setOnboardingCompleted(state.onboardingCompleted);
       setSessionsOpen(state.sessionsOpen);
       setDrawerWidth(state.sessionDrawerWidth);
       setHydrated(true);
@@ -448,12 +529,28 @@ export function App() {
       theme,
       selectedId,
       selectedModelId,
+      selectedModelByProvider,
       agentMode,
+      selectedProviderId,
+      onboardingCompleted,
       sessionsOpen,
       sessionDrawerWidth: drawerWidth,
       sessions,
     });
-  }, [hydrated, locale, theme, selectedId, selectedModelId, agentMode, sessionsOpen, drawerWidth, sessions]);
+  }, [
+    hydrated,
+    locale,
+    theme,
+    selectedId,
+    selectedModelId,
+    selectedModelByProvider,
+    agentMode,
+    selectedProviderId,
+    onboardingCompleted,
+    sessionsOpen,
+    drawerWidth,
+    sessions,
+  ]);
 
   useLayoutEffect(() => {
     applyThemePreference(theme);
@@ -684,6 +781,10 @@ export function App() {
   const onModel = (modelId: string) => {
     setSelectedModelId(modelId);
     appliedModelRef.current = modelId;
+    const providerId = selectedProviderRef.current;
+    if (providerId) {
+      setSelectedModelByProvider((current) => ({ ...current, [providerId]: modelId }));
+    }
     const session = sessionsRef.current.find((item) => item.id === selectedIdRef.current);
     if (statusRef.current === "ready" && modelId !== "auto") {
       sendRef.current({ type: "model.set", modelId, sessionId: session?.acpSessionId });
@@ -702,10 +803,17 @@ export function App() {
     const session = sessionsRef.current.find((item) => item.id === id);
     if (!session) return;
     if (runningIdsRef.current.has(id)) return;
-    if (session.acpSessionId) {
+    const acpId = boundAcpId(session, selectedProviderRef.current);
+    if (acpId) {
       enqueueBind({ localId: id, kind: "use" });
-      sendRef.current({ type: "session.use", sessionId: session.acpSessionId });
+      sendRef.current({ type: "session.use", sessionId: acpId });
     } else if (statusRef.current === "ready") {
+      if (session.messages.length > 0 && !session.pendingForkContext) {
+        patchSession(id, (item) => ({
+          ...item,
+          pendingForkContext: item.pendingForkContext ?? buildForkContext(item.messages),
+        }));
+      }
       enqueueBind({ localId: id, kind: "new" });
       sendRef.current({ type: "session.new" });
     }
@@ -872,9 +980,14 @@ export function App() {
           locale={locale}
           status={status}
           error={error}
+          progress={progress}
+          agents={agents}
+          selectedProviderId={selectedProviderId}
+          showAgentSelect={onboardingCompleted}
           sessionTitle={selected.title}
           sessionsOpen={sessionsOpen}
           theme={theme}
+          onSelectAgent={requestConnect}
           onLocale={(next) => {
             applyLocale(next);
             setLocale(next);
@@ -887,6 +1000,8 @@ export function App() {
           onToggleSessions={() => setSessionsOpen((open) => !open)}
           onRetry={() => {
             pendingBinds.current = [];
+            pendingConnectRef.current = "";
+            connectedProviderRef.current = "";
             setStatus("starting");
             setError(t(locale, "reconnecting"));
             reconnectRef.current();
@@ -894,6 +1009,22 @@ export function App() {
         />
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <div className="min-h-0 flex-1">
+            {!onboardingCompleted ? (
+              <AgentSetup
+                locale={locale}
+                agents={agents}
+                selectedId={selectedProviderId}
+                connecting={status === "connecting"}
+                progress={progress}
+                error={error}
+                onSelect={setSelectedProviderId}
+                onConfirm={() => requestConnect(selectedProviderId)}
+                onRetry={() => {
+                  sendRef.current({ type: "agents.detect" });
+                  reconnectRef.current();
+                }}
+              />
+            ) : (
             <ChatPane
               locale={locale}
               sessionId={selected.id}
@@ -916,11 +1047,13 @@ export function App() {
               agentMode={agentMode}
               onAgentMode={(mode) => {
                 setAgentMode(mode);
-                if (mode !== "auto") return;
+                sendRef.current({ type: "agent.setPolicy", policy: mode });
+                if (mode === "ask") return;
                 setPermissions((current) => {
                   const kept: Record<string, PermissionRequest> = {};
                   for (const [id, request] of Object.entries(current)) {
-                    if (!replyPermission(request.id, request.options)) kept[id] = request;
+                    const allow = mode === "auto" || request.workspaceWrite;
+                    if (!allow || !replyPermission(request.id, request.options)) kept[id] = request;
                   }
                   return kept;
                 });
@@ -987,6 +1120,7 @@ export function App() {
                 />
               }
             />
+            )}
           </div>
         </div>
       </div>

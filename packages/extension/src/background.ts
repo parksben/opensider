@@ -18,18 +18,32 @@ let lastStatus: HostToExt = { type: "status", state: "starting" };
 let lastPage: HostToExt | undefined;
 let lastSession: HostToExt | undefined;
 let lastModels: HostToExt | undefined;
+let lastAgents: HostToExt | undefined;
+let lastProgress: HostToExt | undefined;
 let ignoreNextDisconnect = false;
 
 function remember(msg: HostToExt): void {
-  if (msg.type === "status") lastStatus = msg;
+  if (msg.type === "status") {
+    lastStatus = msg;
+    if (msg.state === "idle" || msg.state === "connecting") {
+      lastSession = undefined;
+      lastModels = undefined;
+    }
+  }
   if (msg.type === "page") lastPage = msg;
   if (msg.type === "session") lastSession = msg;
   if (msg.type === "models") lastModels = msg;
+  if (msg.type === "agents") lastAgents = msg;
+  if (msg.type === "agent.progress") lastProgress = msg;
 }
 
 function replay(port: chrome.runtime.Port): void {
   try {
     port.postMessage(lastStatus);
+    if (lastAgents) port.postMessage(lastAgents);
+    if (lastProgress && lastStatus.type === "status" && lastStatus.state === "connecting") {
+      port.postMessage(lastProgress);
+    }
     if (lastSession) port.postMessage(lastSession);
     if (lastPage) port.postMessage(lastPage);
     if (lastModels) port.postMessage(lastModels);

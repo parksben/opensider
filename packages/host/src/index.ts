@@ -1,5 +1,6 @@
-import type { ExtToHost, HostToExt } from "../../shared/src/protocol.ts";
+import type { AgentPolicy, ExtToHost, HostToExt } from "../../shared/src/protocol.ts";
 import { AcpClient, type SessionOpen } from "./acp.ts";
+import { cachedResolved, detectAgents, rememberResolved, resolveProfile, type ResolvedAgent } from "./detect.ts";
 import { log } from "./log.ts";
 import {
   catalogFromConfigOptions,
@@ -10,11 +11,10 @@ import {
   type ModelCatalog,
 } from "./models.ts";
 import { createNativeIo } from "./native.ts";
-import { defaultAgentPath } from "./paths.ts";
 import { pickLocalPaths } from "./pick.ts";
 import { savePastedJpeg } from "./save.ts";
 import { watchCommands, writeCommandResult } from "./watch.ts";
-import { ensureWorkspace, readSessionId, WORKSPACE_DIR, writeCurrentPage, writeSessionId, writeTabsSnapshot } from "./workspace.ts";
+import { ensureWorkspace, WORKSPACE_DIR, writeCurrentPage, writeSessionId, writeTabsSnapshot } from "./workspace.ts";
 
 log("node host starting");
 ensureWorkspace();
@@ -25,7 +25,6 @@ type AcpRuntime = {
   binding: boolean;
 };
 
-const agentPath = defaultAgentPath();
 const runtimes: AcpRuntime[] = [];
 const rpcClients = new Map<number, AcpClient>();
 let bindTail = Promise.resolve();
@@ -35,6 +34,10 @@ let catalog: ModelCatalog = {
   modelConfigId: "model",
 };
 let pendingModelId: string | undefined;
+let currentAgent: ResolvedAgent | undefined;
+let currentPolicy: AgentPolicy = "ask";
+let lastAgents: Awaited<ReturnType<typeof detectAgents>>["infos"] = [];
+let hostState: "starting" | "idle" | "connecting" | "ready" | "error" = "starting";
 
 const native = createNativeIo((raw) => {
   const msg = raw as ExtToHost;
@@ -49,9 +52,85 @@ function sendModels(): void {
   send({ type: "models", models: catalog.models, currentId: catalog.currentId });
 }
 
+function setHostState(state: typeof hostState, error?: string): void {
+  hostState = state;
+  send({ type: "status", state, error });
+}
+
+function sendAgents(): void {
+  send({ type: "agents", agents: lastAgents, selectedId: currentAgent?.profile.id });
+}
+
+function sendProgress(index: number, total: number, phase: string, label: string): void {
+  send({ type: "agent.progress", progress: { phase, index, total, label } });
+}
+
+function sendHello(): void {
+  send({
+    type: "hello",
+    workspace: WORKSPACE_DIR,
+    agentPath: currentAgent?.command ?? "",
+    providerId: currentAgent?.profile.id,
+  });
+}
+
+async function scanAgents(): Promise<void> {
+  const { infos, resolved } = await detectAgents();
+  lastAgents = infos;
+  for (const item of resolved) rememberResolved(item);
+  sendAgents();
+}
+
+function stopRuntimes(): void {
+  for (const runtime of runtimes) {
+    try {
+      runtime.client.stop();
+    } catch {
+      // ignore
+    }
+  }
+  runtimes.length = 0;
+  rpcClients.clear();
+}
+
+async function connectAgent(providerId: string, policy?: AgentPolicy): Promise<void> {
+  setHostState("connecting");
+  if (policy) currentPolicy = policy;
+  sendProgress(1, 6, "resolve", "Resolving CLI");
+  const resolved = cachedResolved(providerId) ?? (await resolveProfile(providerId));
+  if (!resolved) {
+    throw new Error(`Could not find an ACP CLI for ${providerId}.`);
+  }
+  currentAgent = resolved;
+  rememberResolved(resolved);
+
+  sendProgress(2, 6, "spawn", "Starting process");
+  stopRuntimes();
+  catalog = { models: [], currentId: "", modelConfigId: "model" };
+  sendModels();
+  const runtime: AcpRuntime = { client: undefined as unknown as AcpClient, prompting: false, binding: false };
+  attachClient(runtime);
+  runtime.client.start();
+
+  sendProgress(3, 6, "handshake", "ACP handshake");
+  sendProgress(4, 6, "auth", "Signing in");
+  await runtime.client.initialize();
+  runtimes.push(runtime);
+  log(`acp runtime ready provider=${resolved.profile.id} count=${runtimes.length}`);
+
+  sendProgress(5, 6, "session", "Ready for sessions");
+  sendProgress(6, 6, "models", "Loading models");
+  await refreshModels();
+  sendModels();
+  sendAgents();
+  sendHello();
+  setHostState("ready");
+}
+
 async function refreshModels(): Promise<void> {
+  if (currentAgent?.profile.listModels !== "agent-models") return;
   try {
-    catalog = mergeCatalog(catalog, await listAgentModels(agentPath));
+    catalog = mergeCatalog(catalog, await listAgentModels(currentAgent.command));
   } catch (error) {
     log(`list models failed: ${String(error)}`);
   }
@@ -72,7 +151,17 @@ function enqueueSessionOp<T>(work: () => Promise<T>): Promise<T> {
 }
 
 function attachClient(runtime: AcpRuntime): void {
-  const client = new AcpClient(agentPath, WORKSPACE_DIR, {
+  if (!currentAgent) throw new Error("no agent selected");
+  const client = new AcpClient(
+    {
+      command: currentAgent.command,
+      args: currentAgent.args,
+      cwd: WORKSPACE_DIR,
+      env: currentAgent.profile.env,
+      auth: currentAgent.profile.auth,
+      profile: currentAgent.profile,
+    },
+    {
     onUpdate: (update, sessionId) => {
       if (runtime.binding && !runtime.prompting) {
         if (update.sessionUpdate === "config_option_update") {
@@ -98,8 +187,10 @@ function attachClient(runtime: AcpRuntime): void {
       if (id !== undefined) rpcClients.set(id, client);
       send({ type: "cursor", id, method, params, sessionId: sessionId ?? client.getSessionId() });
     },
-  });
+    },
+  );
   runtime.client = client;
+  runtime.client.setPolicy(currentPolicy);
 }
 
 async function spawnRuntime(): Promise<AcpRuntime> {
@@ -180,7 +271,22 @@ function replyClient(id: number): AcpClient | undefined {
 async function handleExt(msg: ExtToHost): Promise<void> {
   try {
     if (msg.type === "hello") {
-      send({ type: "hello", workspace: WORKSPACE_DIR, agentPath });
+      sendHello();
+      if (lastAgents.length > 0) sendAgents();
+      send({ type: "status", state: hostState === "starting" ? "idle" : hostState });
+      return;
+    }
+    if (msg.type === "agents.detect") {
+      await scanAgents();
+      return;
+    }
+    if (msg.type === "agent.connect") {
+      await connectAgent(msg.providerId, msg.policy);
+      return;
+    }
+    if (msg.type === "agent.setPolicy") {
+      currentPolicy = msg.policy;
+      for (const runtime of runtimes) runtime.client.setPolicy(msg.policy);
       return;
     }
     if (msg.type === "page.pick" || msg.type === "page.pick.cancel") {
@@ -363,32 +469,19 @@ async function handleExt(msg: ExtToHost): Promise<void> {
       send({ type: "turn.end", stopReason: "error", sessionId: msg.sessionId });
       return;
     }
-    send({ type: "status", state: "error", error: String(error) });
+    setHostState("error", String(error));
   }
 }
 
 async function main(): Promise<void> {
-  send({ type: "status", state: "starting" });
+  setHostState("starting");
   try {
-    const runtime = await spawnRuntime();
-    await refreshModels();
-    const opened = await withBinding(runtime, () => runtime.client.openSession(readSessionId()));
-    writeSessionId(opened.sessionId);
-    absorbSessionOptions(opened);
-    await applyPendingModel(runtime);
-    send({
-      type: "session",
-      sessionId: opened.sessionId,
-      replay: opened.replay,
-      created: opened.created,
-      forked: opened.forked,
-    });
-    sendModels();
-    send({ type: "status", state: "ready" });
-    log(`ready session=${opened.sessionId} replay=${opened.replay}`);
+    await scanAgents();
+    setHostState("idle");
+    log(`idle agents=${lastAgents.map((item) => item.id).join(",") || "none"}`);
   } catch (error) {
-    log(`startup failed: ${String(error)}`);
-    send({ type: "status", state: "error", error: String(error) });
+    log(`detect failed: ${String(error)}`);
+    setHostState("error", String(error));
   }
 
   watchCommands((command) => {

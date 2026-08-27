@@ -233,8 +233,52 @@ export type AgentModel = {
   name: string;
 };
 
+export type AgentPolicy = "ask" | "workspace" | "auto";
+
+export type AgentMark =
+  | "cursor"
+  | "opencode"
+  | "copilot"
+  | "codebuddy"
+  | "claude"
+  | "codex"
+  | "gemini"
+  | "qwen"
+  | "kimi"
+  | "iflow"
+  | "trae"
+  | "qoder"
+  | "generic";
+
+export type AgentCaps = {
+  models: boolean;
+  questions: boolean;
+  plans: boolean;
+  todos: boolean;
+};
+
+export type AgentInfo = {
+  id: string;
+  name: string;
+  mark: AgentMark;
+  command?: string;
+  installed: boolean;
+  hint?: string;
+  caps: AgentCaps;
+};
+
+export type AgentProgress = {
+  phase: string;
+  index: number;
+  total: number;
+  label: string;
+};
+
 export type ExtToHost =
   | { type: "hello" }
+  | { type: "agents.detect" }
+  | { type: "agent.connect"; providerId: string; policy?: AgentPolicy }
+  | { type: "agent.setPolicy"; policy: AgentPolicy }
   | { type: "prompt"; text: string; sessionId?: string; currentPage?: { title: string; url: string } }
   | { type: "cancel"; sessionId?: string }
   | { type: "session.new" }
@@ -256,8 +300,10 @@ export type ExtToHost =
   | { type: "cursor.reply"; id: number; result: unknown };
 
 export type HostToExt =
-  | { type: "hello"; workspace: string; agentPath: string }
-  | { type: "status"; state: "starting" | "ready" | "error"; error?: string }
+  | { type: "hello"; workspace: string; agentPath: string; providerId?: string }
+  | { type: "status"; state: "starting" | "idle" | "connecting" | "ready" | "error"; error?: string }
+  | { type: "agents"; agents: AgentInfo[]; selectedId?: string }
+  | { type: "agent.progress"; progress: AgentProgress }
   | { type: "session"; sessionId: string; replay?: boolean; created?: boolean; forked?: boolean }
   | { type: "update"; update: Record<string, unknown>; sessionId?: string }
   | { type: "permission"; id: number; params: Record<string, unknown>; sessionId?: string }

@@ -1,5 +1,5 @@
 import type { AgentModel, AttachmentItem, CurrentPage } from "@shared";
-import { ArrowDown, AtSign, Check, ChevronDown, Copy, GitFork, LoaderCircle, MousePointer2, Paperclip, RefreshCw, Send, Shield, Square, X, Zap } from "lucide-react";
+import { ArrowDown, AtSign, Check, ChevronDown, Copy, FolderPen, GitFork, LoaderCircle, MousePointer2, Paperclip, RefreshCw, Send, Shield, Square, X, Zap } from "lucide-react";
 import logoUrl from "../../../assets/icon.svg?url";
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import type { ChatMessage, ChatPart, TodoItem } from "../chat-types";
@@ -680,10 +680,16 @@ function ModeSelect({
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const { ripples, spawn, done } = useRipple();
-  const current = mode === "auto" ? { icon: Zap, name: t(locale, "modeAuto") } : { icon: Shield, name: t(locale, "modeAsk") };
+  const current =
+    mode === "auto"
+      ? { icon: Zap, name: t(locale, "modeAuto") }
+      : mode === "workspace"
+        ? { icon: FolderPen, name: t(locale, "modeWorkspace") }
+        : { icon: Shield, name: t(locale, "modeAsk") };
   const CurrentIcon = current.icon;
   const options: Array<{ id: AgentMode; icon: typeof Shield; name: string; hint: string }> = [
     { id: "ask", icon: Shield, name: t(locale, "modeAsk"), hint: t(locale, "modeAskHint") },
+    { id: "workspace", icon: FolderPen, name: t(locale, "modeWorkspace"), hint: t(locale, "modeWorkspaceHint") },
     { id: "auto", icon: Zap, name: t(locale, "modeAuto"), hint: t(locale, "modeAutoHint") },
   ];
 
@@ -713,7 +719,7 @@ function ModeSelect({
         onClick={() => setOpen((value) => !value)}
         onPointerDown={(event) => spawn(event)}
         className={`relative flex h-7 items-center gap-1 overflow-hidden rounded-full px-2 text-[11px] hover:bg-[var(--hover)] ${
-          mode === "auto" ? "text-[var(--brass)]" : "text-[var(--muted)]"
+          mode === "ask" ? "text-[var(--muted)]" : "text-[var(--brass)]"
         }`}
       >
         <CurrentIcon size={14} />
@@ -728,7 +734,7 @@ function ModeSelect({
         ))}
       </button>
       {open ? (
-        <div className="absolute bottom-full left-0 z-30 mb-1.5 w-52 overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--panel)] py-1 shadow-xl">
+        <div className="absolute bottom-full left-0 z-30 mb-1.5 w-60 overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--panel)] py-1 shadow-xl">
           {options.map((option) => {
             const Icon = option.icon;
             const active = option.id === mode;

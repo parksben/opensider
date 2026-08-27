@@ -2,6 +2,7 @@ import { mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { TOOL_CATALOG, type CurrentPage, type TabsSnapshot } from "../../shared/src/protocol.ts";
 import {
   AGENTS_MD_PATH,
+  CLAUDE_MD_PATH,
   BROWSER_DIR,
   COMMANDS_DIR,
   CURRENT_PAGE_PATH,
@@ -103,6 +104,7 @@ export function ensureWorkspace(): void {
   mkdirSync(PASTED_DIR, { recursive: true });
   mkdirSync(SIDEBAR_HOME, { recursive: true });
   writeFileSync(AGENTS_MD_PATH, AGENTS_MD);
+  writeFileSync(CLAUDE_MD_PATH, AGENTS_MD);
   writeFileSync(
     TOOLS_PATH,
     `${JSON.stringify(

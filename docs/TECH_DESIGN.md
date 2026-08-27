@@ -188,7 +188,10 @@ chrome.storage.local
   theme: "light" | "dark" | "system"  # 默认 dark；system 跟 prefers-color-scheme
   selectedId: <local session id>
   selectedModelId?: string     # 具体模型 id；auto / 空 = 不指定，不调用 set_model
-  agentMode: "ask" | "auto"    # 默认 ask；auto 自动回 permission.reply
+  agentMode: "ask" | "workspace" | "auto"  # 默认 ask
+  selectedProviderId?: string
+  onboardingCompleted?: boolean
+  selectedModelByProvider?: { [providerId]: modelId }
   sessionsOpen?: boolean       # 右侧会话抽屉是否展开
   sessionDrawerWidth?: number  # 抽屉宽度，默认 248
   sessions[]:
@@ -196,6 +199,7 @@ chrome.storage.local
     pinnedAt?                  # ISO；有值即置顶
     parentId?, forkedFromMessageId?
     pendingForkContext?        # 下一条 prompt 要带的节点前文
+    acpByProvider?             # { [providerId]: acpSessionId }；换 Agent 不丢本地消息
     messages[]               # assistant 带 modelId / modelName，首段流式写入时盖上；结束时写 durationMs
 ```
 
@@ -324,7 +328,11 @@ on them with page tools using args.selector.
 
 ## 权限模式
 
-`agentMode`：`ask`（默认）弹 HITL 卡片；`auto` 在收到 `permission` 时按 option 文案/id 打分，优先 always / 其次 once，立刻 `permission.reply`，不渲染卡片。提问和计划仍走 HITL。切到 `auto` 时若已有待确认权限，同一套逻辑马上回。输入栏 `ModeSelect` 向上弹出，每项标题 + `text-[11px] text-[var(--muted)]` 解释（文案对齐 Copilot 前两项：Default permissions / Allow all）；点选后关闭。
+`agentMode` 三级：`ask`（默认）每次 `request_permission` 弹卡；`workspace` 仅对编辑/写入类自动回 always/once，Shell/网络仍弹卡；`auto` 全部工具权限自动回。提问和计划三种都不自动过。切到更宽的档位时，已弹出且符合该档的卡立刻回。Host 若该 Profile 广告了 `session/set_mode`，按 `modeMap` 推（Ask→default/manual/agent，workspace→acceptEdits，Allow all→bypassPermissions/agent-full-access），没有则只在客户端拦卡。
+
+## 多 Agent CLI
+
+Host 是通用 ACP Client + 数据驱动 `AgentProfile`（启动命令、鉴权、modeMap、contextFiles、gates）。不经 acpx。探测：内置名单（Cursor / OpenCode / Copilot / CodeBuddy / Claude 适配器 / Codex 适配器 / Gemini / Qwen / Kimi / iFlow / Trae / Qoder 等）+ PATH + ACP Registry，对候选做短超时 `initialize` 握手。侧栏会话自己持有消息；`Session.acpByProvider` 记各家 ACP id。换 Agent 不删本地历史；该家没有绑定则 `session/new` 并带本地前文。模型列表按当前 provider 的 `configOptions` 刷新。引导完成前 Host 不拉起 Agent 进程。
 
 ## 标签切换
 

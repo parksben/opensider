@@ -34,6 +34,7 @@ export type PermissionRequest = {
   id: number;
   title: string;
   options: Array<{ optionId: string; name: string; kind?: string }>;
+  workspaceWrite?: boolean;
 };
 
 export type QuestionPrompt = {

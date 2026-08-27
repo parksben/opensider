@@ -22,6 +22,7 @@ export type StoredMessage = {
 export type Session = {
   id: string;
   acpSessionId?: string;
+  acpByProvider?: Record<string, string>;
   title: string;
   titleManual?: boolean;
   createdAt: string;
@@ -49,10 +50,45 @@ export function clampSessionDrawerWidth(width: number, viewportWidth?: number): 
   return Math.min(max, Math.max(SESSION_DRAWER_MIN, Math.round(width)));
 }
 
-export type AgentMode = "ask" | "auto";
+export type AgentMode = "ask" | "workspace" | "auto";
 
 export function isAgentMode(value: unknown): value is AgentMode {
-  return value === "ask" || value === "auto";
+  return value === "ask" || value === "workspace" || value === "auto";
+}
+
+export function isWorkspaceWritePermission(params: Record<string, unknown>): boolean {
+  const toolCall = params.toolCall as { kind?: string; title?: string } | undefined;
+  const hay = `${toolCall?.kind ?? ""} ${toolCall?.title ?? ""}`.toLowerCase();
+  if (/(execute|shell|bash|terminal|command|fetch|http|network|web_search|mcp)/.test(hay)) return false;
+  return /(edit|write|delete|move|create|patch|apply)/.test(hay);
+}
+
+export function boundAcpId(session: Session, providerId?: string): string | undefined {
+  if (providerId && session.acpByProvider?.[providerId]) return session.acpByProvider[providerId];
+  return session.acpSessionId;
+}
+
+export function bindAcpSession(session: Session, providerId: string | undefined, acpSessionId: string): Session {
+  const acpByProvider = providerId
+    ? { ...session.acpByProvider, [providerId]: acpSessionId }
+    : session.acpByProvider;
+  return { ...session, acpSessionId, acpByProvider };
+}
+
+export function applyProviderBinding(sessions: Session[], providerId: string): Session[] {
+  return sessions.map((session) => ({
+    ...session,
+    acpSessionId: session.acpByProvider?.[providerId],
+  }));
+}
+
+export function sessionAcpIds(session: Session): string[] {
+  const ids = new Set<string>();
+  if (session.acpSessionId) ids.add(session.acpSessionId);
+  for (const id of Object.values(session.acpByProvider ?? {})) {
+    if (id) ids.add(id);
+  }
+  return [...ids];
 }
 
 export function autoPermissionOptionId(
@@ -74,7 +110,10 @@ export type PersistedState = {
   theme: ThemePreference;
   selectedId: string;
   selectedModelId?: string;
+  selectedModelByProvider?: Record<string, string>;
   agentMode?: AgentMode;
+  selectedProviderId?: string;
+  onboardingCompleted?: boolean;
   sessionsOpen?: boolean;
   sessionDrawerWidth?: number;
   sessions: Array<Omit<Session, "messages"> & { messages: StoredMessage[] }>;
@@ -306,16 +345,32 @@ export function wrapForkContext(context: string): string {
   return `[Forked thread context — prior messages only. Do not mention this wrapper. Wait for the user's question below.]\n\n${context}`;
 }
 
-export async function loadState(): Promise<{
+export type LoadedState = {
   locale: Locale;
   theme: ThemePreference;
   selectedId: string;
   selectedModelId: string;
+  selectedModelByProvider: Record<string, string>;
   agentMode: AgentMode;
+  selectedProviderId: string;
+  onboardingCompleted: boolean;
   sessionsOpen: boolean;
   sessionDrawerWidth: number;
   sessions: Session[];
-}> {
+};
+
+function migrateSessionBindings(session: Session, providerId: string): Session {
+  if (session.acpByProvider?.[providerId]) {
+    return { ...session, acpSessionId: session.acpByProvider[providerId] };
+  }
+  if (!session.acpSessionId) return session;
+  return {
+    ...session,
+    acpByProvider: { ...session.acpByProvider, [providerId]: session.acpSessionId },
+  };
+}
+
+export async function loadState(): Promise<LoadedState> {
   const raw = await chrome.storage.local.get([STATE_KEY, PREVIOUS_STATE_KEY]);
   const data = (raw[STATE_KEY] ?? raw[PREVIOUS_STATE_KEY]) as PersistedState | undefined;
   if (!data || data.version !== 1 || !Array.isArray(data.sessions)) {
@@ -324,22 +379,38 @@ export async function loadState(): Promise<{
       theme: readCachedTheme() ?? "dark",
       selectedId: "",
       selectedModelId: "",
+      selectedModelByProvider: {},
       agentMode: "ask",
+      selectedProviderId: "",
+      onboardingCompleted: false,
       sessionsOpen: false,
       sessionDrawerWidth: SESSION_DRAWER_DEFAULT,
       sessions: [],
     };
   }
-  const sessions = data.sessions.map(hydrateSession);
+  const hasHistory = data.sessions.some(
+    (session) => session.messages.length > 0 || Boolean(session.acpSessionId) || Boolean(session.acpByProvider),
+  );
+  const onboardingCompleted = data.onboardingCompleted === true || hasHistory;
+  const selectedProviderId = data.selectedProviderId || (onboardingCompleted ? "cursor" : "");
+  const sessions = data.sessions
+    .map(hydrateSession)
+    .map((session) => (selectedProviderId ? migrateSessionBindings(session, selectedProviderId) : session));
   const selectedId = sessions.some((session) => session.id === data.selectedId)
     ? data.selectedId
     : (sessions[0]?.id ?? "");
+  const selectedModelByProvider = data.selectedModelByProvider ?? {};
+  const selectedModelId =
+    (selectedProviderId && selectedModelByProvider[selectedProviderId]) || data.selectedModelId || "";
   return {
     locale: data.locale === "zh" || data.locale === "en" ? data.locale : (readCachedLocale() ?? "en"),
     theme: isThemePreference(data.theme) ? data.theme : (readCachedTheme() ?? "dark"),
     selectedId,
-    selectedModelId: data.selectedModelId || "",
+    selectedModelId,
+    selectedModelByProvider,
     agentMode: isAgentMode(data.agentMode) ? data.agentMode : "ask",
+    selectedProviderId,
+    onboardingCompleted,
     sessionsOpen: data.sessionsOpen === true,
     sessionDrawerWidth: clampSessionDrawerWidth(data.sessionDrawerWidth ?? SESSION_DRAWER_DEFAULT),
     sessions,
@@ -351,7 +422,10 @@ export async function saveState(state: {
   theme: ThemePreference;
   selectedId: string;
   selectedModelId: string;
+  selectedModelByProvider: Record<string, string>;
   agentMode: AgentMode;
+  selectedProviderId: string;
+  onboardingCompleted: boolean;
   sessionsOpen: boolean;
   sessionDrawerWidth: number;
   sessions: Session[];
@@ -362,7 +436,10 @@ export async function saveState(state: {
     theme: state.theme,
     selectedId: state.selectedId,
     selectedModelId: state.selectedModelId,
+    selectedModelByProvider: state.selectedModelByProvider,
     agentMode: state.agentMode,
+    selectedProviderId: state.selectedProviderId || undefined,
+    onboardingCompleted: state.onboardingCompleted || undefined,
     sessionsOpen: state.sessionsOpen,
     sessionDrawerWidth: clampSessionDrawerWidth(state.sessionDrawerWidth),
     sessions: state.sessions.map(serializeSession),
