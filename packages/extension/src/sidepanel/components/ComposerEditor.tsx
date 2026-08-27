@@ -15,6 +15,7 @@ import {
   isEnterKey,
   shouldBlockSubmit,
 } from "../at-menu-lock";
+import { consumeAtBeforeCaret, readAtQuery } from "../at-query";
 import {
   parseMentionSegments,
   parseMentionToken,
@@ -32,6 +33,7 @@ export type ComposerHandle = {
   moveCaretToEnd: () => void;
   getSerialized: () => string;
   getCaretRect: () => DOMRect | undefined;
+  getAtQuery: () => string | null;
 };
 
 function clipboardImages(data: DataTransfer | null): File[] {
@@ -99,19 +101,6 @@ function createChipWrap(mention: MentionChip): HTMLSpanElement {
   wrap.contentEditable = "false";
   wrap.dataset.token = serializeMention(mention);
   return wrap;
-}
-
-function consumeAtBeforeCaret(range: Range): void {
-  const node = range.startContainer;
-  if (node.nodeType !== Node.TEXT_NODE) return;
-  const text = node.textContent ?? "";
-  const offset = range.startOffset;
-  const before = text.slice(0, offset);
-  const at = before.lastIndexOf("@");
-  if (at < 0) return;
-  if (before.slice(at + 1).trim() !== "") return;
-  range.setStart(node, at);
-  range.deleteContents();
 }
 
 function isPadSpace(ch: string | undefined): boolean {
@@ -257,15 +246,32 @@ export const ComposerEditor = forwardRef<
     onSubmit: () => void;
     onPasteImages: (files: File[]) => void;
     onAtTyped?: () => void;
+    onAtQueryChange?: (query: string | null) => void;
   }
->(function ComposerEditor({ value, placeholder, menuOpen, onChange, onSubmit, onPasteImages, onAtTyped }, ref) {
+>(function ComposerEditor({ value, placeholder, menuOpen, onChange, onSubmit, onPasteImages, onAtTyped, onAtQueryChange }, ref) {
   const editorRef = useRef<HTMLDivElement>(null);
   const rootsRef = useRef(new Map<HTMLElement, Root>());
   const lastRangeRef = useRef<Range | null>(null);
   const valueRef = useRef(value);
   const menuOpenRef = useRef(menuOpen);
+  const onAtQueryChangeRef = useRef(onAtQueryChange);
   valueRef.current = value;
   menuOpenRef.current = menuOpen;
+  onAtQueryChangeRef.current = onAtQueryChange;
+
+  const readAtQueryFromEditor = (): string | null => {
+    const editor = editorRef.current;
+    const selection = window.getSelection();
+    if (!editor || !selection || selection.rangeCount === 0) return null;
+    const range = selection.getRangeAt(0);
+    if (!editor.contains(range.startContainer)) return null;
+    return readAtQuery(range);
+  };
+
+  const syncAtQuery = () => {
+    if (!menuOpenRef.current) return;
+    onAtQueryChangeRef.current?.(readAtQueryFromEditor());
+  };
 
   const mountChip = (wrap: HTMLSpanElement, mention: MentionChip) => {
     let root = rootsRef.current.get(wrap);
@@ -307,6 +313,7 @@ export const ComposerEditor = forwardRef<
     editor.dataset.empty = "false";
     if (normalized !== valueRef.current) onChange(normalized);
     scrollCaret(editor);
+    syncAtQuery();
   };
 
   const saveRange = () => {
@@ -316,6 +323,7 @@ export const ComposerEditor = forwardRef<
     const range = selection.getRangeAt(0);
     if (!editor.contains(range.commonAncestorContainer)) return;
     lastRangeRef.current = range.cloneRange();
+    syncAtQuery();
   };
 
   const restoreRange = (): Range | undefined => {
@@ -473,7 +481,12 @@ export const ComposerEditor = forwardRef<
       }
       return editorRef.current?.getBoundingClientRect();
     },
+    getAtQuery: () => readAtQueryFromEditor(),
   }));
+
+  useLayoutEffect(() => {
+    if (menuOpen) syncAtQuery();
+  }, [menuOpen]);
 
   useLayoutEffect(() => {
     const editor = editorRef.current;

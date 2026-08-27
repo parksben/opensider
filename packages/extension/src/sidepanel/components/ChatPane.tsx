@@ -99,6 +99,7 @@ export function ChatPane({
   const [editingQueueId, setEditingQueueId] = useState<string>();
   const [stash, setStash] = useState<{ draft: string; attachments: AttachmentItem[] } | null>(null);
   const [atOpen, setAtOpen] = useState(false);
+  const [atQuery, setAtQuery] = useState("");
   const composerRef = useRef<ComposerHandle>(null);
   const atButtonRef = useRef<HTMLSpanElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -137,6 +138,15 @@ export function ChatPane({
   const closeAtMenu = () => {
     closeAtMenuLock();
     setAtOpen(false);
+    setAtQuery("");
+  };
+
+  const handleAtQueryChange = (query: string | null) => {
+    if (query === null) {
+      closeAtMenu();
+      return;
+    }
+    setAtQuery(query);
   };
 
   const submit = (fromEnter = false) => {
@@ -400,6 +410,7 @@ export function ChatPane({
             onSubmit={() => submit(true)}
             onPasteImages={(files) => void addPastedImages(files)}
             onAtTyped={openAtMenu}
+            onAtQueryChange={handleAtQueryChange}
           />
           <div className="flex items-center justify-between gap-2">
             <div className="relative flex items-center gap-1">
@@ -448,6 +459,7 @@ export function ChatPane({
               <AtMenu
                 open={atOpen}
                 locale={locale}
+                query={atQuery}
                 tabs={historyTabs}
                 attachments={historyAttachments}
                 ignoreRef={atButtonRef}

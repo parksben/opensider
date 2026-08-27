@@ -1,5 +1,5 @@
 import type { AttachmentItem } from "@shared";
-import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import {
   atMenuLock,
@@ -10,18 +10,22 @@ import {
   openAtMenuLock,
   releaseEnterSuppress,
 } from "../at-menu-lock";
+import { filterAtAttachments, filterAtTabs, type AtAttachmentMatch, type AtTabMatch } from "../at-menu-search";
 import { attachmentToMention, type MentionChip } from "../mentions";
 import type { Locale } from "../i18n";
 import { t } from "../i18n";
 import type { HistoryTab } from "../composer-history";
+import { HighlightText } from "./HighlightText";
 import { RippleButton } from "./RippleButton";
-import { MentionChip as MentionChipView, TabFavicon } from "./MentionChip";
+import { MentionIcon, TabFavicon } from "./MentionChip";
 
 export type AtPane = "tabs" | "attachments";
 
 const SAFE = 16;
 const GAP = 6;
 const MENU_WIDTH = 256;
+
+type AtMenuItem = AtTabMatch | AtAttachmentMatch;
 
 function placeMenu(
   anchor: DOMRect,
@@ -46,6 +50,7 @@ function placeMenu(
 export function AtMenu({
   open,
   locale,
+  query,
   tabs,
   attachments,
   ignoreRef,
@@ -55,6 +60,7 @@ export function AtMenu({
 }: {
   open: boolean;
   locale: Locale;
+  query: string;
   tabs: HistoryTab[];
   attachments: AttachmentItem[];
   ignoreRef?: RefObject<HTMLElement | null>;
@@ -68,8 +74,11 @@ export function AtMenu({
   const [highlight, setHighlight] = useState(0);
   const [pos, setPos] = useState({ top: 0, left: 0, maxHeight: 224, ready: false });
 
-  const items = pane === "tabs" ? tabs : attachments;
+  const filteredTabs = useMemo(() => filterAtTabs(tabs, query), [query, tabs]);
+  const filteredAttachments = useMemo(() => filterAtAttachments(attachments, query), [attachments, query]);
+  const items: AtMenuItem[] = pane === "tabs" ? filteredTabs : filteredAttachments;
   const count = items.length;
+  const searching = query.trim().length > 0;
   const getAnchorRectRef = useRef(getAnchorRect);
   const paneRef = useRef(pane);
   const highlightRef = useRef(highlight);
@@ -105,16 +114,19 @@ export function AtMenu({
     const chosen = itemsRef.current[highlightRef.current];
     if (!chosen) return;
     if (paneRef.current === "tabs") {
-      const tab = chosen as HistoryTab;
-      pick({
-        kind: "tab",
-        tabId: tab.tabId,
-        title: tab.title,
-        url: tab.url,
-        favIconUrl: tab.favIconUrl,
-      }, true);
+      const tab = (chosen as AtTabMatch).tab;
+      pick(
+        {
+          kind: "tab",
+          tabId: tab.tabId,
+          title: tab.title,
+          url: tab.url,
+          favIconUrl: tab.favIconUrl,
+        },
+        true,
+      );
     } else {
-      pick(attachmentToMention(chosen as AttachmentItem), true);
+      pick(attachmentToMention((chosen as AtAttachmentMatch).item), true);
     }
   };
 
@@ -128,13 +140,13 @@ export function AtMenu({
 
   useEffect(() => {
     setHighlight(0);
-  }, [pane]);
+  }, [pane, query]);
 
   useLayoutEffect(() => {
     if (!open) return;
     const node = listRef.current?.querySelector<HTMLElement>(`[data-at-index="${highlight}"]`);
     node?.scrollIntoView({ block: "nearest" });
-  }, [open, highlight, pane]);
+  }, [open, highlight, pane, query]);
 
   useLayoutEffect(() => {
     if (!open) {
@@ -163,7 +175,7 @@ export function AtMenu({
       window.removeEventListener("resize", update);
       window.removeEventListener("scroll", update, true);
     };
-  }, [open, pane, tabs, attachments]);
+  }, [open, pane, query, tabs, attachments]);
 
   useLayoutEffect(() => {
     if (!open) return;
@@ -237,6 +249,15 @@ export function AtMenu({
 
   if (!open) return null;
 
+  const emptyKey =
+    count === 0
+      ? searching
+        ? "atNoMatches"
+        : pane === "tabs"
+          ? "atNoTabs"
+          : "atNoAttachments"
+      : null;
+
   return createPortal(
     <div
       ref={rootRef}
@@ -267,13 +288,12 @@ export function AtMenu({
         })}
       </div>
       <div ref={listRef} className="min-h-0 flex-1 overflow-y-auto py-1">
-        {count === 0 ? (
-          <p className="px-2.5 py-1.5 text-[12px] text-[var(--muted)]">
-            {t(locale, pane === "tabs" ? "atNoTabs" : "atNoAttachments")}
-          </p>
+        {emptyKey ? (
+          <p className="px-2.5 py-1.5 text-[12px] text-[var(--muted)]">{t(locale, emptyKey)}</p>
         ) : pane === "tabs" ? (
-          tabs.map((tab, index) => {
+          filteredTabs.map((match, index) => {
             const active = index === highlight;
+            const { tab } = match;
             return (
               <RippleButton
                 key={`${tab.url}-${tab.tabId}`}
@@ -295,26 +315,34 @@ export function AtMenu({
                 }`}
               >
                 <TabFavicon url={tab.favIconUrl} />
-                <span className="min-w-0 truncate">{tab.title || tab.url}</span>
+                <HighlightText text={match.label} ranges={match.labelRanges} className="min-w-0 truncate" />
               </RippleButton>
             );
           })
         ) : (
-          attachments.map((item, index) => {
+          filteredAttachments.map((match, index) => {
             const active = index === highlight;
+            const mention = attachmentToMention(match.item);
             return (
               <RippleButton
-                key={item.path}
+                key={match.item.path}
                 data-at-index={index}
-                title={item.path}
+                title={match.item.path}
                 onMouseDown={(event) => event.preventDefault()}
                 onPointerEnter={() => setHighlight(index)}
-                onClick={() => pick(attachmentToMention(item))}
-                className={`flex w-full items-center px-2.5 py-1.5 text-left ${
+                onClick={() => pick(mention)}
+                className={`flex w-full items-center gap-1.5 px-2.5 py-1.5 text-left ${
                   active ? "bg-[var(--hover-strong)]" : ""
                 }`}
               >
-                <MentionChipView mention={attachmentToMention(item)} />
+                <span className="cs-mention-chip shrink-0">
+                  <MentionIcon mention={mention} />
+                </span>
+                <HighlightText
+                  text={match.label}
+                  ranges={match.labelRanges}
+                  className="cs-mention-chip-label min-w-0 truncate text-[11px]"
+                />
               </RippleButton>
             );
           })

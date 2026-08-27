@@ -167,6 +167,12 @@ input {
   line-height: 1;
 }
 
+mark.cs-at-match {
+  padding: 0;
+  background: none;
+  color: var(--brass);
+}
+
 @property --cs-spin {
   syntax: "<angle>";
   inherits: false;
