@@ -67,7 +67,11 @@ export const PROFILES: AgentProfile[] = [
       { command: "copilot", args: ["--acp"] },
     ],
     auth: { type: "none" },
-    modeMap: { ask: ["default", "ask"], workspace: ["default"], auto: ["allow-all", "auto"] },
+    modeMap: {
+      ask: ["https://agentclientprotocol.com/protocol/session-modes#agent", "default", "ask"],
+      workspace: ["https://agentclientprotocol.com/protocol/session-modes#agent", "default"],
+      auto: ["https://agentclientprotocol.com/protocol/session-modes#autopilot", "allow-all", "auto"],
+    },
     contextFiles: ["AGENTS.md"],
     vendorPrefixes: [],
     caps: stdCaps(),
@@ -106,7 +110,7 @@ export const PROFILES: AgentProfile[] = [
     contextFiles: ["AGENTS.md", "CLAUDE.md"],
     vendorPrefixes: ["_claude/"],
     caps: stdCaps({ todos: true }),
-    loginHint: "Install Claude Code and `npm i -g @zed-industries/claude-agent-acp`, then sign in.",
+    loginHint: "Install Claude Code and `npm i -g @agentclientprotocol/claude-agent-acp`, then sign in.",
   },
   {
     id: "codex",

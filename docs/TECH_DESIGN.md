@@ -321,7 +321,7 @@ on them with page tools using args.selector.
 
 1. Host 在 Cursor 上跑 `agent models`（与 `agent --list-models` 相同），解析 `id - name` 行，按 id 去重后推 `models` 给侧栏。目录初始为空，不预置 Auto。其它 CLI 不跑这条命令。
 2. `initialize` 一律带 `_meta.parameterizedModelPicker: true`，便于返回 `configOptions`。
-3. `session/new|load|fork` 合并模型来源：`configOptions` 里 `category/id/configId` 为 `model` 的选项，以及 ACP `models.availableModels`（Copilot 用 `modelId`）。之后的 `config_option_update` 同样合并。没有模型列表就不画下拉。
+3. `session/new|load|fork` 合并模型来源：`configOptions` 里 `category/id/configId` 为 `model` 的选项，以及 ACP `models.availableModels`（Copilot 用 `modelId`）。之后的 `config_option_update` 同样合并。Copilot 1.0.x 在 CAPI `/models` 为空时 `session/new` 只回 mode / allow_all，不带 model 选项；`session/set_model` 仍可用。此时 Host 用 Copilot CLI 内置公开模型表（`auto` + sonnet/opus/gpt 等）兜底，好让侧栏画出下拉。没有模型列表就不画下拉。
 4. 用户改模型：`session/set_config_option`（发现的 `configId`，通常是 `model`）；失败则 `session/set_model`。`auto` / 空不是合法 ACP 值，跳过 RPC。
 5. 侧栏只在 `status === ready` 且列表非空时渲染下拉。连上后若列表含 `auto` 且用户没有已记住的具体模型，选中态为 `auto`。`selectedModelId` 写入 `chrome.storage.local`；仅当选的是具体模型时再 `model.set`。
 6. 下拉外壳不滚：顶部是固定筛选 `input`（无边框 / outline / ring），`open` 后 `focus()`；下面才是 `overflow-y-auto` 的条目。筛选只对已加载的 `models` 做 `name` / `id` 的 `toLowerCase().includes`，不另发请求。关掉下拉清空关键词。`ArrowDown` / `ArrowUp` 在 `visible` 上取模换 `highlightId`（打开时落在当前模型），`scrollIntoView({ block: "nearest" })` 跟滚；`Enter` 对高亮项 `onModel` 并关下拉。中文 placeholder 为「筛选...」。
@@ -332,7 +332,7 @@ on them with page tools using args.selector.
 
 ## 多 Agent CLI
 
-Host 是通用 ACP Client + 数据驱动 `AgentProfile`（启动命令、鉴权、modeMap、contextFiles、gates）。不经 acpx。探测：内置名单（Cursor / OpenCode / Copilot / CodeBuddy / Claude 适配器 / Codex 适配器 / Gemini / Qwen / Kimi / iFlow / Trae / Qoder 等）+ Chrome 传入的 PATH + 本机常见 bin（`~/.local/bin`、`~/.npm-global/bin`、`~/.bun/bin`、nvm / fnm / volta / asdf）+ ACP Registry。Chrome Native Messaging 的 PATH 不含 nvm，只搜系统目录会漏掉 `copilot` 这类 `#!/usr/bin/env node` 安装。找到二进制后做短超时 `initialize`；二进制在、握手超时仍列入名单，真正连接再走完整握手。拉起子进程时把该 CLI 所在目录和上述 bin 预进 PATH，避免 `env node` 找不到。侧栏会话自己持有消息；`Session.acpByProvider` 记各家 ACP id。换 Agent 不删本地历史；该家没有绑定则 `session/new` 并带本地前文。模型列表按当前 provider 的 `configOptions` / `session.models` 刷新。引导是标题栏下方内容区垂直居中的纯文本按钮，点即连接。顶栏 Agent 下拉 portal 到 `document.body`，避免被消息盖住。会话标题相对 header 居中，左右各留 56px。引导完成前 Host 不拉起 Agent 进程。
+Host 是通用 ACP Client + 数据驱动 `AgentProfile`（启动命令、鉴权、modeMap、contextFiles、gates）。不经 acpx。探测：内置名单（Cursor / OpenCode / Copilot / CodeBuddy / Claude 适配器 / Codex 适配器 / Gemini / Qwen / Kimi / iFlow / Trae / Qoder 等）+ Chrome 传入的 PATH + 本机常见 bin（`~/.local/bin`、`~/.npm-global/bin`、`~/.bun/bin`、nvm / fnm / volta / asdf）+ ACP Registry。Chrome Native Messaging 的 PATH 不含 nvm，只搜系统目录会漏掉 `copilot` 这类 `#!/usr/bin/env node` 安装。Claude Code 只认 `claude-agent-acp` / `claude-code-acp`，不把交互式 `claude` 当成 ACP（`--acp` 不存在，硬加会把 TUI 当已安装）。找到二进制后做短超时 `initialize`；二进制在、握手超时仍列入名单，真正连接再走完整握手。拉起子进程时把该 CLI 所在目录和上述 bin 预进 PATH，避免 `env node` 找不到。Copilot 的 `modeMap` 用 ACP session-modes URL（`#agent` / `#plan` / `#autopilot`），不要发 `default`/`ask`。`~/.gemini` 属 root 时 Gemini `session/new` 会 EACCES，Host 把错误改写成 chown 说明。侧栏会话自己持有消息；`Session.acpByProvider` 记各家 ACP id。换 Agent 不删本地历史；该家没有绑定则 `session/new` 并带本地前文。模型列表按当前 provider 的 `configOptions` / `session.models` 刷新，Copilot 空名单走内置公开表。引导是标题栏下方内容区垂直居中的纯文本按钮，点即连接。顶栏 Agent 下拉 portal 到 `document.body`，避免被消息盖住。会话标题相对 header 居中，左右各留 56px。引导完成前 Host 不拉起 Agent 进程。
 
 ## 标签切换
 

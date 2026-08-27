@@ -98,6 +98,33 @@ export function catalogFromSessionModels(models: unknown): Partial<ModelCatalog>
   };
 }
 
+const COPILOT_FALLBACK_MODELS: AgentModel[] = [
+  { id: "auto", name: "Auto" },
+  { id: "claude-sonnet-4.6", name: "Claude Sonnet 4.6" },
+  { id: "claude-sonnet-4.5", name: "Claude Sonnet 4.5" },
+  { id: "claude-haiku-4.5", name: "Claude Haiku 4.5" },
+  { id: "claude-opus-4.8", name: "Claude Opus 4.8" },
+  { id: "claude-opus-4.7", name: "Claude Opus 4.7" },
+  { id: "claude-opus-4.6", name: "Claude Opus 4.6" },
+  { id: "claude-opus-4.6-fast", name: "Claude Opus 4.6 Fast" },
+  { id: "claude-opus-4.5", name: "Claude Opus 4.5" },
+  { id: "gpt-5.5", name: "GPT-5.5" },
+  { id: "gpt-5.4", name: "GPT-5.4" },
+  { id: "gpt-5.3-codex", name: "GPT-5.3 Codex" },
+  { id: "gpt-5.2-codex", name: "GPT-5.2 Codex" },
+  { id: "gpt-5.2", name: "GPT-5.2" },
+  { id: "gpt-5.4-mini", name: "GPT-5.4 Mini" },
+  { id: "gpt-5-mini", name: "GPT-5 Mini" },
+];
+
+export function copilotFallbackCatalog(): ModelCatalog {
+  return {
+    models: COPILOT_FALLBACK_MODELS,
+    currentId: "auto",
+    modelConfigId: "model",
+  };
+}
+
 export function mergeCatalog(base: ModelCatalog, overlay: Partial<ModelCatalog>): ModelCatalog {
   const byId = new Map(base.models.map((model) => [model.id, model]));
   for (const model of overlay.models ?? []) byId.set(model.id, model);

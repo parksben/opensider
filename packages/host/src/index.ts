@@ -5,6 +5,7 @@ import { log } from "./log.ts";
 import {
   catalogFromConfigOptions,
   catalogFromSessionModels,
+  copilotFallbackCatalog,
   isUnsetModel,
   listAgentModels,
   mergeCatalog,
@@ -122,6 +123,7 @@ async function connectAgent(providerId: string, policy?: AgentPolicy): Promise<v
   sendProgress(5, 6, "session", "Ready for sessions");
   sendProgress(6, 6, "models", "Loading models");
   await refreshModels();
+  applyFallbackModels();
   sendModels();
   sendAgents();
   sendHello();
@@ -147,9 +149,28 @@ function absorbSessionOptions(opened: SessionOpen): void {
   const options = opened.configOptions as ConfigOption[] | undefined;
   catalog = mergeCatalog(catalog, catalogFromConfigOptions(options));
   catalog = mergeCatalog(catalog, catalogFromSessionModels(opened.models));
+  applyFallbackModels();
   if (catalog.models.length > 0) {
     log(`models ${catalog.models.length} current=${catalog.currentId}`);
+  } else {
+    const ids = (options ?? []).map((option) => option.id || (option as { configId?: string }).configId);
+    log(`models empty options=${ids.join(",") || "none"}`);
   }
+}
+
+function applyFallbackModels(): void {
+  if (catalog.models.length > 0) return;
+  if (currentAgent?.profile.id !== "copilot") return;
+  catalog = mergeCatalog(catalog, copilotFallbackCatalog());
+  log(`models fallback copilot ${catalog.models.length}`);
+}
+
+function hostErrorText(error: unknown): string {
+  const text = String(error);
+  if (/EACCES:.*\/\.gemini\b/.test(text)) {
+    return 'Gemini CLI cannot write ~/.gemini (directory is owned by root). Run: sudo chown -R "$(whoami)" ~/.gemini';
+  }
+  return text;
 }
 
 function enqueueSessionOp<T>(work: () => Promise<T>): Promise<T> {
@@ -240,6 +261,7 @@ async function openAndAnnounce(runtime: AcpRuntime, open: () => Promise<SessionO
   absorbSessionOptions(opened);
   if (catalog.models.length === 0) {
     await new Promise((resolve) => setTimeout(resolve, 1200));
+    applyFallbackModels();
   }
   await applyPendingModel(runtime);
   send({
@@ -476,12 +498,12 @@ async function handleExt(msg: ExtToHost): Promise<void> {
       rpcClients.delete(msg.id);
     }
   } catch (error) {
-    log(`handle ext error: ${String(error)}`);
+    log(`handle ext error: ${hostErrorText(error)}`);
     if (msg.type === "prompt") {
       send({ type: "turn.end", stopReason: "error", sessionId: msg.sessionId });
       return;
     }
-    setHostState("error", String(error));
+    setHostState("error", hostErrorText(error));
   }
 }
 
