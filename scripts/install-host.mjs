@@ -65,7 +65,13 @@ writeFileSync(
   hostSh,
   `#!/bin/bash
 export HOME="\${HOME:-${home}}"
-export PATH="/bin:/usr/bin:\${HOME}/.local/bin:/opt/homebrew/bin:/usr/local/bin:\${PATH:-}"
+PATH_PREFIX="\${HOME}/.local/bin:\${HOME}/.npm-global/bin:\${HOME}/.bun/bin:/opt/homebrew/bin:/usr/local/bin:/bin:/usr/bin"
+if [[ -d "\${HOME}/.nvm/versions/node" ]]; then
+  for d in "\${HOME}/.nvm/versions/node/"*/bin; do
+    [[ -d "\$d" ]] && PATH_PREFIX="\$d:\$PATH_PREFIX"
+  done
+fi
+export PATH="\$PATH_PREFIX:\${PATH:-}"
 export NODE_NO_WARNINGS=1
 mkdir -p "\${HOME}/.opensider" /tmp
 {

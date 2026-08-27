@@ -332,7 +332,7 @@ on them with page tools using args.selector.
 
 ## 多 Agent CLI
 
-Host 是通用 ACP Client + 数据驱动 `AgentProfile`（启动命令、鉴权、modeMap、contextFiles、gates）。不经 acpx。探测：内置名单（Cursor / OpenCode / Copilot / CodeBuddy / Claude 适配器 / Codex 适配器 / Gemini / Qwen / Kimi / iFlow / Trae / Qoder 等）+ PATH + ACP Registry，对候选做短超时 `initialize` 握手。侧栏会话自己持有消息；`Session.acpByProvider` 记各家 ACP id。换 Agent 不删本地历史；该家没有绑定则 `session/new` 并带本地前文。模型列表按当前 provider 的 `configOptions` 刷新。引导完成前 Host 不拉起 Agent 进程。
+Host 是通用 ACP Client + 数据驱动 `AgentProfile`（启动命令、鉴权、modeMap、contextFiles、gates）。不经 acpx。探测：内置名单（Cursor / OpenCode / Copilot / CodeBuddy / Claude 适配器 / Codex 适配器 / Gemini / Qwen / Kimi / iFlow / Trae / Qoder 等）+ Chrome 传入的 PATH + 本机常见 bin（`~/.local/bin`、`~/.npm-global/bin`、`~/.bun/bin`、nvm / fnm / volta / asdf）+ ACP Registry。Chrome Native Messaging 的 PATH 不含 nvm，只搜系统目录会漏掉 `copilot` 这类 `#!/usr/bin/env node` 安装。找到二进制后做短超时 `initialize`；二进制在、握手超时仍列入名单，真正连接再走完整握手。拉起子进程时把该 CLI 所在目录和上述 bin 预进 PATH，避免 `env node` 找不到。侧栏会话自己持有消息；`Session.acpByProvider` 记各家 ACP id。换 Agent 不删本地历史；该家没有绑定则 `session/new` 并带本地前文。模型列表按当前 provider 的 `configOptions` 刷新。引导完成前 Host 不拉起 Agent 进程。
 
 ## 标签切换
 
@@ -414,7 +414,7 @@ pnpm workspace。扩展用 Vite + `@crxjs/vite-plugin` 打包。
 
 | 风险 | 处理 |
 |---|---|
-| Native Messaging 环境 PATH 很瘦 | 默认调用 `~/.local/bin/agent`，可覆盖 |
+| Native Messaging 环境 PATH 很瘦 | Host 自己扫 nvm / npm-global / bun 等 bin；子进程 PATH 带上 CLI 所在目录。Cursor 仍默认同 `~/.local/bin/agent` |
 | macOS 拦 Chrome 执行 Desktop 上的 Host | `install-host` 把运行副本放到 `~/.opensider/runtime` |
 | 未登录 | 侧栏提示先跑 `agent login` |
 | `session/load` 不支持或失败 | 新建 ACP 会话，界面历史保留，下一条消息带前文 |

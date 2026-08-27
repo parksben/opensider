@@ -1,6 +1,6 @@
-import { existsSync, renameSync } from "node:fs";
+import { existsSync, readdirSync, renameSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 
 const nextHome = join(homedir(), ".opensider");
 const previousHome = join(homedir(), ".cursor-sidebar");
@@ -30,4 +30,67 @@ export const HOST_LOG_PATH = join(SIDEBAR_HOME, "host.log");
 
 export function defaultAgentPath(): string {
   return process.env.CURSOR_AGENT_PATH || join(homedir(), ".local", "bin", "agent");
+}
+
+function considerDir(dirs: string[], dir: string): void {
+  if (!dir || dirs.includes(dir) || !existsSync(dir)) return;
+  dirs.push(dir);
+}
+
+function versionManagerBins(): string[] {
+  const home = homedir();
+  const dirs: string[] = [];
+  considerDir(dirs, join(home, ".local", "bin"));
+  considerDir(dirs, join(home, ".npm-global", "bin"));
+  considerDir(dirs, join(home, ".bun", "bin"));
+  considerDir(dirs, join(home, ".volta", "bin"));
+  considerDir(dirs, join(home, ".asdf", "shims"));
+  considerDir(dirs, join(home, ".cargo", "bin"));
+  considerDir(dirs, join(home, "Library", "pnpm"));
+  considerDir(dirs, join(home, ".opensider", "runtime", "bin"));
+  considerDir(dirs, "/opt/homebrew/bin");
+  considerDir(dirs, "/usr/local/bin");
+  considerDir(dirs, "/usr/bin");
+
+  const nvmRoot = process.env.NVM_DIR || join(home, ".nvm");
+  considerDir(dirs, join(nvmRoot, "current", "bin"));
+  const nvmVersions = join(nvmRoot, "versions", "node");
+  if (existsSync(nvmVersions)) {
+    try {
+      for (const name of readdirSync(nvmVersions).sort().reverse()) {
+        considerDir(dirs, join(nvmVersions, name, "bin"));
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  const fnmHome = process.env.FNM_DIR || join(home, ".fnm");
+  considerDir(dirs, join(fnmHome, "current", "bin"));
+  const fnmVersions = join(home, "Library", "Application Support", "fnm", "node-versions");
+  if (existsSync(fnmVersions)) {
+    try {
+      for (const name of readdirSync(fnmVersions).sort().reverse()) {
+        considerDir(dirs, join(fnmVersions, name, "installation", "bin"));
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  return dirs;
+}
+
+export function agentSearchDirs(): string[] {
+  const fromEnv = (process.env.PATH ?? "").split(delimiter).filter(Boolean);
+  return [...new Set([...versionManagerBins(), ...fromEnv])];
+}
+
+export function agentPathEnv(command?: string): string {
+  const dirs = agentSearchDirs();
+  if (command) {
+    const dir = dirname(command);
+    if (dir && dir !== ".") dirs.unshift(dir);
+  }
+  return [...new Set(dirs)].join(delimiter);
 }

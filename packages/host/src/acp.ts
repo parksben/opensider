@@ -4,6 +4,7 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import type { AgentPolicy } from "../../shared/src/protocol.ts";
 import { log } from "./log.ts";
+import { agentPathEnv } from "./paths.ts";
 import type { AgentProfile, AuthKind } from "./profiles.ts";
 
 export type AcpLaunch = {
@@ -59,7 +60,7 @@ export class AcpClient {
       throw new Error(`${this.launch.profile.name} CLI not found at ${this.launch.command}. ${this.launch.profile.loginHint}`);
     }
 
-    const path = `${homedir()}/.local/bin:/opt/homebrew/bin:/usr/local/bin:${process.env.PATH ?? ""}`;
+    const path = agentPathEnv(this.launch.command);
     this.child = spawn(this.launch.command, this.launch.args, {
       cwd: this.launch.cwd,
       stdio: ["pipe", "pipe", "pipe"],

@@ -127,7 +127,10 @@ export const PROFILES: AgentProfile[] = [
     id: "gemini",
     name: "Gemini",
     mark: "gemini",
-    launches: [{ command: "gemini", args: ["--acp"] }],
+    launches: [
+      { command: "gemini", args: ["--experimental-acp"] },
+      { command: "gemini", args: ["--acp"] },
+    ],
     auth: { type: "none" },
     modeMap: { ask: ["default"], workspace: ["default"], auto: ["auto"] },
     contextFiles: ["AGENTS.md"],

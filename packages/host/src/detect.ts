@@ -1,9 +1,10 @@
 import { spawn } from "node:child_process";
 import { accessSync, constants } from "node:fs";
 import { homedir } from "node:os";
-import { delimiter, isAbsolute, join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import type { AgentInfo } from "../../shared/src/protocol.ts";
 import { log } from "./log.ts";
+import { agentPathEnv, agentSearchDirs } from "./paths.ts";
 import { genericProfile, PROFILES, type AgentProfile } from "./profiles.ts";
 
 export type ResolvedAgent = {
@@ -11,19 +12,6 @@ export type ResolvedAgent = {
   command: string;
   args: string[];
 };
-
-const SEARCH_DIRS = [
-  join(homedir(), ".local", "bin"),
-  join(homedir(), ".opensider", "runtime", "bin"),
-  "/opt/homebrew/bin",
-  "/usr/local/bin",
-  "/usr/bin",
-];
-
-function searchPath(): string[] {
-  const fromEnv = (process.env.PATH ?? "").split(delimiter).filter(Boolean);
-  return [...new Set([...SEARCH_DIRS, ...fromEnv])];
-}
 
 export function resolveOnPath(command: string): string | undefined {
   if (!command) return undefined;
@@ -35,7 +23,7 @@ export function resolveOnPath(command: string): string | undefined {
       return undefined;
     }
   }
-  for (const dir of searchPath()) {
+  for (const dir of agentSearchDirs()) {
     const full = join(dir, command);
     try {
       accessSync(full, constants.X_OK);
@@ -51,7 +39,7 @@ function writeNdjson(child: { stdin: NodeJS.WritableStream }, msg: unknown): voi
   child.stdin.write(`${JSON.stringify(msg)}\n`);
 }
 
-export function probeAcp(command: string, args: string[], timeoutMs = 2500): Promise<boolean> {
+export function probeAcp(command: string, args: string[], timeoutMs = 5000): Promise<boolean> {
   return new Promise((resolve) => {
     let settled = false;
     const finish = (ok: boolean) => {
@@ -69,7 +57,7 @@ export function probeAcp(command: string, args: string[], timeoutMs = 2500): Pro
       env: {
         ...process.env,
         HOME: process.env.HOME ?? homedir(),
-        PATH: `${searchPath().join(delimiter)}:${process.env.PATH ?? ""}`,
+        PATH: agentPathEnv(command),
       },
     });
     const timer = setTimeout(() => finish(false), timeoutMs);
@@ -116,13 +104,22 @@ export function probeAcp(command: string, args: string[], timeoutMs = 2500): Pro
 }
 
 async function resolveLaunch(profile: AgentProfile): Promise<ResolvedAgent | undefined> {
+  let found: ResolvedAgent | undefined;
   for (const launch of profile.launches) {
     const command = resolveOnPath(launch.command);
     if (!command) continue;
+    found ??= { profile, command, args: launch.args };
     if (await probeAcp(command, launch.args)) {
+      log(`detect ${profile.id} ok ${command} ${launch.args.join(" ")}`);
       return { profile, command, args: launch.args };
     }
+    log(`detect ${profile.id} probe failed ${command} ${launch.args.join(" ")}`);
   }
+  if (found) {
+    log(`detect ${profile.id} installed, handshake skipped ${found.command}`);
+    return found;
+  }
+  log(`detect ${profile.id} miss`);
   return undefined;
 }
 
