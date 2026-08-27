@@ -8,6 +8,7 @@
   --panel: #14160f;
   --panel-2: #1b1e16;
   --line: #2c3124;
+  --line-focus: color-mix(in oklab, var(--line) 78%, white);
   --text: #ece6d4;
   --muted: #a39b84;
   --brass: #d4a054;
@@ -33,6 +34,7 @@
   --panel: #fbfbfc;
   --panel-2: #eef0f3;
   --line: #d4d7dc;
+  --line-focus: color-mix(in oklab, var(--line) 78%, var(--text));
   --text: #1a2330;
   --muted: #5a6876;
   --brass: #3a6d9a;
@@ -176,6 +178,10 @@ input {
   position: relative;
   border: 1px solid var(--line);
   transition: border-color 480ms ease;
+}
+
+.cs-composer:focus-within:not(.is-running) {
+  border-bottom-color: var(--line-focus);
 }
 
 .cs-composer::before {
