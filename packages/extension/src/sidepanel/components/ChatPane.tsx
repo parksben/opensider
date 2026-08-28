@@ -7,7 +7,7 @@ import { useComposerHistory } from "../composer-history";
 import type { Locale } from "../i18n";
 import { t } from "../i18n";
 import { closeAtMenuLock, installAtMenuGuard, openAtMenuLock, shouldBlockSubmit } from "../at-menu-lock";
-import { composerHasContent } from "../mentions";
+import { composerHasContent, stripAttachmentMentions } from "../mentions";
 import { stripEnvPrompt, textOf, type AgentMode } from "../persist";
 import { useRipple } from "../useRipple";
 import type { QueuedMessage } from "../queued-message";
@@ -396,7 +396,10 @@ export function ChatPane({
               removeLabel={label("removeAttachment")}
               previewLabel={label("previewImage")}
               onPreview={openPreview}
-              onRemove={(path) => setAttachments((current) => current.filter((item) => item.path !== path))}
+              onRemove={(path) => {
+                setAttachments((current) => current.filter((item) => item.path !== path));
+                setDraft((current) => stripAttachmentMentions(current, path));
+              }}
               className="mb-1.5 px-1"
             />
           ) : null}
@@ -464,6 +467,12 @@ export function ChatPane({
                 ignoreRef={atButtonRef}
                 getAnchorRect={() => composerRef.current?.getCaretRect()}
                 onSelect={(mention) => {
+                  if (
+                    mention.kind === "attachment" &&
+                    !attachments.some((item) => item.path === mention.path)
+                  ) {
+                    return;
+                  }
                   composerRef.current?.insertMention(mention);
                 }}
                 onClose={closeAtMenu}

@@ -287,7 +287,7 @@ Local paths. Read these files or folders if needed.
 - /abs/path/src
 ```
 
-发给 Agent 仍只传路径，不把附件字节塞进 prompt。预览也不再走 Host：附件 `path` 编成 `file://`（绝对路径、分段 `encodeURIComponent`）给 `<img src>`。侧栏 CSP `img-src` 放行 `file:`。等 `onLoad` 再藏转圈；`onError` 才报失败，避免再卡在 Native Messaging。`ImagePreview` portal 到 `document.body`：`fixed inset-0` flex 居中、`--overlay` + `blur(2px)`，无关闭钮，点遮罩 / 点图 / Esc 都关。图 `max-width: 80vw`、`max-height: 100vh`。转圈用 `.cs-preview-spin`，不依赖 Tailwind `animate-spin`。用户气泡改成外层 `div` 点空白处改历史，图片芯片 `stopPropagation`，进行中也能预览。未发送的芯片只活在输入栏 state 里，不写 `opensider/attachment-history`。
+发给 Agent 仍只传路径，不把附件字节塞进 prompt。预览也不再走 Host：附件 `path` 编成 `file://`（绝对路径、分段 `encodeURIComponent`）给 `<img src>`。侧栏 CSP `img-src` 放行 `file:`。等 `onLoad` 再藏转圈；`onError` 才报失败，避免再卡在 Native Messaging。`ImagePreview` portal 到 `document.body`：`fixed inset-0` flex 居中、`--overlay` + `blur(2px)`，无关闭钮，点遮罩 / 点图 / Esc 都关。图 `max-width: 80vw`、`max-height: 100vh`。转圈用 `.cs-preview-spin`，不依赖 Tailwind `animate-spin`。用户气泡改成外层 `div` 点空白处改历史，图片芯片 `stopPropagation`，进行中也能预览。未发送的芯片只活在输入栏 state 里，不写 `opensider/attachment-history`。附件栏 `onRemove` 按 `path` 从 `attachments` 去掉，并用 `stripAttachmentMentions` 清掉正文里同一路径的 `@att` 芯片，避免栏里删了还能从 `@` 菜单或已插入芯片把路径发给 Agent。
 
 ## 提及芯片（`@`）
 

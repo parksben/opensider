@@ -157,3 +157,14 @@ export function wrapUserMentions(text: string): { display: string; appendix: str
 export function attachmentToMention(item: AttachmentItem): AttachmentMention {
   return { kind: "attachment", path: item.path, name: item.name, fileKind: item.kind };
 }
+
+export function stripAttachmentMentions(text: string, path: string): string {
+  if (!path) return text;
+  return parseMentionSegments(text)
+    .filter(
+      (segment) =>
+        !(segment.type === "mention" && segment.mention.kind === "attachment" && segment.mention.path === path),
+    )
+    .map((segment) => (segment.type === "text" ? segment.text : serializeMention(segment.mention)))
+    .join("");
+}
