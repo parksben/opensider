@@ -6,6 +6,7 @@ import {
   BROWSER_DIR,
   COMMANDS_DIR,
   CURRENT_PAGE_PATH,
+  INTERACTIVE_PATH,
   PASTED_DIR,
   RESULTS_DIR,
   SCREENSHOTS_DIR,
@@ -25,9 +26,49 @@ Read \`browser/tools.json\` now. It lists every page method available in this se
 
 ## Current page
 
-When the user talks about "this page", "the current tab", or the site they are looking at, read \`browser/current.json\` first. \`browser/snapshot.md\` is the latest readable extract of that page.
+When the user talks about "this page", "the current tab", or the site they are looking at, read these files first:
+
+1. \`browser/current.json\` — tabId, url, title
+2. **\`browser/interactive.md\`** — numbered interactive controls. This is how you fill forms and click. Do **not** start by guessing CSS selectors.
+3. \`browser/snapshot.md\` — the same control list plus a readable text extract
 
 The current tab also changes while you work. Re-read those files after navigation, after \`switchTab\`, or if the user says they changed pages.
+
+## How to operate the page (read this)
+
+Interactive controls look like:
+
+\`\`\`
+[1] textbox "Email" empty placeholder="you@acme.com" required
+[2] textbox "Password" type=password empty
+[3] combobox "Country" value="Select…" options=China | Japan
+[4] checkbox "Remember me" unchecked
+[5] button "Submit"
+\`\`\`
+
+Rules:
+
+- Only lines with \`[index]\` are actionable. Indices are **1-based**.
+- Prefer \`args.index\` from the latest list. Second choice: \`args.label\` or \`args.name\` (these resolve to the control, not the \`<label>\` node). CSS \`args.selector\` is a last resort.
+- **Fill a whole form with one \`fillForm\`** whenever you have several fields. Do not invent a selector per box.
+- After \`click\` / \`fill\` / \`fillForm\` / \`select\`, the result JSON includes a fresh \`interactive\` list. **Use those new indices.** Dropdowns, validation, and navigation change the numbering.
+- Custom dropdowns: \`fill\` or \`select\` with the option text as \`args.value\`. If that fails, \`click\` the field, read the new list, \`click\` the option.
+- Do not match inputs by visible \`innerText\` — empty textboxes have none. That is why \`interactive.md\` exists.
+- File inputs cannot be filled. Ask the user to pick the file.
+- Screenshots are for layout / confirmation, not the default way to find a form field.
+
+### fillForm example
+
+\`\`\`json
+{"id":"cmd_form","method":"fillForm","args":{"fields":[{"label":"Email","value":"ada@example.com"},{"label":"Password","value":"secret"},{"label":"Country","value":"China"}]}}
+\`\`\`
+
+### click / fill by index
+
+\`\`\`json
+{"id":"cmd_01","method":"fill","args":{"index":1,"value":"ada@example.com"}}
+{"id":"cmd_02","method":"click","args":{"index":5}}
+\`\`\`
 
 ## Open tabs and windows
 
@@ -47,36 +88,34 @@ If the user message includes \`[Mentioned attachments]\`, those are files / fold
 
 Write a JSON file to \`browser/commands/<id>.json\`, then read \`browser/results/<id>.json\`. If the result is not there yet, wait a moment and read again.
 
-\`\`\`json
-{"id":"<id>","method":"click","args":{"text":"Sign in"}}
-\`\`\`
-
-Find elements with \`args.selector\` (CSS), \`args.text\` (visible text contains), and optional \`args.nth\` (0-based).
+Find elements with \`args.index\` (from \`interactive.md\`), \`args.label\` / \`args.name\`, \`args.selector\` (CSS), \`args.text\` (label then visible text), and optional \`args.nth\` (0-based among matches).
 
 ### Read
 
+- \`getInteractive\` — refresh the numbered control list (same as \`browser/interactive.md\`)
 - \`getMeta\` — url, title, description
 - \`getReadable\` — main text
 - \`getSelection\` — highlighted text
 - \`getLinks\` — same-origin links
 - \`getOutline\` — h1–h3
 - \`queryText\` — one node's text
-- \`queryAll\` — matching node summaries
+- \`queryAll\` — matching node summaries; no locator = current interactive list
 - \`getAttribute\` — requires \`args.attribute\`
-- \`getValue\` — input/textarea/select value
+- \`getValue\` — current value + label of a field
 - \`exists\` — whether a match exists
 - \`listTabs\` — all normal windows and tabs (same shape as \`browser/tabs.json\`)
 
 ### Act
 
 - \`click\` / \`dblclick\` / \`hover\` / \`focus\`
+- \`fillForm\` — many fields at once (\`args.fields\`)
 - \`fill\` — set value (\`args.value\`)
 - \`type\` — append \`args.text\`
 - \`clear\`
-- \`select\` — \`<select>\` + \`args.value\`
-- \`check\` — checkbox/radio, optional \`args.checked\`
+- \`select\` — native \`<select>\` or custom combobox; \`args.value\` is option value or visible text
+- \`check\` — checkbox/radio/switch, optional \`args.checked\`
 - \`press\` — \`args.key\` such as \`Enter\` or \`Escape\`
-- \`scroll\` — element if selector/text, else window by \`args.x\` / \`args.y\`
+- \`scroll\` — element if index/selector/text, else window by \`args.x\` / \`args.y\`
 - \`scrollIntoView\`
 - \`waitFor\` — poll until the element exists (\`args.timeoutMs\`, max 20000)
 - \`navigate\` — \`args.url\`, http(s) only
@@ -87,14 +126,14 @@ Find elements with \`args.selector\` (CSS), \`args.text\` (visible text contains
 
 ### Vision
 
-Use screenshots when the DOM text is not enough to understand layout, pick a target, or plan the next click.
+Use screenshots when the control list is not enough to understand layout, pick a target, or confirm what changed.
 
 - \`screenshot\` — visible viewport JPEG; optional \`x,y,width,height\` in CSS pixels
-- \`screenshotElement\` — scroll an element into view and crop it (\`selector\` or \`text\`)
+- \`screenshotElement\` — scroll an element into view and crop it (\`index\`, \`selector\`, or \`label\`)
 
 The result JSON has \`data.path\` (absolute file). **Read that JPEG** to inspect the page visually. Do not expect base64 in the JSON.
 
-Do not invent other methods. Do not try to run arbitrary JavaScript. After acting, re-read \`browser/current.json\` and \`browser/tabs.json\` if the page or tab set may have changed.
+Do not invent other methods. Do not try to run arbitrary JavaScript. After acting, re-read \`browser/current.json\`, \`browser/interactive.md\`, and \`browser/tabs.json\` if the page or tab set may have changed.
 `;
 
 export function ensureWorkspace(): void {
@@ -109,7 +148,7 @@ export function ensureWorkspace(): void {
     TOOLS_PATH,
     `${JSON.stringify(
       {
-        version: 3,
+        version: 4,
         transport: "workspace-files",
         commandsDir: "browser/commands",
         resultsDir: "browser/results",
@@ -131,10 +170,13 @@ export function writeCurrentPage(page: CurrentPage): void {
     updatedAt: page.updatedAt,
   };
   writeFileSync(CURRENT_PAGE_PATH, `${JSON.stringify(compact, null, 2)}\n`);
-  const body = page.readable?.trim()
-    ? `# ${page.title}\n\n${page.url}\n\n${page.readable.trim()}\n`
-    : `# ${page.title}\n\n${page.url}\n\n_No readable extract available._\n`;
-  writeFileSync(SNAPSHOT_PATH, body);
+  const interactive = page.interactive?.trim() || "_No interactive controls indexed._";
+  const readable = page.readable?.trim() || "_No readable extract available._";
+  writeFileSync(INTERACTIVE_PATH, `# ${page.title}\n\n${page.url}\n\n${interactive}\n`);
+  writeFileSync(
+    SNAPSHOT_PATH,
+    `# ${page.title}\n\n${page.url}\n\n## Interactive controls\n\nSee \`browser/interactive.md\`. Use \`args.index\` (1-based) or \`fillForm\`.\n\n${interactive}\n\n## Readable text\n\n${readable}\n`,
+  );
 }
 
 export function writeTabsSnapshot(snapshot: TabsSnapshot): void {

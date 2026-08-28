@@ -45,7 +45,7 @@ pnpm dev
 
 ## 工作区
 
-会话 cwd 固定为 `~/.opensider/workspace`。页面快照、命令和截图都在 `workspace/browser/`。Host 启动时写入 `AGENTS.md` 与 `browser/tools.json`，Agent 一进会话就能看见全部页面方法。
+会话 cwd 固定为 `~/.opensider/workspace`。页面快照、命令和截图都在 `workspace/browser/`。Host 启动时写入 `AGENTS.md` 与 `browser/tools.json`，Agent 一进会话就能看见全部页面方法。当前页的可点/可填控件写在 `browser/interactive.md`，填表应先读这份编号列表（或一次 `fillForm`），不要猜 CSS。
 
 ## 仓库结构
 

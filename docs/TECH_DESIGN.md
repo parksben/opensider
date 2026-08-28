@@ -14,6 +14,7 @@ Native Host
         └─ 工作区文件: ~/.opensider/workspace
                browser/current.json
                browser/snapshot.md
+               browser/interactive.md
                browser/commands/*.json
                browser/results/*.json
                AGENTS.md
@@ -63,7 +64,14 @@ Cursor Agent 在 ACP 模式下仍然自己执行本地工具（读文件、写�
 
 ### Content Script
 
-运行在隔离世界，不往 `window` 挂 API，也不执行任意 JS。元素定位：`args.selector`（CSS）和 / 或 `args.text`（可见文本包含），可选 `args.nth`。侧栏发起 `page.pick` 时进入拾取：悬停高亮、点击生成全局唯一 CSS selector（id 优先，否则 `tag:nth-of-type` 路径，并校验 `querySelectorAll` 唯一），Esc 取消。
+运行在隔离世界，不往 `window` 挂 API，也不执行任意 JS。元素定位优先级：`args.index`（`interactive.md` 里从 1 起的编号）→ `args.label` / `args.name`（对到控件本身，不是 label 节点）→ `args.selector`（CSS）→ `args.text`（先按控件标签 / placeholder / name 匹配，再退回可见文本包含），可选 `args.nth`。侧栏发起 `page.pick` 时进入拾取：悬停高亮、点击生成全局唯一 CSS selector（id 优先，否则 `tag:nth-of-type` 路径，并校验 `querySelectorAll` 唯一），Esc 取消。
+
+交互快照（对齐 page-agent 的 numbered interactive elements，不引入他们的 DOM walker / 任意 JS）：
+
+- 收集可见的 a / button / input / textarea / select / summary / contenteditable，以及 button、textbox、combobox、listbox、option、checkbox、radio、switch、tab、menuitem、slider 等 ARIA 角色；开放 Shadow Root 与同源 iframe 一并走进去。
+- 过滤 `display:none` / `visibility:hidden` / `aria-hidden` / 无盒模型的节点；去掉套在已收录控件里的装饰节点；`<label>` 只在没有关联控件时单独编号。
+- 每条写成 `[index] role "label" value=… placeholder=…`，并带上是否在视口内。内容脚本模块里保留 `index → HTMLElement`；元素被卸掉时按 role+label+name 回配。
+- 标签切换和操作成功后写入 `browser/interactive.md`，同时叠进 `snapshot.md` 的 Interactive 段。`click` / `fill` / `fillForm` 的结果 JSON 也带最新列表，避免 Agent 复用过期编号。
 
 读取：
 
@@ -71,23 +79,25 @@ Cursor Agent 在 ACP 模式下仍然自己执行本地工具（读文件、写�
 |---|---|
 | `getMeta` | url、title、description、canonical |
 | `getReadable` | 正文纯文本（简单可读性抽取，截断） |
+| `getInteractive` | 刷新并返回编号交互控件（text + elements） |
 | `getSelection` | 当前选区 |
 | `getLinks` | 同源链接（text + href，截断条数） |
 | `getOutline` | h1–h3 文本 |
-| `queryText` | 匹配节点的 textContent |
-| `queryAll` | 匹配节点摘要列表（tag / text / href） |
+| `queryText` | 一个节点的 textContent |
+| `queryAll` | 匹配节点摘要；不带定位参数时等于当前交互列表 |
 | `getAttribute` | `args.attribute` 对应属性 |
-| `getValue` | input / textarea / select 的当前值 |
+| `getValue` | input / textarea / select / 可填控件的当前值与标签 |
 | `exists` | 是否找得到匹配节点 |
 
 操作：
 
 | 方法 | 作用 |
 |---|---|
-| `click` / `dblclick` | 滚入视口、高亮、派发指针事件后点击 |
+| `click` / `dblclick` | 滚入视口、高亮、按坐标派发 pointer/mouse 后点击 |
 | `hover` / `focus` | 悬停或聚焦 |
-| `fill` / `type` / `clear` | 填值 / 追加 / 清空，并派发 input+change |
-| `select` / `check` | 下拉框和 checkbox / radio |
+| `fill` / `type` / `clear` | 填值 / 追加 / 清空：原生 setter + beforeinput/input/change；contenteditable 失败则 `execCommand`；combobox 点开再选 |
+| `fillForm` | 一次填多个字段：`args.fields` 每项 `index` / `label` / `name` / `selector` + `value` |
+| `select` / `check` | 原生 `<select>` 按 value 或 option 文本；自定义下拉同 `fill`；checkbox / radio / switch |
 | `press` | 对焦点或指定元素派发按键（如 Enter） |
 | `scroll` / `scrollIntoView` | 窗口滚动或滚到元素 |
 | `waitFor` | 轮询直到元素出现，默认 8s，最长 20s |
@@ -131,7 +141,8 @@ Host 用 Node 24 直接跑 TypeScript（类型擦除）。stdout 只给 Chrome�
       tools.json             # 机器可读方法目录，Host 启动时写入
       current.json           # 当前标签：tabId, url, title, updatedAt
       tabs.json              # 全部普通窗口/标签：tabId, windowId, title, url, active, pinned, restricted
-      snapshot.md            # 最近一次可读正文
+      snapshot.md            # 交互控件列表 + 可读正文
+      interactive.md         # 仅编号交互控件，填表/点击先读这份
       commands/<id>.json     # Agent 写入的页面命令
       results/<id>.json      # 扩展写回的结果
       screenshots/<id>.jpg   # 视口 / 元素截图
@@ -174,9 +185,9 @@ Host 用 Node 24 直接跑 TypeScript（类型擦除）。stdout 只给 Chrome�
 }
 ```
 
-命令默认超时 20s（`waitFor` / 导航可能更久）。失败结果带 `ok: false` 和错误信息。文本结果约 200KB 截断。截图走 JPEG 压缩，结果 JSON 不内嵌像素。操作类命令成功后刷新 `current.json` / `snapshot.md`。侧栏把 `browser.command` / `browser.result` 写成当前轮 assistant 的 `tool-call`（`toolCallId` 为 `browser:<id>`），跟 ACP 工具同一套 `ToolCard`，不挂 Header。
+命令默认超时 20s（`waitFor` / 导航可能更久）。失败结果带 `ok: false` 和错误信息。文本结果约 200KB 截断。截图走 JPEG 压缩，结果 JSON 不内嵌像素。操作类命令成功后刷新 `current.json` / `snapshot.md` / `interactive.md`。侧栏把 `browser.command` / `browser.result` 写成当前轮 assistant 的 `tool-call`（`toolCallId` 为 `browser:<id>`），跟 ACP 工具同一套 `ToolCard`，不挂 Header。
 
-Host 在 `session/new` 之前写好 `AGENTS.md` 和 `browser/tools.json`，这样 Agent 一进工作区就能感知读、操作、视觉和标签/窗口方法。SW 在标签/窗口变化时（250ms 防抖）发 `tabs.update`，Host 写 `browser/tabs.json`。`listTabs` 结果与该文件同形，给需要立刻拿到列表的命令用。
+Host 在 `session/new` 之前写好 `AGENTS.md` 和 `browser/tools.json`，这样 Agent 一进工作区就能感知读、操作、视觉、交互快照和标签/窗口方法。SW 在标签/窗口变化时（250ms 防抖）发 `tabs.update`，Host 写 `browser/tabs.json`。`listTabs` 结果与该文件同形，给需要立刻拿到列表的命令用。`page.update` 同时写 `interactive.md`。
 
 ## 多会话与 fork
 
@@ -337,9 +348,9 @@ Host 是通用 ACP Client + 数据驱动 `AgentProfile`（启动命令、鉴权�
 ## 标签切换
 
 1. SW 收到 `onActivated` / 完整 URL `onUpdated`
-2. 向该 tab 的内容脚本要 `getMeta` + `getReadable`
+2. 向该 tab 的内容脚本要 `getMeta` + `getReadable` + 交互控件列表
 3. 发给 Host：`page.update`
-4. Host 写 `browser/current.json` 和 `browser/snapshot.md`
+4. Host 写 `browser/current.json`、`browser/snapshot.md` 和 `browser/interactive.md`
 5. Side Panel 仍收 `CurrentPage`（`favIconUrl` 由 SW 从 `chrome.tabs` 并进，不写进 workspace），但顶栏不再画 favicon
 6. 下一条 `session/prompt` 在用户文本前加一行 `[Current tab] {title} — {url}`（UI 不显示这行）
 7. 若有文件附件，再追加 `[Attachments]` 绝对路径；若有拾取的元素，再追加 `[Picked page elements]` 和 CSS selector，并写明用页面工具的 `args.selector` 去查看或操作。正文里的 `@` 芯片先展开成 `@标题`，再按种类追加 `[Mentioned tabs]` / `[Mentioned attachments]`（UI 气泡里只显示用户正文和芯片，不显示这些块）
@@ -428,8 +439,10 @@ pnpm workspace。扩展用 Vite + `@crxjs/vite-plugin` 打包。
 | 重试无效 | 强制重连 Native Host；`connect` 唤醒 SW，失败原因写到顶栏 |
 | 发消息无反馈 | 输入和 isRunning 由 App state 驱动，不走 useAuiState |
 | 命令文件误触发 | 只认 `browser/commands/*.json` 且含 `id`+白名单 `method` |
-| 受控输入收不到赋值 | fill/type 用原生 value setter + input/change |
-| 点击找不到可点目标 | 同时支持 selector 与可见文本，失败返回明确错误 |
+| 受控输入收不到赋值 | fill/type 用原生 value setter + beforeinput/input/change；contenteditable 再退 `execCommand` |
+| 点击找不到可点目标 | 优先 interactive.md 的 index / 控件 label，再 selector 与可见文本 |
+| 表单控件没有 innerText | 交互快照带 label/placeholder/name；`text`/`label` 命中控件而不是标题 |
+| 自定义下拉不是 `<select>` | fill/select 对 combobox/listbox 先点击再选 option 文本 |
 | 导航后内容脚本被卸掉 | 标签级导航走 `chrome.tabs.update`，完成后再抓快照 |
 | 系统页无法拾取 | chrome:// 等直接报错；Esc / 再点拾取取消 |
 | 截图超过 Native Messaging 1MB | JPEG + 最长边 1280 + 质量下调；只传 base64，落盘后再给 Agent 路径 |

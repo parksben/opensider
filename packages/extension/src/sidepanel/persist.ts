@@ -461,7 +461,7 @@ export function wrapAttachments(text: string, items: AttachmentItem[]): string {
   }
   if (elements.length > 0) {
     parts.push(
-      `[Picked page elements]\nThe user picked these elements on the current browser tab. They want you to inspect and/or operate on them. Use page tools (queryText, click, fill, screenshotElement, exists, getAttribute, getValue, etc.) with args.selector set to the exact CSS selector below. Do not treat these as files.\n${elements
+      `[Picked page elements]\nThe user picked these elements on the current browser tab. They want you to inspect and/or operate on them. Use page tools with args.selector set to the exact CSS selector below (or match the same control in browser/interactive.md and use args.index). Do not treat these as files.\n${elements
         .map((item) => `- ${item.path}`)
         .join("\n")}`,
     );

@@ -398,7 +398,7 @@ async function dispatchCommand(command: BrowserCommand): Promise<void> {
 
   sendNative({ type: "browser.result", result });
   broadcast({ type: "browser.result", result });
-  if (result.ok && isActionMethod(command.method)) {
+  if (result.ok && (isActionMethod(command.method) || command.method === "getInteractive" || command.method === "waitFor")) {
     void requestPage(tab.id);
     void publishTabs();
   }

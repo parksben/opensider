@@ -74,13 +74,13 @@
 2. 侧栏不再用 banner 或顶栏 favicon 展示当前页标题与 URL。Agent 正在执行页面命令时，不要把该方法名挂在顶栏：它是工具调用提示，写进当前这一轮对话正文（和其它 tool-call 同一套灰字折叠），不是 Todo List。
 3. 每条用户消息在发给 Agent 时附带一行当前页上下文（标题 + URL），界面里只显示用户自己输入的文字。
 4. 内容脚本向页面注入一套白名单方法。Agent 通过工作区命令文件调用，不走 MCP。
-5. **读取**：元信息、正文、选区、链接、标题大纲、按选择器取文本 / 属性 / 值、列出匹配元素、判断元素是否存在。另可列出当前 Chrome 里所有普通窗口和标签（`tabId` / `windowId` / 标题 / URL / 是否当前 / 是否系统页）。
-6. **操作**：点击、双击、悬停、聚焦、填写、追加输入、清空、下拉选择、勾选、按键、滚动、等待元素、导航、前进 / 后退 / 刷新。另可按 `tabId` 切换到指定标签（并聚焦它所在窗口），用 `openTab` 新开 http(s) 标签（不要用 `navigate` 覆盖当前页），或把若干标签抽到新窗口 / 搬进已有窗口。
-7. **视觉**：截当前视口，或把指定元素滚入视口后截该元素。图片落到工作区文件，供 Agent 用视觉理解布局、对照文案、规划下一步点击。
-8. 定位元素可用 CSS 选择器，或可见文本（可再加 `nth`）。点击前滚动到元素并短暂高亮。
-9. 填写控件时派发 input/change，以便 React / Vue 等受控输入能收到。
-10. 导航只允许 `http(s)`。操作完成后刷新当前页快照。
-11. Host 启动、会话建立时，工作区已写好 `AGENTS.md` 和 `browser/tools.json`。Agent 在插件连上的第一时刻就能读到全部页面方法（含截图、标签/窗口），不必等用户再说明。打开的标签实时写在 `browser/tabs.json`，Agent 先读这份再动手，不要猜 tabId。
+5. **读取**：元信息、正文、选区、链接、标题大纲、按选择器取文本 / 属性 / 值、列出匹配元素、判断元素是否存在。另可列出当前 Chrome 里所有普通窗口和标签（`tabId` / `windowId` / 标题 / URL / 是否当前 / 是否系统页）。**交互快照**（`getInteractive` / `browser/interactive.md`）列出当前页可见的可点、可填控件：编号、角色、标签、当前值、占位、是否在视口内。这是填表和点击的主入口，不要让 Agent 只靠正文纯文本或猜 CSS。
+6. **操作**：点击、双击、悬停、聚焦、填写、追加输入、清空、下拉选择、勾选、按键、滚动、等待元素、导航、前进 / 后退 / 刷新。另可按 `tabId` 切换到指定标签（并聚焦它所在窗口），用 `openTab` 新开 http(s) 标签（不要用 `navigate` 覆盖当前页），或把若干标签抽到新窗口 / 搬进已有窗口。**一次填多字段**用 `fillForm`（按编号 / 标签 / name 匹配），避免一格一格猜。
+7. **视觉**：截当前视口，或把指定元素滚入视口后截该元素。图片落到工作区文件，供 Agent 用视觉理解布局、对照文案、规划下一步点击。有交互快照时视觉是补充，不是填表的第一步。
+8. 定位元素优先用交互快照里的 `args.index`（从 1 起），其次是关联标签（`args.label` / `args.name` / 可见文本会落到对应控件，而不是落在 `<label>` 或标题上），再次才是 CSS 选择器；可再加 `nth`。点击前滚动到元素并短暂高亮。
+9. 填写控件时派发完整的 pointer / beforeinput / input / change，并用原生 value setter，以便 React / Vue 等受控输入能收到。原生 `<select>` 按 option 的 value 或可见文本匹配；自定义下拉（combobox / listbox）先点开再点选项。contenteditable 先合成事件，失败再 `execCommand('insertText')`。
+10. 导航只允许 `http(s)`。操作完成后刷新当前页快照，并重写交互控件列表（编号可能变）。命令结果里带上新的交互列表，避免 Agent 拿着过期 index 继续点。
+11. Host 启动、会话建立时，工作区已写好 `AGENTS.md` 和 `browser/tools.json`。Agent 在插件连上的第一时刻就能读到全部页面方法（含截图、标签/窗口、交互快照），不必等用户再说明。打开的标签实时写在 `browser/tabs.json`，当前页控件写在 `browser/interactive.md`，Agent 先读这两份再动手，不要猜 tabId 或 CSS。
 12. 以下页面不注入、不抓取、不操作、不截图：`chrome://`、`chrome-extension://`、Chrome Web Store。仍可出现在 `tabs.json` 里并允许 `switchTab`（只是切过去看），但不能对这些页跑页面读/写/截图。
 13. 页面自动化默认执行，不再逐步弹权限（用户装这个扩展就是为了让 Agent 动手）。本地文件写入和 Shell 仍走 ACP 权限条。
 
@@ -108,6 +108,7 @@
 | 浏览器 | 仅 Chrome | Side Panel + Native Messaging 最成熟 |
 | 与 CLI 的连接 | Native Messaging Host 拉起 `agent acp` | 扩展无法 spawn 进程；Host 由 Chrome 按需启动，不是常驻服务 |
 | 页面工具 | 内容脚本 + 工作区文件 RPC | 读和写都走同一通道，不必上 MCP、不必再开端口 |
+| 填表定位 | 编号交互快照 + label/index + fillForm（参考 page-agent / browser-use） | 正文抽取看不到 placeholder；`innerText` 匹配会打到 label/标题，输入框本身填不进去 |
 | 页面自动化权限 | 白名单方法默认执行 | 逐步确认会打断自动化；系统页仍然隔离 |
 | 页面截图 | 视口 / 元素 JPEG 写入工作区 | Native Messaging 有 1MB 上限，不能传原图；Agent 用 Read 看图片做视觉规划 |
 | 能力发现 | 启动时写 AGENTS.md + tools.json | 会话 cwd 里第一眼就能看见全部方法 |

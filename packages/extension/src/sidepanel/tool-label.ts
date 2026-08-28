@@ -98,6 +98,8 @@ const COMMON_ARG_KEYS = [
   "query",
   "pattern",
   "selector",
+  "label",
+  "index",
 ];
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {

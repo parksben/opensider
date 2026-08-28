@@ -1,14 +1,22 @@
-import type { BrowserCommand, BrowserCommandArgs, BrowserResult, ClipRect, CurrentPage, PageMethod } from "@shared";
+import type { BrowserCommand, BrowserCommandArgs, BrowserResult, ClipRect, CurrentPage, FormFieldArg, PageMethod } from "@shared";
+import {
+  cleanText,
+  collectOptions,
+  describeElement,
+  findElement,
+  implicitRole,
+  interactiveText,
+  locateElements,
+  locateField,
+  peekInteractive,
+  preferFillable,
+  refreshInteractive,
+} from "./interactive";
 
 const MAX_TEXT = 200_000;
-const SELECTOR_MAX = 300;
 
 function clip(text: string, max = MAX_TEXT): string {
   return text.length > max ? `${text.slice(0, max)}\n\n[truncated]` : text;
-}
-
-function cleanText(value: string): string {
-  return value.replace(/\u00a0/g, " ").replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
 function sleep(ms: number): Promise<void> {
@@ -75,30 +83,6 @@ export function getReadable(): string {
   return clip(cleanText(clone.innerText ?? ""));
 }
 
-function matchesText(el: Element, text?: string): boolean {
-  if (!text) return true;
-  return cleanText((el as HTMLElement).innerText ?? "").toLowerCase().includes(text.toLowerCase());
-}
-
-function collectCandidates(args: BrowserCommandArgs): HTMLElement[] {
-  const selector = args.selector?.trim();
-  if (selector) {
-    if (selector.length > SELECTOR_MAX) throw new Error("selector is too long");
-    return [...document.querySelectorAll(selector)].filter((el) => matchesText(el, args.text)) as HTMLElement[];
-  }
-  if (args.text) {
-    const preferred = document.querySelectorAll(
-      "a, button, [role='button'], input, textarea, select, label, summary, [onclick]",
-    );
-    const hits = [...preferred].filter((el) => matchesText(el, args.text)) as HTMLElement[];
-    if (hits.length > 0) return hits;
-    return [...document.querySelectorAll("h1, h2, h3, h4, p, li, span, div")]
-      .filter((el) => matchesText(el, args.text))
-      .slice(0, 40) as HTMLElement[];
-  }
-  throw new Error("args.selector or args.text is required");
-}
-
 export function measureTarget(args: BrowserCommandArgs): ClipRect {
   const el = findElement(args);
   el.scrollIntoView({ block: "center", inline: "nearest" });
@@ -136,28 +120,6 @@ export function measureViewport(): ClipRect {
   };
 }
 
-function findElement(args: BrowserCommandArgs): HTMLElement {
-  const list = collectCandidates(args);
-  const index = args.nth ?? 0;
-  const el = list[index];
-  if (!el) {
-    throw new Error(`no matching element (matches=${list.length}, nth=${index})`);
-  }
-  return el;
-}
-
-function describe(el: HTMLElement): Record<string, string | undefined> {
-  const href = el instanceof HTMLAnchorElement ? el.href : el.getAttribute("href") ?? undefined;
-  return {
-    tag: el.tagName.toLowerCase(),
-    text: cleanText(el.innerText ?? "").slice(0, 160),
-    href,
-    name: el.getAttribute("name") ?? undefined,
-    type: el.getAttribute("type") ?? undefined,
-    id: el.id || undefined,
-  };
-}
-
 function highlight(el: HTMLElement): void {
   const previous = el.style.outline;
   el.style.outline = "2px solid #d4a054";
@@ -166,62 +128,228 @@ function highlight(el: HTMLElement): void {
   }, 700);
 }
 
-function mouse(el: HTMLElement, type: string): void {
-  el.dispatchEvent(
-    new MouseEvent(type, {
-      bubbles: true,
-      cancelable: true,
-      view: window,
-      composed: true,
-    }),
-  );
-}
-
 function clickElement(el: HTMLElement): void {
   el.scrollIntoView({ block: "center", inline: "nearest" });
   highlight(el);
-  if ("focus" in el) el.focus();
-  mouse(el, "pointerdown");
-  mouse(el, "mousedown");
-  mouse(el, "pointerup");
-  mouse(el, "mouseup");
-  el.click();
+  const rect = el.getBoundingClientRect();
+  const x = rect.left + rect.width / 2;
+  const y = rect.top + rect.height / 2;
+  const hit = document.elementFromPoint(x, y);
+  const target = hit instanceof HTMLElement && el.contains(hit) ? hit : el;
+  const pointerOpts: PointerEventInit = {
+    bubbles: true,
+    cancelable: true,
+    composed: true,
+    clientX: x,
+    clientY: y,
+    pointerType: "mouse",
+    view: window,
+  };
+  const mouseOpts: MouseEventInit = {
+    bubbles: true,
+    cancelable: true,
+    composed: true,
+    clientX: x,
+    clientY: y,
+    button: 0,
+    view: window,
+  };
+  target.dispatchEvent(new PointerEvent("pointerover", pointerOpts));
+  target.dispatchEvent(new PointerEvent("pointerenter", { ...pointerOpts, bubbles: false }));
+  target.dispatchEvent(new MouseEvent("mouseover", mouseOpts));
+  target.dispatchEvent(new MouseEvent("mouseenter", { ...mouseOpts, bubbles: false }));
+  target.dispatchEvent(new PointerEvent("pointerdown", pointerOpts));
+  target.dispatchEvent(new MouseEvent("mousedown", mouseOpts));
+  if ("focus" in el) el.focus({ preventScroll: true });
+  target.dispatchEvent(new PointerEvent("pointerup", pointerOpts));
+  target.dispatchEvent(new MouseEvent("mouseup", mouseOpts));
+  target.click();
+}
+
+function nativeValueSetter(el: HTMLInputElement | HTMLTextAreaElement): ((value: string) => void) | undefined {
+  const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+  return Object.getOwnPropertyDescriptor(proto, "value")?.set;
 }
 
 function setNativeValue(el: HTMLInputElement | HTMLTextAreaElement, value: string): void {
-  const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-  const desc = Object.getOwnPropertyDescriptor(proto, "value");
-  desc?.set?.call(el, value);
-  el.dispatchEvent(new InputEvent("input", { bubbles: true, composed: true, data: value, inputType: "insertText" }));
+  const tracker = (el as HTMLInputElement & { _valueTracker?: { setValue?: (value: string) => void } })._valueTracker;
+  tracker?.setValue?.("");
+  const setter = nativeValueSetter(el);
+  if (setter) setter.call(el, value);
+  else el.value = value;
+}
+
+function fillTextField(el: HTMLInputElement | HTMLTextAreaElement, value: string, append: boolean): void {
+  el.scrollIntoView({ block: "center", inline: "nearest" });
+  highlight(el);
+  el.focus({ preventScroll: true });
+  const next = append ? `${el.value}${value}` : value;
+  el.dispatchEvent(
+    new InputEvent("beforeinput", {
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+      inputType: append ? "insertText" : "insertReplacementText",
+      data: value,
+    }),
+  );
+  setNativeValue(el, next);
+  el.dispatchEvent(
+    new InputEvent("input", {
+      bubbles: true,
+      composed: true,
+      data: value,
+      inputType: append ? "insertText" : "insertReplacementText",
+    }),
+  );
   el.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
-function fillElement(el: HTMLElement, value: string, append: boolean): void {
+function fillContentEditable(el: HTMLElement, value: string, append: boolean): void {
   el.scrollIntoView({ block: "center", inline: "nearest" });
   highlight(el);
-  el.focus();
-  if (el instanceof HTMLSelectElement) {
-    el.value = value;
-    el.dispatchEvent(new Event("input", { bubbles: true }));
-    el.dispatchEvent(new Event("change", { bubbles: true }));
+  el.focus({ preventScroll: true });
+  const next = append ? `${el.innerText ?? ""}${value}` : value;
+  const allowed = el.dispatchEvent(
+    new InputEvent("beforeinput", {
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+      inputType: append ? "insertText" : "insertReplacementText",
+      data: value,
+    }),
+  );
+  if (allowed) {
+    el.innerText = next;
+    el.dispatchEvent(
+      new InputEvent("input", {
+        bubbles: true,
+        composed: true,
+        inputType: append ? "insertText" : "insertReplacementText",
+        data: value,
+      }),
+    );
+  }
+  if (!append && cleanText(el.innerText ?? "") !== cleanText(value)) {
+    const doc = el.ownerDocument;
+    const selection = doc.getSelection();
+    const range = doc.createRange();
+    range.selectNodeContents(el);
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+    doc.execCommand("insertText", false, value);
+  }
+  el.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+function selectByValueOrText(el: HTMLSelectElement, value: string): void {
+  const exact = [...el.options].find((opt) => opt.value === value);
+  const byText = [...el.options].find((opt) => cleanText(opt.text).toLowerCase() === value.trim().toLowerCase());
+  const contains = [...el.options].find((opt) => cleanText(opt.text).toLowerCase().includes(value.trim().toLowerCase()));
+  const option = exact ?? byText ?? contains;
+  if (!option) {
+    const shown = [...el.options]
+      .slice(0, 12)
+      .map((opt) => opt.text.trim() || opt.value)
+      .filter(Boolean)
+      .join(", ");
+    throw new Error(`no <option> matching ${JSON.stringify(value)}${shown ? ` (have: ${shown})` : ""}`);
+  }
+  el.value = option.value;
+  el.dispatchEvent(new Event("input", { bubbles: true }));
+  el.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
+function findVisibleOption(value: string, scope: ParentNode = document): HTMLElement | undefined {
+  const needle = value.trim().toLowerCase();
+  if (!needle) return undefined;
+  const nodes = [
+    ...scope.querySelectorAll("[role=option], [role=menuitem], [role=treeitem], li[role], [data-value]"),
+  ];
+  const visible = nodes.filter((node): node is HTMLElement => node instanceof HTMLElement);
+  return (
+    visible.find((node) => cleanText(node.innerText).toLowerCase() === needle) ??
+    visible.find((node) => cleanText(node.innerText).toLowerCase().includes(needle))
+  );
+}
+
+async function fillCombobox(el: HTMLElement, value: string): Promise<void> {
+  clickElement(el);
+  await sleep(180);
+  const active = document.activeElement;
+  if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) {
+    fillTextField(active, value, false);
+    await sleep(120);
+  } else if (active instanceof HTMLElement && active.isContentEditable) {
+    fillContentEditable(active, value, false);
+    await sleep(120);
+  }
+  const option =
+    findVisibleOption(value, el.ownerDocument) ??
+    findVisibleOption(value) ??
+    findVisibleOption(value, el.parentElement ?? el);
+  if (option) {
+    clickElement(option);
+    await sleep(80);
     return;
   }
-  if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
-    const next = append ? `${el.value}${value}` : value;
-    setNativeValue(el, next);
+  if (active instanceof HTMLElement) {
+    pressKey(active, "Enter");
     return;
   }
-  if (el.isContentEditable) {
-    if (!append) el.textContent = "";
-    el.textContent = `${el.textContent ?? ""}${value}`;
-    el.dispatchEvent(new InputEvent("input", { bubbles: true, composed: true }));
+  throw new Error(`opened the dropdown but found no option matching ${JSON.stringify(value)}`);
+}
+
+async function setChecked(el: HTMLElement, next: boolean): Promise<void> {
+  const current =
+    el instanceof HTMLInputElement && (el.type === "checkbox" || el.type === "radio")
+      ? el.checked
+      : el.getAttribute("aria-checked") === "true";
+  if (current !== next) {
+    clickElement(el);
+    await sleep(50);
+  }
+}
+
+async function fillWidget(el: HTMLElement, value: string, append: boolean): Promise<void> {
+  const target = preferFillable(el);
+  target.scrollIntoView({ block: "center", inline: "nearest" });
+  highlight(target);
+
+  if (target instanceof HTMLInputElement && target.type === "file") {
+    throw new Error("file inputs cannot be filled from page tools; the user must pick a file");
+  }
+
+  const role = implicitRole(target);
+  if (role === "checkbox" || role === "switch") {
+    await setChecked(target, /^(true|1|yes|on|checked)$/i.test(value));
     return;
   }
-  throw new Error("element is not fillable");
+  if (role === "radio") {
+    if (!/^(false|0|off|unchecked)$/i.test(value)) clickElement(target);
+    return;
+  }
+  if (target instanceof HTMLSelectElement) {
+    selectByValueOrText(target, value);
+    return;
+  }
+  if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
+    fillTextField(target, value, append);
+    return;
+  }
+  if (target.isContentEditable) {
+    fillContentEditable(target, value, append);
+    return;
+  }
+  if (role === "combobox" || role === "listbox" || target.getAttribute("aria-haspopup")) {
+    await fillCombobox(target, value);
+    return;
+  }
+  throw new Error(`element is not fillable (role=${role}, tag=${target.tagName.toLowerCase()})`);
 }
 
 function pressKey(el: HTMLElement, key: string): void {
-  const opts = { key, bubbles: true, cancelable: true };
+  const opts: KeyboardEventInit = { key, bubbles: true, cancelable: true, composed: true };
   el.dispatchEvent(new KeyboardEvent("keydown", opts));
   el.dispatchEvent(new KeyboardEvent("keypress", opts));
   el.dispatchEvent(new KeyboardEvent("keyup", opts));
@@ -230,7 +358,13 @@ function pressKey(el: HTMLElement, key: string): void {
   }
 }
 
+function afterAction() {
+  const snap = refreshInteractive();
+  return { interactive: snap.text, count: snap.count };
+}
+
 export function extractSnapshot(tabId: number): CurrentPage {
+  refreshInteractive();
   const meta = getMeta();
   return {
     tabId,
@@ -238,6 +372,7 @@ export function extractSnapshot(tabId: number): CurrentPage {
     title: meta.title,
     updatedAt: new Date().toISOString(),
     readable: getReadable(),
+    interactive: interactiveText(),
   };
 }
 
@@ -256,6 +391,10 @@ async function invoke(method: PageMethod, args: BrowserCommandArgs): Promise<unk
       return getMeta();
     case "getReadable":
       return { text: getReadable() };
+    case "getInteractive": {
+      const snap = refreshInteractive();
+      return { count: snap.count, text: interactiveText(), elements: snap.elements };
+    }
     case "getSelection":
       return { text: getSelectionText() };
     case "getLinks":
@@ -265,86 +404,102 @@ async function invoke(method: PageMethod, args: BrowserCommandArgs): Promise<unk
     case "queryText":
       return { text: clip(cleanText(findElement(args).innerText ?? "")) };
     case "queryAll": {
-      const all = collectCandidates(args);
-      return { count: all.length, elements: all.slice(0, 30).map(describe) };
+      if (args.index == null && !args.selector && !args.text && !args.label && !args.name) {
+        const snap = peekInteractive().count ? peekInteractive() : refreshInteractive();
+        return { count: snap.count, elements: snap.elements };
+      }
+      const all = locateElements(args);
+      return { count: all.length, elements: all.slice(0, 40).map((el) => describeElement(el)) };
     }
     case "getAttribute":
       if (!args.attribute) throw new Error("getAttribute requires args.attribute");
       return { value: findElement(args).getAttribute(args.attribute) };
     case "getValue": {
-      const el = findElement(args);
-      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement) {
-        return { value: el.value };
-      }
-      return { value: cleanText(el.innerText ?? "") };
+      const el = preferFillable(findElement(args));
+      return describeElement(el);
     }
     case "exists": {
-      const all = collectCandidates(args);
+      const all = locateElements(args);
       return { found: all.length > 0, count: all.length };
     }
     case "click": {
       const el = findElement(args);
       clickElement(el);
-      return { clicked: describe(el) };
+      await sleep(120);
+      return { clicked: describeElement(el), ...afterAction() };
     }
     case "dblclick": {
       const el = findElement(args);
       clickElement(el);
       el.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true, view: window }));
-      return { clicked: describe(el) };
+      await sleep(120);
+      return { clicked: describeElement(el), ...afterAction() };
     }
     case "hover": {
       const el = findElement(args);
       el.scrollIntoView({ block: "center", inline: "nearest" });
       highlight(el);
-      mouse(el, "pointerover");
-      mouse(el, "mouseover");
-      mouse(el, "mouseenter");
-      return { hovered: describe(el) };
+      const box = el.getBoundingClientRect();
+      const opts = { bubbles: true, cancelable: true, composed: true, clientX: box.x + box.width / 2, clientY: box.y + box.height / 2, view: window };
+      el.dispatchEvent(new PointerEvent("pointerover", { ...opts, pointerType: "mouse" }));
+      el.dispatchEvent(new MouseEvent("mouseover", opts));
+      el.dispatchEvent(new MouseEvent("mouseenter", { ...opts, bubbles: false }));
+      return { hovered: describeElement(el) };
     }
     case "focus": {
       const el = findElement(args);
       el.scrollIntoView({ block: "center", inline: "nearest" });
       el.focus();
-      return { focused: describe(el) };
+      return { focused: describeElement(el) };
     }
-    case "fill":
+    case "fill": {
       if (args.value == null && args.text == null) throw new Error("fill requires args.value");
-      fillElement(findElement(args), args.value ?? args.text ?? "", false);
-      return { filled: true };
-    case "type":
+      const el = preferFillable(findElement(args));
+      await fillWidget(el, args.value ?? args.text ?? "", false);
+      return { filled: true, target: describeElement(el), ...afterAction() };
+    }
+    case "type": {
       if (args.text == null && args.value == null) throw new Error("type requires args.text");
-      fillElement(findElement(args), args.text ?? args.value ?? "", true);
-      return { typed: true };
-    case "clear":
-      fillElement(findElement(args), "", false);
-      return { cleared: true };
+      const el = preferFillable(findElement(args));
+      await fillWidget(el, args.text ?? args.value ?? "", true);
+      return { typed: true, target: describeElement(el), ...afterAction() };
+    }
+    case "clear": {
+      const el = preferFillable(findElement(args));
+      await fillWidget(el, "", false);
+      return { cleared: true, target: describeElement(el), ...afterAction() };
+    }
+    case "fillForm":
+      return fillForm(args.fields);
     case "select": {
-      const el = findElement(args);
-      if (!(el instanceof HTMLSelectElement)) throw new Error("select requires a <select>");
       if (args.value == null) throw new Error("select requires args.value");
-      fillElement(el, args.value, false);
-      return { selected: el.value };
+      const el = preferFillable(findElement(args));
+      await fillWidget(el, args.value, false);
+      return { selected: describeElement(el), options: collectOptions(el), ...afterAction() };
     }
     case "check": {
-      const el = findElement(args);
-      if (!(el instanceof HTMLInputElement) || (el.type !== "checkbox" && el.type !== "radio")) {
-        throw new Error("check requires a checkbox or radio");
+      const el = preferFillable(findElement(args));
+      const role = implicitRole(el);
+      if (!["checkbox", "radio", "switch"].includes(role) && !(el instanceof HTMLInputElement)) {
+        throw new Error("check requires a checkbox, radio, or switch");
       }
-      const next = args.checked ?? true;
-      if (el.checked !== next) clickElement(el);
-      return { checked: el.checked };
+      await setChecked(el, args.checked ?? true);
+      return { checked: describeElement(el), ...afterAction() };
     }
     case "press": {
       const key = args.key;
       if (!key) throw new Error("press requires args.key");
-      const el = args.selector || args.text ? findElement(args) : (document.activeElement as HTMLElement | null);
+      const el =
+        args.index != null || args.selector || args.text || args.label
+          ? findElement(args)
+          : (document.activeElement as HTMLElement | null);
       if (!el) throw new Error("nothing is focused");
       pressKey(el, key);
-      return { key };
+      await sleep(80);
+      return { key, ...afterAction() };
     }
     case "scroll":
-      if (args.selector || args.text) {
+      if (args.index != null || args.selector || args.text || args.label) {
         findElement(args).scrollIntoView({ block: "center", inline: "nearest" });
         return { scrolled: "element" };
       }
@@ -357,8 +512,12 @@ async function invoke(method: PageMethod, args: BrowserCommandArgs): Promise<unk
       const timeout = Math.min(Math.max(args.timeoutMs ?? 8000, 200), 20_000);
       const start = Date.now();
       while (Date.now() - start < timeout) {
-        if (collectCandidates(args).length > 0) {
-          return { found: true, elapsedMs: Date.now() - start };
+        try {
+          if (locateElements(args).length > 0) {
+            return { found: true, elapsedMs: Date.now() - start };
+          }
+        } catch {
+          // locator may fail until the node exists
         }
         await sleep(150);
       }
@@ -379,3 +538,39 @@ async function invoke(method: PageMethod, args: BrowserCommandArgs): Promise<unk
       throw new Error(`unknown method ${method}`);
   }
 }
+
+async function fillForm(fields?: FormFieldArg[]): Promise<unknown> {
+  if (!fields?.length) throw new Error("fillForm requires args.fields");
+  refreshInteractive();
+  const resolved = fields.map((field, i) => {
+    try {
+      return { field, el: locateField(field), error: undefined as string | undefined };
+    } catch (error) {
+      return { field, el: undefined as HTMLElement | undefined, error: `fields[${i}]: ${String(error)}` };
+    }
+  });
+  const results: Array<Record<string, unknown>> = [];
+  for (const item of resolved) {
+    if (!item.el) {
+      results.push({ ok: false, error: item.error, field: item.field });
+      continue;
+    }
+    try {
+      const value = item.field.value ?? item.field.text ?? "";
+      if (item.field.checked != null) await setChecked(item.el, item.field.checked);
+      else await fillWidget(item.el, value, false);
+      results.push({ ok: true, target: describeElement(item.el) });
+    } catch (error) {
+      results.push({ ok: false, error: String(error), field: item.field });
+    }
+  }
+  const failed = results.filter((row) => !row.ok).length;
+  return {
+    filled: results.length - failed,
+    failed,
+    results,
+    ...afterAction(),
+  };
+}
+
+export { findElement };

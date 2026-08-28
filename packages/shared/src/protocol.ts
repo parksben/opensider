@@ -6,6 +6,7 @@ export const EXTENSION_KEY =
 export const PAGE_METHODS = [
   "getMeta",
   "getReadable",
+  "getInteractive",
   "getSelection",
   "getLinks",
   "getOutline",
@@ -21,6 +22,7 @@ export const PAGE_METHODS = [
   "fill",
   "type",
   "clear",
+  "fillForm",
   "select",
   "check",
   "press",
@@ -51,6 +53,7 @@ export const ACTION_METHODS = [
   "fill",
   "type",
   "clear",
+  "fillForm",
   "select",
   "check",
   "press",
@@ -85,6 +88,16 @@ export function isCaptureMethod(method: PageMethod): boolean {
   return (CAPTURE_METHODS as readonly string[]).includes(method);
 }
 
+export type FormFieldArg = {
+  index?: number;
+  selector?: string;
+  text?: string;
+  label?: string;
+  name?: string;
+  value?: string;
+  checked?: boolean;
+};
+
 export type BrowserCommandArgs = {
   selector?: string;
   text?: string;
@@ -96,12 +109,16 @@ export type BrowserCommandArgs = {
   x?: number;
   y?: number;
   nth?: number;
+  index?: number;
+  label?: string;
+  name?: string;
   checked?: boolean;
   width?: number;
   height?: number;
   tabId?: number;
   tabIds?: number[];
   windowId?: number;
+  fields?: FormFieldArg[];
 };
 
 export type TabRecord = {
@@ -152,33 +169,35 @@ export const TOOL_CATALOG: Array<{
 }> = [
   { name: "getMeta", kind: "read", args: "", summary: "url, title, description" },
   { name: "getReadable", kind: "read", args: "", summary: "main text extract" },
+  { name: "getInteractive", kind: "read", args: "", summary: "numbered interactive controls; prefer args.index from this list" },
   { name: "getSelection", kind: "read", args: "", summary: "highlighted text" },
   { name: "getLinks", kind: "read", args: "", summary: "same-origin links" },
   { name: "getOutline", kind: "read", args: "", summary: "h1–h3 headings" },
-  { name: "queryText", kind: "read", args: "selector|text, nth?", summary: "one node's text" },
-  { name: "queryAll", kind: "read", args: "selector|text", summary: "matching node summaries" },
-  { name: "getAttribute", kind: "read", args: "selector|text, attribute", summary: "element attribute" },
-  { name: "getValue", kind: "read", args: "selector|text", summary: "input/textarea/select value" },
-  { name: "exists", kind: "read", args: "selector|text", summary: "whether a match exists" },
-  { name: "click", kind: "act", args: "selector|text, nth?", summary: "click an element" },
-  { name: "dblclick", kind: "act", args: "selector|text, nth?", summary: "double-click" },
-  { name: "hover", kind: "act", args: "selector|text, nth?", summary: "hover" },
-  { name: "focus", kind: "act", args: "selector|text, nth?", summary: "focus" },
-  { name: "fill", kind: "act", args: "selector|text, value", summary: "set field value" },
-  { name: "type", kind: "act", args: "selector|text, text", summary: "append text" },
-  { name: "clear", kind: "act", args: "selector|text", summary: "clear a field" },
-  { name: "select", kind: "act", args: "selector|text, value", summary: "choose a <select> option" },
-  { name: "check", kind: "act", args: "selector|text, checked?", summary: "checkbox/radio" },
-  { name: "press", kind: "act", args: "key, selector?", summary: "keydown/keyup, e.g. Enter" },
-  { name: "scroll", kind: "act", args: "selector|text or x,y", summary: "scroll window or element" },
-  { name: "scrollIntoView", kind: "act", args: "selector|text", summary: "scroll element into view" },
-  { name: "waitFor", kind: "act", args: "selector|text, timeoutMs?", summary: "wait until element exists" },
+  { name: "queryText", kind: "read", args: "index|selector|label|text, nth?", summary: "one node's text" },
+  { name: "queryAll", kind: "read", args: "index|selector|label|text?", summary: "matching node summaries; empty args = interactive list" },
+  { name: "getAttribute", kind: "read", args: "index|selector|label|text, attribute", summary: "element attribute" },
+  { name: "getValue", kind: "read", args: "index|selector|label|text", summary: "input/textarea/select value" },
+  { name: "exists", kind: "read", args: "index|selector|label|text", summary: "whether a match exists" },
+  { name: "click", kind: "act", args: "index|selector|label|text, nth?", summary: "click an element" },
+  { name: "dblclick", kind: "act", args: "index|selector|label|text, nth?", summary: "double-click" },
+  { name: "hover", kind: "act", args: "index|selector|label|text, nth?", summary: "hover" },
+  { name: "focus", kind: "act", args: "index|selector|label|text, nth?", summary: "focus" },
+  { name: "fill", kind: "act", args: "index|label|selector, value", summary: "set field value (native, contenteditable, or combobox)" },
+  { name: "type", kind: "act", args: "index|label|selector, text", summary: "append text" },
+  { name: "clear", kind: "act", args: "index|label|selector", summary: "clear a field" },
+  { name: "fillForm", kind: "act", args: "fields[{index|label|name, value}]", summary: "fill many fields in one call" },
+  { name: "select", kind: "act", args: "index|label|selector, value", summary: "choose a select/combobox option by value or text" },
+  { name: "check", kind: "act", args: "index|label|selector, checked?", summary: "checkbox/radio/switch" },
+  { name: "press", kind: "act", args: "key, index|selector?", summary: "keydown/keyup, e.g. Enter" },
+  { name: "scroll", kind: "act", args: "index|selector|text or x,y", summary: "scroll window or element" },
+  { name: "scrollIntoView", kind: "act", args: "index|selector|label|text", summary: "scroll element into view" },
+  { name: "waitFor", kind: "act", args: "index|selector|label|text, timeoutMs?", summary: "wait until element exists" },
   { name: "navigate", kind: "act", args: "url", summary: "http(s) navigation" },
   { name: "goBack", kind: "act", args: "", summary: "history back" },
   { name: "goForward", kind: "act", args: "", summary: "history forward" },
   { name: "reload", kind: "act", args: "", summary: "reload tab" },
   { name: "screenshot", kind: "vision", args: "x?,y?,width?,height?", summary: "JPEG of the visible viewport or a region" },
-  { name: "screenshotElement", kind: "vision", args: "selector|text, nth?", summary: "JPEG of one element; Read the file at data.path" },
+  { name: "screenshotElement", kind: "vision", args: "index|selector|label|text, nth?", summary: "JPEG of one element; Read the file at data.path" },
   { name: "listTabs", kind: "read", args: "", summary: "all normal windows and tabs; same shape as browser/tabs.json" },
   { name: "switchTab", kind: "act", args: "tabId", summary: "activate a tab and focus its window" },
   { name: "openTab", kind: "act", args: "url, windowId?", summary: "open http(s) in a new tab; optional windowId" },
@@ -191,6 +210,7 @@ export type CurrentPage = {
   title: string;
   updatedAt: string;
   readable?: string;
+  interactive?: string;
   favIconUrl?: string;
 };
 
