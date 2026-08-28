@@ -4,6 +4,7 @@ import type { Locale, MessageKey } from "../i18n";
 import { t } from "../i18n";
 import { clampSessionDrawerWidth, SESSION_DRAWER_MAX, SESSION_DRAWER_MIN, type Session } from "../persist";
 import { groupSessions, type SessionGroupId } from "../session-groups";
+import { ConfirmPopover } from "./ConfirmPopover";
 import { IconButton } from "./IconButton";
 import { RippleButton } from "./RippleButton";
 
@@ -74,10 +75,15 @@ export function SessionDrawer({
   const [editingId, setEditingId] = useState<string>();
   const [dragging, setDragging] = useState(false);
   const [collapsed, setCollapsed] = useState<ReadonlySet<SessionGroupId>>(() => new Set());
+  const [confirmDelete, setConfirmDelete] = useState<{ id: string; title: string }>();
   const filterRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const rootRef = useRef<HTMLElement>(null);
-  const dragRef = useRef<{ startX: number; startWidth: number }>();
+  const confirmIgnoreRef = useRef<HTMLElement | null>(null);
+  const dragRef = useRef<{ startX: number; startWidth: number } | undefined>(undefined);
+
+  const deleteAnchor = (id?: string) =>
+    (id ? listRef.current?.querySelector<HTMLElement>(`[data-delete-anchor="${CSS.escape(id)}"]`) : null) ?? null;
 
   const groups = useMemo(() => {
     return groupSessions(sessions.filter((session) => matchesSession(session, query, locale)));
@@ -130,6 +136,11 @@ export function SessionDrawer({
         target instanceof HTMLTextAreaElement ||
         (target instanceof HTMLInputElement && target !== filterRef.current);
       if (event.key === "Escape") {
+        if (confirmDelete) {
+          event.preventDefault();
+          setConfirmDelete(undefined);
+          return;
+        }
         if (inField) return;
         event.preventDefault();
         if (query && inDrawer && target === filterRef.current) {
@@ -158,7 +169,14 @@ export function SessionDrawer({
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [editingId, highlightId, onClose, onSelect, query, visible]);
+  }, [confirmDelete, editingId, highlightId, onClose, onSelect, query, visible]);
+
+  useEffect(() => {
+    if (confirmDelete && !sessions.some((session) => session.id === confirmDelete.id)) {
+      setConfirmDelete(undefined);
+    }
+    confirmIgnoreRef.current = deleteAnchor(confirmDelete?.id);
+  }, [confirmDelete, sessions]);
 
   useLayoutEffect(() => {
     if (!highlightId) return;
@@ -173,7 +191,7 @@ export function SessionDrawer({
   }, [onWidth, width]);
 
   useEffect(() => {
-    const move = (event: PointerEvent) => {
+    const move = (event: globalThis.PointerEvent) => {
       const drag = dragRef.current;
       if (!drag) return;
       onWidth(clampSessionDrawerWidth(drag.startWidth + (drag.startX - event.clientX)));
@@ -344,7 +362,11 @@ export function SessionDrawer({
                                 </span>
                                 <SessionMeta locale={locale} running={running} session={session} />
                               </button>
-                              <div className="hidden h-6 shrink-0 items-center group-hover/session:flex">
+                              <div
+                                className={`h-6 shrink-0 items-center ${
+                                  confirmDelete?.id === session.id ? "flex" : "hidden group-hover/session:flex"
+                                }`}
+                              >
                                 <IconButton
                                   side="top"
                                   label={pinned ? label("unpinSession") : label("pinSession")}
@@ -361,14 +383,25 @@ export function SessionDrawer({
                                 >
                                   <Pencil size={12} />
                                 </IconButton>
-                                <IconButton
-                                  side="top"
-                                  label={label("deleteSession")}
-                                  onClick={() => onDelete(session.id)}
-                                  className="flex h-6 w-6 items-center justify-center rounded-full text-[var(--muted)] disabled:opacity-40"
-                                >
-                                  <Trash2 size={12} />
-                                </IconButton>
+                                <span data-delete-anchor={session.id}>
+                                  <IconButton
+                                    side="top"
+                                    label={label("deleteSession")}
+                                    aria-haspopup="dialog"
+                                    aria-expanded={confirmDelete?.id === session.id}
+                                    onClick={(event) => {
+                                      event.currentTarget.blur();
+                                      setConfirmDelete((current) =>
+                                        current?.id === session.id
+                                          ? undefined
+                                          : { id: session.id, title: displayTitle(session, locale) },
+                                      );
+                                    }}
+                                    className="flex h-6 w-6 items-center justify-center rounded-full text-[var(--muted)] disabled:opacity-40"
+                                  >
+                                    <Trash2 size={12} />
+                                  </IconButton>
+                                </span>
                               </div>
                             </div>
                           )}
@@ -385,6 +418,32 @@ export function SessionDrawer({
           })
         )}
       </div>
+      <ConfirmPopover
+        open={Boolean(confirmDelete)}
+        title={label("deleteSessionConfirmTitle")}
+        description={
+          confirmDelete ? (
+            <>
+              <p className="truncate" title={confirmDelete.title}>
+                {confirmDelete.title}
+              </p>
+              <p className="mt-0.5">{label("deleteSessionConfirmDetail")}</p>
+            </>
+          ) : null
+        }
+        confirmLabel={label("deleteSessionConfirmAction")}
+        cancelLabel={label("deleteSessionCancel")}
+        ignoreRef={confirmIgnoreRef}
+        getAnchorRect={() =>
+          deleteAnchor(confirmDelete?.id)?.getBoundingClientRect()
+        }
+        onCancel={() => setConfirmDelete(undefined)}
+        onConfirm={() => {
+          const id = confirmDelete?.id;
+          setConfirmDelete(undefined);
+          if (id) onDelete(id);
+        }}
+      />
     </aside>
   );
 }
