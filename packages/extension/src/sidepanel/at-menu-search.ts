@@ -1,5 +1,16 @@
 import type { AttachmentItem } from "@shared";
-import { dedupeAttachments, type HistoryTab } from "./composer-history";
+import type { HistoryTab } from "./composer-history";
+
+function uniqueByPath(list: AttachmentItem[]): AttachmentItem[] {
+  const seen = new Set<string>();
+  const out: AttachmentItem[] = [];
+  for (const item of list) {
+    if (!item.path || seen.has(item.path)) continue;
+    seen.add(item.path);
+    out.push(item);
+  }
+  return out;
+}
 
 export type AtMatchField = "title" | "url" | "name" | "path";
 
@@ -104,7 +115,7 @@ export function filterAtTabs(tabs: HistoryTab[], query: string): AtTabMatch[] {
 }
 
 export function filterAtAttachments(attachments: AttachmentItem[], query: string): AtAttachmentMatch[] {
-  const matches = dedupeAttachments(attachments)
+  const matches = uniqueByPath(attachments)
     .map((item) => matchAttachment(item, query))
     .filter((entry): entry is AtAttachmentMatch => entry != null);
   if (!query.trim()) return matches;

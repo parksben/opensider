@@ -103,7 +103,7 @@ export function ChatPane({
   const composerRef = useRef<ComposerHandle>(null);
   const atButtonRef = useRef<HTMLSpanElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
-  const { tabs: historyTabs, attachments: historyAttachments, rememberAttachments } = useComposerHistory();
+  const { tabs: historyTabs } = useComposerHistory();
   const threadEndRef = useRef<HTMLDivElement>(null);
   const editingRef = useRef<string | undefined>(undefined);
   const editingQueueRef = useRef<string | undefined>(undefined);
@@ -123,7 +123,6 @@ export function ChatPane({
   const busy = locking;
 
   const mergeAttachments = (items: AttachmentItem[]) => {
-    if (items.length > 0) rememberAttachments(items);
     setAttachments((current) => {
       const seen = new Set(current.map((item) => item.path));
       return [...current, ...items.filter((item) => !seen.has(item.path))];
@@ -461,7 +460,7 @@ export function ChatPane({
                 locale={locale}
                 query={atQuery}
                 tabs={historyTabs}
-                attachments={historyAttachments}
+                attachments={attachments}
                 ignoreRef={atButtonRef}
                 getAnchorRect={() => composerRef.current?.getCaretRect()}
                 onSelect={(mention) => {
