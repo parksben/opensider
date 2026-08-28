@@ -1,5 +1,5 @@
 import type { AttachmentItem } from "@shared";
-import { dedupeHistoryTabs, type HistoryTab } from "./composer-history";
+import { dedupeAttachments, type HistoryTab } from "./composer-history";
 
 export type AtMatchField = "title" | "url" | "name" | "path";
 
@@ -98,14 +98,13 @@ function matchAttachment(item: AttachmentItem, query: string): AtAttachmentMatch
 }
 
 export function filterAtTabs(tabs: HistoryTab[], query: string): AtTabMatch[] {
-  const unique = dedupeHistoryTabs(tabs);
-  const matches = unique.map((tab) => matchTab(tab, query)).filter((item): item is AtTabMatch => item != null);
+  const matches = tabs.map((tab) => matchTab(tab, query)).filter((item): item is AtTabMatch => item != null);
   if (!query.trim()) return matches;
   return matches.sort((a, b) => matchFieldPriority(a.matchField) - matchFieldPriority(b.matchField));
 }
 
 export function filterAtAttachments(attachments: AttachmentItem[], query: string): AtAttachmentMatch[] {
-  const matches = attachments
+  const matches = dedupeAttachments(attachments)
     .map((item) => matchAttachment(item, query))
     .filter((entry): entry is AtAttachmentMatch => entry != null);
   if (!query.trim()) return matches;
