@@ -72,6 +72,7 @@ Cursor Agent 在 ACP 模式下仍然自己执行本地工具（读文件、写�
 - 过滤 `display:none` / `visibility:hidden` / `aria-hidden` / 无盒模型的节点；去掉套在已收录控件里的装饰节点；`<label>` 只在没有关联控件时单独编号。
 - 每条写成 `[index] role "label" value=… placeholder=…`，并带上是否在视口内。内容脚本模块里保留 `index → HTMLElement`；元素被卸掉时按 role+label+name 回配。
 - 标签切换和操作成功后写入 `browser/interactive.md`，同时叠进 `snapshot.md` 的 Interactive 段。`click` / `fill` / `fillForm` 的结果 JSON 也带最新列表，避免 Agent 复用过期编号。
+- 操作光标：内容脚本在页面上挂 `#opensider-agent-cursor`（closed Shadow，`pointer-events: none`，z-index 低于拾取层）。`click` / `fill` / `hover` / `check` 等先 `scrollIntoView`，再把光标从上次位置（第一次从视口中心）按 0.2 插值滑到元素中心，到位或约 450ms 后再派发事件；点按播放涟漪并画一圈目标高亮。不引入 page-agent 的全屏拦截遮罩。`prefers-reduced-motion` 时瞬移。交互收集忽略该节点。空闲约 1.6s 后淡出。
 
 读取：
 
@@ -93,7 +94,7 @@ Cursor Agent 在 ACP 模式下仍然自己执行本地工具（读文件、写�
 
 | 方法 | 作用 |
 |---|---|
-| `click` / `dblclick` | 滚入视口、高亮、按坐标派发 pointer/mouse 后点击 |
+| `click` / `dblclick` | 滚入视口、Agent 光标滑到中心并涟漪、再按坐标派发 pointer/mouse 后点击 |
 | `hover` / `focus` | 悬停或聚焦 |
 | `fill` / `type` / `clear` | 填值 / 追加 / 清空：原生 setter + beforeinput/input/change；contenteditable 失败则 `execCommand`；combobox 点开再选 |
 | `fillForm` | 一次填多个字段：`args.fields` 每项 `index` / `label` / `name` / `selector` + `value` |

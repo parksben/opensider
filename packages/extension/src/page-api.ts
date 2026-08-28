@@ -1,4 +1,5 @@
 import type { BrowserCommand, BrowserCommandArgs, BrowserResult, ClipRect, CurrentPage, FormFieldArg, PageMethod } from "@shared";
+import { pointAt } from "./agent-cursor";
 import {
   cleanText,
   collectOptions,
@@ -86,7 +87,6 @@ export function getReadable(): string {
 export function measureTarget(args: BrowserCommandArgs): ClipRect {
   const el = findElement(args);
   el.scrollIntoView({ block: "center", inline: "nearest" });
-  highlight(el);
   const box = el.getBoundingClientRect();
   const left = Math.max(0, box.x);
   const top = Math.max(0, box.y);
@@ -120,17 +120,15 @@ export function measureViewport(): ClipRect {
   };
 }
 
-function highlight(el: HTMLElement): void {
-  const previous = el.style.outline;
-  el.style.outline = "2px solid #d4a054";
-  window.setTimeout(() => {
-    el.style.outline = previous;
-  }, 700);
+async function prepare(el: HTMLElement, click = false): Promise<Point> {
+  el.scrollIntoView({ block: "center", inline: "nearest" });
+  return pointAt(el, click);
 }
 
-function clickElement(el: HTMLElement): void {
-  el.scrollIntoView({ block: "center", inline: "nearest" });
-  highlight(el);
+type Point = { x: number; y: number };
+
+async function clickElement(el: HTMLElement): Promise<void> {
+  await prepare(el, true);
   const rect = el.getBoundingClientRect();
   const x = rect.left + rect.width / 2;
   const y = rect.top + rect.height / 2;
@@ -179,9 +177,8 @@ function setNativeValue(el: HTMLInputElement | HTMLTextAreaElement, value: strin
   else el.value = value;
 }
 
-function fillTextField(el: HTMLInputElement | HTMLTextAreaElement, value: string, append: boolean): void {
-  el.scrollIntoView({ block: "center", inline: "nearest" });
-  highlight(el);
+async function fillTextField(el: HTMLInputElement | HTMLTextAreaElement, value: string, append: boolean): Promise<void> {
+  await prepare(el, true);
   el.focus({ preventScroll: true });
   const next = append ? `${el.value}${value}` : value;
   el.dispatchEvent(
@@ -205,9 +202,8 @@ function fillTextField(el: HTMLInputElement | HTMLTextAreaElement, value: string
   el.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
-function fillContentEditable(el: HTMLElement, value: string, append: boolean): void {
-  el.scrollIntoView({ block: "center", inline: "nearest" });
-  highlight(el);
+async function fillContentEditable(el: HTMLElement, value: string, append: boolean): Promise<void> {
+  await prepare(el, true);
   el.focus({ preventScroll: true });
   const next = append ? `${el.innerText ?? ""}${value}` : value;
   const allowed = el.dispatchEvent(
@@ -242,7 +238,7 @@ function fillContentEditable(el: HTMLElement, value: string, append: boolean): v
   el.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
-function selectByValueOrText(el: HTMLSelectElement, value: string): void {
+async function selectByValueOrText(el: HTMLSelectElement, value: string): Promise<void> {
   const exact = [...el.options].find((opt) => opt.value === value);
   const byText = [...el.options].find((opt) => cleanText(opt.text).toLowerCase() === value.trim().toLowerCase());
   const contains = [...el.options].find((opt) => cleanText(opt.text).toLowerCase().includes(value.trim().toLowerCase()));
@@ -255,6 +251,7 @@ function selectByValueOrText(el: HTMLSelectElement, value: string): void {
       .join(", ");
     throw new Error(`no <option> matching ${JSON.stringify(value)}${shown ? ` (have: ${shown})` : ""}`);
   }
+  await prepare(el, true);
   el.value = option.value;
   el.dispatchEvent(new Event("input", { bubbles: true }));
   el.dispatchEvent(new Event("change", { bubbles: true }));
@@ -274,14 +271,14 @@ function findVisibleOption(value: string, scope: ParentNode = document): HTMLEle
 }
 
 async function fillCombobox(el: HTMLElement, value: string): Promise<void> {
-  clickElement(el);
+  await clickElement(el);
   await sleep(180);
   const active = document.activeElement;
   if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) {
-    fillTextField(active, value, false);
+    await fillTextField(active, value, false);
     await sleep(120);
   } else if (active instanceof HTMLElement && active.isContentEditable) {
-    fillContentEditable(active, value, false);
+    await fillContentEditable(active, value, false);
     await sleep(120);
   }
   const option =
@@ -289,7 +286,7 @@ async function fillCombobox(el: HTMLElement, value: string): Promise<void> {
     findVisibleOption(value) ??
     findVisibleOption(value, el.parentElement ?? el);
   if (option) {
-    clickElement(option);
+    await clickElement(option);
     await sleep(80);
     return;
   }
@@ -306,15 +303,13 @@ async function setChecked(el: HTMLElement, next: boolean): Promise<void> {
       ? el.checked
       : el.getAttribute("aria-checked") === "true";
   if (current !== next) {
-    clickElement(el);
+    await clickElement(el);
     await sleep(50);
   }
 }
 
 async function fillWidget(el: HTMLElement, value: string, append: boolean): Promise<void> {
   const target = preferFillable(el);
-  target.scrollIntoView({ block: "center", inline: "nearest" });
-  highlight(target);
 
   if (target instanceof HTMLInputElement && target.type === "file") {
     throw new Error("file inputs cannot be filled from page tools; the user must pick a file");
@@ -326,19 +321,19 @@ async function fillWidget(el: HTMLElement, value: string, append: boolean): Prom
     return;
   }
   if (role === "radio") {
-    if (!/^(false|0|off|unchecked)$/i.test(value)) clickElement(target);
+    if (!/^(false|0|off|unchecked)$/i.test(value)) await clickElement(target);
     return;
   }
   if (target instanceof HTMLSelectElement) {
-    selectByValueOrText(target, value);
+    await selectByValueOrText(target, value);
     return;
   }
   if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) {
-    fillTextField(target, value, append);
+    await fillTextField(target, value, append);
     return;
   }
   if (target.isContentEditable) {
-    fillContentEditable(target, value, append);
+    await fillContentEditable(target, value, append);
     return;
   }
   if (role === "combobox" || role === "listbox" || target.getAttribute("aria-haspopup")) {
@@ -424,23 +419,21 @@ async function invoke(method: PageMethod, args: BrowserCommandArgs): Promise<unk
     }
     case "click": {
       const el = findElement(args);
-      clickElement(el);
-      await sleep(120);
+      await clickElement(el);
+      await sleep(80);
       return { clicked: describeElement(el), ...afterAction() };
     }
     case "dblclick": {
       const el = findElement(args);
-      clickElement(el);
+      await clickElement(el);
       el.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true, view: window }));
-      await sleep(120);
+      await sleep(80);
       return { clicked: describeElement(el), ...afterAction() };
     }
     case "hover": {
       const el = findElement(args);
-      el.scrollIntoView({ block: "center", inline: "nearest" });
-      highlight(el);
-      const box = el.getBoundingClientRect();
-      const opts = { bubbles: true, cancelable: true, composed: true, clientX: box.x + box.width / 2, clientY: box.y + box.height / 2, view: window };
+      const point = await prepare(el, false);
+      const opts = { bubbles: true, cancelable: true, composed: true, clientX: point.x, clientY: point.y, view: window };
       el.dispatchEvent(new PointerEvent("pointerover", { ...opts, pointerType: "mouse" }));
       el.dispatchEvent(new MouseEvent("mouseover", opts));
       el.dispatchEvent(new MouseEvent("mouseenter", { ...opts, bubbles: false }));
@@ -448,7 +441,7 @@ async function invoke(method: PageMethod, args: BrowserCommandArgs): Promise<unk
     }
     case "focus": {
       const el = findElement(args);
-      el.scrollIntoView({ block: "center", inline: "nearest" });
+      await prepare(el, false);
       el.focus();
       return { focused: describeElement(el) };
     }
@@ -494,19 +487,20 @@ async function invoke(method: PageMethod, args: BrowserCommandArgs): Promise<unk
           ? findElement(args)
           : (document.activeElement as HTMLElement | null);
       if (!el) throw new Error("nothing is focused");
+      await prepare(el, false);
       pressKey(el, key);
       await sleep(80);
       return { key, ...afterAction() };
     }
     case "scroll":
       if (args.index != null || args.selector || args.text || args.label) {
-        findElement(args).scrollIntoView({ block: "center", inline: "nearest" });
+        await prepare(findElement(args), false);
         return { scrolled: "element" };
       }
       window.scrollBy(args.x ?? 0, args.y ?? 600);
       return { scrolled: "window", x: args.x ?? 0, y: args.y ?? 600 };
     case "scrollIntoView":
-      findElement(args).scrollIntoView({ block: "center", inline: "nearest" });
+      await prepare(findElement(args), false);
       return { scrolled: "element" };
     case "waitFor": {
       const timeout = Math.min(Math.max(args.timeoutMs ?? 8000, 200), 20_000);

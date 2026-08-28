@@ -1,3 +1,4 @@
+import { hideAgentCursor, isAgentCursorNode } from "./agent-cursor";
 import { uniqueCssSelector } from "./selector";
 
 const ROOT_ID = "opensider-picker";
@@ -17,7 +18,9 @@ function isPickerNode(node: EventTarget | null): boolean {
 
 function targetFromPoint(x: number, y: number): Element | undefined {
   const stack = document.elementsFromPoint(x, y);
-  return stack.find((node) => node instanceof Element && !isPickerNode(node));
+  return stack.find(
+    (node) => node instanceof Element && !isPickerNode(node) && !isAgentCursorNode(node),
+  );
 }
 
 function moveHighlight(el: Element | undefined): void {
@@ -82,6 +85,7 @@ export function stopPick(): void {
 
 export function startPick(requestId: string, hint: string): void {
   stopPick();
+  hideAgentCursor();
   activeRequest = requestId;
 
   const host = document.createElement("div");

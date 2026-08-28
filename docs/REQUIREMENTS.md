@@ -77,7 +77,7 @@
 5. **读取**：元信息、正文、选区、链接、标题大纲、按选择器取文本 / 属性 / 值、列出匹配元素、判断元素是否存在。另可列出当前 Chrome 里所有普通窗口和标签（`tabId` / `windowId` / 标题 / URL / 是否当前 / 是否系统页）。**交互快照**（`getInteractive` / `browser/interactive.md`）列出当前页可见的可点、可填控件：编号、角色、标签、当前值、占位、是否在视口内。这是填表和点击的主入口，不要让 Agent 只靠正文纯文本或猜 CSS。
 6. **操作**：点击、双击、悬停、聚焦、填写、追加输入、清空、下拉选择、勾选、按键、滚动、等待元素、导航、前进 / 后退 / 刷新。另可按 `tabId` 切换到指定标签（并聚焦它所在窗口），用 `openTab` 新开 http(s) 标签（不要用 `navigate` 覆盖当前页），或把若干标签抽到新窗口 / 搬进已有窗口。**一次填多字段**用 `fillForm`（按编号 / 标签 / name 匹配），避免一格一格猜。
 7. **视觉**：截当前视口，或把指定元素滚入视口后截该元素。图片落到工作区文件，供 Agent 用视觉理解布局、对照文案、规划下一步点击。有交互快照时视觉是补充，不是填表的第一步。
-8. 定位元素优先用交互快照里的 `args.index`（从 1 起），其次是关联标签（`args.label` / `args.name` / 可见文本会落到对应控件，而不是落在 `<label>` 或标题上），再次才是 CSS 选择器；可再加 `nth`。点击前滚动到元素并短暂高亮。
+8. 定位元素优先用交互快照里的 `args.index`（从 1 起），其次是关联标签（`args.label` / `args.name` / 可见文本会落到对应控件，而不是落在 `<label>` 或标题上），再次才是 CSS 选择器；可再加 `nth`。点击、填写、悬停前先滚到元素，再把页面上的 **Agent 光标**（参考 page-agent：渐变箭头 + 点按涟漪）滑到目标中心并短暂高亮该控件。光标不拦截页面事件，也不挡我们自己的点击命中。
 9. 填写控件时派发完整的 pointer / beforeinput / input / change，并用原生 value setter，以便 React / Vue 等受控输入能收到。原生 `<select>` 按 option 的 value 或可见文本匹配；自定义下拉（combobox / listbox）先点开再点选项。contenteditable 先合成事件，失败再 `execCommand('insertText')`。
 10. 导航只允许 `http(s)`。操作完成后刷新当前页快照，并重写交互控件列表（编号可能变）。命令结果里带上新的交互列表，避免 Agent 拿着过期 index 继续点。
 11. Host 启动、会话建立时，工作区已写好 `AGENTS.md` 和 `browser/tools.json`。Agent 在插件连上的第一时刻就能读到全部页面方法（含截图、标签/窗口、交互快照），不必等用户再说明。打开的标签实时写在 `browser/tabs.json`，当前页控件写在 `browser/interactive.md`，Agent 先读这两份再动手，不要猜 tabId 或 CSS。
@@ -109,6 +109,7 @@
 | 与 CLI 的连接 | Native Messaging Host 拉起 `agent acp` | 扩展无法 spawn 进程；Host 由 Chrome 按需启动，不是常驻服务 |
 | 页面工具 | 内容脚本 + 工作区文件 RPC | 读和写都走同一通道，不必上 MCP、不必再开端口 |
 | 填表定位 | 编号交互快照 + label/index + fillForm（参考 page-agent / browser-use） | 正文抽取看不到 placeholder；`innerText` 匹配会打到 label/标题，输入框本身填不进去 |
+| Agent 操作光标 | 页面内浮动指针滑到目标再点按（参考 page-agent，不做全屏挡操作遮罩） | 用户要看见 Agent 在点哪里；全屏 mask 会挡住 `elementFromPoint` 和真人操作 |
 | 页面自动化权限 | 白名单方法默认执行 | 逐步确认会打断自动化；系统页仍然隔离 |
 | 页面截图 | 视口 / 元素 JPEG 写入工作区 | Native Messaging 有 1MB 上限，不能传原图；Agent 用 Read 看图片做视觉规划 |
 | 能力发现 | 启动时写 AGENTS.md + tools.json | 会话 cwd 里第一眼就能看见全部方法 |

@@ -332,6 +332,7 @@ function isSemanticControl(el: HTMLElement): boolean {
 }
 
 function shouldKeep(el: HTMLElement, all: Set<HTMLElement>): boolean {
+  if (el.closest("#opensider-agent-cursor, #opensider-picker")) return false;
   if (!isDisplayed(el) || isFullPageCatcher(el)) return false;
   if (el instanceof HTMLInputElement && el.type === "hidden") return false;
   const control = labeledControl(el);
