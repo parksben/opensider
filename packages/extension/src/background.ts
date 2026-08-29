@@ -9,7 +9,7 @@ import type {
   TabRecord,
   TabsSnapshot,
 } from "@shared";
-import { HOST_NAME, isActionMethod, isCaptureMethod, isTabMethod, isWindowMethod } from "@shared";
+import { HOST_NAME, isActionMethod, isCaptureMethod, isScriptMethod, isTabMethod, isWindowMethod } from "@shared";
 import { captureViewport } from "./screenshot";
 
 let nativePort: chrome.runtime.Port | null = null;
@@ -141,8 +141,53 @@ function sendNative(msg: ExtToHost): void {
   }
 }
 
-function fail(command: BrowserCommand, error: string): BrowserResult {
-  return { id: command.id, ok: false, method: command.method, error };
+function fail(command: BrowserCommand, error: string, data?: unknown): BrowserResult {
+  return { id: command.id, ok: false, method: command.method, error, data };
+}
+
+type UnsavedProbe = {
+  dirty: boolean;
+  reasons: string[];
+  fields?: Array<{ label?: string; name?: string; reason: string }>;
+  beforeunload?: boolean;
+};
+
+async function probeUnsaved(tabId: number): Promise<UnsavedProbe | null> {
+  try {
+    const result = (await chrome.tabs.sendMessage(tabId, {
+      type: "browser.command",
+      command: { id: `unsaved_${tabId}`, method: "getUnsavedChanges", args: {} },
+    })) as BrowserResult;
+    if (!result?.ok || !result.data || typeof result.data !== "object") return null;
+    return result.data as UnsavedProbe;
+  } catch {
+    return null;
+  }
+}
+
+function unsavedBlockMessage(probe: UnsavedProbe): string {
+  const sample = (probe.fields ?? [])
+    .slice(0, 5)
+    .map((field) => field.label || field.name || field.reason)
+    .filter(Boolean)
+    .join("; ");
+  const reason = probe.reasons.join(", ") || "unsaved edits";
+  const detail = sample ? ` Examples: ${sample}.` : "";
+  return (
+    `Page has unsaved edits (${reason}).${detail} ` +
+    `If you only need another page for information, call openTab instead. ` +
+    `If the user explicitly asked to leave or close this page, confirm with cursor/ask_question first, then retry with args.force=true.`
+  );
+}
+
+async function guardUnsaved(
+  command: BrowserCommand,
+  tabId: number,
+): Promise<BrowserResult | undefined> {
+  if (command.args?.force === true) return undefined;
+  const probe = await probeUnsaved(tabId);
+  if (!probe?.dirty) return undefined;
+  return fail(command, unsavedBlockMessage(probe), probe);
 }
 
 async function waitTabComplete(tabId: number, timeoutMs: number): Promise<void> {
@@ -164,6 +209,8 @@ async function waitTabComplete(tabId: number, timeoutMs: number): Promise<void> 
 
 async function runTabMethod(tabId: number, command: BrowserCommand): Promise<BrowserResult> {
   const timeout = Math.min(command.args?.timeoutMs ?? 15_000, 20_000);
+  const blocked = await guardUnsaved(command, tabId);
+  if (blocked) return blocked;
   if (command.method === "navigate") {
     const url = command.args?.url;
     if (!url) return fail(command, "navigate requires args.url");
@@ -193,6 +240,58 @@ async function runTabMethod(tabId: number, command: BrowserCommand): Promise<Bro
   await chrome.tabs.reload(tabId);
   await waitTabComplete(tabId, timeout).catch(() => undefined);
   return { id: command.id, ok: true, method: command.method, data: { action: "reload" } };
+}
+
+const RUN_SCRIPT_MAX_CODE = 80_000;
+
+async function runScriptMethod(tabId: number, command: BrowserCommand): Promise<BrowserResult> {
+  const code = command.args?.code;
+  if (typeof code !== "string" || !code.trim()) return fail(command, "runScript requires args.code (async function body)");
+  if (code.length > RUN_SCRIPT_MAX_CODE) return fail(command, `runScript code exceeds ${RUN_SCRIPT_MAX_CODE} characters`);
+  const tab = await chrome.tabs.get(tabId);
+  if (isRestrictedUrl(tab.url)) return fail(command, "runScript is not allowed on restricted pages");
+  if (!tab.url || (!tab.url.startsWith("http://") && !tab.url.startsWith("https://"))) {
+    return fail(command, "runScript only works on http(s) pages");
+  }
+  const world = command.args?.world === "MAIN" ? "MAIN" : "ISOLATED";
+  const timeout = Math.min(Math.max(command.args?.timeoutMs ?? 10_000, 200), 20_000);
+
+  try {
+    const injection = chrome.scripting.executeScript({
+      target: { tabId },
+      world,
+      args: [code],
+      func: async (source: string) => {
+        const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor as new (
+          ...args: string[]
+        ) => (...fnArgs: unknown[]) => Promise<unknown>;
+        try {
+          const value = await new AsyncFunction(source)();
+          let serialized: unknown;
+          try {
+            serialized = JSON.parse(JSON.stringify(value === undefined ? null : value));
+          } catch {
+            serialized = String(value);
+          }
+          return { ok: true as const, value: serialized };
+        } catch (error) {
+          return { ok: false as const, error: error instanceof Error ? error.message : String(error) };
+        }
+      },
+    });
+    const results = await Promise.race([
+      injection,
+      new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error(`runScript timed out after ${timeout}ms`)), timeout);
+      }),
+    ]);
+    const entry = results[0]?.result as { ok: boolean; value?: unknown; error?: string } | undefined;
+    if (!entry) return fail(command, "runScript produced no result");
+    if (!entry.ok) return fail(command, entry.error ?? "runScript failed", { world, error: entry.error });
+    return { id: command.id, ok: true, method: command.method, data: { world, value: entry.value } };
+  } catch (error) {
+    return fail(command, String(error));
+  }
 }
 
 async function runCapture(tab: { id?: number; windowId?: number }, command: BrowserCommand): Promise<BrowserResult> {
@@ -329,6 +428,24 @@ async function runWindowMethod(command: BrowserCommand): Promise<BrowserResult> 
     };
   }
 
+  if (command.method === "closeTab") {
+    let tabId = command.args?.tabId;
+    if (tabId == null) {
+      const [active] = await chrome.tabs.query({ active: true, currentWindow: true });
+      tabId = active?.id;
+    }
+    if (tabId == null || !Number.isInteger(tabId)) return fail(command, "closeTab requires args.tabId or an active tab");
+    const blocked = await guardUnsaved(command, tabId);
+    if (blocked) return blocked;
+    await chrome.tabs.remove(tabId);
+    return {
+      id: command.id,
+      ok: true,
+      method: command.method,
+      data: { tabId, ...(await collectTabsSnapshot()) },
+    };
+  }
+
   const ids = commandTabIds(command.args);
   if (ids.length === 0) return fail(command, "moveTabsToWindow requires args.tabIds or args.tabId");
   const [first, ...rest] = ids;
@@ -383,15 +500,17 @@ async function dispatchCommand(command: BrowserCommand): Promise<void> {
       ? await runCapture(tab, command)
       : isTabMethod(command.method)
         ? await runTabMethod(tab.id, command)
-        : await Promise.race([
-          chrome.tabs.sendMessage(tab.id, { type: "browser.command", command }) as Promise<BrowserResult>,
-          new Promise<BrowserResult>((resolve) => {
-            setTimeout(
-              () => resolve(fail(command, "page command timed out")),
-              Math.min(command.args?.timeoutMs ?? 20_000, 20_000),
-            );
-          }),
-        ]);
+        : isScriptMethod(command.method)
+          ? await runScriptMethod(tab.id, command)
+          : await Promise.race([
+            chrome.tabs.sendMessage(tab.id, { type: "browser.command", command }) as Promise<BrowserResult>,
+            new Promise<BrowserResult>((resolve) => {
+              setTimeout(
+                () => resolve(fail(command, "page command timed out")),
+                Math.min(command.args?.timeoutMs ?? 20_000, 20_000),
+              );
+            }),
+          ]);
   } catch (error) {
     result = fail(command, String(error));
   }

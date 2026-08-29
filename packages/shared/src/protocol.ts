@@ -7,6 +7,7 @@ export const PAGE_METHODS = [
   "getMeta",
   "getReadable",
   "getInteractive",
+  "getUnsavedChanges",
   "getSelection",
   "getLinks",
   "getOutline",
@@ -33,17 +34,20 @@ export const PAGE_METHODS = [
   "goBack",
   "goForward",
   "reload",
+  "runScript",
   "screenshot",
   "screenshotElement",
   "listTabs",
   "switchTab",
   "openTab",
+  "closeTab",
   "moveTabsToWindow",
 ] as const;
 
 export const TAB_METHODS = ["navigate", "goBack", "goForward", "reload"] as const;
-export const WINDOW_METHODS = ["listTabs", "switchTab", "openTab", "moveTabsToWindow"] as const;
+export const WINDOW_METHODS = ["listTabs", "switchTab", "openTab", "closeTab", "moveTabsToWindow"] as const;
 export const CAPTURE_METHODS = ["screenshot", "screenshotElement"] as const;
+export const SCRIPT_METHODS = ["runScript"] as const;
 
 export const ACTION_METHODS = [
   "click",
@@ -63,8 +67,10 @@ export const ACTION_METHODS = [
   "goBack",
   "goForward",
   "reload",
+  "runScript",
   "switchTab",
   "openTab",
+  "closeTab",
   "moveTabsToWindow",
 ] as const;
 
@@ -86,6 +92,10 @@ export function isActionMethod(method: PageMethod): boolean {
 
 export function isCaptureMethod(method: PageMethod): boolean {
   return (CAPTURE_METHODS as readonly string[]).includes(method);
+}
+
+export function isScriptMethod(method: PageMethod): boolean {
+  return (SCRIPT_METHODS as readonly string[]).includes(method);
 }
 
 export type FormFieldArg = {
@@ -118,6 +128,9 @@ export type BrowserCommandArgs = {
   tabId?: number;
   tabIds?: number[];
   windowId?: number;
+  force?: boolean;
+  code?: string;
+  world?: "ISOLATED" | "MAIN";
   fields?: FormFieldArg[];
 };
 
@@ -170,6 +183,7 @@ export const TOOL_CATALOG: Array<{
   { name: "getMeta", kind: "read", args: "", summary: "url, title, description" },
   { name: "getReadable", kind: "read", args: "", summary: "main text extract" },
   { name: "getInteractive", kind: "read", args: "", summary: "numbered interactive controls; prefer args.index from this list" },
+  { name: "getUnsavedChanges", kind: "read", args: "", summary: "detect unsaved form/editor edits before navigate/close" },
   { name: "getSelection", kind: "read", args: "", summary: "highlighted text" },
   { name: "getLinks", kind: "read", args: "", summary: "same-origin links" },
   { name: "getOutline", kind: "read", args: "", summary: "h1–h3 headings" },
@@ -192,15 +206,22 @@ export const TOOL_CATALOG: Array<{
   { name: "scroll", kind: "act", args: "index|selector|text or x,y", summary: "scroll window or element" },
   { name: "scrollIntoView", kind: "act", args: "index|selector|label|text", summary: "scroll element into view" },
   { name: "waitFor", kind: "act", args: "index|selector|label|text, timeoutMs?", summary: "wait until element exists" },
-  { name: "navigate", kind: "act", args: "url", summary: "http(s) navigation" },
-  { name: "goBack", kind: "act", args: "", summary: "history back" },
-  { name: "goForward", kind: "act", args: "", summary: "history forward" },
-  { name: "reload", kind: "act", args: "", summary: "reload tab" },
+  { name: "navigate", kind: "act", args: "url, force?", summary: "http(s) navigation; blocked if unsaved unless force" },
+  { name: "goBack", kind: "act", args: "force?", summary: "history back; blocked if unsaved unless force" },
+  { name: "goForward", kind: "act", args: "force?", summary: "history forward; blocked if unsaved unless force" },
+  { name: "reload", kind: "act", args: "force?", summary: "reload tab; blocked if unsaved unless force" },
+  {
+    name: "runScript",
+    kind: "act",
+    args: "code, world?, timeoutMs?",
+    summary: "run async page script for batch DOM work; world=ISOLATED|MAIN",
+  },
   { name: "screenshot", kind: "vision", args: "x?,y?,width?,height?", summary: "JPEG of the visible viewport or a region" },
   { name: "screenshotElement", kind: "vision", args: "index|selector|label|text, nth?", summary: "JPEG of one element; Read the file at data.path" },
   { name: "listTabs", kind: "read", args: "", summary: "all normal windows and tabs; same shape as browser/tabs.json" },
   { name: "switchTab", kind: "act", args: "tabId", summary: "activate a tab and focus its window" },
-  { name: "openTab", kind: "act", args: "url, windowId?", summary: "open http(s) in a new tab; optional windowId" },
+  { name: "openTab", kind: "act", args: "url, windowId?", summary: "open http(s) in a new tab without touching the current page" },
+  { name: "closeTab", kind: "act", args: "tabId?, force?", summary: "close a tab; blocked if unsaved unless force" },
   { name: "moveTabsToWindow", kind: "act", args: "tabIds, windowId?", summary: "pull tabs into a new window, or into windowId" },
 ];
 

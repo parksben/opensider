@@ -34,6 +34,13 @@ When the user talks about "this page", "the current tab", or the site they are l
 
 The current tab also changes while you work. Re-read those files after navigation, after \`switchTab\`, or if the user says they changed pages.
 
+## Before you automate (required)
+
+1. **Explore first.** Read \`browser/interactive.md\` and \`browser/snapshot.md\` (and \`getUnsavedChanges\` / a screenshot if needed). Match what you see against the user's request.
+2. **Confirm mismatches.** If labels, counts, URLs, or controls disagree with what the user described — or the goal is ambiguous — stop and ask with \`cursor/ask_question\`. Do not click or fill based on guesses.
+3. **Batch when it is batch work.** After you understand the DOM (selectors, row patterns, checkboxes), prefer one \`runScript\` over dozens of \`click\`/\`fill\` commands for repetitive tasks (tables, bulk toggles, scraping lists, multi-step DOM transforms).
+4. Single-step whitelist methods remain best for one-off, carefully aimed actions the user is watching.
+
 ## How to operate the page (read this)
 
 Interactive controls look like:
@@ -74,9 +81,23 @@ Rules:
 
 Read \`browser/tabs.json\` for every normal Chrome window and tab (\`tabId\`, \`windowId\`, \`index\`, \`title\`, \`url\`, \`active\`, \`pinned\`, \`restricted\`). It updates when tabs move. Call \`listTabs\` if you need the same list in a command result.
 
-Do not invent tab IDs. To switch tabs, call \`switchTab\` with \`args.tabId\` from that file — it also focuses the tab's window. To open a site without replacing the current page, call \`openTab\` with \`args.url\` (http(s) only). To pull one or more tabs into their own window, call \`moveTabsToWindow\` with \`args.tabIds\`. Pass \`args.windowId\` to move them into an existing window instead of creating one.
+Do not invent tab IDs. To switch tabs, call \`switchTab\` with \`args.tabId\` from that file — it also focuses the tab's window. To open a site without replacing the current page, call \`openTab\` with \`args.url\` (http(s) only). To close a tab, call \`closeTab\` with \`args.tabId\` (or omit to close the active tab). To pull one or more tabs into their own window, call \`moveTabsToWindow\` with \`args.tabIds\`. Pass \`args.windowId\` to move them into an existing window instead of creating one.
 
 \`restricted: true\` means chrome://, chrome-extension://, or the Web Store. You may \`switchTab\` to those, but do not run page read / act / screenshot on them.
+
+### Protect unsaved page edits (required)
+
+Before \`navigate\`, \`reload\`, \`goBack\`, \`goForward\`, or \`closeTab\` on a page the user may have edited, call \`getUnsavedChanges\` on that tab (switch to it first if needed).
+
+If \`dirty\` is true:
+
+1. **Do not** navigate away, reload, go back/forward, or close that tab.
+2. Decide why you wanted to leave:
+   - **Need another page only to look something up / copy info while continuing work** → call \`openTab\` with that URL. Keep the edited tab intact.
+   - **User explicitly asked to leave, discard, navigate, or close this page** → stop and confirm with the sidebar question card (\`cursor/ask_question\`). Explain that the page has unsaved edits and what will be lost. Only after they confirm, retry the same method with \`args.force=true\`.
+3. Never set \`force:true\` on your own. The extension blocks those methods when the page is dirty unless \`force\` is set after user confirmation.
+
+\`openTab\` and \`switchTab\` do not destroy the current page's contents; prefer them whenever you are unsure.
 
 If the user message includes \`[Picked page elements]\`, those CSS selectors were chosen by the user in the sidebar picker. Inspect or operate on that exact node with page tools and \`args.selector\`. Do not treat those lines as file paths.
 
@@ -93,6 +114,7 @@ Find elements with \`args.index\` (from \`interactive.md\`), \`args.label\` / \`
 ### Read
 
 - \`getInteractive\` — refresh the numbered control list (same as \`browser/interactive.md\`)
+- \`getUnsavedChanges\` — whether the page has unsaved form / editor edits (\`dirty\`, \`reasons\`, \`fields\`)
 - \`getMeta\` — url, title, description
 - \`getReadable\` — main text
 - \`getSelection\` — highlighted text
@@ -118,11 +140,31 @@ Find elements with \`args.index\` (from \`interactive.md\`), \`args.label\` / \`
 - \`scroll\` — element if index/selector/text, else window by \`args.x\` / \`args.y\`
 - \`scrollIntoView\`
 - \`waitFor\` — poll until the element exists (\`args.timeoutMs\`, max 20000)
-- \`navigate\` — \`args.url\`, http(s) only
-- \`goBack\` / \`goForward\` / \`reload\`
+- \`navigate\` — \`args.url\`, http(s) only; blocked if unsaved unless \`args.force\`
+- \`goBack\` / \`goForward\` / \`reload\` — blocked if unsaved unless \`args.force\`
 - \`switchTab\` — \`args.tabId\`
-- \`openTab\` — \`args.url\` (http(s)), optional \`args.windowId\`
+- \`openTab\` — \`args.url\` (http(s)), optional \`args.windowId\` (safe; does not wipe the current tab)
+- \`closeTab\` — optional \`args.tabId\` (defaults to active); blocked if unsaved unless \`args.force\`
 - \`moveTabsToWindow\` — \`args.tabIds\`, optional \`args.windowId\`
+- \`runScript\` — batch page script; see below
+
+### runScript (batch browser script)
+
+\`args.code\` is the **body of an async function** (not a full \`async function(){}\` wrapper). Optional \`args.world\`: \`ISOLATED\` (default, content-script world) or \`MAIN\` (page's JS world — use when you need the site's own globals). Optional \`args.timeoutMs\` (default 10000, max 20000).
+
+Example — count checked rows:
+
+\`\`\`json
+{"id":"cmd_script","method":"runScript","args":{"code":"const rows = [...document.querySelectorAll('table tbody tr')];\\nreturn { total: rows.length, checked: rows.filter(r => r.querySelector('input[type=checkbox]:checked')).length };"}}
+\`\`\`
+
+Rules:
+
+- Only http(s) tabs. Restricted pages refuse \`runScript\`.
+- Return JSON-serializable data (objects, arrays, strings, numbers). DOM nodes are not returned.
+- Prefer \`ISOLATED\` unless you truly need page globals / framework internals.
+- Explore with \`getInteractive\` / snapshot first so the script targets the real selectors. Do not invent selectors blindly.
+- Still respect unsaved-edit rules: a script must not navigate/reload/close the tab to discard user edits without confirmation.
 
 ### Vision
 
@@ -133,7 +175,7 @@ Use screenshots when the control list is not enough to understand layout, pick a
 
 The result JSON has \`data.path\` (absolute file). **Read that JPEG** to inspect the page visually. Do not expect base64 in the JSON.
 
-Do not invent other methods. Do not try to run arbitrary JavaScript. After acting, re-read \`browser/current.json\`, \`browser/interactive.md\`, and \`browser/tabs.json\` if the page or tab set may have changed.
+Do not invent other methods. After acting or running a script, re-read \`browser/current.json\`, \`browser/interactive.md\`, and \`browser/tabs.json\` if the page or tab set may have changed.
 `;
 
 export function ensureWorkspace(): void {
@@ -148,7 +190,7 @@ export function ensureWorkspace(): void {
     TOOLS_PATH,
     `${JSON.stringify(
       {
-        version: 4,
+        version: 6,
         transport: "workspace-files",
         commandsDir: "browser/commands",
         resultsDir: "browser/results",

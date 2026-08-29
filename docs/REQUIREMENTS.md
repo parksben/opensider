@@ -13,7 +13,7 @@
 - 不另起用户需要手动启动的本地 HTTP / WebSocket 服务（ACP / 附件仍由 Native Host 按需拉起）
 - 不通过 MCP 暴露页面能力
 - 不支持 Firefox / Safari（本机 Core 与浏览器扩展分离，Firefox 后做）
-- 不执行页面里的任意 JavaScript（只开放白名单方法）
+- 不通过页面脚本开放无约束的 Chrome 扩展 API；`runScript` 仅在 http(s) 页内跑、有超时与结果大小限制
 - 不把聊天同步到云端
 - 不上架 Chrome Web Store（先以未打包扩展加载）
 - 不接入 Claude Cowork（没有 CLI / ACP）
@@ -73,16 +73,17 @@
 1. 用户切换 Chrome 标签或当前页 URL 变化时，扩展更新「当前页」状态。
 2. 侧栏不再用 banner 或顶栏 favicon 展示当前页标题与 URL。Agent 正在执行页面命令时，不要把该方法名挂在顶栏：它是工具调用提示，写进当前这一轮对话正文（和其它 tool-call 同一套灰字折叠），不是 Todo List。
 3. 每条用户消息在发给 Agent 时附带一行当前页上下文（标题 + URL），界面里只显示用户自己输入的文字。
-4. 内容脚本向页面注入一套白名单方法。Agent 通过工作区命令文件调用，不走 MCP。
+4. 内容脚本向页面注入白名单方法；批处理另可由 SW 执行 `runScript`。Agent 通过工作区命令文件调用，不走 MCP。
 5. **读取**：元信息、正文、选区、链接、标题大纲、按选择器取文本 / 属性 / 值、列出匹配元素、判断元素是否存在。另可列出当前 Chrome 里所有普通窗口和标签（`tabId` / `windowId` / 标题 / URL / 是否当前 / 是否系统页）。**交互快照**（`getInteractive` / `browser/interactive.md`）列出当前页可见的可点、可填控件：编号、角色、标签、当前值、占位、是否在视口内。这是填表和点击的主入口，不要让 Agent 只靠正文纯文本或猜 CSS。
-6. **操作**：点击、双击、悬停、聚焦、填写、追加输入、清空、下拉选择、勾选、按键、滚动、等待元素、导航、前进 / 后退 / 刷新。另可按 `tabId` 切换到指定标签（并聚焦它所在窗口），用 `openTab` 新开 http(s) 标签（不要用 `navigate` 覆盖当前页），或把若干标签抽到新窗口 / 搬进已有窗口。**一次填多字段**用 `fillForm`（按编号 / 标签 / name 匹配），避免一格一格猜。
-7. **视觉**：截当前视口，或把指定元素滚入视口后截该元素。图片落到工作区文件，供 Agent 用视觉理解布局、对照文案、规划下一步点击。有交互快照时视觉是补充，不是填表的第一步。
-8. 定位元素优先用交互快照里的 `args.index`（从 1 起），其次是关联标签（`args.label` / `args.name` / 可见文本会落到对应控件，而不是落在 `<label>` 或标题上），再次才是 CSS 选择器；可再加 `nth`。点击、填写、悬停前先滚到元素，再把页面上的 **Agent 光标**（参考 page-agent：渐变箭头 + 点按涟漪）滑到目标中心并短暂高亮该控件。光标不拦截页面事件，也不挡我们自己的点击命中。
-9. 填写控件时派发完整的 pointer / beforeinput / input / change，并用原生 value setter，以便 React / Vue 等受控输入能收到。原生 `<select>` 按 option 的 value 或可见文本匹配；自定义下拉（combobox / listbox）先点开再点选项。contenteditable 先合成事件，失败再 `execCommand('insertText')`。
-10. 导航只允许 `http(s)`。操作完成后刷新当前页快照，并重写交互控件列表（编号可能变）。命令结果里带上新的交互列表，避免 Agent 拿着过期 index 继续点。
-11. Host 启动、会话建立时，工作区已写好 `AGENTS.md` 和 `browser/tools.json`。Agent 在插件连上的第一时刻就能读到全部页面方法（含截图、标签/窗口、交互快照），不必等用户再说明。打开的标签实时写在 `browser/tabs.json`，当前页控件写在 `browser/interactive.md`，Agent 先读这两份再动手，不要猜 tabId 或 CSS。
-12. 以下页面不注入、不抓取、不操作、不截图：`chrome://`、`chrome-extension://`、Chrome Web Store。仍可出现在 `tabs.json` 里并允许 `switchTab`（只是切过去看），但不能对这些页跑页面读/写/截图。
-13. 页面自动化默认执行，不再逐步弹权限（用户装这个扩展就是为了让 Agent 动手）。本地文件写入和 Shell 仍走 ACP 权限条。
+6. **操作**：点击、双击、悬停、聚焦、填写、追加输入、清空、下拉选择、勾选、按键、滚动、等待元素、导航、前进 / 后退 / 刷新。另可按 `tabId` 切换到指定标签（并聚焦它所在窗口），用 `openTab` 新开 http(s) 标签（不要用 `navigate` 覆盖当前页），用 `closeTab` 关闭标签，或把若干标签抽到新窗口 / 搬进已有窗口。**一次填多字段**用 `fillForm`（按编号 / 标签 / name 匹配），避免一格一格猜。**离开页面前**须先 `getUnsavedChanges`：若页面有用户未提交的编辑，不得直接 `navigate` / `reload` / `goBack` / `goForward` / `closeTab`。过程中只是要去别的页拿信息 → 一律 `openTab` 新开，保住当前页；用户明确要求关掉或覆盖当前页 → 先用交互式提问卡（`cursor/ask_question`）说明风险并等确认，确认后才可带 `args.force=true` 执行。未确认的覆盖/关闭会被扩展拒绝并返回未保存摘要。**批处理 / 重复 DOM 操作**可用 `runScript`（`args.code` 为 async 函数体，可选 `world: MAIN|ISOLATED`）在页面里一次跑完，避免逐条 click/fill。
+7. **动手前先核对**：自动化开始前先读 `interactive.md` / `snapshot.md`（必要时再截图），对照用户描述。若页面结构、文案、控件与用户说法不符，或目标不明确，先用提问卡确认，禁止瞎点蛮干。能判定为批处理（多行表格、批量勾选、批量导出等）时，摸清选择器后再优先 `runScript`，而不是循环发几十条单步命令。
+8. **视觉**：截当前视口，或把指定元素滚入视口后截该元素。图片落到工作区文件，供 Agent 用视觉理解布局、对照文案、规划下一步点击。有交互快照时视觉是补充，不是填表的第一步。
+9. 定位元素优先用交互快照里的 `args.index`（从 1 起），其次是关联标签（`args.label` / `args.name` / 可见文本会落到对应控件，而不是落在 `<label>` 或标题上），再次才是 CSS 选择器；可再加 `nth`。点击、填写、悬停前先滚到元素，再把页面上的 **Agent 光标**（参考 page-agent：渐变箭头 + 点按涟漪）滑到目标中心并短暂高亮该控件。光标不拦截页面事件，也不挡我们自己的点击命中。
+10. 填写控件时派发完整的 pointer / beforeinput / input / change，并用原生 value setter，以便 React / Vue 等受控输入能收到。原生 `<select>` 按 option 的 value 或可见文本匹配；自定义下拉（combobox / listbox）先点开再点选项。contenteditable 先合成事件，失败再 `execCommand('insertText')`。
+11. 导航只允许 `http(s)`。操作完成后刷新当前页快照，并重写交互控件列表（编号可能变）。命令结果里带上新的交互列表，避免 Agent 拿着过期 index 继续点。
+12. Host 启动、会话建立时，工作区已写好 `AGENTS.md` 和 `browser/tools.json`。Agent 在插件连上的第一时刻就能读到全部页面方法（含截图、标签/窗口、交互快照、`runScript`），不必等用户再说明。打开的标签实时写在 `browser/tabs.json`，当前页控件写在 `browser/interactive.md`，Agent 先读这两份再动手，不要猜 tabId 或 CSS。
+13. 以下页面不注入、不抓取、不操作、不截图、不跑 `runScript`：`chrome://`、`chrome-extension://`、Chrome Web Store。仍可出现在 `tabs.json` 里并允许 `switchTab`（只是切过去看），但不能对这些页跑页面读/写/截图/脚本。
+14. 页面自动化默认执行，不再逐步弹权限（用户装这个扩展就是为了让 Agent 动手）。本地文件写入和 Shell 仍走 ACP 权限条。
 
 ### 跨页工作
 
@@ -126,4 +127,6 @@
 | 提及 | contenteditable 芯片 + 当前打开标签 / 当前输入栏附件 | 要和文字混排，并让 Agent 读懂反序列化后的 tab / 路径 / selector；附件历史会和输入栏不同步 |
 | 模型 | `agent models` + ACP `configOptions` | 与 Cursor 账号当前可选模型对齐，而不是写死一份 |
 | Mermaid | `flowchart`/`graph` 用 dagre SVG；其它类型回退代码块 | mermaid 包太重且会污染 DOM、打字时重绘抖动；扩展 CSP 下 HTML 节点也常画不出来 |
-| 标签/窗口 | `tabs.json` + `listTabs` / `switchTab` / `openTab` / `moveTabsToWindow` | Agent 要先看见全部标签才能切换、新开或抽成独立窗口；走现有命令文件，不另开 MCP |
+| 标签/窗口 | `tabs.json` + `listTabs` / `switchTab` / `openTab` / `closeTab` / `moveTabsToWindow` | Agent 要先看见全部标签才能切换、新开、关闭或抽成独立窗口；走现有命令文件，不另开 MCP |
+| 未保存编辑 | `getUnsavedChanges` + 跳转/关闭软拦截 | 有未提交内容时默认拒 `navigate`/`reload`/前进后退/`closeTab`；旁路查信息用 `openTab`；用户确认后才 `force` |
+| 批处理脚本 | `runScript`（ISOLATED / MAIN） | 重复 DOM 操作一次跑完；先探索再写脚本；仅 http(s)，有超时与 JSON 结果限制 |

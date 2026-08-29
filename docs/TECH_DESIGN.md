@@ -81,6 +81,8 @@ Cursor Agent 在 ACP 模式下仍然自己执行本地工具（读文件、写�
 | `getMeta` | url、title、description、canonical |
 | `getReadable` | 正文纯文本（简单可读性抽取，截断） |
 | `getInteractive` | 刷新并返回编号交互控件（text + elements） |
+| `getUnsavedChanges` | 探测表单 / contenteditable / beforeunload 是否有未提交编辑 |
+| `runScript` | 在当前 http(s) 标签执行 `args.code`（async 函数体）；`world` 默认 ISOLATED，可 MAIN；SW `chrome.scripting.executeScript`，超时与 JSON 结果封顶 |
 | `getSelection` | 当前选区 |
 | `getLinks` | 同源链接（text + href，截断条数） |
 | `getOutline` | h1–h3 文本 |
@@ -112,7 +114,7 @@ Cursor Agent 在 ACP 模式下仍然自己执行本地工具（读文件、写�
 
 `chrome.tabs.captureVisibleTab` 得到 JPEG，按 devicePixelRatio 裁切，最长边压到约 1280，质量约 0.72，保证 Native Messaging 帧小于 1MB。Host 把 base64 落成 `browser/screenshots/<id>.jpg`，结果 JSON 只保留绝对路径、宽高、mime。Agent 用已有 Read 打开该图片做视觉分析。v1 不拼整页长截图。
 
-标签级操作由 Service Worker 执行：`navigate`（仅 http(s)）、`goBack`、`goForward`、`reload`。窗口级也走 SW（不经内容脚本）：`listTabs`、`switchTab`（`args.tabId` + 聚焦窗口）、`openTab`（`args.url` 新开标签，仅 http(s)）、`moveTabsToWindow`（`args.tabIds`，可选 `args.windowId`；没有则 `chrome.windows.create` 再 `tabs.move`）。完成后刷新 `current.json`，并重写 `browser/tabs.json`。manifest 加 `windows`。
+标签级操作由 Service Worker 执行：`navigate`（仅 http(s)）、`goBack`、`goForward`、`reload`。窗口级也走 SW（不经内容脚本）：`listTabs`、`switchTab`（`args.tabId` + 聚焦窗口）、`openTab`（`args.url` 新开标签，仅 http(s)）、`closeTab`（`args.tabId?`，默认当前活动标签）、`moveTabsToWindow`（`args.tabIds`，可选 `args.windowId`；没有则 `chrome.windows.create` 再 `tabs.move`）。`navigate` / `goBack` / `goForward` / `reload` / `closeTab` 执行前 SW 向目标标签发 `getUnsavedChanges`；若 `dirty` 且未带 `args.force=true`，返回失败并附上未保存字段摘要，迫使 Agent 改用 `openTab` 或先 `cursor/ask_question` 确认。`runScript` 由 SW 直接 `chrome.scripting.executeScript`（不经内容脚本 RPC）：`args.code` 最大约 80KB，默认 `world: "ISOLATED"`（可 `"MAIN"`），超时默认 10s、上限 20s；注入体包一层 async 函数，返回值 `JSON.stringify` 后回传，不可序列化则改成字符串。完成后刷新 `current.json`，并重写 `browser/tabs.json`。manifest 加 `windows`。
 
 ### Native Host
 

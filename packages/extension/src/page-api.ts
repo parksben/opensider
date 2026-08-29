@@ -13,6 +13,7 @@ import {
   preferFillable,
   refreshInteractive,
 } from "./interactive";
+import { getUnsavedChanges } from "./unsaved";
 
 const MAX_TEXT = 200_000;
 
@@ -390,6 +391,8 @@ async function invoke(method: PageMethod, args: BrowserCommandArgs): Promise<unk
       const snap = refreshInteractive();
       return { count: snap.count, text: interactiveText(), elements: snap.elements };
     }
+    case "getUnsavedChanges":
+      return getUnsavedChanges();
     case "getSelection":
       return { text: getSelectionText() };
     case "getLinks":
@@ -521,11 +524,13 @@ async function invoke(method: PageMethod, args: BrowserCommandArgs): Promise<unk
     case "goBack":
     case "goForward":
     case "reload":
+    case "runScript":
     case "screenshot":
     case "screenshotElement":
     case "listTabs":
     case "switchTab":
     case "openTab":
+    case "closeTab":
     case "moveTabsToWindow":
       throw new Error(`${method} is handled by the extension service worker`);
     default:
