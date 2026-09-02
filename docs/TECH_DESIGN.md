@@ -489,7 +489,7 @@ Release 资产名必须和壳一致：
 | 风险 | 处理 |
 |---|---|
 | Native Messaging 环境 PATH 很瘦 | Host 自己扫 nvm / npm-global / bun / `~/.opencode/bin` 等 bin；子进程 PATH 带上 CLI 所在目录。Cursor 仍默认同 `~/.local/bin/agent` |
-| macOS 切 OpenCode 弹 Gatekeeper（`.xxxx.node`） | OpenCode/Bun 把未公证的 `watcher.node` 解到 `$TMPDIR`；Host 只 exec 用户的 `opencode`，不去 quarantine。用户点「完成」并在隐私与安全性允许，或官方重装；不要「移到废纸篓」 |
+| macOS 切 Agent 弹 Gatekeeper（`.xxxx.node`） | Host 只 exec 用户 PATH 上的 CLI，不去 quarantine。**OpenCode** 官方二进制（`curl -fsSL https://opencode.ai/install` / GitHub `opencode-darwin-arm64`）仍是 adhoc/linker-signed，启动时把未公证 `watcher.node` 解到 `$TMPDIR`，官方重装不能公证。**Gemini**（`@google/gemini-cli`）和 **Claude ACP**（`@agentclientprotocol/claude-agent-acp`）是 npm，附带 adhoc `.node`，无法 Apple 公证。**Copilot** 官方 cask `copilot-cli` 是 Notarized Developer ID（GitHub `VEKTX9H2N7`）；npm `@github/copilot` 仍有未公证 addon。Homebrew `gemini-cli` 已弃用，`antigravity-cli`（`agy`）不是探测目标（仍认 `gemini --experimental-acp` / `--acp`）。用户点「完成」并在隐私与安全性允许；不要「移到废纸篓」 |
 | 探测卡住 starting | 探测后台化 + 总时限；ProbeACP 不继承 Host stdio、杀进程组；SW 10s 看门狗 |
 | 换 Agent 卡在鉴权 / 握手 | 进度条右侧取消；Host 先握手新进程再停旧进程，取消回上一份 ready 或 idle |
 | 旧 `~/.opensider` 混着 Node Host 残留 | 备份后 `install --local` 重建 runtime / workspace |
