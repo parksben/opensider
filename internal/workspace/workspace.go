@@ -19,15 +19,17 @@ func Ensure() {
 	_ = os.MkdirAll(paths.ResultsDir(), 0o755)
 	_ = os.MkdirAll(paths.ScreenshotsDir(), 0o755)
 	_ = os.MkdirAll(paths.PastedDir(), 0o755)
+	_ = os.MkdirAll(paths.OutputsDir(), 0o755)
 	_ = os.MkdirAll(paths.SidebarHome(), 0o755)
 	_ = os.WriteFile(paths.AgentsMDPath(), []byte(agentsMD), 0o644)
 	_ = os.WriteFile(paths.ClaudeMDPath(), []byte(agentsMD), 0o644)
 	tools := map[string]any{
-		"version":        7,
+		"version":        8,
 		"transport":      "workspace-files",
 		"commandsDir":    "browser/commands",
 		"resultsDir":     "browser/results",
 		"screenshotsDir": "browser/screenshots",
+		"outputsDir":     "outputs",
 		"methods":        protocol.ToolCatalog,
 	}
 	raw, _ := json.MarshalIndent(tools, "", "  ")

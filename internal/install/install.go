@@ -29,6 +29,7 @@ func Run(local bool) error {
 	_ = os.MkdirAll(paths.ResultsDir(), 0o755)
 	_ = os.MkdirAll(paths.ScreenshotsDir(), 0o755)
 	_ = os.MkdirAll(paths.PastedDir(), 0o755)
+	_ = os.MkdirAll(paths.OutputsDir(), 0o755)
 	_ = os.MkdirAll(paths.RuntimeDir(), 0o755)
 	workspace.Ensure()
 

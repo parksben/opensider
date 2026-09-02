@@ -25,6 +25,7 @@ func SidebarHome() string {
 }
 
 func WorkspaceDir() string    { return filepath.Join(SidebarHome(), "workspace") }
+func OutputsDir() string      { return filepath.Join(WorkspaceDir(), "outputs") }
 func BrowserDir() string      { return filepath.Join(WorkspaceDir(), "browser") }
 func CommandsDir() string     { return filepath.Join(BrowserDir(), "commands") }
 func ResultsDir() string      { return filepath.Join(BrowserDir(), "results") }

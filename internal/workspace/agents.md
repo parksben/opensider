@@ -157,12 +157,18 @@ The result JSON has `data.path` (absolute file). **Read that JPEG** to inspect t
 
 Do not invent other methods. After acting or running a script, re-read `browser/current.json`, `browser/interactive.md`, and `browser/tabs.json` if the page or tab set may have changed.
 
+## User-facing deliverables (required)
+
+Files the user will open — HTML, PDF, Markdown, images, exports, generated docs you produce as the task result — go under `outputs/` (relative to this workspace cwd). Do **not** drop them in the workspace root next to `AGENTS.md` / `browser/`. Scratch and temp files may live elsewhere.
+
+After those files exist, still call `reportArtifacts` with their paths. Prefer `outputs/...`.
+
 ## Report output files (required when you create files)
 
 If this turn writes files the user should see (reports, exports, generated docs, images, folders), call `reportArtifacts` **after those files exist**. The sidebar replaces its artifact list with this call; call it once with the full set, not once per file.
 
 ```json
-{"id":"cmd_artifacts","method":"reportArtifacts","args":{"files":[{"path":"/absolute/or/workspace-relative/output.pdf"},{"path":"browser/screenshots/out.jpg","name":"optional display name"}]}}
+{"id":"cmd_artifacts","method":"reportArtifacts","args":{"files":[{"path":"outputs/report.html"},{"path":"outputs/summary.pdf","name":"optional display name"}]}}
 ```
 
-`args.files`, `args.paths` (string array), or a single `args.path` are accepted. Paths must exist on disk. Relative paths are resolved from this workspace. The next `reportArtifacts` in the same chat overwrites the previous list.
+`args.files`, `args.paths` (string array), or a single `args.path` are accepted. Paths must exist on disk. Relative paths are resolved from this workspace. Prefer `outputs/...`. The next `reportArtifacts` in the same chat overwrites the previous list.

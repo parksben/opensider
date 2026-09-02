@@ -39,7 +39,7 @@ pnpm build
 pnpm install-host
 ```
 
-`install --local` 会 `go build` 出 `~/.opensider/runtime/opensider`（不要用 `go run` 当 Native Host），重写各浏览器的 `com.opensider.host.json`，并确保工作区有 `AGENTS.md` / `browser/tools.json`。若本机 `~/.opensider` 还留着 Node Host 时代的 `PickFiles.app` / `runtime/packages` / 旧 `session.json`，先备份该目录再跑一次安装。
+`install --local` 会 `go build` 出 `~/.opensider/runtime/opensider`（不要用 `go run` 当 Native Host），重写各浏览器的 `com.opensider.host.json`，并确保工作区有 `AGENTS.md` / `browser/tools.json` / `outputs/`。若本机 `~/.opensider` 还留着 Node Host 时代的 `PickFiles.app` / `runtime/packages` / 旧 `session.json`，先备份该目录再跑一次安装。
 
 推送 `v*` tag 会跑 `.github/workflows/release.yml`：macOS 开 cgo 编 darwin 二进制，Ubuntu 交叉编译 linux / windows，再打 `opensider.crx`、`extension.zip`、安装壳和 `SHA256SUMS`，用该区间的 commit 列表发 GitHub Release。
 
@@ -54,7 +54,7 @@ pnpm dev
 
 ## 工作区
 
-会话 cwd 固定为 `~/.opensider/workspace`。页面快照、命令和截图都在 `workspace/browser/`。Host 启动时写入 `AGENTS.md` 与 `browser/tools.json`。
+会话 cwd 固定为 `~/.opensider/workspace`。页面快照、命令和截图都在 `workspace/browser/`。用户可见的任务产物约定写在 `workspace/outputs/`（引导，不拦截 Agent 本地工具）。Host 启动时写入 `AGENTS.md` 与 `browser/tools.json`，并确保 `outputs/` 存在。
 
 ## 仓库结构
 

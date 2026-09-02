@@ -18,6 +18,7 @@ Native Host
                browser/commands/*.json
                browser/results/*.json
                AGENTS.md
+               outputs/              # 用户可见产物（引导，不拦截写入）
 
 Content Script  ←── 当前标签的读取 / 操作方法
 Service Worker  ←── navigate / goBack / goForward / reload
@@ -143,8 +144,9 @@ Host 是一份 Go 二进制（`cmd/opensider` + `internal/`）。`browser/tools.
   extension/                 # 用户侧已解压的扩展
   workspace/                 # ACP session cwd
     AGENTS.md                # 页面协议说明，会话开始就会被读到
+    outputs/                 # 用户会打开的任务产物；Ensure() 每次 0755 创建
     browser/
-      tools.json             # 机器可读方法目录，Host 启动时写入
+      tools.json             # 机器可读方法目录，Host 启动时写入（含 outputsDir）
       current.json           # 当前标签：tabId, url, title, updatedAt
       tabs.json              # 全部普通窗口/标签：tabId, windowId, title, url, active, pinned, restricted
       snapshot.md            # 交互控件列表 + 可读正文
@@ -193,9 +195,9 @@ Host 是一份 Go 二进制（`cmd/opensider` + `internal/`）。`browser/tools.
 
 命令默认超时 20s（`waitFor` / 导航可能更久）。失败结果带 `ok: false` 和错误信息。文本结果约 200KB 截断。截图走 JPEG 压缩，结果 JSON 不内嵌像素。操作类命令成功后刷新 `current.json` / `snapshot.md` / `interactive.md`。侧栏把 `browser.command` / `browser.result` 写成当前轮 assistant 的 `tool-call`（`toolCallId` 为 `browser:<id>`），跟 ACP 工具同一套 `ToolCard`，不挂 Header。
 
-Host 在 `session/new` 之前写好 `AGENTS.md` 和 `browser/tools.json`，这样 Agent 一进工作区就能感知读、操作、视觉、交互快照、标签/窗口方法和 `reportArtifacts`。SW 在标签/窗口变化时（250ms 防抖）发 `tabs.update`，Host 写 `browser/tabs.json`。`listTabs` 结果与该文件同形，给需要立刻拿到列表的命令用。`page.update` 同时写 `interactive.md`。
+Host 在 `session/new` 之前写好 `AGENTS.md` 和 `browser/tools.json`，这样 Agent 一进工作区就能感知读、操作、视觉、交互快照、标签/窗口方法和 `reportArtifacts`。`workspace.Ensure()` 在 Host 启动和 `install` 时创建 `browser/` 子目录以及 `outputs/`（0755），并重写 `AGENTS.md` / `CLAUDE.md` / `browser/tools.json`。`tools.json` 的 `version` 随协议字段变更递增（现为 8），并带 `outputsDir: "outputs"`。Agent 应把用户会打开的 html / pdf / md / 图片写到 `outputs/`（相对工作区 cwd），不要丢在根目录；草稿和临时文件不限。Host **不**拦截 Write / Shell，也不把根目录写入改写到 `outputs/`——这是 AGENTS.md + 目录布局引导，不是写拒绝列表。SW 在标签/窗口变化时（250ms 防抖）发 `tabs.update`，Host 写 `browser/tabs.json`。`listTabs` 结果与该文件同形，给需要立刻拿到列表的命令用。`page.update` 同时写 `interactive.md`。
 
-`reportArtifacts` 不是页面方法。Agent 仍写 `browser/commands/<id>.json`，Host 监视时认出 `method` 后自己解析、写 `browser/results/<id>.json`，**不**转成 `browser.command`。参数接受 `args.files[{path, name?}]`、`args.paths[]` 或单个 `args.path`；相对路径相对工作区 cwd。每条须存在于本机，按路径去重，用和附件同一套规则标 `kind`。随后推 `{ type: "artifacts", items, sessionId? }`：`sessionId` 优先取正在 `prompt` 的 ACP 会话，侧栏映射到本地会话后 **整表覆盖** `Session.artifacts`（新表不含 `missing`，上次打开位置失败留下的失效标记一起清掉，按路径替换而不是按路径合并）。侧栏 `fs.reveal` 让 Host 调系统文件管理器打开目录并选中该文件。路径不存在时 Host 回 `{ type: "fs.revealed", path, missing: true, error }`，不能只打日志；侧栏按 `path` 把该条 `missing: true` 写进 `Session.artifacts` 并随会话持久化。其它 reveal 失败（空路径、非绝对路径、系统文件管理器报错）也回 `fs.revealed` + `error`，但不标 `missing`，按钮保留。成功打开不回结果。
+`reportArtifacts` 不是页面方法。Agent 仍写 `browser/commands/<id>.json`，Host 监视时认出 `method` 后自己解析、写 `browser/results/<id>.json`，**不**转成 `browser.command`。参数接受 `args.files[{path, name?}]`、`args.paths[]` 或单个 `args.path`；相对路径相对工作区 cwd。示例与说明优先 `outputs/...`，但仍接受任意已存在路径。每条须存在于本机，按路径去重，用和附件同一套规则标 `kind`。随后推 `{ type: "artifacts", items, sessionId? }`：`sessionId` 优先取正在 `prompt` 的 ACP 会话，侧栏映射到本地会话后 **整表覆盖** `Session.artifacts`（新表不含 `missing`，上次打开位置失败留下的失效标记一起清掉，按路径替换而不是按路径合并）。侧栏 `fs.reveal` 让 Host 调系统文件管理器打开目录并选中该文件。路径不存在时 Host 回 `{ type: "fs.revealed", path, missing: true, error }`，不能只打日志；侧栏按 `path` 把该条 `missing: true` 写进 `Session.artifacts` 并随会话持久化。其它 reveal 失败（空路径、非绝对路径、系统文件管理器报错）也回 `fs.revealed` + `error`，但不标 `missing`，按钮保留。成功打开不回结果。
 
 ## 多会话与 fork
 
@@ -421,7 +423,7 @@ CRX 安装包用 `scripts/keys/extension.pem` 签 CRX3，打包 ID 为 `clnpnldm
 Host 注册名：`com.opensider.host`  
 macOS 清单路径：`~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.opensider.host.json`
 
-用户：`releases/latest` 的 `install.sh` / `install.ps1` 下一份 `opensider` 并 `opensider install`，清单 `path` 指向 `~/.opensider/runtime/opensider`。开发：`pnpm install-host` = `go run ./cmd/opensider install --local`，必须 `go build` 出真实二进制拷到 runtime（**禁止**把 `go run` 写成 Native Host path，Chrome 保不住这个进程）。`install` 同时 `workspace.Ensure()`，马上就有 `AGENTS.md` / `browser/tools.json`。macOS TCC 仍要求二进制不在 Desktop / Documents / Downloads。Host 日志只写 `~/.opensider/host.log`，不写 stderr。从 Node 时代留下的 `~/.opensider`（`PickFiles.app`、`runtime/packages`、旧 `session.json`）可能和 Go Host 打架；开发机应备份后重新 `install --local`。推送 `v*` tag 触发 Actions：darwin 在 macOS 开 cgo 编，linux/windows 交叉编译；Release 说明只列该版本 commit。桥接未注册时 SW 轮询 `connectNative`。不迁旧目录。
+用户：`releases/latest` 的 `install.sh` / `install.ps1` 下一份 `opensider` 并 `opensider install`，清单 `path` 指向 `~/.opensider/runtime/opensider`。开发：`pnpm install-host` = `go run ./cmd/opensider install --local`，必须 `go build` 出真实二进制拷到 runtime（**禁止**把 `go run` 写成 Native Host path，Chrome 保不住这个进程）。`install` 同时 `workspace.Ensure()`，马上就有 `AGENTS.md` / `browser/tools.json` / `outputs/`。macOS TCC 仍要求二进制不在 Desktop / Documents / Downloads。Host 日志只写 `~/.opensider/host.log`，不写 stderr。从 Node 时代留下的 `~/.opensider`（`PickFiles.app`、`runtime/packages`、旧 `session.json`）可能和 Go Host 打架；开发机应备份后重新 `install --local`。推送 `v*` tag 触发 Actions：darwin 在 macOS 开 cgo 编，linux/windows 交叉编译；Release 说明只列该版本 commit。桥接未注册时 SW 轮询 `connectNative`。不迁旧目录。
 
 ## UI
 
@@ -524,6 +526,7 @@ Release 资产名必须和壳一致：
 | 重试无效 | 强制重连 Native Host；`connect` 唤醒 SW，失败原因写到顶栏 |
 | 发消息无反馈 | 输入和 isRunning 由 App state 驱动，不走 useAuiState |
 | 命令文件误触发 | 只认 `browser/commands/*.json` 且含 `id`+白名单 `method` |
+| Agent 仍把产物写到工作区根目录 | AGENTS.md + tools.json 引导 `outputs/`；Ensure 建目录。不拦截 Write/Shell |
 | 受控输入收不到赋值 | fill/type 用原生 value setter + beforeinput/input/change；contenteditable 再退 `execCommand` |
 | 点击找不到可点目标 | 优先 interactive.md 的 index / 控件 label，再 selector 与可见文本 |
 | 表单控件没有 innerText | 交互快照带 label/placeholder/name；`text`/`label` 命中控件而不是标题 |

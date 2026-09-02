@@ -181,7 +181,7 @@ var ToolCatalog = []ToolEntry{
 	{Name: "openTab", Kind: "act", Args: "url, windowId?", Summary: "open http(s) in a new tab without touching the current page"},
 	{Name: "closeTab", Kind: "act", Args: "tabId?, force?", Summary: "close a tab; blocked if unsaved unless force"},
 	{Name: "moveTabsToWindow", Kind: "act", Args: "tabIds, windowId?", Summary: "pull tabs into a new window, or into windowId"},
-	{Name: "reportArtifacts", Kind: "workspace", Args: "files[{path, name?}] | paths[] | path", Summary: "replace the sidebar artifact list with these local files after you finish writing outputs"},
+	{Name: "reportArtifacts", Kind: "workspace", Args: "files[{path, name?}] | paths[] | path", Summary: "replace the sidebar artifact list with these local files after you finish writing outputs; prefer outputs/... paths"},
 }
 
 func IsPageMethod(method string) bool {
