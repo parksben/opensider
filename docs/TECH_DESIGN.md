@@ -60,7 +60,7 @@ Cursor Agent 在 ACP 模式下仍然自己执行本地工具（读文件、写�
 - 在 Side Panel、Content Script、Host 之间转发消息；`page.pick` 只走内容脚本，不进 Native Host。先 ping，失败则按 manifest 注入内容脚本再拾取
 - 监听 `tabs.onActivated` / `tabs.onUpdated`，通知内容脚本刷新当前页
 - 点击工具栏图标打开 Side Panel
-- Host 包装脚本一启动就往 `~/.opensider/host.log` 打一行，便于判断 Chrome 有没有真正拉起 Host
+- Go Host 一启动就往 `~/.opensider/host.log` 打一行，便于判断 Chrome 有没有真正拉起 Host
 
 ### Content Script
 
@@ -129,7 +129,7 @@ Cursor Agent 在 ACP 模式下仍然自己执行本地工具（读文件、写�
 - 把 Agent 的 `session/update`、权限请求、Cursor 扩展方法推给扩展
 - 把页面快照和 `browser/tools.json` 写入工作区；监视 `browser/commands/`，转给扩展，再把结果写回 `browser/results/`（截图另存 `browser/screenshots/`）
 
-Host 是 Go 单文件。stdout 只给 Chrome，ACP 走子进程管道，日志只写 `~/.opensider/host.log`。`fs.pick` 时 exec 自己的 `pick` 子命令（独立进程才能把系统对话框拉到前台）。`hello` 不带 os；选文件分流用侧栏 UA。
+Host 是一份 Go 二进制（`cmd/opensider` + `internal/`）。`browser/tools.json` 由 `internal/protocol.ToolCatalog` 在启动时写入，不在 TS 里再维护一份。stdout 只给 Chrome，ACP 走子进程管道，日志只写 `~/.opensider/host.log`。`fs.pick` 时 exec 自己的 `pick` 子命令（独立进程才能把系统对话框拉到前台）。`hello` 不带 os；选文件分流用侧栏 UA。`page.pick` 到不了 Host。
 
 ## 工作区布局
 
@@ -318,7 +318,7 @@ Read file/folder/image paths. For kind=element, use page tools with args.selecto
 
 `AGENTS.md` 同步写明这两块。用户气泡和改历史回填都走同一套 parse → 芯片。会话标题用去掉 token、换成 `@标题` 后的纯文本。
 
-`@` 菜单标签页不写 `opensider/tab-history`。侧栏启动时 `chrome.tabs.query({ windowType: "normal" })`，并听 `onCreated` / `onUpdated` / `onActivated` / `onRemoved` / `onReplaced` / `onAttached` / `onDetached` 防抖重查；只展示当前仍打开、且有 URL 的标签（按 `lastAccessed` / 当前活动优先）。关掉即消失。启动时清掉旧的 tab-history 存储。菜单第一 tab 用这份列表（左 favicon，失败则 Lucide `Globe`）。附件 tab 直接用当前输入栏 `attachments`（按 `path` 去重），不读也不写附件历史；启动时清掉旧的 `opensider/attachment-history` / `cursor-sidebar/attachment-history`。
+`@` 菜单标签页不写历史存储。侧栏启动时 `chrome.tabs.query({ windowType: "normal" })`，并听 `onCreated` / `onUpdated` / `onActivated` / `onRemoved` / `onReplaced` / `onAttached` / `onDetached` 防抖重查；只展示当前仍打开、且有 URL 的标签（按 `lastAccessed` / 当前活动优先）。关掉即消失。菜单第一 tab 用这份列表（左 favicon，失败则 Lucide `Globe`）。附件 tab 直接用当前输入栏 `attachments`（按 `path` 去重）。启动时顺手清掉旧版 `opensider/*-history` 与 `cursor-sidebar/*-history`。
 
 `@` 按钮：focus 编辑器、caret 移到最前、插入 `@`、打开菜单。`AtMenu` portal 到 `document.body`，`position: fixed`，锚点用编辑器上次 range 的 caret 盒；优先放在光标上方（底边 = caret.top - 6），四边夹在视口内缩 16px，高度按上方可用空间收缩，列表 `flex-1 min-h-0` 滚动。mousedown `preventDefault` 以免抢焦点，插入前恢复上次 range。键盘与模型下拉同一套循环高亮 + `scrollIntoView({ block: "nearest" })`；Tab / 左右键切「标签页 / 附件」两个页。回车 / 点击只 `insertMention`。上次没兜住：AtMenu 的 `document` capture 把 `onSelect` 放进 effect 依赖，每次 ChatPane 渲染都拆掉重绑；`stopImmediatePropagation` 拦不住 React 根节点委托；`menuOpen` / `atOpen` 是异步 state，打开菜单的同一拍或 `flushSync` 插芯片之后 Composer 仍会 `onSubmit`；`submit()` 自己也不看菜单。现在用模块级同步锁 `atMenuLock`：输入 `@` 或点 `@` 的当帧就 `open=true`；`installAtMenuGuard` 在 `window` capture 常驻，Enter 只 `confirm` 插芯片；Composer 原生 capture + React `onKeyDown` + `beforeinput` 都认锁；`submit(fromEnter)` 见锁直接 return；菜单在该记 Enter 的 `keyup` 才关，避免同一记回车落到发送。芯片高度跟所在行行高对齐：`.cs-mention-wrap` / `.cs-mention-chip` 继承正文的 `font-size` 和 `line-height`，再 `height: 1lh`。上次写成芯片自己 `font-size: 11px` + `line-height: 1`，`1lh` 就变成 11px，视觉上塌成字高。标签仍 11px，内容 `align-items: center`。padding `0 12px 0 8px`。选中后用芯片替换光标前的 `@` 及紧跟搜索词（`readAtQuery` / `consumeAtBeforeCaret` 共用同一 text-node 规则：caret 须在 `@` 之后，query 不含换行）。**内联搜索**：菜单打开时 `ComposerEditor.getAtQuery()` 读 caret 前 `@` 到 caret 的文本作为 `query` 传给 `AtMenu`；`readAtQuery` 返回 `null`（删了 `@`、caret 移出触发区）则 `closeAtMenu`。`at-menu-search.ts`：`filterAtTabs` / `filterAtAttachments` 对 title+url / name+path 做 `toLowerCase().includes`；标题 / 名称命中排前，仅 URL / 路径命中排后；空 query 不过滤。`HighlightText` + `.cs-at-match` 把匹配子串改成 `color: var(--brass)`，无背景、无选中块。`insertMention` 在插入点看前后第一个非 zwsp 字符：不是空格（` ` / `nbsp`）就在芯片左/右各插一个普通空格，已有则不重复；光标仍落在芯片后的 zwsp 上。点芯片时 `mousedown` `preventDefault`，caret 放到 wrap 后的 zwsp；`.cs-mention-wrap` / `.cs-mention-chip` 及子孙 `user-select: none`，`selectstart` 也拦住，避免光标进芯片或划词。
 
@@ -392,7 +392,7 @@ Host 是 ACP Client，`clientCapabilities` 关闭 `fs` / `terminal`，让 Agent 
 Host 注册名：`com.opensider.host`  
 macOS 清单路径：`~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.opensider.host.json`
 
-用户：`releases/latest` 的 `install.sh` / `install.ps1` 下一份 `opensider` 并 `opensider install`，清单 `path` 指向 `~/.opensider/runtime/opensider`。开发：`pnpm install-host` = `go run ./cmd/opensider install --local`（旧的 `scripts/install-host.mjs` 已删）。macOS TCC 仍要求二进制不在 Desktop / Documents / Downloads。Host 日志只写 `~/.opensider/host.log`，不写 stderr。推送 `v*` tag 触发 Actions：darwin 在 macOS 开 cgo 编，linux/windows 交叉编译；Release 说明只列该版本 commit。桥接未注册时 SW 轮询 `connectNative`。不迁旧目录。
+用户：`releases/latest` 的 `install.sh` / `install.ps1` 下一份 `opensider` 并 `opensider install`，清单 `path` 指向 `~/.opensider/runtime/opensider`。开发：`pnpm install-host` = `go run ./cmd/opensider install --local`。macOS TCC 仍要求二进制不在 Desktop / Documents / Downloads。Host 日志只写 `~/.opensider/host.log`，不写 stderr。推送 `v*` tag 触发 Actions：darwin 在 macOS 开 cgo 编，linux/windows 交叉编译；Release 说明只列该版本 commit。桥接未注册时 SW 轮询 `connectNative`。不迁旧目录。
 
 ## UI
 
@@ -417,6 +417,7 @@ macOS 清单路径：`~/Library/Application Support/Google/Chrome/NativeMessagin
 
 ```
 cmd/opensider       唯一 Go 入口（host / install / pick）
+internal/           Host / install / pick / ACP
 packages/shared     扩展 ↔ Host 消息类型（TS）
 packages/extension  Chrome MV3（background / content / sidepanel）
 scripts/install     用户壳 install.sh / install.ps1

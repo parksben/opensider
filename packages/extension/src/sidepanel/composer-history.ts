@@ -1,7 +1,11 @@
 import { useEffect, useState } from "react";
 
-export const TAB_HISTORY_KEY = "opensider/tab-history";
-export const ATTACHMENT_HISTORY_KEY = "opensider/attachment-history";
+const STALE_HISTORY_KEYS = [
+  "opensider/tab-history",
+  "opensider/attachment-history",
+  "cursor-sidebar/tab-history",
+  "cursor-sidebar/attachment-history",
+];
 
 export type HistoryTab = {
   tabId: number;
@@ -11,7 +15,7 @@ export type HistoryTab = {
   seenAt: string;
 };
 
-export function historyTabFromChrome(tab: chrome.tabs.Tab): HistoryTab | undefined {
+function historyTabFromChrome(tab: chrome.tabs.Tab): HistoryTab | undefined {
   if (tab.id == null) return undefined;
   const url = tab.url || tab.pendingUrl || "";
   if (!url) return undefined;
@@ -66,7 +70,7 @@ export function useComposerHistory(): { tabs: HistoryTab[] } {
       }, 50);
     };
 
-    void chrome.storage.local.remove([TAB_HISTORY_KEY, ATTACHMENT_HISTORY_KEY]);
+    void chrome.storage.local.remove(STALE_HISTORY_KEYS);
     void refreshTabs();
 
     chrome.tabs.onCreated.addListener(scheduleTabs);

@@ -174,57 +174,6 @@ export type ScreenshotPayload = {
   height: number;
 };
 
-export const TOOL_CATALOG: Array<{
-  name: PageMethod;
-  kind: "read" | "act" | "vision";
-  args: string;
-  summary: string;
-}> = [
-  { name: "getMeta", kind: "read", args: "", summary: "url, title, description" },
-  { name: "getReadable", kind: "read", args: "", summary: "main text extract" },
-  { name: "getInteractive", kind: "read", args: "", summary: "numbered interactive controls; prefer args.index from this list" },
-  { name: "getUnsavedChanges", kind: "read", args: "", summary: "detect unsaved form/editor edits before navigate/close" },
-  { name: "getSelection", kind: "read", args: "", summary: "highlighted text" },
-  { name: "getLinks", kind: "read", args: "", summary: "same-origin links" },
-  { name: "getOutline", kind: "read", args: "", summary: "h1–h3 headings" },
-  { name: "queryText", kind: "read", args: "index|selector|label|text, nth?", summary: "one node's text" },
-  { name: "queryAll", kind: "read", args: "index|selector|label|text?", summary: "matching node summaries; empty args = interactive list" },
-  { name: "getAttribute", kind: "read", args: "index|selector|label|text, attribute", summary: "element attribute" },
-  { name: "getValue", kind: "read", args: "index|selector|label|text", summary: "input/textarea/select value" },
-  { name: "exists", kind: "read", args: "index|selector|label|text", summary: "whether a match exists" },
-  { name: "click", kind: "act", args: "index|selector|label|text, nth?", summary: "click an element" },
-  { name: "dblclick", kind: "act", args: "index|selector|label|text, nth?", summary: "double-click" },
-  { name: "hover", kind: "act", args: "index|selector|label|text, nth?", summary: "hover" },
-  { name: "focus", kind: "act", args: "index|selector|label|text, nth?", summary: "focus" },
-  { name: "fill", kind: "act", args: "index|label|selector, value", summary: "set field value (native, contenteditable, or combobox)" },
-  { name: "type", kind: "act", args: "index|label|selector, text", summary: "append text" },
-  { name: "clear", kind: "act", args: "index|label|selector", summary: "clear a field" },
-  { name: "fillForm", kind: "act", args: "fields[{index|label|name, value}]", summary: "fill many fields in one call" },
-  { name: "select", kind: "act", args: "index|label|selector, value", summary: "choose a select/combobox option by value or text" },
-  { name: "check", kind: "act", args: "index|label|selector, checked?", summary: "checkbox/radio/switch" },
-  { name: "press", kind: "act", args: "key, index|selector?", summary: "keydown/keyup, e.g. Enter" },
-  { name: "scroll", kind: "act", args: "index|selector|text or x,y", summary: "scroll window or element" },
-  { name: "scrollIntoView", kind: "act", args: "index|selector|label|text", summary: "scroll element into view" },
-  { name: "waitFor", kind: "act", args: "index|selector|label|text, timeoutMs?", summary: "wait until element exists" },
-  { name: "navigate", kind: "act", args: "url, force?", summary: "http(s) navigation; blocked if unsaved unless force" },
-  { name: "goBack", kind: "act", args: "force?", summary: "history back; blocked if unsaved unless force" },
-  { name: "goForward", kind: "act", args: "force?", summary: "history forward; blocked if unsaved unless force" },
-  { name: "reload", kind: "act", args: "force?", summary: "reload tab; blocked if unsaved unless force" },
-  {
-    name: "runScript",
-    kind: "act",
-    args: "code, world?, timeoutMs?",
-    summary: "run async page script for batch DOM work; world=ISOLATED|MAIN",
-  },
-  { name: "screenshot", kind: "vision", args: "x?,y?,width?,height?", summary: "JPEG of the visible viewport or a region" },
-  { name: "screenshotElement", kind: "vision", args: "index|selector|label|text, nth?", summary: "JPEG of one element; Read the file at data.path" },
-  { name: "listTabs", kind: "read", args: "", summary: "all normal windows and tabs; same shape as browser/tabs.json" },
-  { name: "switchTab", kind: "act", args: "tabId", summary: "activate a tab and focus its window" },
-  { name: "openTab", kind: "act", args: "url, windowId?", summary: "open http(s) in a new tab without touching the current page" },
-  { name: "closeTab", kind: "act", args: "tabId?, force?", summary: "close a tab; blocked if unsaved unless force" },
-  { name: "moveTabsToWindow", kind: "act", args: "tabIds, windowId?", summary: "pull tabs into a new window, or into windowId" },
-];
-
 export type CurrentPage = {
   tabId: number;
   url: string;

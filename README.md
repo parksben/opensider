@@ -58,6 +58,7 @@ pnpm dev
 
 ```
 cmd/opensider         唯一 Go 入口（无参=Host，install，pick）
+internal/             Host / install / pick / ACP
 docs/                 需求与技术设计
 packages/shared       扩展 ↔ Host 消息类型
 packages/extension    Chrome MV3 侧栏 / 内容脚本 / Service Worker

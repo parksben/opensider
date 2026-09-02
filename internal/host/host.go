@@ -576,8 +576,6 @@ func (h *Host) dispatch(typ string, msg map[string]any) error {
 			runtime.client.SetPolicy(policy)
 		}
 		return nil
-	case "page.pick", "page.pick.cancel":
-		return nil
 	case "page.update":
 		var page protocol.CurrentPage
 		if raw, err := json.Marshal(msg["page"]); err == nil {
