@@ -104,6 +104,9 @@ function remember(msg: HostToExt): void {
       lastSession = undefined;
       lastModels = undefined;
     }
+    if (msg.state !== "connecting") {
+      lastProgress = undefined;
+    }
     if (msg.state === "missing") {
       lastAgents = undefined;
       lastProgress = undefined;

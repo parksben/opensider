@@ -105,6 +105,9 @@ export function App() {
   const onboardingRef = useRef(onboardingCompleted);
   const pendingConnectRef = useRef("");
   const connectedProviderRef = useRef("");
+  const rollbackRef = useRef<{ providerId: string; wasReady: boolean } | null>(null);
+  const skipIdleConnectRef = useRef(false);
+  const awaitingCancelRef = useRef(false);
   const pickWaiters = useRef(new Map<string, (items: AttachmentItem[]) => void>());
   const appliedModelRef = useRef("");
   const elementPickId = useRef("");
@@ -161,6 +164,14 @@ export function App() {
     if (!providerId) return;
     if (connectedProviderRef.current === providerId && statusRef.current === "ready") return;
     if (pendingConnectRef.current === providerId && statusRef.current === "connecting") return;
+    skipIdleConnectRef.current = false;
+    awaitingCancelRef.current = false;
+    if (statusRef.current !== "connecting") {
+      rollbackRef.current = {
+        providerId: connectedProviderRef.current || selectedProviderRef.current,
+        wasReady: statusRef.current === "ready" && Boolean(connectedProviderRef.current),
+      };
+    }
     pendingConnectRef.current = providerId;
     setSelectedProviderId(providerId);
     setSessions((list) => applyProviderBinding(list, providerId));
@@ -169,6 +180,35 @@ export function App() {
     setModels([]);
     setProgress(undefined);
     sendRef.current({ type: "agent.connect", providerId, policy: agentModeRef.current });
+  };
+
+  const cancelConnect = () => {
+    if (statusRef.current !== "connecting") return;
+    const snap = rollbackRef.current;
+    pendingConnectRef.current = "";
+    awaitingCancelRef.current = true;
+    setProgress(undefined);
+    setError(undefined);
+    if (snap?.wasReady && snap.providerId) {
+      skipIdleConnectRef.current = false;
+      selectedProviderRef.current = snap.providerId;
+      setSelectedProviderId(snap.providerId);
+      setSessions((list) => applyProviderBinding(list, snap.providerId));
+      setSelectedModelId(selectedModelByProviderRef.current[snap.providerId] || "");
+      connectedProviderRef.current = snap.providerId;
+      statusRef.current = "ready";
+      setStatus("ready");
+    } else {
+      skipIdleConnectRef.current = true;
+      const restoreId = snap?.providerId ?? "";
+      selectedProviderRef.current = restoreId;
+      setSelectedProviderId(restoreId);
+      if (restoreId) setSessions((list) => applyProviderBinding(list, restoreId));
+      connectedProviderRef.current = "";
+      statusRef.current = "idle";
+      setStatus("idle");
+    }
+    sendRef.current({ type: "agent.cancelConnect" });
   };
 
   const syncRunning = (next: Set<string>) => {
@@ -301,6 +341,7 @@ export function App() {
       return;
     }
     if (msg.type === "agent.progress") {
+      if (awaitingCancelRef.current) return;
       setProgress(msg.progress);
       return;
     }
@@ -309,6 +350,10 @@ export function App() {
       return;
     }
     if (msg.type === "status") {
+      if (awaitingCancelRef.current && msg.state === "connecting") return;
+      if (msg.state === "idle" || msg.state === "ready" || msg.state === "error" || msg.state === "missing") {
+        awaitingCancelRef.current = false;
+      }
       setStatus(msg.state);
       setError(msg.error);
       if (msg.state === "error" || msg.state === "missing") {
@@ -328,6 +373,11 @@ export function App() {
         tryBindCurrent();
       }
       if (msg.state === "idle" && onboardingRef.current && selectedProviderRef.current) {
+        if (skipIdleConnectRef.current) {
+          skipIdleConnectRef.current = false;
+          setProgress(undefined);
+          return;
+        }
         requestConnect(selectedProviderRef.current);
       }
       return;
@@ -1001,6 +1051,7 @@ export function App() {
           sessionsOpen={sessionsOpen}
           theme={theme}
           onSelectAgent={requestConnect}
+          onCancelConnect={cancelConnect}
           onLocale={(next) => {
             applyLocale(next);
             setLocale(next);
@@ -1036,6 +1087,7 @@ export function App() {
                 progress={progress}
                 error={error}
                 onSelect={requestConnect}
+                onCancel={cancelConnect}
                 onRetry={() => {
                   setSawAgents(false);
                   setAgents([]);

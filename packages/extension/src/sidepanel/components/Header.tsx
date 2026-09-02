@@ -6,6 +6,16 @@ import { t } from "../i18n";
 import { nextTheme, type ThemePreference } from "../theme";
 import { AgentSelect } from "./AgentSelect";
 import { IconButton } from "./IconButton";
+import { RippleButton } from "./RippleButton";
+
+const PHASE_KEYS = {
+  resolve: "progressResolve",
+  spawn: "progressSpawn",
+  handshake: "progressHandshake",
+  auth: "progressAuth",
+  session: "progressSession",
+  models: "progressModels",
+} as const;
 
 const TITLE_GAP = 56;
 
@@ -21,6 +31,7 @@ export function Header({
   sessionsOpen,
   theme,
   onRetry,
+  onCancelConnect,
   onLocale,
   onTheme,
   onToggleSessions,
@@ -38,6 +49,7 @@ export function Header({
   sessionsOpen: boolean;
   theme: ThemePreference;
   onRetry?: () => void;
+  onCancelConnect?: () => void;
   onLocale: (locale: Locale) => void;
   onTheme: (theme: ThemePreference) => void;
   onToggleSessions: () => void;
@@ -229,17 +241,35 @@ export function Header({
         </div>
       </div>
 
-      {status === "connecting" && progress ? (
+      {status === "connecting" ? (
         <div className="mt-2">
-          <div className="h-0.5 overflow-hidden rounded-full bg-[var(--panel-2)]">
-            <div
-              className="h-full bg-[var(--brass)] transition-[width] duration-300"
-              style={{ width: `${Math.round((progress.index / progress.total) * 100)}%` }}
-            />
+          {progress ? (
+            <div className="h-0.5 overflow-hidden rounded-full bg-[var(--panel-2)]">
+              <div
+                className="h-full bg-[var(--brass)] transition-[width] duration-300"
+                style={{ width: `${Math.round((progress.index / progress.total) * 100)}%` }}
+              />
+            </div>
+          ) : null}
+          <div className="mt-1 flex items-center justify-between gap-2">
+            <p className="min-w-0 truncate text-[11px] text-[var(--muted)]">
+              {progress
+                ? `${progress.index}/${progress.total} · ${
+                    PHASE_KEYS[progress.phase as keyof typeof PHASE_KEYS]
+                      ? label(PHASE_KEYS[progress.phase as keyof typeof PHASE_KEYS])
+                      : progress.label
+                  }`
+                : label("connecting")}
+            </p>
+            {onCancelConnect ? (
+              <RippleButton
+                onClick={onCancelConnect}
+                className="shrink-0 rounded px-1.5 py-0.5 text-[11px] text-[var(--brass)] hover:bg-[var(--brass)]/20"
+              >
+                {label("cancelConnect")}
+              </RippleButton>
+            ) : null}
           </div>
-          <p className="mt-1 text-[11px] text-[var(--muted)]">
-            {progress.index}/{progress.total} · {progress.label}
-          </p>
         </div>
       ) : null}
       {error && status === "error" ? (

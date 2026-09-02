@@ -269,6 +269,7 @@ export type ExtToHost =
   | { type: "hello" }
   | { type: "agents.detect" }
   | { type: "agent.connect"; providerId: string; policy?: AgentPolicy }
+  | { type: "agent.cancelConnect" }
   | { type: "agent.setPolicy"; policy: AgentPolicy }
   | { type: "prompt"; text: string; sessionId?: string; currentPage?: { title: string; url: string } }
   | { type: "cancel"; sessionId?: string }

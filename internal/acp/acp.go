@@ -323,6 +323,7 @@ func (c *Client) Stop() {
 	if cmd != nil && cmd.Process != nil {
 		_ = cmd.Process.Kill()
 	}
+	c.failAll(errors.New("agent stopped"))
 }
 
 func (c *Client) trySetPolicyMode(sessionID string) {

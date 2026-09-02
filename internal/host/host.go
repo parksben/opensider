@@ -28,18 +28,23 @@ type acpRuntime struct {
 	binding   bool
 }
 
+var errConnectCancelled = errors.New("connect cancelled")
+
 type Host struct {
-	io             *native.IO
-	mu             sync.Mutex
-	bindMu         sync.Mutex
-	runtimes       []*acpRuntime
-	rpcClients     map[int]*acp.Client
-	catalog        models.Catalog
-	pendingModelID string
-	currentAgent   *detect.ResolvedAgent
-	currentPolicy  protocol.AgentPolicy
-	lastAgents     []protocol.AgentInfo
-	hostState      string
+	io               *native.IO
+	mu               sync.Mutex
+	bindMu           sync.Mutex
+	runtimes         []*acpRuntime
+	rpcClients       map[int]*acp.Client
+	catalog          models.Catalog
+	pendingModelID   string
+	currentAgent     *detect.ResolvedAgent
+	previousAgent    *detect.ResolvedAgent
+	connectingClient *acp.Client
+	connectSeq       int
+	currentPolicy    protocol.AgentPolicy
+	lastAgents       []protocol.AgentInfo
+	hostState        string
 }
 
 func Run() {
@@ -217,12 +222,7 @@ func (h *Host) scanAgents() error {
 	return nil
 }
 
-func (h *Host) stopRuntimes() {
-	h.mu.Lock()
-	runtimes := h.runtimes
-	h.runtimes = nil
-	h.rpcClients = map[int]*acp.Client{}
-	h.mu.Unlock()
+func stopRuntimeList(runtimes []*acpRuntime) {
 	for _, runtime := range runtimes {
 		func() {
 			defer func() { _ = recover() }()
@@ -231,13 +231,96 @@ func (h *Host) stopRuntimes() {
 	}
 }
 
+func (h *Host) beginConnect() int {
+	h.mu.Lock()
+	h.connectSeq++
+	seq := h.connectSeq
+	if h.hostState == "ready" && h.currentAgent != nil {
+		snapshot := *h.currentAgent
+		h.previousAgent = &snapshot
+	} else if h.hostState != "connecting" {
+		h.previousAgent = nil
+	}
+	h.hostState = "connecting"
+	stale := h.connectingClient
+	h.connectingClient = nil
+	h.mu.Unlock()
+	if stale != nil {
+		stale.Stop()
+	}
+	return seq
+}
+
+func (h *Host) connectInvalid(seq int) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return seq != h.connectSeq
+}
+
+func (h *Host) abortConnect(seq int, runtime *acpRuntime, err error) error {
+	if runtime != nil && runtime.client != nil {
+		runtime.client.Stop()
+	}
+	h.mu.Lock()
+	if runtime != nil && h.connectingClient == runtime.client {
+		h.connectingClient = nil
+	}
+	cancelled := seq != h.connectSeq
+	h.mu.Unlock()
+	if cancelled || errors.Is(err, errConnectCancelled) {
+		return errConnectCancelled
+	}
+	return err
+}
+
+func (h *Host) cancelConnect() error {
+	h.mu.Lock()
+	if h.hostState != "connecting" {
+		h.mu.Unlock()
+		return nil
+	}
+	h.connectSeq++
+	client := h.connectingClient
+	h.connectingClient = nil
+	prev := h.previousAgent
+	hasPrev := len(h.runtimes) > 0
+	h.mu.Unlock()
+
+	if client != nil {
+		client.Stop()
+	}
+
+	if hasPrev {
+		h.mu.Lock()
+		if prev != nil {
+			h.currentAgent = prev
+		}
+		h.mu.Unlock()
+		h.sendHello()
+		h.sendModels()
+		h.sendAgents()
+		h.setHostState("ready", "")
+		log.Log("connect cancelled; restored previous agent")
+		return nil
+	}
+
+	h.mu.Lock()
+	h.currentAgent = nil
+	h.previousAgent = nil
+	h.mu.Unlock()
+	h.setHostState("idle", "")
+	log.Log("connect cancelled; idle")
+	return nil
+}
+
 func (h *Host) connectAgent(providerID string, policy protocol.AgentPolicy) error {
-	h.setHostState("connecting", "")
+	seq := h.beginConnect()
 	if policy != "" {
 		h.mu.Lock()
 		h.currentPolicy = policy
 		h.mu.Unlock()
 	}
+	h.setHostState("connecting", "")
 	h.sendProgress(1, 6, "resolve", "Resolving CLI")
 	resolved := detect.CachedResolved(providerID)
 	if resolved == nil {
@@ -246,33 +329,51 @@ func (h *Host) connectAgent(providerID string, policy protocol.AgentPolicy) erro
 	if resolved == nil {
 		return fmt.Errorf("Could not find an ACP CLI for %s.", providerID)
 	}
+	if h.connectInvalid(seq) {
+		return errConnectCancelled
+	}
 	h.mu.Lock()
 	h.currentAgent = resolved
 	h.mu.Unlock()
 	detect.RememberResolved(*resolved)
 
 	h.sendProgress(2, 6, "spawn", "Starting process")
-	h.stopRuntimes()
 	h.mu.Lock()
 	h.catalog = models.Catalog{ModelConfigID: "model"}
 	h.mu.Unlock()
 	h.sendModels()
 	runtime := &acpRuntime{}
 	if err := h.attachClient(runtime); err != nil {
-		return err
+		return h.abortConnect(seq, runtime, err)
 	}
 	if err := runtime.client.Start(); err != nil {
-		return err
+		return h.abortConnect(seq, runtime, err)
 	}
+	if h.connectInvalid(seq) {
+		return h.abortConnect(seq, runtime, errConnectCancelled)
+	}
+	h.mu.Lock()
+	h.connectingClient = runtime.client
+	h.mu.Unlock()
+
 	h.sendProgress(3, 6, "handshake", "ACP handshake")
 	h.sendProgress(4, 6, "auth", "Signing in")
 	if err := runtime.client.Initialize(); err != nil {
-		return err
+		return h.abortConnect(seq, runtime, err)
 	}
 	h.mu.Lock()
-	h.runtimes = append(h.runtimes, runtime)
+	if seq != h.connectSeq {
+		h.mu.Unlock()
+		return h.abortConnect(seq, runtime, errConnectCancelled)
+	}
+	old := h.runtimes
+	h.runtimes = []*acpRuntime{runtime}
+	h.rpcClients = map[int]*acp.Client{}
+	h.connectingClient = nil
+	h.previousAgent = nil
 	count := len(h.runtimes)
 	h.mu.Unlock()
+	stopRuntimeList(old)
 	log.Log(fmt.Sprintf("acp runtime ready provider=%s count=%d", resolved.Profile.ID, count))
 
 	h.sendProgress(5, 6, "session", "Ready for sessions")
@@ -584,6 +685,10 @@ func (h *Host) handleExt(msg map[string]any) {
 		}
 	}()
 	if err := h.dispatch(typ, msg); err != nil {
+		if errors.Is(err, errConnectCancelled) {
+			log.Log("connect cancelled")
+			return
+		}
 		log.Log("handle ext error: " + hostErrorText(err))
 		if typ == "prompt" {
 			h.send(map[string]any{"type": "turn.end", "stopReason": "error", "sessionId": str(msg["sessionId"])})
@@ -612,6 +717,8 @@ func (h *Host) dispatch(typ string, msg map[string]any) error {
 		return h.scanAgents()
 	case "agent.connect":
 		return h.connectAgent(str(msg["providerId"]), protocol.AgentPolicy(str(msg["policy"])))
+	case "agent.cancelConnect":
+		return h.cancelConnect()
 	case "agent.setPolicy":
 		policy := protocol.AgentPolicy(str(msg["policy"]))
 		h.mu.Lock()

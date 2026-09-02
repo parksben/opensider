@@ -46,7 +46,7 @@ Cursor Agent 在 ACP 模式下仍然自己执行本地工具（读文件、写�
 - 会话列表、当前选中会话、语言也由 App state 驱动，写入 `chrome.storage.local`
 - 工具调用、思考、markdown 由侧栏自己的折叠行 / Markdown 组件展示
 - 发出用户输入（可带本机附件路径）、取消、权限决定、提问/计划回答、新建 / 切换 / fork 会话、选模型；进行中再发送的消息进该会话内存队列，`turn.end` 后按序发出
-- 展示进行中的页面命令、无边框连接状态、输入框上方的 todo、消息队列与权限/提问/计划卡片、输入栏附件芯片、`@` 提及菜单、元素拾取蒙层与模型下拉。顶栏不放当前页 favicon。
+- 展示进行中的页面命令、无边框连接状态、连接进度条（文案右侧「取消 / Cancel」）、输入框上方的 todo、消息队列与权限/提问/计划卡片、输入栏附件芯片、`@` 提及菜单、元素拾取蒙层与模型下拉。顶栏不放当前页 favicon。
 - 离线发送会立刻报错；Service Worker 断开时显示原因（含扩展 ID / `lastError`）并允许重试
 - 侧栏先 `sendMessage({ type: "ping" })` 唤醒 SW，再 `connect`。React StrictMode 卸载只摘监听器，不拆端口。端口若在 SW 还在加载时空断，自动重连，避免永远停在 Lost connection
 - 不再挂载 assistant-ui runtime；旧的 `ExternalStoreThreadRuntimeCore` 会在端口断开后抛错，把扩展标红
@@ -227,6 +227,8 @@ chrome.storage.local
 
 | 侧栏 → Host | Host 行为 |
 |---|---|
+| `agent.connect` | 按 `providerId` 拉起对应 ACP：先握手新进程，成功后再停旧 runtime；进行中报 `connecting` + `agent.progress` |
+| `agent.cancelConnect` | 取消进行中的 `agent.connect`（`ready` 时空操作）。杀掉正在握手的新进程，不拆已 ready 的旧 runtime；有旧 runtime 则恢复 `currentAgent` 并报 `ready`，否则回 `idle`。用 `connectSeq` 作废进行中的 connect，避免取消后迟到的 `ready` |
 | `session.new` | 在空闲（或新开的）ACP 进程上 `session/new`，回 `session`。不打断正在跑的进程 |
 | `session.use` + `sessionId` | 该会话已在某进程上且正在跑则只回 `session`（replay），不 `session/load`；否则在空闲进程上 `session/load`，失败则 `session/new` |
 | `session.fork` + `sessionId` | 在空闲进程上先试不稳定的 `session/fork`（整段历史）；失败则 `session/new` |
@@ -354,7 +356,7 @@ on them with page tools using args.selector.
 
 ## 多 Agent CLI
 
-Host 是通用 ACP Client + 数据驱动 `AgentProfile`（启动命令、鉴权、modeMap、contextFiles、gates）。不经 acpx。探测：内置名单（Cursor / OpenCode / Copilot / CodeBuddy / Claude 适配器 / Codex 适配器 / Gemini / Qwen / Kimi / iFlow / Trae / Qoder 等）+ Chrome 传入的 PATH + 本机常见 bin（`~/.local/bin`、`~/.opencode/bin`、`~/.npm-global/bin`、`~/.bun/bin`、nvm / fnm / volta / asdf）+ ACP Registry。Chrome Native Messaging 的 PATH 不含 nvm，只搜系统目录会漏掉 `copilot` 这类 `#!/usr/bin/env node` 安装。Claude Code 只认 `claude-agent-acp` / `claude-code-acp`，不把交互式 `claude` 当成 ACP（`--acp` 不存在，硬加会把 TUI 当已安装）。探测在 Host 进 `idle` 之前于后台完成，而且**只看二进制在不在**（`ResolveOnPath`），启动阶段不再对每家跑 `initialize`——握手会把 `agent acp` / `copilot` 的 stdout 弄脏 Native Messaging 管道，hello/status 就被堵住。同一绝对路径不重复列。真正点连接再走完整握手。ProbeACP 仍给按需解析用：子进程必须自建 stdin/stdout、不能继承 Host 管道，超时后杀进程组且 `Wait` 有上限。Registry HTTP 在本地名单已经 `idle` 之后再补，失败就跳过。拉起子进程时把该 CLI 所在目录和上述 bin 预进 PATH，避免 `env node` 找不到。Copilot 的 `modeMap` 用 ACP session-modes URL（`#agent` / `#plan` / `#autopilot`），不要发 `default`/`ask`。`~/.gemini` 属 root 时 Gemini `session/new` 会 EACCES，Host 把错误改写成 chown 说明。OpenCode 常见安装是 Bun 打成的单文件（`~/.opencode/bin/opencode`），`acp.Client.Start` 只 `exec` 探测到的绝对路径加 `acp`，不复制、不解压、不改 `com.apple.quarantine`。该二进制 adhoc/linker 签名；启动时 Bun 把内嵌的 `watcher.node`（`@parcel/watcher` 一类）解到 macOS `$TMPDIR`，文件名形如 `.<hash>-00000001.node`，同样只有 adhoc 签名，Gatekeeper 会弹「未打开 / Apple 无法验证」。这是 OpenCode 自己的未公证 addon，任何父进程拉起 `opencode` 都可能触发。产品代码禁止给用户整份 OpenCode 安装去隔离属性。用户应点「完成」、在系统设置 → 隐私与安全性允许，或从官方渠道重装；不要把 `.node` 丢进废纸篓。侧栏会话自己持有消息；`Session.acpByProvider` 记各家 ACP id。换 Agent 不删本地历史；该家没有绑定则 `session/new` 并带本地前文。模型列表按当前 provider 的 `configOptions` / `session.models` 刷新，Copilot 空名单走内置公开表。引导是标题栏下方内容区垂直居中的纯文本按钮，点即连接。顶栏 Agent 下拉 portal 到 `document.body`，避免被消息盖住。会话标题相对 header 居中，左右各留 56px。引导完成前 Host 不拉起 Agent 进程。Service Worker 若约 10s 仍停在 `starting`（Host 没回 `idle` / `ready` / `error`），改报 error 并写 `~/.opensider/host.log`，不要转圈到永远。
+Host 是通用 ACP Client + 数据驱动 `AgentProfile`（启动命令、鉴权、modeMap、contextFiles、gates）。不经 acpx。探测：内置名单（Cursor / OpenCode / Copilot / CodeBuddy / Claude 适配器 / Codex 适配器 / Gemini / Qwen / Kimi / iFlow / Trae / Qoder 等）+ Chrome 传入的 PATH + 本机常见 bin（`~/.local/bin`、`~/.opencode/bin`、`~/.npm-global/bin`、`~/.bun/bin`、nvm / fnm / volta / asdf）+ ACP Registry。Chrome Native Messaging 的 PATH 不含 nvm，只搜系统目录会漏掉 `copilot` 这类 `#!/usr/bin/env node` 安装。Claude Code 只认 `claude-agent-acp` / `claude-code-acp`，不把交互式 `claude` 当成 ACP（`--acp` 不存在，硬加会把 TUI 当已安装）。探测在 Host 进 `idle` 之前于后台完成，而且**只看二进制在不在**（`ResolveOnPath`），启动阶段不再对每家跑 `initialize`——握手会把 `agent acp` / `copilot` 的 stdout 弄脏 Native Messaging 管道，hello/status 就被堵住。同一绝对路径不重复列。真正点连接再走完整握手。ProbeACP 仍给按需解析用：子进程必须自建 stdin/stdout、不能继承 Host 管道，超时后杀进程组且 `Wait` 有上限。Registry HTTP 在本地名单已经 `idle` 之后再补，失败就跳过。拉起子进程时把该 CLI 所在目录和上述 bin 预进 PATH，避免 `env node` 找不到。Copilot 的 `modeMap` 用 ACP session-modes URL（`#agent` / `#plan` / `#autopilot`），不要发 `default`/`ask`。`~/.gemini` 属 root 时 Gemini `session/new` 会 EACCES，Host 把错误改写成 chown 说明。OpenCode 常见安装是 Bun 打成的单文件（`~/.opencode/bin/opencode`），`acp.Client.Start` 只 `exec` 探测到的绝对路径加 `acp`，不复制、不解压、不改 `com.apple.quarantine`。该二进制 adhoc/linker 签名；启动时 Bun 把内嵌的 `watcher.node`（`@parcel/watcher` 一类）解到 macOS `$TMPDIR`，文件名形如 `.<hash>-00000001.node`，同样只有 adhoc 签名，Gatekeeper 会弹「未打开 / Apple 无法验证」。这是 OpenCode 自己的未公证 addon，任何父进程拉起 `opencode` 都可能触发。产品代码禁止给用户整份 OpenCode 安装去隔离属性。用户应点「完成」、在系统设置 → 隐私与安全性允许，或从官方渠道重装；不要把 `.node` 丢进废纸篓。侧栏会话自己持有消息；`Session.acpByProvider` 记各家 ACP id。换 Agent 不删本地历史；该家没有绑定则 `session/new` 并带本地前文。模型列表按当前 provider 的 `configOptions` / `session.models` 刷新，Copilot 空名单走内置公开表。引导是标题栏下方内容区垂直居中的纯文本按钮，点即连接。顶栏 Agent 下拉 portal 到 `document.body`，避免被消息盖住。会话标题相对 header 居中，左右各留 56px。引导完成前 Host 不拉起 Agent 进程。换 Agent（或首次点连接）时 Host **先**握手新进程、成功后再 `Stop` 旧 runtime，这样取消只需停新进程、旧会话还在。侧栏在 `requestConnect` 之前记下上一份 `providerId` 与是否 `ready`；点取消发 `agent.cancelConnect`，立刻还原 `selectedProviderId` / 会话绑定，清掉进度，且不再把随后的 `idle` 自动连到被取消的那一家。已 `ready` 不画取消钮。Service Worker 若约 10s 仍停在 `starting`（Host 没回 `idle` / `ready` / `error`），改报 error 并写 `~/.opensider/host.log`，不要转圈到永远。
 
 ## 标签切换
 
@@ -489,6 +491,7 @@ Release 资产名必须和壳一致：
 | Native Messaging 环境 PATH 很瘦 | Host 自己扫 nvm / npm-global / bun / `~/.opencode/bin` 等 bin；子进程 PATH 带上 CLI 所在目录。Cursor 仍默认同 `~/.local/bin/agent` |
 | macOS 切 OpenCode 弹 Gatekeeper（`.xxxx.node`） | OpenCode/Bun 把未公证的 `watcher.node` 解到 `$TMPDIR`；Host 只 exec 用户的 `opencode`，不去 quarantine。用户点「完成」并在隐私与安全性允许，或官方重装；不要「移到废纸篓」 |
 | 探测卡住 starting | 探测后台化 + 总时限；ProbeACP 不继承 Host stdio、杀进程组；SW 10s 看门狗 |
+| 换 Agent 卡在鉴权 / 握手 | 进度条右侧取消；Host 先握手新进程再停旧进程，取消回上一份 ready 或 idle |
 | 旧 `~/.opensider` 混着 Node Host 残留 | 备份后 `install --local` 重建 runtime / workspace |
 | macOS 拦 Chrome 执行 Desktop 上的 Host | `opensider install`（开发时 `--local`）把运行副本放到 `~/.opensider/runtime` |
 | macos-latest 编不出 darwin/amd64 | 该资产可缺；Intel Mac 用户要等能编出来的 tag，或用源码 `go run` |

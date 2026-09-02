@@ -22,6 +22,7 @@ export function AgentSetup({
   progress,
   error,
   onSelect,
+  onCancel,
   onRetry,
 }: {
   locale: Locale;
@@ -32,6 +33,7 @@ export function AgentSetup({
   progress?: AgentProgress;
   error?: string;
   onSelect: (id: string) => void;
+  onCancel?: () => void;
   onRetry: () => void;
 }) {
   const selected = agents.find((item) => item.id === selectedId);
@@ -56,12 +58,32 @@ export function AgentSetup({
                     style={{ width: `${Math.round((progress.index / progress.total) * 100)}%` }}
                   />
                 </div>
-                <p className="text-center text-[11.5px] text-[var(--muted)]">
-                  {progress.index}/{progress.total} · {phaseKey ? t(locale, phaseKey) : progress.label}
-                </p>
+                <div className="flex items-center justify-between gap-2">
+                  <p className="min-w-0 truncate text-[11.5px] text-[var(--muted)]">
+                    {progress.index}/{progress.total} · {phaseKey ? t(locale, phaseKey) : progress.label}
+                  </p>
+                  {onCancel ? (
+                    <RippleButton
+                      onClick={onCancel}
+                      className="shrink-0 rounded px-1.5 py-0.5 text-[11px] text-[var(--brass)] hover:bg-[var(--brass)]/20"
+                    >
+                      {t(locale, "cancelConnect")}
+                    </RippleButton>
+                  ) : null}
+                </div>
               </div>
             ) : (
-              <LoaderCircle size={16} className="animate-spin text-[var(--muted)]" />
+              <div className="flex w-full items-center justify-between gap-2">
+                <LoaderCircle size={16} className="animate-spin text-[var(--muted)]" />
+                {onCancel ? (
+                  <RippleButton
+                    onClick={onCancel}
+                    className="shrink-0 rounded px-1.5 py-0.5 text-[11px] text-[var(--brass)] hover:bg-[var(--brass)]/20"
+                  >
+                    {t(locale, "cancelConnect")}
+                  </RippleButton>
+                ) : null}
+              </div>
             )}
           </div>
         ) : scanning ? (
