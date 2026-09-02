@@ -1,6 +1,6 @@
 # OpenSider — 技术设计
 
-> 产品名 OpenSider。Chrome 扩展通过 Native Messaging 托管 `agent acp`；页面感知用内容脚本 + 工作区文件，不使用 MCP，不运行常驻本地服务。对外名称、包名、Native Host、本机目录和 storage key 都用 `opensider` / `com.opensider.host` / `~/.opensider`。首次启动若还剩旧目录 `~/.cursor-sidebar` 或旧 storage key，会读出来迁到新名。
+> 产品名 OpenSider。Chromium 扩展通过 Native Messaging 托管 `agent acp`；页面感知用内容脚本 + 工作区文件，不使用 MCP，不运行常驻本地服务。Host 是一份预编译 Go 二进制（`cmd/opensider`：无参=Host，`install`，`pick`）。对外名称、包名、Native Host、本机目录和 storage key 都用 `opensider` / `com.opensider.host` / `~/.opensider`。不迁旧目录 `~/.cursor-sidebar`。
 
 ## 总览
 
@@ -23,7 +23,7 @@ Content Script  ←── 当前标签的读取 / 操作方法
 Service Worker  ←── navigate / goBack / goForward / reload
 ```
 
-浏览器扩展不能 spawn 本机进程。Cursor CLI 的自定义客户端协议是 ACP（`agent acp`，stdio JSON-RPC）。二者之间只加一层 **Chrome Native Messaging Host**：Chrome 在扩展连接时启动它，断开后退出。用户不必先开一个 Node 服务。
+浏览器扩展不能 spawn 本机进程。Cursor CLI 的自定义客户端协议是 ACP（`agent acp`，stdio JSON-RPC）。二者之间只加一层 **Chrome Native Messaging Host**（Go 二进制 `opensider`）：浏览器在扩展连接时启动它，断开后退出。用户不必先开一个 Node 服务，本机也不需要 Node。
 
 ## 为什么不用 MCP
 
@@ -129,15 +129,15 @@ Cursor Agent 在 ACP 模式下仍然自己执行本地工具（读文件、写�
 - 把 Agent 的 `session/update`、权限请求、Cursor 扩展方法推给扩展
 - 把页面快照和 `browser/tools.json` 写入工作区；监视 `browser/commands/`，转给扩展，再把结果写回 `browser/results/`（截图另存 `browser/screenshots/`）
 
-Host 用 Node 24 直接跑 TypeScript（类型擦除）。stdout 只给 Chrome，ACP 走子进程管道，日志只写 `~/.opensider/host.log`。
+Host 是 Go 单文件。stdout 只给 Chrome，ACP 走子进程管道，日志只写 `~/.opensider/host.log`。`fs.pick` 时 exec 自己的 `pick` 子命令（独立进程才能把系统对话框拉到前台）。`hello` 不带 os；选文件分流用侧栏 UA。
 
 ## 工作区布局
 
 ```
 ~/.opensider/
-  runtime/                   # Chrome 实际拉起的 Host 副本（不在 Desktop）
-    packages/host/src
-    packages/shared/src
+  runtime/
+    opensider                # 唯一 Go 二进制（Windows 为 opensider.exe）
+  extension/                 # 用户侧已解压的扩展
   workspace/                 # ACP session cwd
     AGENTS.md                # 页面协议说明，会话开始就会被读到
     browser/
@@ -276,7 +276,7 @@ chrome.storage.local
 
 ## 附件（只传路径）
 
-Chrome 的文件选择器不会给出本机绝对路径。加号因此发给 Host `fs.pick`。`install-host` 用 `swiftc` 编 `PickFiles.app`（常规激活策略，能到前台）放到 `~/.opensider/runtime/`。Host **直接 exec** 包内二进制（不用 `open -W`，Chrome 子进程里 `open` 经常立刻返回、面板也不出现）。面板可同时选文件和文件夹、可多选；若进程在 400ms 内空退，再退回访达 `choose file`。`fs.stat` 分成 `image` / `file` / `folder`。侧栏芯片只展示 `basename`，`title` 是全路径。未连上就点加号，侧栏写明确错误。
+Chrome 的文件选择器不会给出本机绝对路径。加号发给 Host `fs.pick`（带 `mode`: `mixed` | `files` | `folders`）。侧栏用 UA 判断：macOS 直接 `mixed`（`NSOpenPanel` 一次混选）；其它系统在回形针上方弹出「多选文件 / 多选文件夹」再发对应 mode。Host **exec 自己**加 `pick`（Chrome 子进程里直接弹框经常出不来）。Windows `IFileOpenDialog` 与 Linux zenity/kdialog/portal 都是文件或文件夹二选一。`fs.stat` 分成 `image` / `file` / `folder`。侧栏芯片只展示 `basename`，`title` 是全路径。未连上就点加号，侧栏写明确错误。
 
 剪贴板里的截图同样没有本机路径，不能当文件选。composer `paste` 若带 `image/*`，先按页面截图那套压成 JPEG（最长边约 1280、质量约 0.72、base64 &lt; 700KB，以免 Native Messaging 超 1MB），再 `fs.save` 落到 `~/.opensider/workspace/browser/pasted/`。回包后当普通 `kind: image` 芯片，走同一套 `wrapAttachments`。Chrome 会把同一张图同时挂在 `clipboardData.files` 和 `items` 上，且 `getAsFile()` 的 `lastModified` 往往对不上，按 name/size/mtime 去重会漏。`clipboardImages` 只读 `files` 里的图片；没有才退到 `items`。有图时 `preventDefault`，避免二进制糊进 textarea；若同时带纯文本则插到光标处。落盘完成前不让发送，以免消息先走、图还没进附件。未连上或压图/写盘失败写明确错误。
 
@@ -392,7 +392,7 @@ Host 是 ACP Client，`clientCapabilities` 关闭 `fs` / `terminal`，让 Agent 
 Host 注册名：`com.opensider.host`  
 macOS 清单路径：`~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.opensider.host.json`
 
-`pnpm install-host`（`pnpm build` 也会跑）把 `packages/host` 和 `packages/shared` 的源码拷到 `~/.opensider/runtime/`，再生成带本机 Node 绝对路径的启动脚本。Chrome 的 Native Messaging 清单 `path` 指向这份副本，而不是 Desktop 仓库里的脚本：macOS TCC 会拦 Chrome 执行 Desktop / Documents / Downloads 下的文件，Chrome 只报 `Native host has exited`，宿主日志也不会出现。nvm 的 `node` 也必须写绝对路径，因为 Chrome 拉起 Host 时 PATH 很瘦。Host 日志只写 `~/.opensider/host.log`，不写 stderr，避免 Chrome 把 stderr 当成协议失败。
+用户：`releases/latest` 的 `install.sh` / `install.ps1` 下一份 `opensider` 并 `opensider install`，清单 `path` 指向 `~/.opensider/runtime/opensider`。开发：`npm run install-host` = `go run ./cmd/opensider install --local`。macOS TCC 仍要求二进制不在 Desktop / Documents / Downloads。Host 日志只写 `~/.opensider/host.log`，不写 stderr。推送 `v*` tag 触发 Actions：darwin 在 macOS 开 cgo 编，linux/windows 交叉编译；Release 说明只列该版本 commit。桥接未注册时 SW 轮询 `connectNative`。不迁旧目录。
 
 ## UI
 
@@ -416,13 +416,14 @@ macOS 清单路径：`~/Library/Application Support/Google/Chrome/NativeMessagin
 ## 仓库结构
 
 ```
-packages/shared     扩展 ↔ Host 消息类型
-packages/host       Native Messaging Host + ACP Client
+cmd/opensider       唯一 Go 入口（host / install / pick）
+packages/shared     扩展 ↔ Host 消息类型（TS）
 packages/extension  Chrome MV3（background / content / sidepanel）
-scripts/            安装 Host、构建
+scripts/install     用户壳 install.sh / install.ps1
+.github/workflows   tag 发 Release
 ```
 
-pnpm workspace。扩展用 Vite + `@crxjs/vite-plugin` 打包。
+pnpm workspace 只编扩展。Host 用 Go。扩展用 Vite + `@crxjs/vite-plugin` 打包。
 
 ## 风险
 
