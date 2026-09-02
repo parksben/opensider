@@ -218,6 +218,7 @@ export function App() {
     const next = new Set(runningIdsRef.current);
     next.add(id);
     syncRunning(next);
+    patchSession(id, (session) => (session.todos.length === 0 ? session : { ...session, todos: [] }));
   };
 
   const replyPermission = (id: number, options: PermissionRequest["options"]): boolean => {
@@ -473,7 +474,7 @@ export function App() {
         const merge = Boolean(msg.params.merge);
         patchSession(localId, (session) => ({
           ...session,
-          todos: merge ? mergeTodos(session.todos, incoming) : incoming,
+          todos: applyTodos(session.todos, incoming, merge),
         }));
         return;
       }
@@ -1171,7 +1172,14 @@ export function App() {
   );
 }
 
-function mergeTodos(current: TodoItem[], incoming: TodoItem[]): TodoItem[] {
+function todoPlanKey(item: TodoItem): string {
+  return `${item.id}\0${item.content}`;
+}
+
+function applyTodos(current: TodoItem[], incoming: TodoItem[], merge: boolean): TodoItem[] {
+  if (!merge || current.length === 0) return incoming;
+  const currentKeys = new Set(current.map(todoPlanKey));
+  if (incoming.some((item) => !currentKeys.has(todoPlanKey(item)))) return incoming;
   const map = new Map(current.map((item) => [item.id, item]));
   for (const item of incoming) map.set(item.id, item);
   return [...map.values()];

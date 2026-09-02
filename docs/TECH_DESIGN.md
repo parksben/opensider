@@ -378,7 +378,7 @@ Host 是 ACP Client，`clientCapabilities` 关闭 `fs` / `terminal`，让 Agent 
 | `session/request_permission` | 权限卡片（输入框上方，正文 `max-height: 9.5lh`） |
 | `cursor/ask_question` | 选择题 |
 | `cursor/create_plan` | 计划审批 |
-| `cursor/update_todos` | 输入框上方可折叠 TodoList |
+| `cursor/update_todos` | 输入框上方可折叠 TodoList。新一轮 `beginTurn` 先清空 `session.todos`。下发时若 `merge` 且只是已有 id+文案的状态更新则合并；一旦出现新的 id/文案则整表覆盖，不保留上一轮条目 |
 | `cursor/task` | 子任务卡片 |
 | `session/prompt` 结束 | 对应本地会话移出 `runningIds`，给**该会话**末尾 assistant 打上 `durationMs` |
 
