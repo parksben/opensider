@@ -245,7 +245,7 @@ const copy = {
     sessionRunning: "进行中",
     offlineSend: "本机 Agent 离线。请先重连，再发送。",
     turnError: "这一轮以错误结束。",
-    todoList: "Todo List - {done}/{total}",
+    todoList: "待办项 - {done}/{total}",
     expandTodoList: "展开待办",
     collapseTodoList: "收起待办",
     artifactList: "产物 · {count}",

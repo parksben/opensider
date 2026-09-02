@@ -273,7 +273,7 @@ chrome.storage.local
 
 ## 语言
 
-`packages/extension/src/sidepanel/i18n.ts` 提供 `en` / `zh` 词条。默认 `en`。完整 state 仍写 `chrome.storage.local`；切换时同步镜像 `localStorage` 的 `opensider/locale`。`theme-boot.js` 同时读这份镜像并设 `document.documentElement.lang`，避免每次打开先闪英文。React 初始 state 也从镜像读。连接错误原文（Host / Chrome `lastError`）不翻译。composer `placeholder` 在发送提示后补一句 `@` 引用：中「输入@可引用内容」、英「Type @ to mention」。
+`packages/extension/src/sidepanel/i18n.ts` 提供 `en` / `zh` 词条。默认 `en`。完整 state 仍写 `chrome.storage.local`；切换时同步镜像 `localStorage` 的 `opensider/locale`。`theme-boot.js` 同时读这份镜像并设 `document.documentElement.lang`，避免每次打开先闪英文。React 初始 state 也从镜像读。连接错误原文（Host / Chrome `lastError`）不翻译。composer `placeholder` 在发送提示后补一句 `@` 引用：中「输入@可引用内容」、英「Type @ to mention」。输入框上方 todo 标题走 `todoList`：英「Todo List - {done}/{total}」，中「待办项 - {done}/{total}」。
 
 ## 主题
 
