@@ -241,6 +241,8 @@ chrome.storage.local
 | `fs.save` | Host 把侧栏压好的 JPEG 写到 `browser/pasted/`，回 `fs.saved`（绝对路径 + kind=image） |
 | `fs.reveal` + `path` | Host 打开系统文件管理器并选中该文件；路径不存在则回 `fs.revealed`（`missing: true` + error），其它失败也回 error 但不标 missing；成功不回 |
 | `fs.revealed`（Host → 侧栏） | reveal 失败时带 `path` / `error` / 可选 `missing`；侧栏只在 `missing` 时按 path 把该条产物标失效并持久化 |
+| `fs.preview` + `path` + `requestId` | Host 读本机图片（绝对路径、常规文件、图像类型、上限 32MB），按 512KiB 原文分片 base64 回多条 `fs.previewed` |
+| `fs.previewed`（Host → 侧栏） | 成功：`mime` / `size` / `index` / `total` / `data`；失败：`error`。侧栏拼 `blob:`；失败文案走 i18n，不加句号 |
 | `artifacts`（Host → 侧栏） | `reportArtifacts` 成功后整表覆盖该会话产物列表 |
 | `page.pick` | SW 让当前标签内容脚本拾取元素，回 `page.picked`（CSS selector，kind=element）；不转发 Host |
 | `model.set` | 非 `auto` 时 `session/set_config_option`（`category: model`）；失败再试 `session/set_model` |
@@ -302,7 +304,7 @@ Local paths. Read these files or folders if needed.
 - /abs/path/src
 ```
 
-发给 Agent 仍只传路径，不把附件字节塞进 prompt。预览也不再走 Host：附件 `path` 编成 `file://`（绝对路径、分段 `encodeURIComponent`）给 `<img src>`。侧栏 CSP `img-src` 放行 `file:`。等 `onLoad` 再藏转圈；`onError` 才报失败，避免再卡在 Native Messaging。`ImagePreview` portal 到 `document.body`：`fixed inset-0` flex 居中、`--overlay` + `blur(2px)`，无关闭钮，点遮罩 / 点图 / Esc 都关。图 `max-width: 80vw`、`max-height: 100vh`。转圈用 `.cs-preview-spin`，不依赖 Tailwind `animate-spin`。用户气泡改成外层 `div` 点空白处改历史，图片芯片 `stopPropagation`，进行中也能预览。未发送的芯片只活在输入栏 state 里，不写 `opensider/attachment-history`。附件栏 `onRemove` 按 `path` 从 `attachments` 去掉，并用 `stripAttachmentMentions` 清掉正文里同一路径的 `@att` 芯片，避免栏里删了还能从 `@` 菜单或已插入芯片把路径发给 Agent。
+发给 Agent 仍只传路径，不把附件字节塞进 prompt。预览必须走 Host：Chrome 扩展页（`chrome-extension://`）即使 CSP `img-src` 写了 `file:` 也加载不了 `file://`，这就是旧方案从未真正显示出图的原因。侧栏只对已经挂上的 `kind: image` 芯片发 `{ type: "fs.preview", requestId, path }`，拒绝 `http(s)` / 相对路径 / 元素 selector。Host `internal/preview` 校验绝对路径、常规文件、图像类型（魔数优先，扩展名兜底 HEIC/AVIF/SVG），超过 32MB 回错误；字节按 512KiB 切，每片独立 base64，整帧低于 Native Messaging 1MB，连续回 `{ type: "fs.previewed", requestId, mime, size, index, total, data }`。读文件在 goroutine 里做，避免堵住 Native 读循环。侧栏按片 `atob` 再拼 `blob:` 给 `<img>`，关掉预览 `revokeObjectURL`。等 `onLoad` 再藏转圈；任何失败（离线、超时、非图、读盘、`onError`）都居中显示 `previewImageFailed`（中「无法加载这张图片」/ 英「Couldn't load this image」，无句号），不要静默没反应。`ImagePreview` portal 到 `document.body`：`fixed inset-0` flex 居中、`--overlay` + `blur(2px)`，无关闭钮，点遮罩 / 点图 / Esc 都关。图 `max-width: 80vw`、`max-height: 100vh`。转圈用 `.cs-preview-spin`，不依赖 Tailwind `animate-spin`。用户气泡改成外层 `div` 点空白处改历史，图片芯片 `stopPropagation`，进行中也能预览。非图片芯片不可点预览。未发送的芯片只活在输入栏 state 里，不写 `opensider/attachment-history`。附件栏 `onRemove` 按 `path` 从 `attachments` 去掉，并用 `stripAttachmentMentions` 清掉正文里同一路径的 `@att` 芯片，避免栏里删了还能从 `@` 菜单或已插入芯片把路径发给 Agent。
 
 ## 提及芯片（`@`）
 
@@ -534,6 +536,8 @@ Release 资产名必须和壳一致：
 | 导航后内容脚本被卸掉 | 标签级导航走 `chrome.tabs.update`，完成后再抓快照 |
 | 系统页无法拾取 | chrome:// 等直接报错；Esc / 再点拾取取消 |
 | 截图超过 Native Messaging 1MB | JPEG + 最长边 1280 + 质量下调；只传 base64，落盘后再给 Agent 路径 |
+| 扩展页 `<img src="file://…">` 被 Chrome 拦 | 不再走 `file://`；Host 分片回传，侧栏 `blob:` |
+| 预览图超过 Native Messaging 1MB | 512KiB 原文分片；单文件上限 32MB，超限回 i18n 失败文案 |
 | 元素截图像素比不对 | 用 `devicePixelRatio` 把 CSS 盒映射到截图像素 |
 | 扩展选文件没有真路径 | Host 用 `PickFiles.app`（`open -W`）弹出访达多选，回绝对路径 |
 | Chrome 子进程弹不出 NSOpenPanel | 直接 exec `PickFiles`（regular 激活）到前台；空退则访达 `choose file` |

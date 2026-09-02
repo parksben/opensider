@@ -57,6 +57,7 @@ export function ChatPane({
   onPasteImages,
   onPickElement,
   onCancelElementPick,
+  onPreviewImage,
   onModel,
   agentMode,
   onAgentMode,
@@ -95,6 +96,7 @@ export function ChatPane({
   onPasteImages: (files: File[]) => Promise<AttachmentItem[]>;
   onPickElement: () => Promise<AttachmentItem[]>;
   onCancelElementPick: () => void;
+  onPreviewImage: (path: string) => Promise<string>;
   onModel: (modelId: string) => void;
   agentMode: AgentMode;
   onAgentMode: (mode: AgentMode) => void;
@@ -551,6 +553,7 @@ export function ChatPane({
           locale={locale}
           name={preview.name}
           path={preview.path}
+          loadSrc={onPreviewImage}
           onClose={() => setPreview(undefined)}
         />
       ) : null}

@@ -12,8 +12,9 @@ import type {
   FsPickMode,
 } from "@shared";
 import { MousePointer2 } from "lucide-react";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { encodeImageBlob } from "../image-encode";
+import { blobUrlFromBase64Chunks, isAttachedImagePath } from "./image-preview";
 import { applyAcpUpdate, applyBrowserTool, createUserMessage } from "./acp-messages";
 import { connectSidebar } from "./bridge";
 import type { ChatMessage, PermissionRequest, PlanPrompt, QuestionPrompt, TodoItem } from "./chat-types";
@@ -110,6 +111,19 @@ export function App() {
   const skipIdleConnectRef = useRef(false);
   const awaitingCancelRef = useRef(false);
   const pickWaiters = useRef(new Map<string, (items: AttachmentItem[]) => void>());
+  const previewWaiters = useRef(
+    new Map<
+      string,
+      {
+        resolve: (url: string) => void;
+        reject: (error: Error) => void;
+        chunks: string[];
+        received: number;
+        mime: string;
+        timer: ReturnType<typeof setTimeout>;
+      }
+    >(),
+  );
   const appliedModelRef = useRef("");
   const elementPickId = useRef("");
   const runningIdsRef = useRef<Set<string>>(new Set());
@@ -457,6 +471,40 @@ export function App() {
       else if (msg.error === "inject") setError(t(localeRef.current, "pickInjectFailed"));
       else if (msg.error) setError(msg.error);
       waiter?.(msg.items ?? []);
+      return;
+    }
+    if (msg.type === "fs.previewed") {
+      const waiter = previewWaiters.current.get(msg.requestId);
+      if (!waiter) return;
+      const fail = (error: Error) => {
+        previewWaiters.current.delete(msg.requestId);
+        window.clearTimeout(waiter.timer);
+        waiter.reject(error);
+      };
+      if (msg.error) {
+        fail(new Error(msg.error));
+        return;
+      }
+      const index = msg.index ?? 0;
+      const total = msg.total ?? 0;
+      if (!msg.data || total <= 0 || index < 0 || index >= total) {
+        fail(new Error("invalid preview chunk"));
+        return;
+      }
+      if (waiter.chunks.length !== total) waiter.chunks = Array.from({ length: total }, () => "");
+      if (!waiter.chunks[index]) {
+        waiter.chunks[index] = msg.data;
+        waiter.received += 1;
+      }
+      if (msg.mime) waiter.mime = msg.mime;
+      if (waiter.received < total) return;
+      previewWaiters.current.delete(msg.requestId);
+      window.clearTimeout(waiter.timer);
+      try {
+        waiter.resolve(blobUrlFromBase64Chunks(waiter.chunks, waiter.mime));
+      } catch (error) {
+        waiter.reject(error instanceof Error ? error : new Error("preview decode failed"));
+      }
       return;
     }
     if (msg.type === "artifacts") {
@@ -839,6 +887,33 @@ export function App() {
       sendRef.current({ type: "fs.pick", requestId, mode });
     });
 
+  const onPreviewImage = useCallback((path: string) => {
+    return new Promise<string>((resolve, reject) => {
+      if (!isAttachedImagePath(path)) {
+        reject(new Error("invalid preview path"));
+        return;
+      }
+      if (statusRef.current === "missing") {
+        reject(new Error("native host missing"));
+        return;
+      }
+      const requestId = crypto.randomUUID();
+      const timer = window.setTimeout(() => {
+        previewWaiters.current.delete(requestId);
+        reject(new Error("preview timed out"));
+      }, 20_000);
+      previewWaiters.current.set(requestId, {
+        resolve,
+        reject,
+        chunks: [],
+        received: 0,
+        mime: "",
+        timer,
+      });
+      sendRef.current({ type: "fs.preview", requestId, path });
+    });
+  }, []);
+
   const onPasteImages = async (files: File[]) => {
     if (statusRef.current !== "ready") {
       setError(t(localeRef.current, "pasteFailed"));
@@ -1174,6 +1249,7 @@ export function App() {
               onPasteImages={onPasteImages}
               onPickElement={onPickElement}
               onCancelElementPick={onCancelElementPick}
+              onPreviewImage={onPreviewImage}
               onModel={onModel}
               agentMode={agentMode}
               onAgentMode={(mode) => {

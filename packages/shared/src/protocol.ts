@@ -280,6 +280,7 @@ export type ExtToHost =
   | { type: "fs.pick"; requestId: string; mode?: FsPickMode }
   | { type: "fs.save"; requestId: string; name?: string; imageBase64: string; mime: "image/jpeg" }
   | { type: "fs.reveal"; path: string }
+  | { type: "fs.preview"; requestId: string; path: string }
   | { type: "page.pick"; requestId: string; hint?: string }
   | { type: "page.pick.cancel"; requestId?: string }
   | { type: "model.set"; modelId: string; sessionId?: string }
@@ -325,6 +326,16 @@ export type HostToExt =
     }
   | { type: "models"; models: AgentModel[]; currentId: string }
   | { type: "fs.revealed"; path: string; missing?: boolean; error?: string }
+  | {
+      type: "fs.previewed";
+      requestId: string;
+      mime?: string;
+      size?: number;
+      index?: number;
+      total?: number;
+      data?: string;
+      error?: string;
+    }
   | { type: "artifacts"; items: AttachmentItem[]; sessionId?: string }
   | {
       type: "page.picked";

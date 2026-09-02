@@ -16,6 +16,7 @@ import (
 	"github.com/parksben/opensider/internal/native"
 	"github.com/parksben/opensider/internal/paths"
 	"github.com/parksben/opensider/internal/pick"
+	"github.com/parksben/opensider/internal/preview"
 	"github.com/parksben/opensider/internal/protocol"
 	"github.com/parksben/opensider/internal/reveal"
 	"github.com/parksben/opensider/internal/watch"
@@ -141,6 +142,32 @@ func resolvedFromInfos(infos []protocol.AgentInfo) []detect.ResolvedAgent {
 
 func (h *Host) send(msg any) {
 	h.io.Send(msg)
+}
+
+func (h *Host) previewImage(requestID, path string) {
+	mime, data, err := preview.Read(path)
+	if err != nil {
+		log.Log("fs.preview: " + err.Error())
+		h.send(map[string]any{"type": "fs.previewed", "requestId": requestID, "error": err.Error()})
+		return
+	}
+	chunks := preview.EncodeChunks(data)
+	if len(chunks) == 0 {
+		h.send(map[string]any{"type": "fs.previewed", "requestId": requestID, "error": preview.ErrEmptyFile.Error()})
+		return
+	}
+	log.Log(fmt.Sprintf("fs.preview chunks=%d bytes=%d mime=%s", len(chunks), len(data), mime))
+	for i, chunk := range chunks {
+		h.send(map[string]any{
+			"type":      "fs.previewed",
+			"requestId": requestID,
+			"mime":      mime,
+			"size":      len(data),
+			"index":     i,
+			"total":     len(chunks),
+			"data":      chunk,
+		})
+	}
 }
 
 func (h *Host) sendModels() {
@@ -843,6 +870,11 @@ func (h *Host) dispatch(typ string, msg map[string]any) error {
 		}
 		log.Log("saved paste " + item.Path)
 		h.send(map[string]any{"type": "fs.saved", "requestId": requestID, "items": []protocol.AttachmentItem{item}})
+		return nil
+	case "fs.preview":
+		requestID := str(msg["requestId"])
+		path := str(msg["path"])
+		go h.previewImage(requestID, path)
 		return nil
 	case "model.set":
 		modelID := str(msg["modelId"])
