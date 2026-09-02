@@ -357,7 +357,7 @@ on them with page tools using args.selector.
 
 | id | 中 / 英 | 自动过什么 |
 |---|---|---|
-| `ask` | 所有工具需授权 / Approve every tool | 无。每次 `request_permission` 弹卡 |
+| `ask` | 所有工具需授权 / Ask every time | 无。每次 `request_permission` 弹卡 |
 | `workspace` | 工作区改文件免确认 / Allow workspace edits | 仅编辑/写入类工具回 always/once；Shell / 网络仍弹卡 |
 | `auto` | 工具免确认 / Auto-run tools | 全部工具权限回 always/once。**提问和计划仍要人点** |
 | `unattended` | 允许一切操作 / Allow all | 工具同 `auto`；`cursor/create_plan` 自动 `accepted`；`cursor/ask_question` 确定性作答（每题选第一项，没有选项则空数组）。三张 HITL 卡都不留着等人 |
@@ -366,7 +366,7 @@ on them with page tools using args.selector.
 
 Host `session/set_mode` 仍按 Profile `modeMap` 推。**Cursor ACP 没有第四种 session mode**：`ask` / `workspace` / `auto` / `unattended` 都映射到 `agent`，真正的「允许一切」只在侧栏拦卡。其它 CLI 的 `unattended` 复用该家最宽的已有 mode（与 `auto` 相同：`bypassPermissions` / `autopilot` / `agent-full-access` 等）；没有 `session/set_mode` 则只在客户端拦卡。提问/计划自动答不经过 Host，侧栏直接 `cursor.reply`。
 
-侧栏 `ModeSelect` 文案走 `i18n`：`ask`「所有工具需授权 / Approve every tool」灰字「用任何工具前都先问你 / You'll be asked before any tool runs」；`workspace`「工作区改文件免确认 / Allow workspace edits」灰字「改工作区文件不用问；跑命令、上网还是会问 / File edits go through; shell and network still ask」；`auto`「工具免确认 / Auto-run tools」灰字「工具不用问；提问和计划还要你点 / Tools run on their own; questions and plans still need a click」；`unattended`「允许一切操作 / Allow all」灰字「工具、提问、计划都自动过，不用你再点 / Tools, questions, and plans all go through — you don't have to click」。图标：`Shield` / `FolderPen` / `Zap` / `Unlock`。`isWorkspaceWritePermission` 按 `toolCall.kind` / `title` 启发式：命中 execute/shell/bash/terminal/command/fetch/http/network/web_search/mcp 则仍弹卡，命中 edit/write/delete/move/create/patch/apply 才自动过。客户端不按路径判断是否出目录；出目录仍问靠 Agent 的 `acceptEdits`。`autoQuestionAnswers`：每题取 `options[0].id`，没有则 `selectedOptionIds: []`。
+侧栏 `ModeSelect` 文案走 `i18n`，按系统设置口吻写（短标题 + 一句说明，不要营销句）：`ask`「所有工具需授权 / Ask every time」灰字「每次用工具都要先同意 / Confirm each tool」；`workspace`「工作区改文件免确认 / Allow workspace edits」灰字「改工作区文件不用问，命令和上网仍要问 / Workspace file edits skip confirmation; commands and network still ask」；`auto`「工具免确认 / Auto-run tools」灰字「工具直接跑，提问和计划仍要你点 / Tools skip confirmation; questions and plans still need a click」；`unattended`「允许一切操作 / Allow all」灰字「工具、提问、计划都不再问 / Don't ask about tools, questions, or plans」。图标：`Shield` / `FolderPen` / `Zap` / `Unlock`。`isWorkspaceWritePermission` 按 `toolCall.kind` / `title` 启发式：命中 execute/shell/bash/terminal/command/fetch/http/network/web_search/mcp 则仍弹卡，命中 edit/write/delete/move/create/patch/apply 才自动过。客户端不按路径判断是否出目录；出目录仍问靠 Agent 的 `acceptEdits`。`autoQuestionAnswers`：每题取 `options[0].id`，没有则 `selectedOptionIds: []`。
 
 ## 多 Agent CLI
 
