@@ -3,7 +3,7 @@
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
-$RepoDownload = "https://github.com/parksben/cursor-sidebar/releases/latest/download"
+$RepoDownload = "https://github.com/parksben/opensider/releases/latest/download"
 
 function Write-InstallError {
     param([string]$Message)

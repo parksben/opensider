@@ -7,8 +7,8 @@ import (
 
 	_ "embed"
 
-	"github.com/parksben/cursor-sidebar/internal/paths"
-	"github.com/parksben/cursor-sidebar/internal/protocol"
+	"github.com/parksben/opensider/internal/paths"
+	"github.com/parksben/opensider/internal/protocol"
 )
 
 //go:embed agents.md

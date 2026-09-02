@@ -12,10 +12,10 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/parksben/cursor-sidebar/internal/detect"
-	"github.com/parksben/cursor-sidebar/internal/log"
-	"github.com/parksben/cursor-sidebar/internal/paths"
-	"github.com/parksben/cursor-sidebar/internal/protocol"
+	"github.com/parksben/opensider/internal/detect"
+	"github.com/parksben/opensider/internal/log"
+	"github.com/parksben/opensider/internal/paths"
+	"github.com/parksben/opensider/internal/protocol"
 )
 
 type Launch struct {

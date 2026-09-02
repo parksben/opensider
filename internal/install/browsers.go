@@ -7,8 +7,8 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/parksben/cursor-sidebar/internal/paths"
-	"github.com/parksben/cursor-sidebar/internal/protocol"
+	"github.com/parksben/opensider/internal/paths"
+	"github.com/parksben/opensider/internal/protocol"
 )
 
 func Register(hostPath string) ([]string, error) {

@@ -11,13 +11,13 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/parksben/cursor-sidebar/internal/log"
-	"github.com/parksben/cursor-sidebar/internal/paths"
-	"github.com/parksben/cursor-sidebar/internal/protocol"
+	"github.com/parksben/opensider/internal/log"
+	"github.com/parksben/opensider/internal/paths"
+	"github.com/parksben/opensider/internal/protocol"
 )
 
 const (
-	extensionZipURL = "https://github.com/parksben/cursor-sidebar/releases/latest/download/extension.zip"
+	extensionZipURL = "https://github.com/parksben/opensider/releases/latest/download/extension.zip"
 	previousHost    = "com.cursor.sidebar.host"
 )
 

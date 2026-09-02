@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/parksben/cursor-sidebar/internal/host"
-	"github.com/parksben/cursor-sidebar/internal/install"
-	"github.com/parksben/cursor-sidebar/internal/pick"
+	"github.com/parksben/opensider/internal/host"
+	"github.com/parksben/opensider/internal/install"
+	"github.com/parksben/opensider/internal/pick"
 )
 
 func main() {

@@ -1,4 +1,4 @@
-module github.com/parksben/cursor-sidebar
+module github.com/parksben/opensider
 
 go 1.23.0
 

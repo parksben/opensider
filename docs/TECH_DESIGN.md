@@ -435,7 +435,7 @@ pnpm workspace 只编扩展。Host 用 Go。扩展用 Vite + `@crxjs/vite-plugin
 `scripts/install/install.sh`（darwin / linux）与 `scripts/install/install.ps1`（Windows）是薄包装，不内嵌 Host 逻辑：
 
 1. 识别 OS / arch。POSIX：`uname -s` → `darwin` / `linux`；`uname -m` 把 `aarch64` 映射成 `arm64`、`x86_64` 映射成 `amd64`。Windows：`PROCESSOR_ARCHITECTURE` 为 `ARM64` 时下 `opensider-windows-arm64.exe`，否则 `opensider-windows-amd64.exe`。
-2. 从 `https://github.com/parksben/cursor-sidebar/releases/latest/download/` 拉 `SHA256SUMS` 和对应二进制（名必须与 Release 资产一致）。
+2. 从 `https://github.com/parksben/opensider/releases/latest/download/` 拉 `SHA256SUMS` 和对应二进制（名必须与 Release 资产一致）。代码与 Release 都在私仓 `parksben/opensider`。
 3. 用本机 `sha256sum` / `shasum -a 256` 或 `Get-FileHash` 核对该文件；对不上或 SUMS 里没有这一行就退出。
 4. `chmod +x` 后 `exec ./opensider-<os>-<arch> install`（Windows 为 `.\opensider-windows-*.exe install`）。`--local` 只给仓库里的 `go run`，用户壳不传。
 5. 其它 OS / arch 立刻失败，文案写清支持范围。

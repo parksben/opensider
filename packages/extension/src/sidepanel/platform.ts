@@ -16,7 +16,7 @@ export function detectDesktopOs(): DesktopOs {
 
 export function hostInstallScript(os: DesktopOs = detectDesktopOs()): string {
   if (os === "windows") {
-    return "irm https://github.com/parksben/cursor-sidebar/releases/latest/download/install.ps1 | iex";
+    return "irm https://github.com/parksben/opensider/releases/latest/download/install.ps1 | iex";
   }
-  return "curl -fsSL https://github.com/parksben/cursor-sidebar/releases/latest/download/install.sh | bash";
+  return "curl -fsSL https://github.com/parksben/opensider/releases/latest/download/install.sh | bash";
 }

@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/parksben/cursor-sidebar/internal/paths"
+	"github.com/parksben/opensider/internal/paths"
 )
 
 var mu sync.Mutex

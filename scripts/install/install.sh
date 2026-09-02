@@ -3,7 +3,7 @@
 # releases/latest, verify SHA-256, then exec `opensider install`.
 set -euo pipefail
 
-REPO_DOWNLOAD="https://github.com/parksben/cursor-sidebar/releases/latest/download"
+REPO_DOWNLOAD="https://github.com/parksben/opensider/releases/latest/download"
 
 die() {
   echo "opensider install: $*" >&2

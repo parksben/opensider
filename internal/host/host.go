@@ -9,16 +9,16 @@ import (
 	"sync"
 	"time"
 
-	"github.com/parksben/cursor-sidebar/internal/acp"
-	"github.com/parksben/cursor-sidebar/internal/detect"
-	"github.com/parksben/cursor-sidebar/internal/log"
-	"github.com/parksben/cursor-sidebar/internal/models"
-	"github.com/parksben/cursor-sidebar/internal/native"
-	"github.com/parksben/cursor-sidebar/internal/paths"
-	"github.com/parksben/cursor-sidebar/internal/pick"
-	"github.com/parksben/cursor-sidebar/internal/protocol"
-	"github.com/parksben/cursor-sidebar/internal/watch"
-	"github.com/parksben/cursor-sidebar/internal/workspace"
+	"github.com/parksben/opensider/internal/acp"
+	"github.com/parksben/opensider/internal/detect"
+	"github.com/parksben/opensider/internal/log"
+	"github.com/parksben/opensider/internal/models"
+	"github.com/parksben/opensider/internal/native"
+	"github.com/parksben/opensider/internal/paths"
+	"github.com/parksben/opensider/internal/pick"
+	"github.com/parksben/opensider/internal/protocol"
+	"github.com/parksben/opensider/internal/watch"
+	"github.com/parksben/opensider/internal/workspace"
 )
 
 type acpRuntime struct {

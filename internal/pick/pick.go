@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/parksben/cursor-sidebar/internal/log"
-	"github.com/parksben/cursor-sidebar/internal/protocol"
+	"github.com/parksben/opensider/internal/log"
+	"github.com/parksben/opensider/internal/protocol"
 )
 
 type Mode = protocol.PickMode

@@ -9,13 +9,13 @@ Chromium 侧栏插件：用侧栏自己的聊天面板连接本机 Agent CLI（C
 macOS / Linux：
 
 ```bash
-curl -fsSL https://github.com/parksben/cursor-sidebar/releases/latest/download/install.sh | bash
+curl -fsSL https://github.com/parksben/opensider/releases/latest/download/install.sh | bash
 ```
 
 Windows PowerShell：
 
 ```powershell
-irm https://github.com/parksben/cursor-sidebar/releases/latest/download/install.ps1 | iex
+irm https://github.com/parksben/opensider/releases/latest/download/install.ps1 | iex
 ```
 
 然后打开 `chrome://extensions`（或 `edge://extensions` / `brave://extensions`），打开开发者模式，加载已解压的扩展，选 `~/.opensider/extension`。点工具栏图标打开侧栏。

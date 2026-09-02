@@ -7,7 +7,7 @@ import (
 	"os"
 	"sync"
 
-	"github.com/parksben/cursor-sidebar/internal/log"
+	"github.com/parksben/opensider/internal/log"
 )
 
 const maxMessage = 1024 * 1024
