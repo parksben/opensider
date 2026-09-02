@@ -225,7 +225,7 @@ export type AgentModel = {
   name: string;
 };
 
-export type AgentPolicy = "ask" | "workspace" | "auto";
+export type AgentPolicy = "ask" | "workspace" | "auto" | "unattended";
 
 export type AgentMark =
   | "cursor"

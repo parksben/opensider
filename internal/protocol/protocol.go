@@ -41,9 +41,10 @@ type AgentModel struct {
 type AgentPolicy string
 
 const (
-	PolicyAsk       AgentPolicy = "ask"
-	PolicyWorkspace AgentPolicy = "workspace"
-	PolicyAuto      AgentPolicy = "auto"
+	PolicyAsk        AgentPolicy = "ask"
+	PolicyWorkspace  AgentPolicy = "workspace"
+	PolicyAuto       AgentPolicy = "auto"
+	PolicyUnattended AgentPolicy = "unattended"
 )
 
 type AgentMark string

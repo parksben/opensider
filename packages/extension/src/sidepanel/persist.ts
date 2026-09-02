@@ -51,10 +51,10 @@ export function clampSessionDrawerWidth(width: number, viewportWidth?: number): 
   return Math.min(max, Math.max(SESSION_DRAWER_MIN, Math.round(width)));
 }
 
-export type AgentMode = "ask" | "workspace" | "auto";
+export type AgentMode = "ask" | "workspace" | "auto" | "unattended";
 
 export function isAgentMode(value: unknown): value is AgentMode {
-  return value === "ask" || value === "workspace" || value === "auto";
+  return value === "ask" || value === "workspace" || value === "auto" || value === "unattended";
 }
 
 export function isWorkspaceWritePermission(params: Record<string, unknown>): boolean {
@@ -103,6 +103,15 @@ export function autoPermissionOptionId(
     return 1;
   };
   return [...options].sort((a, b) => score(b) - score(a))[0]?.optionId;
+}
+
+export function autoQuestionAnswers(
+  questions: Array<{ id: string; options: Array<{ id: string }> }>,
+): Array<{ questionId: string; selectedOptionIds: string[] }> {
+  return questions.map((question) => {
+    const first = question.options[0]?.id;
+    return { questionId: question.id, selectedOptionIds: first ? [first] : [] };
+  });
 }
 
 export type PersistedState = {

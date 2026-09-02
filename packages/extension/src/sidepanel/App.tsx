@@ -37,6 +37,7 @@ import {
   buildForkContext,
   applyProviderBinding,
   autoPermissionOptionId,
+  autoQuestionAnswers,
   bindAcpSession,
   boundAcpId,
   clampSessionDrawerWidth,
@@ -271,6 +272,22 @@ export function App() {
       outcome: { outcome: "selected", optionId },
     });
     return true;
+  };
+
+  const replyQuestion = (id: number, questions: QuestionPrompt["questions"]) => {
+    sendRef.current({
+      type: "cursor.reply",
+      id,
+      result: { outcome: { outcome: "answered", answers: autoQuestionAnswers(questions) } },
+    });
+  };
+
+  const replyPlan = (id: number) => {
+    sendRef.current({
+      type: "cursor.reply",
+      id,
+      result: { outcome: { outcome: "accepted" } },
+    });
   };
 
   const recordBrowserTool = (command: BrowserCommand, result?: BrowserResult) => {
@@ -513,7 +530,10 @@ export function App() {
       const options = (msg.params.options as PermissionRequest["options"]) ?? [];
       const workspaceWrite = isWorkspaceWritePermission(msg.params);
       const mode = agentModeRef.current;
-      if ((mode === "auto" || (mode === "workspace" && workspaceWrite)) && replyPermission(msg.id, options)) {
+      if (
+        (mode === "auto" || mode === "unattended" || (mode === "workspace" && workspaceWrite)) &&
+        replyPermission(msg.id, options)
+      ) {
         setPermissions((current) => {
           if (!(localId in current)) return current;
           const next = { ...current };
@@ -546,21 +566,44 @@ export function App() {
         return;
       }
       if (msg.method === "cursor/ask_question" && msg.id !== undefined && localId) {
+        const requestId = msg.id;
+        const incoming = (msg.params.questions as QuestionPrompt["questions"]) ?? [];
+        if (agentModeRef.current === "unattended") {
+          replyQuestion(requestId, incoming);
+          setQuestions((current) => {
+            if (!(localId in current)) return current;
+            const next = { ...current };
+            delete next[localId];
+            return next;
+          });
+          return;
+        }
         setQuestions((current) => ({
           ...current,
           [localId]: {
-            id: msg.id,
+            id: requestId,
             title: msg.params.title as string | undefined,
-            questions: (msg.params.questions as QuestionPrompt["questions"]) ?? [],
+            questions: incoming,
           },
         }));
         return;
       }
       if (msg.method === "cursor/create_plan" && msg.id !== undefined && localId) {
+        const requestId = msg.id;
+        if (agentModeRef.current === "unattended") {
+          replyPlan(requestId);
+          setPlans((current) => {
+            if (!(localId in current)) return current;
+            const next = { ...current };
+            delete next[localId];
+            return next;
+          });
+          return;
+        }
         setPlans((current) => ({
           ...current,
           [localId]: {
-            id: msg.id,
+            id: requestId,
             name: msg.params.name as string | undefined,
             overview: msg.params.overview as string | undefined,
             plan: String(msg.params.plan ?? ""),
@@ -1139,10 +1182,23 @@ export function App() {
                 setPermissions((current) => {
                   const kept: Record<string, PermissionRequest> = {};
                   for (const [id, request] of Object.entries(current)) {
-                    const allow = mode === "auto" || request.workspaceWrite;
+                    const allow = mode === "auto" || mode === "unattended" || request.workspaceWrite;
                     if (!allow || !replyPermission(request.id, request.options)) kept[id] = request;
                   }
                   return kept;
+                });
+                if (mode !== "unattended") return;
+                setQuestions((current) => {
+                  for (const prompt of Object.values(current)) {
+                    replyQuestion(prompt.id, prompt.questions);
+                  }
+                  return {};
+                });
+                setPlans((current) => {
+                  for (const plan of Object.values(current)) {
+                    replyPlan(plan.id);
+                  }
+                  return {};
                 });
               }}
               page={page}
