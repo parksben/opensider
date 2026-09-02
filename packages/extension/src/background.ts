@@ -11,6 +11,11 @@ import type {
 } from "@shared";
 import { HOST_NAME, isActionMethod, isCaptureMethod, isScriptMethod, isTabMethod, isWindowMethod } from "@shared";
 import { captureViewport } from "./screenshot";
+import {
+  isClosedCurrentTab,
+  resolveActiveTab,
+  shouldClearCurrentPage,
+} from "./tab-sync";
 
 let nativePort: chrome.runtime.Port | null = null;
 const sidebars = new Set<chrome.runtime.Port>();
@@ -210,6 +215,7 @@ function connectNative(force = false): void {
       armStartingWatchdog();
     }
     void publishTabs();
+    void syncCurrentPage();
   } catch (error) {
     nativePort = null;
     const detail = String(error);
@@ -468,9 +474,69 @@ async function collectTabsSnapshot(): Promise<TabsSnapshot> {
 }
 
 let tabsTimer = 0;
+let pageSyncTimer = 0;
+let pageSyncGen = 0;
+let currentTabId: number | undefined;
+
 function scheduleTabsPublish(): void {
   clearTimeout(tabsTimer);
   tabsTimer = setTimeout(() => void publishTabs(), 250) as unknown as number;
+}
+
+function rememberCurrentTab(tabId: number | undefined): void {
+  currentTabId = tabId;
+}
+
+function lastKnownTabId(): number | undefined {
+  if (lastPage?.type === "page" && lastPage.page.tabId > 0) return lastPage.page.tabId;
+  return currentTabId;
+}
+
+function publishClearedPage(): void {
+  rememberCurrentTab(undefined);
+  const page: CurrentPage = {
+    tabId: 0,
+    url: "",
+    title: "",
+    updatedAt: new Date().toISOString(),
+  };
+  sendNative({ type: "page.update", page });
+  broadcast({ type: "page", page });
+}
+
+async function resolveFocusedActiveChromeTab(
+  preferredWindowId?: number,
+): Promise<chrome.tabs.Tab | undefined> {
+  const windows = await chrome.windows.getAll({ populate: true, windowTypes: ["normal"] });
+  const picked = resolveActiveTab(windows, preferredWindowId);
+  if (!picked?.id) return undefined;
+  try {
+    return await chrome.tabs.get(picked.id);
+  } catch {
+    return undefined;
+  }
+}
+
+async function syncCurrentPage(preferredWindowId?: number): Promise<void> {
+  const gen = ++pageSyncGen;
+  const tab = await resolveFocusedActiveChromeTab(preferredWindowId);
+  if (gen !== pageSyncGen) return;
+  if (!tab?.id) {
+    if (shouldClearCurrentPage(lastKnownTabId(), [])) publishClearedPage();
+    return;
+  }
+  await requestPage(tab.id, gen);
+}
+
+function scheduleCurrentPageSync(preferredWindowId?: number): void {
+  clearTimeout(pageSyncTimer);
+  pageSyncTimer = setTimeout(() => void syncCurrentPage(preferredWindowId), 250) as unknown as number;
+}
+
+function onActiveTabMaybeChanged(preferredWindowId?: number): void {
+  void syncCurrentPage(preferredWindowId);
+  scheduleCurrentPageSync(preferredWindowId);
+  scheduleTabsPublish();
 }
 
 async function publishTabs(): Promise<void> {
@@ -632,11 +698,22 @@ async function dispatchCommand(command: BrowserCommand): Promise<void> {
   }
 }
 
-async function requestPage(tabId: number): Promise<void> {
+async function requestPage(tabId: number, writeGen?: number): Promise<void> {
+  const gen = writeGen ?? ++pageSyncGen;
   let tab: chrome.tabs.Tab;
   try {
     tab = await chrome.tabs.get(tabId);
   } catch {
+    if (gen !== pageSyncGen) return;
+    const replacement = await resolveFocusedActiveChromeTab();
+    if (gen !== pageSyncGen) return;
+    if (replacement?.id && replacement.id !== tabId) {
+      await requestPage(replacement.id, gen);
+      return;
+    }
+    if (shouldClearCurrentPage(lastKnownTabId() ?? tabId, replacement?.id ? [replacement.id] : [])) {
+      publishClearedPage();
+    }
     return;
   }
   const favIconUrl = tab.favIconUrl;
@@ -648,9 +725,13 @@ async function requestPage(tabId: number): Promise<void> {
       })) as CurrentPage,
       favIconUrl,
     };
+    if (gen !== pageSyncGen) return;
+    rememberCurrentTab(tabId);
     sendNative({ type: "page.update", page });
     broadcast({ type: "page", page });
   } catch {
+    if (gen !== pageSyncGen) return;
+    rememberCurrentTab(tabId);
     const page: CurrentPage = {
       tabId,
       url: tab.url ?? "",
@@ -805,12 +886,11 @@ void chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch((
 connectNative();
 
 chrome.tabs.onActivated.addListener((info) => {
-  void requestPage(info.tabId);
-  scheduleTabsPublish();
+  onActiveTabMaybeChanged(info.windowId);
 });
 
 chrome.tabs.onUpdated.addListener((tabId, change, tab) => {
-  if (tab.active && (change.status === "complete" || change.favIconUrl)) {
+  if (tab.active && (change.status === "complete" || change.favIconUrl || change.url || change.title)) {
     void requestPage(tabId);
   }
   if (change.status || change.title || change.url || change.favIconUrl || change.pinned) {
@@ -818,11 +898,45 @@ chrome.tabs.onUpdated.addListener((tabId, change, tab) => {
   }
 });
 
-chrome.tabs.onCreated.addListener(scheduleTabsPublish);
-chrome.tabs.onRemoved.addListener(scheduleTabsPublish);
-chrome.tabs.onMoved.addListener(scheduleTabsPublish);
-chrome.tabs.onAttached.addListener(scheduleTabsPublish);
-chrome.tabs.onDetached.addListener(scheduleTabsPublish);
+chrome.tabs.onCreated.addListener((tab) => {
+  if (tab.active) onActiveTabMaybeChanged(tab.windowId);
+  else scheduleTabsPublish();
+});
+
+chrome.tabs.onRemoved.addListener((tabId, info) => {
+  if (isClosedCurrentTab(currentTabId, tabId) || isClosedCurrentTab(lastKnownTabId(), tabId)) {
+    rememberCurrentTab(undefined);
+  }
+  onActiveTabMaybeChanged(info.isWindowClosing ? undefined : info.windowId);
+});
+
+chrome.tabs.onReplaced.addListener((addedTabId, removedTabId) => {
+  if (isClosedCurrentTab(currentTabId, removedTabId) || isClosedCurrentTab(lastKnownTabId(), removedTabId)) {
+    rememberCurrentTab(addedTabId);
+  }
+  onActiveTabMaybeChanged();
+});
+
+chrome.tabs.onMoved.addListener((_tabId, info) => {
+  onActiveTabMaybeChanged(info.windowId);
+});
+
+chrome.tabs.onAttached.addListener((_tabId, info) => {
+  onActiveTabMaybeChanged(info.newWindowId);
+});
+
+chrome.tabs.onDetached.addListener((_tabId, info) => {
+  onActiveTabMaybeChanged(info.oldWindowId);
+});
+
 chrome.windows.onCreated.addListener(scheduleTabsPublish);
-chrome.windows.onRemoved.addListener(scheduleTabsPublish);
-chrome.windows.onFocusChanged.addListener(scheduleTabsPublish);
+chrome.windows.onRemoved.addListener(() => {
+  onActiveTabMaybeChanged();
+});
+chrome.windows.onFocusChanged.addListener((windowId) => {
+  if (windowId === chrome.windows.WINDOW_ID_NONE) {
+    scheduleTabsPublish();
+    return;
+  }
+  onActiveTabMaybeChanged(windowId);
+});

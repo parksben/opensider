@@ -59,7 +59,7 @@ Cursor Agent 在 ACP 模式下仍然自己执行本地工具（读文件、写�
 - 往 Native / 侧栏端口发消息一律 try/catch，断开时清掉引用并写出 `chrome.runtime.lastError`
 - 缓存最近一次 `status` / `session` / `page` / `models`，侧栏 `onConnect` 或 `ping` 时立即回放，避免 Host 已 ready 但面板因 React StrictMode 重挂而一直显示离线
 - 在 Side Panel、Content Script、Host 之间转发消息；`page.pick` 只走内容脚本，不进 Native Host。先 ping，失败则按 manifest 注入内容脚本再拾取
-- 监听 `tabs.onActivated` / `tabs.onUpdated`，通知内容脚本刷新当前页
+- 监听 `tabs.onActivated` / `onUpdated` / `onRemoved` / `onReplaced` / `onCreated` / `onMoved` / `onAttached` / `onDetached` 以及 `windows.onFocusChanged` / `onRemoved`。活动标签可能变化时，解析焦点普通窗口里当前 `active` 的标签（不要用刚关掉的 tabId），立刻并在 250ms 防抖后再推 `page.update`，同时防抖写 `tabs.update`。Chrome 关掉活动标签后不一定再发 `onActivated`，所以 `onRemoved` 必须自己跟上替换标签，禁止 `current.json` 停在已关闭 tabId
 - 点击工具栏图标打开 Side Panel
 - Go Host 一启动就往 `~/.opensider/host.log` 打一行，便于判断 Chrome 有没有真正拉起 Host
 
@@ -362,16 +362,19 @@ Host 是通用 ACP Client + 数据驱动 `AgentProfile`（启动命令、鉴权�
 
 ## 标签切换
 
-1. SW 收到 `onActivated` / 完整 URL `onUpdated`
-2. 向该 tab 的内容脚本要 `getMeta` + `getReadable` + 交互控件列表
-3. 发给 Host：`page.update`
-4. Host 写 `browser/current.json`、`browser/snapshot.md` 和 `browser/interactive.md`
-5. Side Panel 仍收 `CurrentPage`（`favIconUrl` 由 SW 从 `chrome.tabs` 并进，不写进 workspace），但顶栏不再画 favicon
-6. 下一条 `session/prompt` 在用户文本前加一行 `[Current tab] {title} — {url}`（UI 不显示这行）
-7. 若有文件附件，再追加 `[Attachments]` 绝对路径；若有拾取的元素，再追加 `[Picked page elements]` 和 CSS selector，并写明用页面工具的 `args.selector` 去查看或操作。正文里的 `@` 芯片先展开成 `@标题`，再按种类追加 `[Mentioned tabs]` / `[Mentioned attachments]`（UI 气泡里只显示用户正文和芯片，不显示这些块）
-8. 同时（及 `onCreated` / `onRemoved` / `onMoved` / `onAttached` / `onDetached` / 窗口焦点变化）防抖写 `browser/tabs.json`。Agent `switchTab` / `moveTabsToWindow` 成功后再抓当前页快照。
+活动标签以浏览器焦点普通窗口里 `active: true` 的标签为准，不以「上次成功抓过快照的 tabId」为准。Chrome 在关掉当前活动标签并激活另一张已打开标签时，**不保证**再发 `tabs.onActivated`；只听激活事件会把 `current.json` 留在已关闭的 tabId，而 `tabs.json` 已经是新列表。因此关标签、换窗、移动/挂接都必须自己解析替换后的活动标签。
 
-不在切换时往会话里塞一条用户消息，以免污染对话。Agent 需要更多页面内容时，按 `AGENTS.md` 读 snapshot 或写命令文件。跨标签先读 `tabs.json`（或 `listTabs`）拿 `tabId`，再 `switchTab`，然后用原来的页面方法操作新的当前页。
+1. SW 在这些事件上认为活动标签可能变了：`tabs.onActivated`、`tabs.onRemoved`（尤其是关掉当前活动标签）、`tabs.onReplaced`、`tabs.onCreated`（新标签常被激活）、`tabs.onMoved` / `onAttached` / `onDetached`、`windows.onFocusChanged` / `onRemoved`，以及活动标签的完整 URL `onUpdated`
+2. 不要用事件里的 tabId 当最终写入目标（它可能刚被关掉）。先立刻 `windows.getAll({ populate, windowTypes: ["normal"] })` 解析焦点窗口的活动标签并 `requestPage`，再按与 `tabs.json` 相同的 250ms 防抖再解析一次，避免关掉当前标签后丢掉随后才稳定的激活。进行中的旧 `requestPage` 用代数作废，禁止晚到的关标签快照盖住新页
+3. 向该 tab 的内容脚本要 `getMeta` + `getReadable` + 交互控件列表；内容脚本不可用则仍写 url/title（系统页也要更新身份，只是不注入）
+4. 发给 Host：`page.update`
+5. Host 写 `browser/current.json`、`browser/snapshot.md` 和 `browser/interactive.md`
+6. Side Panel 仍收 `CurrentPage`（`favIconUrl` 由 SW 从 `chrome.tabs` 并进，不写进 workspace），但顶栏不再画 favicon
+7. 下一条 `session/prompt` 在用户文本前加一行 `[Current tab] {title} — {url}`（UI 不显示这行）
+8. 若有文件附件，再追加 `[Attachments]` 绝对路径；若有拾取的元素，再追加 `[Picked page elements]` 和 CSS selector，并写明用页面工具的 `args.selector` 去查看或操作。正文里的 `@` 芯片先展开成 `@标题`，再按种类追加 `[Mentioned tabs]` / `[Mentioned attachments]`（UI 气泡里只显示用户正文和芯片，不显示这些块）
+9. 同时防抖写 `browser/tabs.json`。若当前 tabId 已不在打开集合里，立刻清掉 `current.json` 里的旧 tabId（空 url/title），不得停在已关闭标签。Agent `switchTab` / `moveTabsToWindow` 成功后再抓当前页快照
+
+不在切换时往会话里塞一条用户消息，以免污染对话。Agent 需要更多页面内容时，按 `AGENTS.md` 读 snapshot 或写命令文件。跨标签先读 `tabs.json`（或 `listTabs`）拿 `tabId`，再 `switchTab`，然后用原来的页面方法操作新的当前页。同域链接点击规则不变（见聊天正文链接）：这套同步管的是标签身份 / 当前页，不是页内链接点击。
 
 ## ACP 映射
 

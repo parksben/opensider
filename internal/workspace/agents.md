@@ -12,7 +12,7 @@ When the user talks about "this page", "the current tab", or the site they are l
 2. **`browser/interactive.md`** — numbered interactive controls. This is how you fill forms and click. Do **not** start by guessing CSS selectors.
 3. `browser/snapshot.md` — the same control list plus a readable text extract
 
-The current tab also changes while you work. Re-read those files after navigation, after `switchTab`, or if the user says they changed pages.
+These files track the focused window's **active** tab in real time — including when the user clicks another tab, closes the current tab and Chrome activates another already-open tab, or focuses a different window. If `current.json` still names a tabId that is gone from `tabs.json`, treat it as stale and re-read both files. Re-read after navigation, after `switchTab`, or if the user says they changed pages.
 
 ## Before you automate (required)
 
@@ -59,7 +59,7 @@ Rules:
 
 ## Open tabs and windows
 
-Read `browser/tabs.json` for every normal Chrome window and tab (`tabId`, `windowId`, `index`, `title`, `url`, `active`, `pinned`, `restricted`). It updates when tabs move. Call `listTabs` if you need the same list in a command result.
+Read `browser/tabs.json` for every normal Chrome window and tab (`tabId`, `windowId`, `index`, `title`, `url`, `active`, `pinned`, `restricted`). It updates when tabs are created, closed, moved, or when the focused window changes. Call `listTabs` if you need the same list in a command result.
 
 Do not invent tab IDs. To switch tabs, call `switchTab` with `args.tabId` from that file — it also focuses the tab's window. To open a site without replacing the current page, call `openTab` with `args.url` (http(s) only). To close a tab, call `closeTab` with `args.tabId` (or omit to close the active tab). To pull one or more tabs into their own window, call `moveTabsToWindow` with `args.tabIds`. Pass `args.windowId` to move them into an existing window instead of creating one.
 
