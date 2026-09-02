@@ -449,6 +449,9 @@ export function App() {
     }
     if (msg.type === "models") {
       const incoming = msg.models.filter((model, index, all) => all.findIndex((item) => item.id === model.id) === index);
+      if (incoming.length === 0 && statusRef.current !== "ready") {
+        return;
+      }
       setModels(incoming);
       const desired = selectedModelRef.current;
       const autoId = incoming.find((model) => model.id === "auto")?.id;

@@ -128,7 +128,13 @@ function remember(msg: HostToExt): void {
   }
   if (msg.type === "page") lastPage = msg;
   if (msg.type === "session") lastSession = msg;
-  if (msg.type === "models") lastModels = msg;
+  if (msg.type === "models") {
+    const empty = !Array.isArray(msg.models) || msg.models.length === 0;
+    if (empty && lastStatus.type === "status" && lastStatus.state !== "ready") {
+      return;
+    }
+    lastModels = msg;
+  }
   if (msg.type === "agent.progress") lastProgress = msg;
 }
 

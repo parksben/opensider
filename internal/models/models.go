@@ -104,10 +104,11 @@ func CatalogFromConfigOptions(options []ConfigOption) Catalog {
 	var model *ConfigOption
 	for i := range options {
 		option := &options[i]
-		id := strings.ToLower(option.ID + " " + option.ConfigID)
-		if option.Category == "model" || strings.Contains(id, "model") {
+		if !isModelOption(option) {
+			continue
+		}
+		if model == nil || (len(model.Options) == 0 && len(option.Options) > 0) {
 			model = option
-			break
 		}
 	}
 	if model == nil {
@@ -144,12 +145,19 @@ func CatalogFromConfigOptions(options []ConfigOption) Catalog {
 }
 
 func CatalogFromSessionModels(models any) Catalog {
+	if list, ok := models.([]any); ok {
+		return CatalogFromSessionModels(map[string]any{"availableModels": list})
+	}
 	rec, ok := models.(map[string]any)
 	if !ok || rec == nil {
 		return Catalog{}
 	}
 	var mapped []protocol.AgentModel
-	if raw, ok := rec["availableModels"].([]any); ok {
+	raw, ok := rec["availableModels"].([]any)
+	if !ok {
+		raw, ok = rec["models"].([]any)
+	}
+	if ok {
 		for _, item := range raw {
 			obj, ok := item.(map[string]any)
 			if !ok {
@@ -240,6 +248,49 @@ func MergeCatalog(base Catalog, overlay Catalog) Catalog {
 }
 
 func ListAgentModels(agentPath string) Catalog {
+	return listCLIModels(agentPath, ParseAgentModels)
+}
+
+func ListOpenCodeModels(agentPath string) Catalog {
+	return listCLIModels(agentPath, ParseOpenCodeModels)
+}
+
+func ListCLIModels(agentPath, kind string) Catalog {
+	switch kind {
+	case "agent-models":
+		return ListAgentModels(agentPath)
+	case "opencode-models":
+		return ListOpenCodeModels(agentPath)
+	default:
+		return Catalog{ModelConfigID: "model"}
+	}
+}
+
+func ParseOpenCodeModels(stdout string) Catalog {
+	var models []protocol.AgentModel
+	for _, raw := range strings.Split(stdout, "\n") {
+		line := strings.TrimSpace(strings.TrimSuffix(raw, "\r"))
+		if line == "" || strings.HasPrefix(line, "{") || strings.HasPrefix(line, "[") {
+			continue
+		}
+		if strings.Contains(strings.ToLower(line), "cache refreshed") {
+			continue
+		}
+		id := openCodeModelID(line)
+		if id == "" {
+			continue
+		}
+		models = append(models, protocol.AgentModel{ID: id, Name: id})
+	}
+	unique := UniqueModels(models)
+	currentID := ""
+	if len(unique) > 0 {
+		currentID = unique[0].ID
+	}
+	return Catalog{Models: unique, CurrentID: currentID, ModelConfigID: "model"}
+}
+
+func listCLIModels(agentPath string, parse func(string) Catalog) Catalog {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, agentPath, "models")
@@ -248,40 +299,104 @@ func ListAgentModels(agentPath string) Catalog {
 		log.Log("list models failed: " + err.Error())
 		return Catalog{ModelConfigID: "model"}
 	}
-	return ParseAgentModels(string(out))
+	return parse(string(out))
+}
+
+var openCodeModelLine = regexp.MustCompile(`^[A-Za-z0-9._-]+/.+$`)
+
+func openCodeModelID(line string) string {
+	if !openCodeModelLine.MatchString(line) {
+		return ""
+	}
+	if strings.ContainsAny(line, " \t") {
+		return ""
+	}
+	return line
 }
 
 func OptionsFromAny(v any) []ConfigOption {
-	raw, ok := v.([]any)
-	if !ok {
-		return nil
-	}
-	var out []ConfigOption
-	for _, item := range raw {
-		obj, ok := item.(map[string]any)
-		if !ok {
-			continue
-		}
-		opt := ConfigOption{
-			ID:           str(obj["id"]),
-			ConfigID:     str(obj["configId"]),
-			Name:         str(obj["name"]),
-			Category:     str(obj["category"]),
-			Type:         str(obj["type"]),
-			CurrentValue: obj["currentValue"],
-		}
-		if choices, ok := obj["options"].([]any); ok {
-			for _, c := range choices {
-				co, ok := c.(map[string]any)
-				if !ok {
-					continue
-				}
-				opt.Options = append(opt.Options, ConfigChoice{Value: str(co["value"]), Name: str(co["name"])})
+	switch raw := v.(type) {
+	case []any:
+		var out []ConfigOption
+		for _, item := range raw {
+			if opt, ok := optionFromMap(item); ok {
+				out = append(out, opt)
 			}
 		}
-		out = append(out, opt)
+		return out
+	case map[string]any:
+		if opt, ok := optionFromMap(raw); ok {
+			return []ConfigOption{opt}
+		}
+		var out []ConfigOption
+		if nested, ok := raw["configOptions"]; ok && nested != nil {
+			out = append(out, OptionsFromAny(nested)...)
+		}
+		for key, item := range raw {
+			if key == "configOptions" {
+				continue
+			}
+			if opt, ok := optionFromMap(item); ok {
+				out = append(out, opt)
+			}
+		}
+		return out
+	default:
+		return nil
 	}
-	return out
+}
+
+func optionFromMap(v any) (ConfigOption, bool) {
+	obj, ok := v.(map[string]any)
+	if !ok {
+		return ConfigOption{}, false
+	}
+	opt := ConfigOption{
+		ID:           firstStr(obj, "id", "configId"),
+		ConfigID:     firstStr(obj, "configId", "id"),
+		Name:         str(obj["name"]),
+		Category:     str(obj["category"]),
+		Type:         str(obj["type"]),
+		CurrentValue: obj["currentValue"],
+	}
+	if opt.CurrentValue == nil {
+		opt.CurrentValue = obj["value"]
+	}
+	if choices, ok := obj["options"].([]any); ok {
+		for _, c := range choices {
+			co, ok := c.(map[string]any)
+			if !ok {
+				continue
+			}
+			value := firstStr(co, "value", "id", "modelId")
+			name := str(co["name"])
+			if name == "" {
+				name = value
+			}
+			if value == "" {
+				continue
+			}
+			opt.Options = append(opt.Options, ConfigChoice{Value: value, Name: name})
+		}
+	}
+	if opt.ID == "" && opt.ConfigID == "" && opt.Category == "" && len(opt.Options) == 0 {
+		return ConfigOption{}, false
+	}
+	return opt, true
+}
+
+func isModelOption(option *ConfigOption) bool {
+	id := strings.ToLower(option.ID + " " + option.ConfigID)
+	return option.Category == "model" || strings.Contains(id, "model")
+}
+
+func firstStr(obj map[string]any, keys ...string) string {
+	for _, key := range keys {
+		if s := str(obj[key]); s != "" {
+			return s
+		}
+	}
+	return ""
 }
 
 func hasModel(models []protocol.AgentModel, id string) bool {

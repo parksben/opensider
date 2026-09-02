@@ -76,6 +76,7 @@ func Profiles() []AgentProfile {
 			Auth:         AuthKind{Type: "none"},
 			ModeMap:      map[protocol.AgentPolicy][]string{protocol.PolicyAsk: {"default", "ask"}, protocol.PolicyWorkspace: {"acceptEdits"}, protocol.PolicyAuto: {"bypassPermissions", "auto"}, protocol.PolicyUnattended: {"bypassPermissions", "auto"}},
 			ContextFiles: []string{"AGENTS.md"},
+			ListModels:   "opencode-models",
 			Caps:         stdCaps(protocol.AgentCaps{}),
 			LoginHint:    "Sign in with `opencode` or set OPENCODE_API_KEY, then retry.",
 		},

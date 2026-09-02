@@ -372,7 +372,6 @@ func (h *Host) connectAgent(providerID string, policy protocol.AgentPolicy) erro
 	h.mu.Lock()
 	h.catalog = models.Catalog{ModelConfigID: "model"}
 	h.mu.Unlock()
-	h.sendModels()
 	runtime := &acpRuntime{}
 	if err := h.attachClient(runtime); err != nil {
 		return h.abortConnect(seq, runtime, err)
@@ -422,10 +421,10 @@ func (h *Host) refreshModels() {
 	h.mu.Lock()
 	agent := h.currentAgent
 	h.mu.Unlock()
-	if agent == nil || agent.Profile.ListModels != "agent-models" {
+	if agent == nil || agent.Profile.ListModels == "" {
 		return
 	}
-	catalog := models.ListAgentModels(agent.Command)
+	catalog := models.ListCLIModels(agent.Command, agent.Profile.ListModels)
 	h.mu.Lock()
 	h.catalog = models.MergeCatalog(h.catalog, catalog)
 	h.mu.Unlock()
@@ -643,6 +642,7 @@ func (h *Host) openAndAnnounce(runtime *acpRuntime, open func() (acp.SessionOpen
 	h.mu.Unlock()
 	if empty {
 		time.Sleep(1200 * time.Millisecond)
+		h.refreshModels()
 		h.applyFallbackModels()
 	}
 	h.applyPendingModel(runtime)
@@ -742,6 +742,9 @@ func (h *Host) dispatch(typ string, msg map[string]any) error {
 		}
 		if state != "" && state != "starting" {
 			h.send(map[string]any{"type": "status", "state": state})
+		}
+		if state == "ready" {
+			h.sendModels()
 		}
 		return nil
 	case "agents.detect":
@@ -1011,6 +1014,13 @@ func (h *Host) handlePrompt(msg map[string]any) error {
 		}
 		workspace.WriteSessionID(opened.SessionID)
 		h.absorbSessionOptions(opened)
+		h.mu.Lock()
+		empty := len(h.catalog.Models) == 0
+		h.mu.Unlock()
+		if empty {
+			h.refreshModels()
+			h.applyFallbackModels()
+		}
 		h.send(map[string]any{
 			"type":      "session",
 			"sessionId": opened.SessionID,
