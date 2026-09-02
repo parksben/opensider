@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/parksben/opensider/internal/log"
 	"github.com/parksben/opensider/internal/paths"
@@ -13,8 +14,11 @@ import (
 	"github.com/parksben/opensider/internal/watch"
 )
 
+const pageCommandTimeout = 30 * time.Second
+
 func (h *Host) handleWorkspaceCommand(command protocol.BrowserCommand) {
 	if command.Method != "reportArtifacts" {
+		h.armPageCommandTimeout(command)
 		h.send(map[string]any{"type": "browser.command", "command": command})
 		return
 	}
@@ -47,6 +51,55 @@ func (h *Host) handleWorkspaceCommand(command protocol.BrowserCommand) {
 		return
 	}
 	log.Log(fmt.Sprintf("reportArtifacts count=%d session=%s", len(items), str(msg["sessionId"])))
+}
+
+func (h *Host) armPageCommandTimeout(command protocol.BrowserCommand) {
+	h.mu.Lock()
+	if h.pageCommandTimers == nil {
+		h.pageCommandTimers = map[string]*time.Timer{}
+	}
+	if h.pageCommandSettled == nil {
+		h.pageCommandSettled = map[string]bool{}
+	}
+	if t := h.pageCommandTimers[command.ID]; t != nil {
+		t.Stop()
+	}
+	delete(h.pageCommandSettled, command.ID)
+	id := command.ID
+	method := command.Method
+	h.pageCommandTimers[id] = time.AfterFunc(pageCommandTimeout, func() {
+		if !h.settlePageCommand(id) {
+			return
+		}
+		_ = watch.WriteCommandResult(protocol.BrowserResult{
+			ID:     id,
+			OK:     false,
+			Method: method,
+			Error:  "page command timed out waiting for the extension",
+		})
+		log.Log("page command timeout " + id)
+	})
+	h.mu.Unlock()
+}
+
+func (h *Host) settlePageCommand(id string) bool {
+	if id == "" {
+		return false
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.pageCommandSettled == nil {
+		h.pageCommandSettled = map[string]bool{}
+	}
+	if h.pageCommandSettled[id] {
+		return false
+	}
+	h.pageCommandSettled[id] = true
+	if t := h.pageCommandTimers[id]; t != nil {
+		t.Stop()
+		delete(h.pageCommandTimers, id)
+	}
+	return true
 }
 
 func (h *Host) promptingSessionID() string {

@@ -1,3 +1,4 @@
+import type { BrowserCommand, BrowserCommandArgs } from "@shared";
 import { extractSnapshot, measureTarget, measureViewport, runPageMethod } from "./page-api";
 import { PAGE_PICK_API } from "./page-pick";
 import { startPick, stopPick } from "./picker";
@@ -10,6 +11,10 @@ const pageApi = {
     stopPick();
     return true;
   },
+  snapshot: (tabId: unknown) => extractSnapshot(Number(tabId ?? -1)),
+  viewport: () => measureViewport(),
+  measure: (args: unknown) => measureTarget((args ?? {}) as BrowserCommandArgs),
+  runCommand: (command: unknown) => runPageMethod(command as BrowserCommand),
 };
 
 (globalThis as unknown as Record<string, typeof pageApi>)[PAGE_PICK_API] = pageApi;

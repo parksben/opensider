@@ -4,6 +4,9 @@ import {
   isPickablePageUrl,
   isPickArmed,
   isRestrictedUrl,
+  pageCommandError,
+  pageToolsAllowed,
+  PAGE_API_METHODS,
   pickFailureCode,
   PICK_ARM_MS,
 } from "./page-pick.ts";
@@ -51,5 +54,33 @@ describe("pick arming and failure codes", () => {
     assert.equal(pickFailureCode("not injected"), "inject");
     assert.equal(pickFailureCode("restricted"), "restricted");
     assert.equal(pickFailureCode("something else"), "something else");
+  });
+});
+
+describe("page tools after late content-script inject", () => {
+  it("exposes snapshot and runCommand on the isolated-world API", () => {
+    assert.deepEqual([...PAGE_API_METHODS], [
+      "ping",
+      "startPick",
+      "stopPick",
+      "snapshot",
+      "viewport",
+      "measure",
+      "runCommand",
+    ]);
+  });
+
+  it("allows YouTube and other http(s) pages, but not system pages", () => {
+    assert.equal(pageToolsAllowed("https://www.youtube.com/watch?v=dQw4w9WgXcQ").ok, true);
+    assert.equal(pageToolsAllowed("https://www.stats.gov.cn/").ok, true);
+    assert.equal(pageToolsAllowed("chrome://extensions").ok, false);
+    assert.equal(pageToolsAllowed("chrome-extension://abc/sidepanel.html").ok, false);
+    assert.equal(pageToolsAllowed(undefined).ok, false);
+  });
+
+  it("rewrites Chrome no-receiver errors into a readable inject message", () => {
+    const message = pageCommandError("Error: Could not establish connection. Receiving end does not exist.");
+    assert.match(message, /Content script is not ready/);
+    assert.equal(pageCommandError("no such element"), "no such element");
   });
 });

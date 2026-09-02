@@ -10,7 +10,15 @@ import type {
   TabsSnapshot,
 } from "@shared";
 import { HOST_NAME, isActionMethod, isCaptureMethod, isScriptMethod, isTabMethod, isWindowMethod } from "@shared";
-import { isPickablePageUrl, isRestrictedUrl, PAGE_PICK_API, pickFailureCode } from "./page-pick";
+import {
+  isPickablePageUrl,
+  isRestrictedUrl,
+  PAGE_PICK_API,
+  pageCommandError,
+  pageToolsAllowed,
+  pickFailureCode,
+  type PageApiMethod,
+} from "./page-pick";
 import { captureViewport } from "./screenshot";
 import {
   isClosedCurrentTab,
@@ -270,10 +278,11 @@ type UnsavedProbe = {
 
 async function probeUnsaved(tabId: number): Promise<UnsavedProbe | null> {
   try {
-    const result = (await chrome.tabs.sendMessage(tabId, {
-      type: "browser.command",
-      command: { id: `unsaved_${tabId}`, method: "getUnsavedChanges", args: {} },
-    })) as BrowserResult;
+    const result = await runContentMethod(tabId, {
+      id: `unsaved_${tabId}`,
+      method: "getUnsavedChanges",
+      args: {},
+    });
     if (!result?.ok || !result.data || typeof result.data !== "object") return null;
     return result.data as UnsavedProbe;
   } catch {
@@ -412,33 +421,31 @@ async function runScriptMethod(tabId: number, command: BrowserCommand): Promise<
 
 async function runCapture(tab: { id?: number; windowId?: number }, command: BrowserCommand): Promise<BrowserResult> {
   if (tab.id == null || tab.windowId == null) return fail(command, "tab is not capturable");
+  try {
+    await ensureContent(tab.id);
+  } catch (error) {
+    return fail(command, pageCommandError(error));
+  }
   let clip: ClipRect | undefined;
   if (command.method === "screenshotElement") {
-    const measured = (await chrome.tabs.sendMessage(tab.id, {
-      type: "page.measure",
-      args: command.args ?? {},
-    })) as { ok: boolean; rect?: ClipRect; error?: string };
-    if (!measured?.ok || !measured.rect) return fail(command, measured?.error ?? "measure failed");
-    clip = measured.rect;
+    const measured = await callPageApi<ClipRect>(tab.id, "measure", [command.args ?? {}]);
+    if (!measured.ok || !measured.value) return fail(command, measured.error ?? "measure failed");
+    clip = measured.value;
     await new Promise((resolve) => setTimeout(resolve, 120));
   } else if (
     command.args &&
     [command.args.x, command.args.y, command.args.width, command.args.height].some((value) => value != null)
   ) {
-    const view = (await chrome.tabs.sendMessage(tab.id, { type: "page.viewport" })) as {
-      ok: boolean;
-      rect?: ClipRect;
-      error?: string;
-    };
-    if (!view?.ok || !view.rect) return fail(command, view?.error ?? "viewport measure failed");
+    const view = await callPageApi<ClipRect>(tab.id, "viewport");
+    if (!view.ok || !view.value) return fail(command, view.error ?? "viewport measure failed");
     clip = {
       x: command.args.x ?? 0,
       y: command.args.y ?? 0,
-      width: command.args.width ?? view.rect.viewportWidth,
-      height: command.args.height ?? view.rect.viewportHeight,
-      dpr: view.rect.dpr,
-      viewportWidth: view.rect.viewportWidth,
-      viewportHeight: view.rect.viewportHeight,
+      width: command.args.width ?? view.value.viewportWidth,
+      height: command.args.height ?? view.value.viewportHeight,
+      dpr: view.value.dpr,
+      viewportWidth: view.value.viewportWidth,
+      viewportHeight: view.value.viewportHeight,
     };
   }
   const payload = await captureViewport(tab.windowId, clip);
@@ -662,9 +669,17 @@ async function dispatchCommand(command: BrowserCommand): Promise<void> {
     return;
   }
 
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  const tab = await resolveFocusedActiveChromeTab();
   if (!tab?.id) {
     const result = fail(command, "No active tab");
+    sendNative({ type: "browser.result", result });
+    broadcast({ type: "browser.result", result });
+    return;
+  }
+
+  const allowed = pageToolsAllowed(tab.url);
+  if (!allowed.ok && !isTabMethod(command.method)) {
+    const result = fail(command, allowed.error);
     sendNative({ type: "browser.result", result });
     broadcast({ type: "browser.result", result });
     return;
@@ -678,17 +693,9 @@ async function dispatchCommand(command: BrowserCommand): Promise<void> {
         ? await runTabMethod(tab.id, command)
         : isScriptMethod(command.method)
           ? await runScriptMethod(tab.id, command)
-          : await Promise.race([
-            chrome.tabs.sendMessage(tab.id, { type: "browser.command", command }) as Promise<BrowserResult>,
-            new Promise<BrowserResult>((resolve) => {
-              setTimeout(
-                () => resolve(fail(command, "page command timed out")),
-                Math.min(command.args?.timeoutMs ?? 20_000, 20_000),
-              );
-            }),
-          ]);
+          : await runContentMethod(tab.id, command);
   } catch (error) {
-    result = fail(command, String(error));
+    result = fail(command, pageCommandError(error));
   }
 
   sendNative({ type: "browser.result", result });
@@ -718,31 +725,33 @@ async function requestPage(tabId: number, writeGen?: number): Promise<void> {
     return;
   }
   const favIconUrl = tab.favIconUrl;
+  const fallback = (): CurrentPage => ({
+    tabId,
+    url: tab.url ?? "",
+    title: tab.title ?? "",
+    updatedAt: new Date().toISOString(),
+    favIconUrl,
+  });
   try {
-    const page = {
-      ...(await chrome.tabs.sendMessage(tabId, {
-        type: "page.snapshot",
-        tabId,
-      })) as CurrentPage,
-      favIconUrl,
-    };
-    if (gen !== pageSyncGen) return;
-    rememberCurrentTab(tabId);
-    sendNative({ type: "page.update", page });
-    broadcast({ type: "page", page });
+    if (pageToolsAllowed(tab.url).ok) {
+      await ensureContent(tabId);
+      const snap = await callPageApi<CurrentPage>(tabId, "snapshot", [tabId]);
+      if (!snap.ok || !snap.value) throw new Error(snap.error ?? "snapshot failed");
+      const page = { ...snap.value, favIconUrl };
+      if (gen !== pageSyncGen) return;
+      rememberCurrentTab(tabId);
+      sendNative({ type: "page.update", page });
+      broadcast({ type: "page", page });
+      return;
+    }
   } catch {
-    if (gen !== pageSyncGen) return;
-    rememberCurrentTab(tabId);
-    const page: CurrentPage = {
-      tabId,
-      url: tab.url ?? "",
-      title: tab.title ?? "",
-      updatedAt: new Date().toISOString(),
-      favIconUrl,
-    };
-    sendNative({ type: "page.update", page });
-    broadcast({ type: "page", page });
+    // restricted, still loading, or inject failed — still publish identity
   }
+  if (gen !== pageSyncGen) return;
+  rememberCurrentTab(tabId);
+  const page = fallback();
+  sendNative({ type: "page.update", page });
+  broadcast({ type: "page", page });
 }
 
 function isHttpTab(tab: chrome.tabs.Tab): boolean {
@@ -785,48 +794,52 @@ async function injectContent(tabId: number, allFrames: boolean): Promise<void> {
   });
 }
 
-type PagePickCall = { ok: boolean; error?: string; value?: unknown };
+type PageApiCall<T = unknown> = { ok: boolean; error?: string; value?: T };
 
-async function callPagePickApi(tabId: number, method: "ping" | "startPick" | "stopPick", methodArgs: unknown[] = []): Promise<PagePickCall> {
-  const results = await chrome.scripting.executeScript({
-    target: { tabId, frameIds: [0] },
-    world: "ISOLATED",
-    injectImmediately: true,
-    func: (apiName: string, apiMethod: string, args: unknown[]) => {
-      const api = (globalThis as unknown as Record<string, Record<string, (...fnArgs: unknown[]) => unknown>>)[apiName];
-      if (!api || typeof api[apiMethod] !== "function") return { ok: false, error: "not injected" };
-      try {
-        return { ok: true, value: api[apiMethod](...args) };
-      } catch (error) {
-        return { ok: false, error: error instanceof Error ? error.message : String(error) };
-      }
-    },
-    args: [PAGE_PICK_API, method, methodArgs],
-  });
-  const result = results[0]?.result as PagePickCall | undefined;
-  return result ?? { ok: false, error: "not injected" };
-}
-
-async function pingPagePick(tabId: number): Promise<boolean> {
+async function callPageApi<T = unknown>(
+  tabId: number,
+  method: PageApiMethod,
+  methodArgs: unknown[] = [],
+): Promise<PageApiCall<T>> {
   try {
-    const result = await callPagePickApi(tabId, "ping");
-    return result.ok === true;
-  } catch {
-    return false;
+    const results = await chrome.scripting.executeScript({
+      target: { tabId, frameIds: [0] },
+      world: "ISOLATED",
+      injectImmediately: true,
+      func: async (apiName: string, apiMethod: string, args: unknown[]) => {
+        const api = (globalThis as unknown as Record<string, Record<string, (...fnArgs: unknown[]) => unknown>>)[apiName];
+        if (!api || typeof api[apiMethod] !== "function") return { ok: false, error: "not injected" };
+        try {
+          return { ok: true, value: await api[apiMethod](...args) };
+        } catch (error) {
+          return { ok: false, error: error instanceof Error ? error.message : String(error) };
+        }
+      },
+      args: [PAGE_PICK_API, method, methodArgs],
+    });
+    const result = results[0]?.result as PageApiCall<T> | undefined;
+    return result ?? { ok: false, error: "not injected" };
+  } catch (error) {
+    return { ok: false, error: pageCommandError(error) };
   }
 }
 
-async function waitForPagePick(tabId: number, timeoutMs = 2_500): Promise<boolean> {
+async function pingPageApi(tabId: number): Promise<boolean> {
+  const result = await callPageApi(tabId, "ping");
+  return result.ok === true;
+}
+
+async function waitForPageApi(tabId: number, timeoutMs = 2_500): Promise<boolean> {
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
-    if (await pingPagePick(tabId)) return true;
+    if (await pingPageApi(tabId)) return true;
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
   return false;
 }
 
 async function ensureContent(tabId: number): Promise<void> {
-  if (await pingPagePick(tabId)) return;
+  if (await pingPageApi(tabId)) return;
   try {
     await injectContent(tabId, true);
   } catch {
@@ -834,10 +847,32 @@ async function ensureContent(tabId: number): Promise<void> {
   }
   // CRXJS injects a loader that import()s the real module; executeScript
   // resolves before __opensiderPage exists.
-  if (await waitForPagePick(tabId)) return;
+  if (await waitForPageApi(tabId)) return;
   await injectContent(tabId, false);
-  if (!(await waitForPagePick(tabId))) {
-    throw new Error("Could not inject the page picker into this tab.");
+  if (!(await waitForPageApi(tabId))) {
+    throw new Error("Could not inject the page API into this tab.");
+  }
+}
+
+async function runContentMethod(tabId: number, command: BrowserCommand): Promise<BrowserResult> {
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    const allowed = pageToolsAllowed(tab.url);
+    if (!allowed.ok) return fail(command, allowed.error);
+    await ensureContent(tabId);
+    const timeout = Math.min(command.args?.timeoutMs ?? 20_000, 20_000);
+    const called = await Promise.race([
+      callPageApi<BrowserResult>(tabId, "runCommand", [command]),
+      new Promise<PageApiCall<BrowserResult>>((resolve) => {
+        setTimeout(() => resolve({ ok: false, error: "page command timed out" }), timeout);
+      }),
+    ]);
+    if (!called.ok) return fail(command, pageCommandError(called.error));
+    const value = called.value;
+    if (value && typeof value === "object" && "id" in value) return value;
+    return { id: command.id, ok: true, method: command.method, data: value };
+  } catch (error) {
+    return fail(command, pageCommandError(error));
   }
 }
 
@@ -857,7 +892,7 @@ async function startPagePick(requestId: string, hint?: string): Promise<void> {
   pickTabId = tab.id;
   try {
     await ensureContent(tab.id);
-    const started = await callPagePickApi(tab.id, "startPick", [requestId, hint ?? ""]);
+    const started = await callPageApi(tab.id, "startPick", [requestId, hint ?? ""]);
     if (!started.ok || started.value === false) throw new Error(started.error ?? "not injected");
   } catch (error) {
     pickTabId = undefined;
@@ -875,7 +910,7 @@ async function cancelPagePick(): Promise<void> {
   pickTabId = undefined;
   if (!tabId) return;
   try {
-    await callPagePickApi(tabId, "stopPick");
+    await callPageApi(tabId, "stopPick");
   } catch {
     try {
       await chrome.tabs.sendMessage(tabId, { type: "page.pick.cancel" }, { frameId: 0 });
@@ -913,7 +948,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg?.type === "page.picked") {
     const tabId = pickTabId;
     pickTabId = undefined;
-    if (tabId) void callPagePickApi(tabId, "stopPick").catch(() => undefined);
+    if (tabId) void callPageApi(tabId, "stopPick");
     broadcast({
       type: "page.picked",
       requestId: String(msg.requestId ?? ""),

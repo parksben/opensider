@@ -32,30 +32,34 @@ type acpRuntime struct {
 var errConnectCancelled = errors.New("connect cancelled")
 
 type Host struct {
-	io               *native.IO
-	mu               sync.Mutex
-	bindMu           sync.Mutex
-	runtimes         []*acpRuntime
-	rpcClients       map[int]*acp.Client
-	catalog          models.Catalog
-	pendingModelID   string
-	currentAgent     *detect.ResolvedAgent
-	previousAgent    *detect.ResolvedAgent
-	connectingClient *acp.Client
-	connectSeq       int
-	currentPolicy    protocol.AgentPolicy
-	lastAgents       []protocol.AgentInfo
-	hostState        string
+	io                 *native.IO
+	mu                 sync.Mutex
+	bindMu             sync.Mutex
+	runtimes           []*acpRuntime
+	rpcClients         map[int]*acp.Client
+	catalog            models.Catalog
+	pendingModelID     string
+	currentAgent       *detect.ResolvedAgent
+	previousAgent      *detect.ResolvedAgent
+	connectingClient   *acp.Client
+	connectSeq         int
+	currentPolicy      protocol.AgentPolicy
+	lastAgents         []protocol.AgentInfo
+	hostState          string
+	pageCommandTimers  map[string]*time.Timer
+	pageCommandSettled map[string]bool
 }
 
 func Run() {
 	log.Log("go host starting")
 	workspace.Ensure()
 	h := &Host{
-		rpcClients:    map[int]*acp.Client{},
-		currentPolicy: protocol.PolicyAsk,
-		hostState:     "starting",
-		catalog:       models.Catalog{ModelConfigID: "model"},
+		rpcClients:         map[int]*acp.Client{},
+		currentPolicy:      protocol.PolicyAsk,
+		hostState:          "starting",
+		catalog:            models.Catalog{ModelConfigID: "model"},
+		pageCommandTimers:  map[string]*time.Timer{},
+		pageCommandSettled: map[string]bool{},
 	}
 	h.io = native.New(func(msg map[string]any) {
 		go h.handleExt(msg)
@@ -776,6 +780,7 @@ func (h *Host) dispatch(typ string, msg map[string]any) error {
 		if raw, err := json.Marshal(msg["result"]); err == nil {
 			_ = json.Unmarshal(raw, &result)
 		}
+		h.settlePageCommand(result.ID)
 		return watch.WriteCommandResult(result)
 	case "session.new":
 		h.mu.Lock()

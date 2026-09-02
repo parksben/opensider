@@ -1,6 +1,18 @@
 export const PAGE_PICK_API = "__opensiderPage";
 export const PICK_ARM_MS = 200;
 
+export const PAGE_API_METHODS = [
+  "ping",
+  "startPick",
+  "stopPick",
+  "snapshot",
+  "viewport",
+  "measure",
+  "runCommand",
+] as const;
+
+export type PageApiMethod = (typeof PAGE_API_METHODS)[number];
+
 export function isRestrictedUrl(url?: string): boolean {
   if (!url) return false;
   return (
@@ -35,4 +47,26 @@ export function pickFailureCode(error: unknown): "restricted" | "inject" | strin
     return "inject";
   }
   return text;
+}
+
+export function pageToolsAllowed(url?: string): { ok: true } | { ok: false; error: string } {
+  if (isRestrictedUrl(url)) {
+    return { ok: false, error: "page tools are not allowed on restricted pages (chrome://, extension, or store)" };
+  }
+  if (!isPickablePageUrl(url)) {
+    return { ok: false, error: "page tools only work on http(s) pages" };
+  }
+  return { ok: true };
+}
+
+export function pageCommandError(error: unknown): string {
+  const text = String(error ?? "").replace(/^Error:\s*/i, "").trim();
+  if (
+    /receiving end does not exist|not injected|could not inject|cannot access contents|could not inject the page|frame was removed|cannot be scripted/i.test(
+      text,
+    )
+  ) {
+    return "Content script is not ready on this tab. The extension injects automatically; reload the tab if this persists.";
+  }
+  return text || "page command failed";
 }

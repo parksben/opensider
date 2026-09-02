@@ -59,14 +59,14 @@ Cursor Agent 在 ACP 模式下仍然自己执行本地工具（读文件、写�
 - `starting` 有看门狗：连上后约 10s 还没离开 starting，广播 `error`（附 `~/.opensider/host.log`），避免点 Connection 空转。若已经收到非空 `agents`，看门狗直接当 detect 完成（回放名单并视为 idle），不要再报 starting。侧栏「没有找到 CLI」只在收到过 `agents` 且为空时出现。
 - 往 Native / 侧栏端口发消息一律 try/catch，断开时清掉引用并写出 `chrome.runtime.lastError`
 - 缓存最近一次 `status` / `session` / `page` / `models`，侧栏 `onConnect` 或 `ping` 时立即回放，避免 Host 已 ready 但面板因 React StrictMode 重挂而一直显示离线
-- 在 Side Panel、Content Script、Host 之间转发消息；`page.pick` 只走内容脚本，不进 Native Host。内容脚本 `run_at: document_start`，避免 YouTube `/watch` 迟迟不到 `document_idle`。先在活动主框探测 picker API，失败则 `executeScript` 补注入（`injectImmediately`，先 `allFrames` 再退回主框），并轮询等到 CRXJS loader 的 `import()` 挂上 API，再在**当前活动文档的主框**里直接调用 `startPick`。不用 `tabs.sendMessage` 开拾取：YouTube 会预渲染下一个视频，消息可能打到隐藏文档。YouTube / youtu.be 是普通 http(s)，不当系统页。注入失败回 `error: inject`。
+- 在 Side Panel、Content Script、Host 之间转发消息；`page.pick` 只走内容脚本，不进 Native Host。内容脚本 `run_at: document_start`，避免 YouTube `/watch` 迟迟不到 `document_idle`。先在活动主框探测 `__opensiderPage` API，失败则 `executeScript` 补注入（`injectImmediately`，先 `allFrames` 再退回主框），并轮询等到 CRXJS loader 的 `import()` 挂上 API。**页面命令、快照、量测、未保存探测与拾取走同一通道**：就绪后在**当前活动文档的主框**里直接调用 `runCommand` / `snapshot` / `measure` / `viewport` / `startPick`。不用 `tabs.sendMessage` 做页面 RPC：扩展重载后旧标签内容脚本已成孤儿、CRXJS loader 尚未 `import`、YouTube 预渲染文档都会变成 `Receiving end does not exist`。`dispatchCommand` 的目标标签与 `current.json` 相同——焦点普通窗口的活动标签，不用 Service Worker 的 `currentWindow`。YouTube / youtu.be 是普通 http(s)，不当系统页。系统页不注入，命令回明确 restricted 错误；http(s) 注入失败则 `ok: false` 并写清原因。`requestPage` 同样先 ensure 再 snapshot，避免 `snapshot.md` / `interactive.md` 只剩 url/title。
 - 监听 `tabs.onActivated` / `onUpdated` / `onRemoved` / `onReplaced` / `onCreated` / `onMoved` / `onAttached` / `onDetached` 以及 `windows.onFocusChanged` / `onRemoved`。活动标签可能变化时，解析焦点普通窗口里当前 `active` 的标签（不要用刚关掉的 tabId），立刻并在 250ms 防抖后再推 `page.update`，同时防抖写 `tabs.update`。Chrome 关掉活动标签后不一定再发 `onActivated`，所以 `onRemoved` 必须自己跟上替换标签，禁止 `current.json` 停在已关闭 tabId
 - 点击工具栏图标打开 Side Panel
 - Go Host 一启动就往 `~/.opensider/host.log` 打一行，便于判断 Chrome 有没有真正拉起 Host
 
 ### Content Script
 
-运行在隔离世界，不往 `window` 挂 API，也不执行任意 JS。元素定位优先级：`args.index`（`interactive.md` 里从 1 起的编号）→ `args.label` / `args.name`（对到控件本身，不是 label 节点）→ `args.selector`（CSS）→ `args.text`（先按控件标签 / placeholder / name 匹配，再退回可见文本包含），可选 `args.nth`。侧栏发起 `page.pick` 时进入拾取：悬停高亮、点击生成全局唯一 CSS selector（id 优先，否则 `tag:nth-of-type` 路径，并校验 `querySelectorAll` 唯一），Esc 取消。拾取层挂 closed Shadow + 尽量 `popover` 进顶层，避免压在 YouTube `#movie_player` 下面；遮罩自己吃指针（再 `elementsFromPoint` 看底下节点），忽略开拾取后约 200ms 内的残留 pointerdown，并在 `yt-navigate-*` / `fullscreenchange` 时把层补回去。预渲染文档上的 `startPick` 直接 return。
+运行在隔离世界，不往页面 `window` 挂 API，也不执行任意 JS。模块加载后把 `__opensiderPage` 挂到隔离世界 `globalThis`：`ping` / `startPick` / `stopPick` / `snapshot` / `viewport` / `measure` / `runCommand`。SW 用 `executeScript` 调这些方法，不依赖 `onMessage` 是否已经挂上。元素定位优先级：`args.index`（`interactive.md` 里从 1 起的编号）→ `args.label` / `args.name`（对到控件本身，不是 label 节点）→ `args.selector`（CSS）→ `args.text`（先按控件标签 / placeholder / name 匹配，再退回可见文本包含），可选 `args.nth`。侧栏发起 `page.pick` 时进入拾取：悬停高亮、点击生成全局唯一 CSS selector（id 优先，否则 `tag:nth-of-type` 路径，并校验 `querySelectorAll` 唯一），Esc 取消。拾取层挂 closed Shadow + 尽量 `popover` 进顶层，避免压在 YouTube `#movie_player` 下面；遮罩自己吃指针（再 `elementsFromPoint` 看底下节点），忽略开拾取后约 200ms 内的残留 pointerdown，并在 `yt-navigate-*` / `fullscreenchange` 时把层补回去。预渲染文档上的 `startPick` 直接 return。
 
 交互快照（对齐 page-agent 的 numbered interactive elements，不引入他们的 DOM walker / 任意 JS）：
 
@@ -131,7 +131,7 @@ Cursor Agent 在 ACP 模式下仍然自己执行本地工具（读文件、写�
 - 用本机系统对话框选出文件/文件夹的绝对路径（Chrome `<input type=file>` 给不出真路径）
 - 用 `agent models` 列出账号可选模型，并结合 `session/new` 的 `configOptions`
 - 把 Agent 的 `session/update`、权限请求、Cursor 扩展方法推给扩展
-- 把页面快照和 `browser/tools.json` 写入工作区；监视 `browser/commands/`，转给扩展，再把结果写回 `browser/results/`（截图另存 `browser/screenshots/`）
+- 把页面快照和 `browser/tools.json` 写入工作区；监视 `browser/commands/`，转给扩展，再把结果写回 `browser/results/`（截图另存 `browser/screenshots/`）。`reportArtifacts` 由 Host 自己消化，不得把页面方法拦下。页面命令发出后若约 30s 还没有 `browser.result`，Host 仍写 `results/<id>.json`（`ok: false`，说明等扩展超时），避免 Agent 空等。
 
 Host 是一份 Go 二进制（`cmd/opensider` + `internal/`）。`browser/tools.json` 由 `internal/protocol.ToolCatalog` 在启动时写入，不在 TS 里再维护一份。stdout 只给 Chrome，ACP 走子进程管道，日志只写 `~/.opensider/host.log`。`fs.pick` 时 exec 自己的 `pick` 子命令（独立进程才能把系统对话框拉到前台）。`hello` 不带 os；选文件分流用侧栏 UA。`page.pick` 到不了 Host。
 
@@ -193,7 +193,7 @@ Host 是一份 Go 二进制（`cmd/opensider` + `internal/`）。`browser/tools.
 }
 ```
 
-命令默认超时 20s（`waitFor` / 导航可能更久）。失败结果带 `ok: false` 和错误信息。文本结果约 200KB 截断。截图走 JPEG 压缩，结果 JSON 不内嵌像素。操作类命令成功后刷新 `current.json` / `snapshot.md` / `interactive.md`。侧栏把 `browser.command` / `browser.result` 写成当前轮 assistant 的 `tool-call`（`toolCallId` 为 `browser:<id>`），跟 ACP 工具同一套 `ToolCard`，不挂 Header。
+命令默认超时 20s（`waitFor` / 导航可能更久）。失败结果带 `ok: false` 和错误信息。Host 在约 30s 仍未收到扩展回包时也会写一份失败结果，避免 `results/<id>.json` 缺失。文本结果约 200KB 截断。截图走 JPEG 压缩，结果 JSON 不内嵌像素。操作类命令成功后刷新 `current.json` / `snapshot.md` / `interactive.md`。侧栏把 `browser.command` / `browser.result` 写成当前轮 assistant 的 `tool-call`（`toolCallId` 为 `browser:<id>`），跟 ACP 工具同一套 `ToolCard`，不挂 Header。
 
 Host 在 `session/new` 之前写好 `AGENTS.md` 和 `browser/tools.json`，这样 Agent 一进工作区就能感知读、操作、视觉、交互快照、标签/窗口方法和 `reportArtifacts`。`workspace.Ensure()` 在 Host 启动和 `install` 时创建 `browser/` 子目录以及 `outputs/`（0755），并重写 `AGENTS.md` / `CLAUDE.md` / `browser/tools.json`。`tools.json` 的 `version` 随协议字段变更递增（现为 8），并带 `outputsDir: "outputs"`。Agent 应把用户会打开的 html / pdf / md / 图片写到 `outputs/`（相对工作区 cwd），不要丢在根目录；草稿和临时文件不限。Host **不**拦截 Write / Shell，也不把根目录写入改写到 `outputs/`——这是 AGENTS.md + 目录布局引导，不是写拒绝列表。SW 在标签/窗口变化时（250ms 防抖）发 `tabs.update`，Host 写 `browser/tabs.json`。`listTabs` 结果与该文件同形，给需要立刻拿到列表的命令用。`page.update` 同时写 `interactive.md`。
 
@@ -382,7 +382,7 @@ Host 是通用 ACP Client + 数据驱动 `AgentProfile`（启动命令、鉴权�
 
 1. SW 在这些事件上认为活动标签可能变了：`tabs.onActivated`、`tabs.onRemoved`（尤其是关掉当前活动标签）、`tabs.onReplaced`、`tabs.onCreated`（新标签常被激活）、`tabs.onMoved` / `onAttached` / `onDetached`、`windows.onFocusChanged` / `onRemoved`，以及活动标签的完整 URL `onUpdated`
 2. 不要用事件里的 tabId 当最终写入目标（它可能刚被关掉）。先立刻 `windows.getAll({ populate, windowTypes: ["normal"] })` 解析焦点窗口的活动标签并 `requestPage`，再按与 `tabs.json` 相同的 250ms 防抖再解析一次，避免关掉当前标签后丢掉随后才稳定的激活。进行中的旧 `requestPage` 用代数作废，禁止晚到的关标签快照盖住新页
-3. 向该 tab 的内容脚本要 `getMeta` + `getReadable` + 交互控件列表；内容脚本不可用则仍写 url/title（系统页也要更新身份，只是不注入）
+3. 向该 tab 的内容脚本要 `getMeta` + `getReadable` + 交互控件列表。http(s) 页先 `ensureContent`（等 `__opensiderPage`），再在主框调 `snapshot`；系统页或不允许注入时仍写 url/title（更新身份，不注入）
 4. 发给 Host：`page.update`
 5. Host 写 `browser/current.json`、`browser/snapshot.md` 和 `browser/interactive.md`
 6. Side Panel 仍收 `CurrentPage`（`favIconUrl` 由 SW 从 `chrome.tabs` 并进，不写进 workspace），但顶栏不再画 favicon
@@ -520,7 +520,8 @@ Release 资产名必须和壳一致：
 | `session/load` 不支持或失败 | 新建 ACP 会话，界面历史保留，下一条消息带前文 |
 | `session/fork` 不可用或不支持指定消息 | 新会话 + 首条 prompt 前缀截断记录 |
 | chrome.storage 变大 | 工具输出超长时截断再写入 |
-| 内容脚本无法注入 | `current.json` 只写 url/title，命令返回明确错误 |
+| 内容脚本无法注入 | `current.json` 只写 url/title，命令返回明确错误；Host 超时仍落 `results/<id>.json` |
+| 扩展重载 / CRXJS 异步 loader 后旧标签没有接收端 | 页面命令与快照走同一套 `ensureContent` + 主框 `__opensiderPage` 调用，不用 `tabs.sendMessage` |
 | Chrome 杀 Service Worker | 重连 Native Host；ACP 子进程随 Host 退出，重连后 load/new |
 | 侧栏晚于 Host ready 才连上 | SW 回放最近状态 |
 | React StrictMode 拆掉端口后再 postMessage | 页面存活期间不拆端口；卸载只摘监听器 |
