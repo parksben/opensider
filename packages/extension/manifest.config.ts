@@ -36,7 +36,7 @@ export default defineManifest({
       run_at: "document_idle",
     },
   ],
-  permissions: ["sidePanel", "nativeMessaging", "tabs", "windows", "storage", "scripting"],
+  permissions: ["sidePanel", "nativeMessaging", "tabs", "windows", "storage", "scripting", "favicon"],
   host_permissions: ["http://*/*", "https://*/*"],
   content_security_policy: {
     extension_pages: "script-src 'self'; object-src 'self'; img-src 'self' data: blob: file: https:;",

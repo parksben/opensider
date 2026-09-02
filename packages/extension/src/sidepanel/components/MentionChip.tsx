@@ -1,12 +1,13 @@
 import type { AttachmentKind } from "@shared";
 import { File, Folder, Globe, Image, MousePointer2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   mentionLabel,
   mentionTitle,
   parseMentionSegments,
   type MentionChip as Mention,
 } from "../mentions";
+import { tabFaviconCandidates } from "../tab-favicon";
 
 export function kindIcon(kind: AttachmentKind) {
   if (kind === "image") return Image;
@@ -15,21 +16,28 @@ export function kindIcon(kind: AttachmentKind) {
   return File;
 }
 
-export function TabFavicon({ url }: { url?: string }) {
-  const [failed, setFailed] = useState(false);
-  if (!url || failed) return <Globe size={12} className="shrink-0 opacity-80" />;
+export function TabFavicon({ pageUrl, favIconUrl }: { pageUrl?: string; favIconUrl?: string }) {
+  const candidates = useMemo(() => tabFaviconCandidates(pageUrl, favIconUrl), [pageUrl, favIconUrl]);
+  const [index, setIndex] = useState(0);
+  useEffect(() => {
+    setIndex(0);
+  }, [pageUrl, favIconUrl]);
+  const src = candidates[index];
+  if (!src) return <Globe size={12} className="shrink-0 opacity-80" />;
   return (
     <img
-      src={url}
+      key={src}
+      src={src}
       alt=""
+      referrerPolicy="no-referrer"
       className="h-3 w-3 shrink-0 rounded-[2px] object-cover"
-      onError={() => setFailed(true)}
+      onError={() => setIndex((current) => current + 1)}
     />
   );
 }
 
 export function MentionIcon({ mention }: { mention: Mention }) {
-  if (mention.kind === "tab") return <TabFavicon url={mention.favIconUrl} />;
+  if (mention.kind === "tab") return <TabFavicon pageUrl={mention.url} favIconUrl={mention.favIconUrl} />;
   const Icon = kindIcon(mention.fileKind);
   return <Icon size={12} className="shrink-0 opacity-80" />;
 }

@@ -314,7 +314,7 @@ export function AtMenu({
                   active ? "bg-[var(--hover-strong)] text-[var(--text)]" : "text-[var(--muted)]"
                 }`}
               >
-                <TabFavicon url={tab.favIconUrl} />
+                <TabFavicon pageUrl={tab.url} favIconUrl={tab.favIconUrl} />
                 <HighlightText text={match.label} ranges={match.labelRanges} className="min-w-0 truncate" />
               </RippleButton>
             );
