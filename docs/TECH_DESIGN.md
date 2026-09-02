@@ -55,7 +55,7 @@ Cursor Agent 在 ACP 模式下仍然自己执行本地工具（读文件、写�
 
 - Service Worker 一启动就 `connectNative`，不依赖侧栏先连上；`ping` / `onConnect` 也会再拉一次，避免第一次 `connect` 落在 listener 注册之前
 - `chrome.runtime.connectNative` 连接 Host；重试时强制拆掉旧端口再连，避免僵尸 `nativePort` 让 `if (nativePort) return` 直接跳过
-- `starting` 有看门狗：连上后约 10s 还没离开 starting，广播 `error`（附 `~/.opensider/host.log`），避免点 Connection 空转
+- `starting` 有看门狗：连上后约 10s 还没离开 starting，广播 `error`（附 `~/.opensider/host.log`），避免点 Connection 空转。若已经收到非空 `agents`，看门狗直接当 detect 完成（回放名单并视为 idle），不要再报 starting。侧栏「没有找到 CLI」只在收到过 `agents` 且为空时出现。
 - 往 Native / 侧栏端口发消息一律 try/catch，断开时清掉引用并写出 `chrome.runtime.lastError`
 - 缓存最近一次 `status` / `session` / `page` / `models`，侧栏 `onConnect` 或 `ping` 时立即回放，避免 Host 已 ready 但面板因 React StrictMode 重挂而一直显示离线
 - 在 Side Panel、Content Script、Host 之间转发消息；`page.pick` 只走内容脚本，不进 Native Host。先 ping，失败则按 manifest 注入内容脚本再拾取
@@ -119,6 +119,7 @@ Cursor Agent 在 ACP 模式下仍然自己执行本地工具（读文件、写�
 
 ### Native Host
 
+- Chrome / Edge / Brave 拉起 Host 时会把调用方 origin 放进 `argv`（macOS/Linux 为 `chrome-extension://<id>/`，Windows 再加窗口句柄）。`cmd/opensider` 只把 `install` / `pick` 当子命令；**剥掉 origin / `--parent-window=` / 纯数字句柄之后若没有子命令，就进 Host**。禁止把 origin 当成 unknown command 写 stderr 再 `exit 2`——那会让 Chrome 秒杀进程，侧栏永远收不到 `idle` / `agents`。
 - 解析 Chrome Native Messaging 长度前缀帧（**禁止往 stdout 打日志**）
 - 启动后立刻 `status=starting` 并应答 `hello`；CLI 探测在后台跑，**不得**挡住读循环或把 `hello` 拖到探测结束。探测有总时限（约 8s）；超时仍按已找到的二进制列名单并转 `idle`。一帧 header+body 一次 `Write`，避免半帧卡死 Chrome。
 - spawn `~/.local/bin/agent acp`（PATH 不足时用绝对路径）

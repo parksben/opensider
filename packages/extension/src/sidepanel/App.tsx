@@ -70,6 +70,7 @@ export function App() {
   const [selectedProviderId, setSelectedProviderId] = useState("");
   const [onboardingCompleted, setOnboardingCompleted] = useState(false);
   const [agents, setAgents] = useState<AgentInfo[]>([]);
+  const [sawAgents, setSawAgents] = useState(false);
   const [progress, setProgress] = useState<AgentProgress>();
   const [sessionsOpen, setSessionsOpen] = useState(false);
   const [drawerWidth, setDrawerWidth] = useState(SESSION_DRAWER_DEFAULT);
@@ -285,6 +286,7 @@ export function App() {
 
   const handleHost = (msg: HostToExt) => {
     if (msg.type === "agents") {
+      setSawAgents(true);
       setAgents(msg.agents);
       if (!selectedProviderRef.current && msg.agents[0]) {
         setSelectedProviderId(msg.agents[0].id);
@@ -1014,6 +1016,8 @@ export function App() {
             pendingConnectRef.current = "";
             connectedProviderRef.current = "";
             setStatus("starting");
+            setSawAgents(false);
+            setAgents([]);
             setError(t(locale, "reconnecting"));
             reconnectRef.current();
           }}
@@ -1023,23 +1027,22 @@ export function App() {
             {status === "missing" ? (
               <BridgeSetup locale={locale} />
             ) : !onboardingCompleted ? (
-              status === "idle" || status === "connecting" || status === "ready" || status === "error" ? (
               <AgentSetup
                 locale={locale}
                 agents={agents}
                 selectedId={selectedProviderId}
                 connecting={status === "connecting"}
+                scanning={!sawAgents && status !== "idle" && status !== "ready" && status !== "connecting"}
                 progress={progress}
                 error={error}
                 onSelect={requestConnect}
                 onRetry={() => {
+                  setSawAgents(false);
+                  setAgents([]);
                   sendRef.current({ type: "agents.detect" });
                   reconnectRef.current();
                 }}
               />
-              ) : (
-                <div className="h-full bg-[var(--ink)]" />
-              )
             ) : (
             <ChatPane
               locale={locale}

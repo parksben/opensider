@@ -55,13 +55,17 @@ function armStartingWatchdog(): void {
   clearStartingWatchdog();
   startingWatchdog = setTimeout(() => {
     startingWatchdog = 0;
-    if (lastStatus.type === "status" && lastStatus.state === "starting") {
-      broadcast({
-        type: "status",
-        state: "error",
-        error: nativeError("Native host is still starting. Check ~/.opensider/host.log."),
-      });
+    if (lastStatus.type !== "status" || lastStatus.state !== "starting") return;
+    if (lastAgents && lastAgents.type === "agents" && lastAgents.agents.length > 0) {
+      broadcast(lastAgents);
+      broadcast({ type: "status", state: "idle" });
+      return;
     }
+    broadcast({
+      type: "status",
+      state: "error",
+      error: nativeError("Native host is still starting. Check ~/.opensider/host.log."),
+    });
   }, STARTING_TIMEOUT_MS) as unknown as number;
 }
 
@@ -83,6 +87,12 @@ function reportMissing(detail: string): void {
 }
 
 function remember(msg: HostToExt): void {
+  if (msg.type === "agents") {
+    lastAgents = msg;
+    if (Array.isArray(msg.agents) && msg.agents.length > 0 && lastStatus.type === "status" && lastStatus.state === "starting") {
+      clearStartingWatchdog();
+    }
+  }
   if (msg.type === "status") {
     lastStatus = msg;
     if (msg.state === "starting") {
@@ -102,7 +112,6 @@ function remember(msg: HostToExt): void {
   if (msg.type === "page") lastPage = msg;
   if (msg.type === "session") lastSession = msg;
   if (msg.type === "models") lastModels = msg;
-  if (msg.type === "agents") lastAgents = msg;
   if (msg.type === "agent.progress") lastProgress = msg;
 }
 

@@ -18,6 +18,7 @@ export function AgentSetup({
   agents,
   selectedId,
   connecting,
+  scanning,
   progress,
   error,
   onSelect,
@@ -27,6 +28,7 @@ export function AgentSetup({
   agents: AgentInfo[];
   selectedId: string;
   connecting: boolean;
+  scanning?: boolean;
   progress?: AgentProgress;
   error?: string;
   onSelect: (id: string) => void;
@@ -34,6 +36,7 @@ export function AgentSetup({
 }) {
   const selected = agents.find((item) => item.id === selectedId);
   const phaseKey = progress ? PHASE_KEYS[progress.phase as keyof typeof PHASE_KEYS] : undefined;
+  const showEmpty = !connecting && !scanning && agents.length === 0;
 
   return (
     <div className="flex h-full min-h-0 flex-col items-center justify-center overflow-y-auto px-5 py-8">
@@ -61,7 +64,12 @@ export function AgentSetup({
               <LoaderCircle size={16} className="animate-spin text-[var(--muted)]" />
             )}
           </div>
-        ) : agents.length === 0 ? (
+        ) : scanning ? (
+          <div className="flex w-full flex-col items-center gap-3 rounded-xl border border-[var(--line)] bg-[var(--panel)] px-4 py-6 text-center">
+            <LoaderCircle size={16} className="animate-spin text-[var(--muted)]" />
+            <p className="text-[12.5px] leading-relaxed text-[var(--muted)]">{t(locale, "setupScanning")}</p>
+          </div>
+        ) : showEmpty ? (
           <div className="flex w-full flex-col items-center gap-3 rounded-xl border border-[var(--line)] bg-[var(--panel)] px-4 py-6 text-center">
             <p className="text-[12.5px] leading-relaxed text-[var(--muted)]">{t(locale, "setupEmpty")}</p>
             <RippleButton
