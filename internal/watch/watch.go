@@ -1,7 +1,9 @@
 package watch
 
 import (
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -70,9 +72,12 @@ func readCommand(file string, onCommand func(command protocol.BrowserCommand)) {
 		if cmd.ID == "" || !protocol.IsWatchedMethod(cmd.Method) {
 			return
 		}
-		if _, loaded := processed.LoadOrStore(cmd.ID, true); loaded {
+		sum := sha256.Sum256(raw)
+		hash := hex.EncodeToString(sum[:])
+		if prev, ok := processed.Load(cmd.ID); ok && prev == hash {
 			return
 		}
+		processed.Store(cmd.ID, hash)
 		onCommand(cmd)
 		return
 	}
