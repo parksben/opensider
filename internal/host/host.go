@@ -17,6 +17,7 @@ import (
 	"github.com/parksben/opensider/internal/paths"
 	"github.com/parksben/opensider/internal/pick"
 	"github.com/parksben/opensider/internal/protocol"
+	"github.com/parksben/opensider/internal/reveal"
 	"github.com/parksben/opensider/internal/watch"
 	"github.com/parksben/opensider/internal/workspace"
 )
@@ -81,7 +82,7 @@ func (h *Host) main() {
 		log.Log("idle agents=" + joined)
 	}
 	if err := watch.WatchCommands(func(command protocol.BrowserCommand) {
-		h.send(map[string]any{"type": "browser.command", "command": command})
+		h.handleWorkspaceCommand(command)
 	}); err != nil {
 		log.Log("watch commands: " + err.Error())
 	}
@@ -669,6 +670,12 @@ func (h *Host) dispatch(typ string, msg map[string]any) error {
 			out["cancelled"] = true
 		}
 		h.send(out)
+		return nil
+	case "fs.reveal":
+		path := str(msg["path"])
+		if err := reveal.Path(path); err != nil {
+			log.Log("fs.reveal: " + err.Error())
+		}
 		return nil
 	case "fs.save":
 		requestID := str(msg["requestId"])

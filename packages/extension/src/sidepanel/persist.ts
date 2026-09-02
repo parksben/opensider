@@ -32,6 +32,7 @@ export type Session = {
   pendingForkContext?: string;
   messages: ChatMessage[];
   todos: TodoItem[];
+  artifacts?: AttachmentItem[];
 };
 
 export const SESSION_DRAWER_MIN = 196;
@@ -264,6 +265,7 @@ export function hydrateSession(session: PersistedState["sessions"][number]): Ses
     title: stripEnvPrompt(title) || title,
     messages,
     todos: session.todos ?? [],
+    artifacts: Array.isArray(session.artifacts) ? session.artifacts : [],
   };
 }
 
@@ -276,6 +278,7 @@ export function emptySession(partial?: Partial<Session>): Session {
     updatedAt: now,
     messages: [],
     todos: [],
+    artifacts: [],
     ...partial,
   };
 }

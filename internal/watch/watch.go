@@ -67,7 +67,7 @@ func readCommand(file string, onCommand func(command protocol.BrowserCommand)) {
 		if err := json.Unmarshal(raw, &cmd); err != nil {
 			return
 		}
-		if cmd.ID == "" || !protocol.IsPageMethod(cmd.Method) {
+		if cmd.ID == "" || !protocol.IsWatchedMethod(cmd.Method) {
 			return
 		}
 		if _, loaded := processed.LoadOrStore(cmd.ID, true); loaded {

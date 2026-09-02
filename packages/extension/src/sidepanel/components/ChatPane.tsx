@@ -22,6 +22,7 @@ import { ImagePreview } from "./ImagePreview";
 import { QueuedMessageList } from "./QueuedMessageList";
 import { RippleButton } from "./RippleButton";
 import { TextFold } from "./TextFold";
+import { ArtifactList } from "./ArtifactList";
 import { TodoList } from "./TodoList";
 import { ToolCard } from "./ToolCard";
 
@@ -62,6 +63,8 @@ export function ChatPane({
   page,
   hitl,
   todos,
+  artifacts,
+  onRevealArtifact,
   queue,
 }: {
   locale: Locale;
@@ -74,6 +77,9 @@ export function ChatPane({
   modelId: string;
   showModelPicker: boolean;
   hitl?: ReactNode;
+  todos?: TodoItem[];
+  artifacts?: AttachmentItem[];
+  onRevealArtifact?: (path: string) => void;
   queue: QueuedMessage[];
   onSend: (text: string, attachments: AttachmentItem[]) => void;
   onEnqueue: (text: string, attachments: AttachmentItem[]) => void;
@@ -93,7 +99,6 @@ export function ChatPane({
   agentMode: AgentMode;
   onAgentMode: (mode: AgentMode) => void;
   page?: CurrentPage;
-  todos?: TodoItem[];
 }) {
   const [draft, setDraft] = useState("");
   const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
@@ -376,6 +381,7 @@ export function ChatPane({
           ) : null}
         <TodoList locale={locale} todos={todos ?? []} />
         {hitl}
+        <ArtifactList locale={locale} items={artifacts ?? []} onReveal={(path) => onRevealArtifact?.(path)} />
         <QueuedMessageList
           locale={locale}
           items={queue}

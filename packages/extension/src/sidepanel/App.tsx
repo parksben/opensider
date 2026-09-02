@@ -388,6 +388,13 @@ export function App() {
       waiter?.(msg.items ?? []);
       return;
     }
+    if (msg.type === "artifacts") {
+      const localId = localIdForAcp(msg.sessionId) || selectedIdRef.current;
+      if (!localId) return;
+      const items = Array.isArray(msg.items) ? msg.items : [];
+      patchSession(localId, (session) => ({ ...session, artifacts: items }));
+      return;
+    }
     if (msg.type === "browser.command") {
       recordBrowserTool(msg.command);
       return;
@@ -1069,6 +1076,8 @@ export function App() {
               }}
               page={page}
               todos={selected.todos}
+              artifacts={selected.artifacts ?? []}
+              onRevealArtifact={(path) => sendRef.current({ type: "fs.reveal", path })}
               queue={queues[selected.id] ?? []}
               onEnqueue={onEnqueue}
               onUpdateQueued={onUpdateQueued}
