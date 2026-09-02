@@ -450,6 +450,12 @@ macOS 清单路径：`~/Library/Application Support/Google/Chrome/NativeMessagin
 ## 仓库结构
 
 ```
+README.md           面向用户的产品页与安装（不写开发命令或仓库树）
+docs/REQUIREMENTS.md  需求：做什么、为什么
+docs/TECH_DESIGN.md   本文件：怎么做、为什么选这个方案
+docs/DEVELOPMENT.md   开发构建、Host 注册、工作区、打 CRX、tag 发 Release
+docs/images/          README 用的 logo 与海报（不引用 packages/ 源码路径）
+docs/demo/            README 用的侧栏演示视频（H.264 MP4，≤30s）
 cmd/opensider       唯一 Go 入口（host / install / pick）
 internal/           Host / install / pick / ACP
 packages/shared     扩展 ↔ Host 消息类型（TS）
@@ -460,7 +466,7 @@ scripts/keys        扩展 CRX 签名钥（固定打包 ID）
 .github/workflows   tag 发 Release
 ```
 
-pnpm workspace 只编扩展。Host 用 Go。扩展用 Vite + `@crxjs/vite-plugin` 打包。
+pnpm workspace 只编扩展。Host 用 Go。扩展用 Vite + `@crxjs/vite-plugin` 打包。开发命令与加载 `packages/extension/dist` 的步骤只写在 `docs/DEVELOPMENT.md`，根目录 README 只服务使用者。
 
 ## 发布与安装壳
 

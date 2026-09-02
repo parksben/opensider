@@ -8,6 +8,13 @@
 
 所有网页共用**同一个工作区**，因此可以做跨页面的连续工作。聊天本身是**多会话**：用户可以新建、切换，也可以从某一轮对话之后的位置 fork 出新会话。切换标签时，Agent 能知道用户现在在哪个页面，并能抓取页面信息、直接操作页面完成自动化。
 
+## 文档分层
+
+- **`README.md`**：面向使用者的产品页。只写产品是什么、适用谁、如何从 GitHub Release 安装并打开侧栏，以及一段不超过 30 秒的侧栏演示视频。不写 pnpm / Go、仓库树、工作区内部协议，也不把 `packages/extension/dist` 当成用户加载路径。
+- **`docs/DEVELOPMENT.md`**：面向开发。本地构建、`pnpm install-host`、工作区布局、仓库结构、打 CRX、推 `v*` tag 发 Release。
+- **本文件**：记产品做什么、为什么。
+- **`docs/TECH_DESIGN.md`**：记怎么做、为什么选这个方案。README 的 logo / 海报放 `docs/images/`，演示视频放 `docs/demo/`，避免依赖 `packages/` 路径。
+
 ## 非目标（v1）
 
 - 不另起用户需要手动启动的本地 HTTP / WebSocket 服务（ACP / 附件仍由 Native Host 按需拉起）
