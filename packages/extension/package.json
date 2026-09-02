@@ -7,12 +7,13 @@
     "build": "vite build"
   },
   "dependencies": {
-    "@opensider/shared": "workspace:*",
     "@dagrejs/dagre": "^3.1.1",
+    "@opensider/shared": "workspace:*",
     "lucide-react": "^0.542.0",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "react-markdown": "^10.1.0",
+    "react-zoom-pan-pinch": "^4.1.1",
     "remark-gfm": "^4.0.1"
   },
   "devDependencies": {

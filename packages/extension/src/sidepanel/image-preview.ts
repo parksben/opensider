@@ -23,6 +23,31 @@ export function bytesFromBase64Chunks(chunks: string[]): Uint8Array {
   return out;
 }
 
+export const PREVIEW_DRAG_THRESHOLD_PX = 4;
+
+function hasClosest(target: EventTarget | null): target is Element {
+  return !!target && typeof (target as Element).closest === "function";
+}
+
+export function isPreviewBackdropClose(target: EventTarget | null, dragged: boolean): boolean {
+  if (dragged) return false;
+  if (!hasClosest(target)) return false;
+  if (target.closest("img, .cs-preview-image")) return false;
+  if (target.closest("[data-preview-chrome]")) return false;
+  return true;
+}
+
+export function previewPointerDragged(
+  start: { x: number; y: number },
+  x: number,
+  y: number,
+  threshold = PREVIEW_DRAG_THRESHOLD_PX,
+): boolean {
+  const dx = x - start.x;
+  const dy = y - start.y;
+  return dx * dx + dy * dy > threshold * threshold;
+}
+
 export function blobUrlFromBase64Chunks(chunks: string[], mime: string): string {
   const bytes = bytesFromBase64Chunks(chunks);
   const copy = new ArrayBuffer(bytes.byteLength);

@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { bytesFromBase64Chunks, isAttachedImagePath } from "./image-preview.ts";
+import {
+  bytesFromBase64Chunks,
+  isAttachedImagePath,
+  isPreviewBackdropClose,
+  previewPointerDragged,
+} from "./image-preview.ts";
 
 describe("isAttachedImagePath", () => {
   it("accepts local absolute paths only", () => {
@@ -15,6 +20,27 @@ describe("isAttachedImagePath", () => {
     assert.equal(isAttachedImagePath("https://example.com/a.png"), false);
     assert.equal(isAttachedImagePath("file:///tmp/a.png"), false);
     assert.equal(isAttachedImagePath("html > body > img"), false);
+  });
+});
+
+describe("isPreviewBackdropClose", () => {
+  it("closes on the mask, not the image, chrome, or a drag", () => {
+    const mask = { closest: () => null };
+    const image = { closest: (sel: string) => (sel === "img, .cs-preview-image" ? {} : null) };
+    const icon = { closest: (sel: string) => (sel === "[data-preview-chrome]" ? {} : null) };
+
+    assert.equal(isPreviewBackdropClose(mask as never, false), true);
+    assert.equal(isPreviewBackdropClose(image as never, false), false);
+    assert.equal(isPreviewBackdropClose(icon as never, false), false);
+    assert.equal(isPreviewBackdropClose(mask as never, true), false);
+    assert.equal(isPreviewBackdropClose(null, false), false);
+  });
+});
+
+describe("previewPointerDragged", () => {
+  it("ignores small jitter and flags a real drag", () => {
+    assert.equal(previewPointerDragged({ x: 10, y: 10 }, 12, 11), false);
+    assert.equal(previewPointerDragged({ x: 10, y: 10 }, 16, 10), true);
   });
 });
 

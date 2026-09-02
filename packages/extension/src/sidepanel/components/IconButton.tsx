@@ -91,7 +91,7 @@ export function IconButton({
             <span
               ref={tipRef}
               role="tooltip"
-              className="pointer-events-none fixed z-50 max-w-[calc(100vw-16px)] whitespace-pre-line rounded-md border border-[var(--line)] bg-[var(--panel)] px-2 py-1 text-left text-[11px] text-[var(--text)] shadow-lg"
+              className="pointer-events-none fixed z-[110] max-w-[calc(100vw-16px)] whitespace-pre-line rounded-md border border-[var(--line)] bg-[var(--panel)] px-2 py-1 text-left text-[11px] text-[var(--text)] shadow-lg"
               style={{
                 top: pos.ready ? pos.top : 0,
                 left: pos.ready ? pos.left : 0,

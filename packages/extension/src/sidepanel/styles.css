@@ -242,12 +242,27 @@ mark.cs-at-match {
   }
 }
 
+.cs-preview-stage {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  cursor: grab;
+}
+
+.cs-preview-stage:active {
+  cursor: grabbing;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .cs-composer.is-running::before {
     animation: none;
   }
 
   .cs-braille-spin::before {
+    animation: none;
+  }
+
+  .cs-preview-spin {
     animation: none;
   }
 }
