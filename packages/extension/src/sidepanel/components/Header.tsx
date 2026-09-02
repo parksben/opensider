@@ -17,7 +17,7 @@ const PHASE_KEYS = {
   models: "progressModels",
 } as const;
 
-const TITLE_GAP = 56;
+const TITLE_GAP = 32;
 
 export function Header({
   locale,
