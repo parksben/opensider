@@ -248,7 +248,7 @@ chrome.storage.local
 2. 若 fork 的是**最后一条**且 Agent 支持 `session/fork`，用 ACP fork，Agent 历史与 UI 对齐，不必再灌上下文。
 3. 否则 `session/new`。Agent 是空会话，把截断后的对话写成 `pendingForkContext`，**下一条用户消息**前缀带上（UI 不显示这段包装）。这样 Agent 不会为了灌上下文先回一嘴。
 
-侧栏用 `runningIds`（不持久化）记哪些本地会话有一轮在飞，不再用全局一把锁。`isRunning` 只表示**当前选中**会话在跑（输入框描边、停止钮、该会话的 fork / 重生成 / 改历史）。新建和切换始终允许；流式 `update` / `turn.end` / HITL 按消息上的 ACP `sessionId` 写回对应本地会话。切到别的会话时，若目标自己正在跑则不要再 `session.use`。权限 / 提问 / 计划按会话存放，只在看着该会话时画出来；「全部允许」仍会自动回掉所有会话里待批的权限。页面工具仍共用一个工作区，两条 Agent 同时改页面时可能打架，这是并行的取舍。会话列表里进行中的卡片左侧用六点盲文字符（`⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏`）CSS `content` 循环代替圆点，不要再在标题旁挂 `LoaderCircle`。
+侧栏用 `runningIds`（不持久化）记哪些本地会话有一轮在飞，不再用全局一把锁。`isRunning` 只表示**当前选中**会话在跑（输入框描边、停止钮、该会话的 fork / 重生成 / 改历史）。新建和切换始终允许；流式 `update` / `turn.end` / HITL 按消息上的 ACP `sessionId` 写回对应本地会话。切到别的会话时，若目标自己正在跑则不要再 `session.use`。权限 / 提问 / 计划按会话存放，只在看着该会话时画出来；「工具免确认」仍会自动回掉所有会话里待批的权限。页面工具仍共用一个工作区，两条 Agent 同时改页面时可能打架，这是并行的取舍。会话列表里进行中的卡片左侧用六点盲文字符（`⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏`）CSS `content` 循环代替圆点，不要再在标题旁挂 `LoaderCircle`。
 
 重新生成（同一会话抽卡）：
 
@@ -352,7 +352,9 @@ on them with page tools using args.selector.
 
 ## 权限模式
 
-`agentMode` 三级：`ask`（默认）每次 `request_permission` 弹卡；`workspace` 仅对编辑/写入类自动回 always/once，Shell/网络仍弹卡；`auto` 全部工具权限自动回。提问和计划三种都不自动过。切到更宽的档位时，已弹出且符合该档的卡立刻回。Host 若该 Profile 广告了 `session/set_mode`，按 `modeMap` 推（Ask→default/manual/agent，workspace→acceptEdits，Allow all→bypassPermissions/agent-full-access），没有则只在客户端拦卡。
+`agentMode` 三级：`ask`（默认）每次 `request_permission` 弹卡；`workspace` 仅对编辑/写入类自动回 always/once，Shell/网络仍弹卡；`auto` 全部工具权限自动回。提问和计划三种都不自动过。切到更宽的档位时，已弹出且符合该档的卡立刻回。Host 若该 Profile 广告了 `session/set_mode`，按 `modeMap` 推（ask→default/manual/agent，workspace→acceptEdits，auto→bypassPermissions/agent-full-access），没有则只在客户端拦卡。
+
+侧栏 `ModeSelect` 文案走 `i18n`：`ask`「所有工具需授权 / Approve every tool」灰字「用任何工具前都先问你 / You'll be asked before any tool runs」；`workspace`「工作区改文件免确认 / Allow workspace edits」灰字「改工作区文件不用问；跑命令、上网还是会问 / File edits go through; shell and network still ask」；`auto`「工具免确认 / Auto-run tools」灰字「工具不用问；提问和计划还要你点 / Tools run on their own; questions and plans still need a click」。`isWorkspaceWritePermission` 按 `toolCall.kind` / `title` 启发式：命中 execute/shell/bash/terminal/command/fetch/http/network/web_search/mcp 则仍弹卡，命中 edit/write/delete/move/create/patch/apply 才自动过。客户端不按路径判断是否出目录；出目录仍问靠 Agent 的 `acceptEdits`。
 
 ## 多 Agent CLI
 
