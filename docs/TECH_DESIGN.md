@@ -390,7 +390,7 @@ Host 是 ACP Client，`clientCapabilities` 关闭 `fs` / `terminal`，让 Agent 
 | `cursor/create_plan` | 计划审批 |
 | `cursor/update_todos` | 输入框上方可折叠 TodoList。新一轮 `beginTurn` 先清空 `session.todos`。下发时若 `merge` 且只是已有 id+文案的状态更新则合并；一旦出现新的 id/文案则整表覆盖，不保留上一轮条目 |
 | `cursor/task` | 子任务卡片 |
-| `session/prompt` 结束 | 对应本地会话移出 `runningIds`，给**该会话**末尾 assistant 打上 `durationMs` |
+| `session/prompt` 结束 | 对应本地会话移出 `runningIds`，给**该会话**末尾 assistant 打上 `durationMs`。Cursor 在正文/工具已经流完后，偶尔用 JSON-RPC error `RetriableError: WritableIterable is closed` 收尾，或再推一段同样文案的 `agent_message_chunk` / `agent_thought_chunk`。这是 CLI 自己的流拆掉，不是 Host 提前关了 stdin。Host 若本轮已经转发过正文、思考或工具，把该 error 记日志并按 `end_turn` 结束，不发 `stopReason: error`。转发 update 前丢掉整段（或首尾整行 / 句末）的这一句。侧栏 `applyAcpUpdate` / `settleFinishedContent` 同样剥，避免旧 Host 或已落盘记录再画出来。空轮（只有这句、没有任何内容）仍当失败；鉴权 / 崩溃 / 其它 RPC error 照旧 `turn.end` + 顶栏错误 |
 
 消息状态由 Side Panel 持有并持久化。Host 重启后 `session/load` 只负责恢复 Agent 侧上下文；Panel 以本地存储的消息为准，不因为 `replay` 清空界面。`session/load` / `session/new` / `session/fork` 以及为了切会话而做的 `session/load` 期间，Agent 会把历史当 `session/update` 回放（常常是一整段带 `[Current tab]` 前缀的 `user_message_chunk`）。三层拦住：
 
@@ -500,7 +500,7 @@ Release 资产名必须和壳一致：
 | 旧 `~/.opensider` 混着 Node Host 残留 | 备份后 `install --local` 重建 runtime / workspace |
 | macOS 拦 Chrome 执行 Desktop 上的 Host | `opensider install`（开发时 `--local`）把运行副本放到 `~/.opensider/runtime` |
 | macos-latest 编不出 darwin/amd64 | 该资产可缺；Intel Mac 用户要等能编出来的 tag，或用源码 `go run` |
-| 未登录 | 侧栏提示先跑 `agent login` |
+| Cursor `WritableIterable is closed` | 成功轮次按 `end_turn`，剥掉该关流字；空轮仍报错。改不了 Cursor CLI 本身 |
 | `session/load` 不支持或失败 | 新建 ACP 会话，界面历史保留，下一条消息带前文 |
 | `session/fork` 不可用或不支持指定消息 | 新会话 + 首条 prompt 前缀截断记录 |
 | chrome.storage 变大 | 工具输出超长时截断再写入 |

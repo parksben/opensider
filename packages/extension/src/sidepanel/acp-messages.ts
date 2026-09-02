@@ -1,5 +1,6 @@
 import type { BrowserCommand, BrowserResult } from "@shared";
 import type { ChatMessage, ChatPart, ToolPart, ToolStatus } from "./chat-types";
+import { isBenignStreamCloseText, stripBenignStreamClose } from "./stream-close";
 import { withPrimaryArg } from "./tool-label";
 
 function id(): string {
@@ -36,6 +37,11 @@ function replacePart(message: ChatMessage, index: number, part: ChatPart): ChatM
   return { ...message, content };
 }
 
+function visibleAcpText(update: Record<string, unknown>): string {
+  const raw = String((update.content as { text?: string } | undefined)?.text ?? "");
+  return isBenignStreamCloseText(raw) ? stripBenignStreamClose(raw) : raw;
+}
+
 function appendText(parts: ChatPart[], type: "text" | "reasoning", text: string): ChatPart[] {
   const last = parts[parts.length - 1];
   if (last && last.type === type) {
@@ -67,7 +73,8 @@ export function applyAcpUpdate(
   }
 
   if (kind === "agent_message_chunk") {
-    const text = String((update.content as { text?: string } | undefined)?.text ?? "");
+    const text = visibleAcpText(update);
+    if (!text) return messages;
     const next = lastAssistant(messages, model);
     const message = next.messages[next.index];
     const updated = { ...message, content: appendText(message.content, "text", text) };
@@ -76,7 +83,8 @@ export function applyAcpUpdate(
   }
 
   if (kind === "agent_thought_chunk") {
-    const text = String((update.content as { text?: string } | undefined)?.text ?? "");
+    const text = visibleAcpText(update);
+    if (!text) return messages;
     const next = lastAssistant(messages, model);
     const message = next.messages[next.index];
     const updated = { ...message, content: appendText(message.content, "reasoning", text) };

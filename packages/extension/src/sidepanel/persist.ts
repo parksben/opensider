@@ -2,6 +2,7 @@ import type { AttachmentItem } from "@shared";
 import type { ChatMessage, ChatPart, TodoItem } from "./chat-types";
 import { readCachedLocale, type Locale } from "./i18n";
 import { displayMentionText, wrapUserMentions } from "./mentions";
+import { isBenignStreamCloseText, stripBenignStreamClose } from "./stream-close";
 import { stampToolParts } from "./tool-label";
 import { isThemePreference, readCachedTheme, type ThemePreference } from "./theme";
 
@@ -122,12 +123,19 @@ export type PersistedState = {
 export function settleFinishedContent(content: ChatPart[]): ChatPart[] {
   const stamped = stampToolParts(content);
   let changed = stamped !== content;
-  const next = stamped.map((part) => {
-    if (part.type !== "tool-call") return part;
-    const status = part.status ?? "pending";
-    if (status !== "pending" && status !== "in_progress") return part;
-    changed = true;
-    return { ...part, status: "completed" as const };
+  const next = stamped.flatMap((part) => {
+    if (part.type === "tool-call") {
+      const status = part.status ?? "pending";
+      if (status !== "pending" && status !== "in_progress") return [part];
+      changed = true;
+      return [{ ...part, status: "completed" as const }];
+    }
+    if ((part.type === "text" || part.type === "reasoning") && isBenignStreamCloseText(part.text)) {
+      const text = stripBenignStreamClose(part.text);
+      changed = true;
+      return text ? [{ ...part, text }] : [];
+    }
+    return [part];
   });
   return changed ? next : content;
 }

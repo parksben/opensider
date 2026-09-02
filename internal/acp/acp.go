@@ -52,15 +52,16 @@ type rpcResult struct {
 }
 
 type Client struct {
-	launch   Launch
-	handlers Handlers
-	mu       sync.Mutex
-	cmd      *exec.Cmd
-	stdin    io.WriteCloser
-	nextID   atomic.Int64
-	pending  map[int]rpcWaiter
-	session  string
-	policy   protocol.AgentPolicy
+	launch         Launch
+	handlers       Handlers
+	mu             sync.Mutex
+	cmd            *exec.Cmd
+	stdin          io.WriteCloser
+	nextID         atomic.Int64
+	pending        map[int]rpcWaiter
+	session        string
+	policy         protocol.AgentPolicy
+	turnHadContent bool
 }
 
 func New(launch Launch, handlers Handlers) *Client {
@@ -282,11 +283,18 @@ func (c *Client) Prompt(text string) (string, error) {
 	if c.GetSessionID() == "" {
 		return "", errors.New("no session")
 	}
+	c.mu.Lock()
+	c.turnHadContent = false
+	c.mu.Unlock()
 	result, err := c.request("session/prompt", map[string]any{
 		"sessionId": c.GetSessionID(),
 		"prompt":    []any{map[string]any{"type": "text", "text": text}},
 	})
 	if err != nil {
+		if IsBenignStreamClose(err) && c.sawTurnContent() {
+			log.Log("session/prompt stream-close after content; treating as end_turn")
+			return "end_turn", nil
+		}
 		return "", err
 	}
 	obj, _ := result.(map[string]any)
@@ -376,6 +384,11 @@ func (c *Client) handleMessage(msg map[string]any) {
 		if update == nil {
 			update = params
 		}
+		if dropBenignStreamCloseUpdate(update) {
+			log.Log("dropped Cursor stream-close update")
+			return
+		}
+		c.noteTurnUpdate(update)
 		if c.handlers.OnUpdate != nil {
 			c.handlers.OnUpdate(update, sessionID)
 		}
@@ -439,6 +452,76 @@ func (c *Client) write(msg any) error {
 	}
 	_, err = c.stdin.Write(append(raw, '\n'))
 	return err
+}
+
+func (c *Client) sawTurnContent() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.turnHadContent
+}
+
+func (c *Client) noteTurnUpdate(update map[string]any) {
+	if !updateHasTurnContent(update) {
+		return
+	}
+	c.mu.Lock()
+	c.turnHadContent = true
+	c.mu.Unlock()
+}
+
+func updateText(update map[string]any) (string, bool) {
+	switch content := update["content"].(type) {
+	case string:
+		return content, true
+	case map[string]any:
+		return str(content["text"]), true
+	default:
+		return "", false
+	}
+}
+
+func setUpdateText(update map[string]any, text string) {
+	switch content := update["content"].(type) {
+	case map[string]any:
+		content["text"] = text
+	default:
+		update["content"] = map[string]any{"type": "text", "text": text}
+	}
+}
+
+func dropBenignStreamCloseUpdate(update map[string]any) bool {
+	kind := str(update["sessionUpdate"])
+	if kind != "agent_message_chunk" && kind != "agent_thought_chunk" {
+		return false
+	}
+	text, ok := updateText(update)
+	if !ok || !IsBenignStreamCloseText(text) {
+		return false
+	}
+	if IsOnlyBenignStreamClose(text) {
+		return true
+	}
+	cleaned := StripBenignStreamClose(text)
+	if cleaned == text {
+		return false
+	}
+	if strings.TrimSpace(cleaned) == "" {
+		return true
+	}
+	setUpdateText(update, cleaned)
+	return false
+}
+
+func updateHasTurnContent(update map[string]any) bool {
+	switch str(update["sessionUpdate"]) {
+	case "agent_message_chunk", "agent_thought_chunk":
+		text, _ := updateText(update)
+		return strings.TrimSpace(text) != ""
+	case "tool_call", "tool_call_update":
+		return true
+	default:
+		return false
+	}
 }
 
 func (c *Client) failAll(err error) {
