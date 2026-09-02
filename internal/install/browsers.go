@@ -17,7 +17,10 @@ func Register(hostPath string) ([]string, error) {
 		"description":     "OpenSider native host",
 		"path":            hostPath,
 		"type":            "stdio",
-		"allowed_origins": []string{"chrome-extension://" + protocol.ExtensionID + "/"},
+		"allowed_origins": []string{
+			"chrome-extension://" + protocol.ExtensionID + "/",
+			"chrome-extension://" + protocol.PackedExtensionID + "/",
+		},
 	}
 	raw, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {

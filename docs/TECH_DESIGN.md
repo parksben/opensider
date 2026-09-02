@@ -392,7 +392,9 @@ Host 是 ACP Client，`clientCapabilities` 关闭 `fs` / `terminal`，让 Agent 
 
 ## 扩展身份
 
-未打包扩展的 ID 必须稳定，Native Messaging 的 `allowed_origins` 才能写死。`manifest.json` 带固定 `key`，ID 为 `gcblddgaifebccglndkaccmibhechimj`。
+未打包扩展的 ID 必须稳定，Native Messaging 的 `allowed_origins` 才能写死。`manifest.json` 带固定 `key`，未打包 ID 为 `gcblddgaifebccglndkaccmibhechimj`。
+
+CRX 安装包用 `scripts/keys/extension.pem` 签 CRX3，打包 ID 为 `clnpnldmjaklambmaglpckjlgkicmcpb`。当初生成 `key` 时私钥没有留档，不能用同一把钥匙签包，否则会改未打包 ID、侧栏 `chrome.storage` 会丢。因此打包 ID 与未打包 ID 不同，Host 清单 `allowed_origins` 同时写这两个 origin。私钥只用来固定打包 ID，不代表商店发布者身份，跟仓库一起走，保证本地 `pnpm build` 和 tag Release 签出同一份 ID。
 
 Host 注册名：`com.opensider.host`  
 macOS 清单路径：`~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.opensider.host.json`
@@ -426,6 +428,8 @@ internal/           Host / install / pick / ACP
 packages/shared     扩展 ↔ Host 消息类型（TS）
 packages/extension  Chrome MV3（background / content / sidepanel）
 scripts/install     用户壳 install.sh / install.ps1
+scripts/pack-extension.mjs  把 dist 打成 zip + CRX3
+scripts/keys        扩展 CRX 签名钥（固定打包 ID）
 .github/workflows   tag 发 Release
 ```
 
@@ -449,7 +453,7 @@ pnpm workspace 只编扩展。Host 用 Go。扩展用 Vite + `@crxjs/vite-plugin
 
 ### 开发脚本
 
-根 `package.json`：`install-host` → `go run ./cmd/opensider install --local`；`build` 先编扩展再跑同一条。`dev` 仍只起 Vite。不再走 Node 安装器。
+根 `package.json`：`install-host` → `go run ./cmd/opensider install --local`；`pack-extension` → `node scripts/pack-extension.mjs`（把 `packages/extension/dist` 打成 `dist-release/extension.zip` 和 CRX3 `dist-release/opensider.crx`）；`build` 先编扩展，再打包，再跑 `install --local`。`dev` 仍只起 Vite。不再走 Node 安装器。打包脚本只用 Node 内置 `crypto` / `zlib`，不另加 crx 依赖。`dist-release/` 不入库。
 
 ### tag 发 Release
 
@@ -459,7 +463,7 @@ pnpm workspace 只编扩展。Host 用 Go。扩展用 Vite + `@crxjs/vite-plugin
 |---|---|---|
 | `build-darwin` | `macos-latest` | Go 1.22+，`CGO_ENABLED=1`，产出 `opensider-darwin-arm64`；在同一台机器上再试 `GOARCH=amd64`（`CC=clang`），编得出来才上传 |
 | `build-cross` | `ubuntu-latest` | `CGO_ENABLED=0`，`GOOS=linux/windows` × `GOARCH=amd64/arm64`（Windows 带 `.exe`） |
-| `release` | `ubuntu-latest`（等前两个） | `pnpm install` + `pnpm --filter @opensider/extension build` **一次**，把 `packages/extension/dist` 打成 `extension.zip`；拷贝两份安装壳；下载二进制工件；写 `SHA256SUMS`；`scripts/release-notes.sh` 打 commit 列表；`gh release create` |
+| `release` | `ubuntu-latest`（等前两个） | `pnpm install` + `pnpm --filter @opensider/extension build` **一次**，再跑 `pnpm pack-extension` 产出 `extension.zip` 与 `opensider.crx`；拷贝两份安装壳；下载二进制工件；写 `SHA256SUMS`；`scripts/release-notes.sh` 打 commit 列表；`gh release create` |
 
 扩展只在 `release` job 编一次，darwin / cross 不再装 Node。darwin 开 cgo 是为了本机 `pick`（AppKit）；linux / windows 交叉编译关 cgo，避免依赖目标系统的 C 工具链。macos-latest 现在是 Apple Silicon，darwin/amd64 属于尽力：SDK 够就编，不够就跳过，不挡发版。
 
@@ -469,6 +473,7 @@ Release 资产名必须和壳一致：
 - `opensider-linux-amd64` / `opensider-linux-arm64`
 - `opensider-windows-amd64.exe` / `opensider-windows-arm64.exe`（后者可选，流水线仍编）
 - `extension.zip`
+- `opensider.crx`
 - `install.sh` / `install.ps1`
 - `SHA256SUMS`
 

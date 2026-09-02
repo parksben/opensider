@@ -60,7 +60,7 @@ func Run(local bool) error {
 	}
 	fmt.Printf("Registered %s\n", protocol.HostName)
 	fmt.Printf("Host: %s\n", abs)
-	fmt.Printf("Allowed origin: chrome-extension://%s/\n", protocol.ExtensionID)
+	fmt.Printf("Allowed origins: chrome-extension://%s/ chrome-extension://%s/\n", protocol.ExtensionID, protocol.PackedExtensionID)
 	fmt.Printf("Workspace: %s\n", paths.WorkspaceDir())
 	fmt.Printf("Extension: %s\n", paths.ExtensionDir())
 	fmt.Printf("Manifests: %s\n", strings.Join(dirs, ", "))

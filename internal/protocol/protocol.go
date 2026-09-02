@@ -2,7 +2,8 @@ package protocol
 
 const (
 	HostName    = "com.opensider.host"
-	ExtensionID = "gcblddgaifebccglndkaccmibhechimj"
+	ExtensionID       = "gcblddgaifebccglndkaccmibhechimj"
+	PackedExtensionID = "clnpnldmjaklambmaglpckjlgkicmcpb"
 )
 
 var PageMethods = []string{

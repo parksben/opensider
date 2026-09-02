@@ -94,7 +94,9 @@ jobs:
           set -euo pipefail
           pnpm install --frozen-lockfile
           pnpm --filter @opensider/extension build
-          test -f packages/extension/dist/manifest.json
+          pnpm pack-extension
+          test -f dist-release/extension.zip
+          test -f dist-release/opensider.crx
 
       - uses: actions/download-artifact@v4
         with:
@@ -108,11 +110,15 @@ jobs:
           cp scripts/install/install.sh dist-release/install.sh
           cp scripts/install/install.ps1 dist-release/install.ps1
           chmod +x dist-release/install.sh dist-release/opensider-darwin-* dist-release/opensider-linux-*
-          (cd packages/extension/dist && zip -r "$GITHUB_WORKSPACE/dist-release/extension.zip" .)
+          test -f dist-release/extension.zip
+          test -f dist-release/opensider.crx
           cd dist-release
           sha256sum \
-            opensider-* \
+            opensider-darwin-* \
+            opensider-linux-* \
+            opensider-windows-* \
             extension.zip \
+            opensider.crx \
             install.sh \
             install.ps1 \
             > SHA256SUMS
@@ -128,8 +134,11 @@ jobs:
           set -euo pipefail
           shopt -s nullglob
           assets=(
-            dist-release/opensider-*
+            dist-release/opensider-darwin-*
+            dist-release/opensider-linux-*
+            dist-release/opensider-windows-*
             dist-release/extension.zip
+            dist-release/opensider.crx
             dist-release/install.sh
             dist-release/install.ps1
             dist-release/SHA256SUMS
