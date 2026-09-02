@@ -443,9 +443,9 @@ export function ChatPane({
             onAtTyped={openAtMenu}
             onAtQueryChange={handleAtQueryChange}
           />
-          <div className="flex items-center justify-between gap-2">
-            <div className="relative flex items-center gap-1">
-              <div className="flex items-center gap-0">
+          <div className="flex min-w-0 items-center gap-2">
+            <div className="relative flex min-w-0 flex-1 items-center gap-1">
+              <div className="flex shrink-0 items-center gap-0">
               <span ref={paperclipRef}>
               <IconButton
                 side="top"
@@ -520,7 +520,7 @@ export function ChatPane({
               />
               <ModeSelect locale={locale} mode={agentMode} onMode={onAgentMode} />
             </div>
-            <div className="flex min-w-0 items-center justify-end gap-1.5">
+            <div className="flex min-w-0 shrink items-center justify-end gap-1.5">
               {showModelPicker ? (
                 <ModelSelect locale={locale} models={models} modelId={modelId} onModel={onModel} />
               ) : null}
@@ -529,7 +529,7 @@ export function ChatPane({
                   side="top"
                   label={label("stop")}
                   onClick={onCancel}
-                  className="flex h-7 w-7 items-center justify-center rounded-full text-[var(--text)] hover:bg-[var(--hover)]"
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[var(--text)] hover:bg-[var(--hover)]"
                 >
                   <Square size={14} />
                 </IconButton>
@@ -539,7 +539,7 @@ export function ChatPane({
                 label={label("send")}
                 onClick={submit}
                 disabled={!canSend || savingPaste || Boolean(editingId && isRunning)}
-                className="flex h-7 w-7 items-center justify-center rounded-full text-[var(--text)] hover:bg-[var(--hover)] disabled:opacity-30 disabled:hover:bg-transparent"
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[var(--text)] hover:bg-[var(--hover)] disabled:opacity-30 disabled:hover:bg-transparent"
               >
                 <Send size={14} />
               </IconButton>
@@ -763,7 +763,7 @@ function ModeSelect({
   }, [open]);
 
   return (
-    <div ref={rootRef} className="relative">
+    <div ref={rootRef} className="relative min-w-[5rem] max-w-full flex-1 overflow-hidden">
       <button
         type="button"
         title={current.name}
@@ -771,12 +771,12 @@ function ModeSelect({
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
         onPointerDown={(event) => spawn(event)}
-        className={`relative flex h-7 items-center gap-1 overflow-hidden rounded-full px-2 text-[11px] hover:bg-[var(--hover)] ${
+        className={`relative flex h-7 max-w-full min-w-0 items-center gap-1 overflow-hidden whitespace-nowrap rounded-full px-2 text-[11px] hover:bg-[var(--hover)] ${
           mode === "ask" ? "text-[var(--muted)]" : "text-[var(--brass)]"
         }`}
       >
-        <CurrentIcon size={14} />
-        <span>{current.name}</span>
+        <CurrentIcon size={14} className="shrink-0" />
+        <span className="min-w-0 truncate">{current.name}</span>
         {ripples.map((ripple) => (
           <span
             key={ripple.id}
@@ -913,7 +913,7 @@ function ModelSelect({
   }, [open, highlightId]);
 
   return (
-    <div ref={rootRef} className="relative min-w-0">
+    <div ref={rootRef} className="relative min-w-0 max-w-[9.5rem]">
       <button
         type="button"
         title={label}
@@ -924,7 +924,7 @@ function ModelSelect({
         onPointerDown={(event) => {
           if (!disabled) spawn(event);
         }}
-        className="relative flex h-7 max-w-[9.5rem] items-center gap-1 overflow-hidden rounded-full border border-[var(--line)] bg-[var(--panel-2)] px-2 text-[11px] text-[var(--muted)] hover:text-[var(--text)] disabled:opacity-40"
+        className="relative flex h-7 w-full min-w-0 max-w-[9.5rem] items-center gap-1 overflow-hidden whitespace-nowrap rounded-full border border-[var(--line)] bg-[var(--panel-2)] px-2 text-[11px] text-[var(--muted)] hover:text-[var(--text)] disabled:opacity-40"
       >
         <span className="min-w-0 truncate">{label}</span>
         <ChevronDown size={12} className={`shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
