@@ -4,7 +4,7 @@
   "packageManager": "pnpm@10.12.1",
   "scripts": {
     "dev": "pnpm --filter @opensider/extension dev",
-    "build": "pnpm --filter @opensider/extension build && node scripts/install-host.mjs",
-    "install-host": "node scripts/install-host.mjs"
+    "build": "pnpm --filter @opensider/extension build && go run ./cmd/opensider install --local",
+    "install-host": "go run ./cmd/opensider install --local"
   }
 }

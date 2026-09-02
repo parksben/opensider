@@ -1,0 +1,140 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-darwin:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ">=1.22"
+
+      - name: Build darwin binaries
+        env:
+          CGO_ENABLED: "1"
+        run: |
+          set -euo pipefail
+          go build -o opensider-darwin-arm64 ./cmd/opensider
+          set +e
+          CGO_ENABLED=1 GOARCH=amd64 CC="clang -arch x86_64" \
+            go build -o opensider-darwin-amd64 ./cmd/opensider
+          amd64_status=$?
+          set -e
+          if [[ "$amd64_status" -ne 0 ]]; then
+            echo "::warning::darwin/amd64 CGO build is not feasible on this runner; omitting opensider-darwin-amd64"
+            rm -f opensider-darwin-amd64
+          fi
+          chmod +x opensider-darwin-*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: darwin-binaries
+          path: opensider-darwin-*
+          if-no-files-found: error
+
+  build-cross:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ">=1.22"
+
+      - name: Cross-compile linux and windows
+        run: |
+          set -euo pipefail
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o opensider-linux-amd64 ./cmd/opensider
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o opensider-linux-arm64 ./cmd/opensider
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o opensider-windows-amd64.exe ./cmd/opensider
+          CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go build -o opensider-windows-arm64.exe ./cmd/opensider
+          chmod +x opensider-linux-*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cross-binaries
+          path: |
+            opensider-linux-amd64
+            opensider-linux-arm64
+            opensider-windows-amd64.exe
+            opensider-windows-arm64.exe
+          if-no-files-found: error
+
+  release:
+    needs: [build-darwin, build-cross]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Build extension
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile
+          pnpm --filter @opensider/extension build
+          test -f packages/extension/dist/manifest.json
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Stage release assets
+        run: |
+          set -euo pipefail
+          mkdir -p dist-release
+          find artifacts -type f -exec cp {} dist-release/ \;
+          cp scripts/install/install.sh dist-release/install.sh
+          cp scripts/install/install.ps1 dist-release/install.ps1
+          chmod +x dist-release/install.sh dist-release/opensider-darwin-* dist-release/opensider-linux-*
+          (cd packages/extension/dist && zip -r "$GITHUB_WORKSPACE/dist-release/extension.zip" .)
+          cd dist-release
+          sha256sum \
+            opensider-* \
+            extension.zip \
+            install.sh \
+            install.ps1 \
+            > SHA256SUMS
+          ls -l
+
+      - name: Release notes
+        run: bash scripts/release-notes.sh > dist-release/NOTES.md
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          assets=(
+            dist-release/opensider-*
+            dist-release/extension.zip
+            dist-release/install.sh
+            dist-release/install.ps1
+            dist-release/SHA256SUMS
+          )
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "${GITHUB_REF_NAME}" \
+            --notes-file dist-release/NOTES.md \
+            "${assets[@]}"

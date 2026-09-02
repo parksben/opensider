@@ -392,7 +392,7 @@ Host 是 ACP Client，`clientCapabilities` 关闭 `fs` / `terminal`，让 Agent 
 Host 注册名：`com.opensider.host`  
 macOS 清单路径：`~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.opensider.host.json`
 
-用户：`releases/latest` 的 `install.sh` / `install.ps1` 下一份 `opensider` 并 `opensider install`，清单 `path` 指向 `~/.opensider/runtime/opensider`。开发：`npm run install-host` = `go run ./cmd/opensider install --local`。macOS TCC 仍要求二进制不在 Desktop / Documents / Downloads。Host 日志只写 `~/.opensider/host.log`，不写 stderr。推送 `v*` tag 触发 Actions：darwin 在 macOS 开 cgo 编，linux/windows 交叉编译；Release 说明只列该版本 commit。桥接未注册时 SW 轮询 `connectNative`。不迁旧目录。
+用户：`releases/latest` 的 `install.sh` / `install.ps1` 下一份 `opensider` 并 `opensider install`，清单 `path` 指向 `~/.opensider/runtime/opensider`。开发：`pnpm install-host` = `go run ./cmd/opensider install --local`（旧的 `scripts/install-host.mjs` 已删）。macOS TCC 仍要求二进制不在 Desktop / Documents / Downloads。Host 日志只写 `~/.opensider/host.log`，不写 stderr。推送 `v*` tag 触发 Actions：darwin 在 macOS 开 cgo 编，linux/windows 交叉编译；Release 说明只列该版本 commit。桥接未注册时 SW 轮询 `connectNative`。不迁旧目录。
 
 ## UI
 
@@ -425,12 +425,56 @@ scripts/install     用户壳 install.sh / install.ps1
 
 pnpm workspace 只编扩展。Host 用 Go。扩展用 Vite + `@crxjs/vite-plugin` 打包。
 
+## 发布与安装壳
+
+用户侧不克隆仓库。一行壳永远打 `releases/latest`，按本机只下一份 Host 二进制，校验后再把安装交给该二进制。
+
+### 用户壳
+
+`scripts/install/install.sh`（darwin / linux）与 `scripts/install/install.ps1`（Windows）是薄包装，不内嵌 Host 逻辑：
+
+1. 识别 OS / arch。POSIX：`uname -s` → `darwin` / `linux`；`uname -m` 把 `aarch64` 映射成 `arm64`、`x86_64` 映射成 `amd64`。Windows：`PROCESSOR_ARCHITECTURE` 为 `ARM64` 时下 `opensider-windows-arm64.exe`，否则 `opensider-windows-amd64.exe`。
+2. 从 `https://github.com/parksben/cursor-sidebar/releases/latest/download/` 拉 `SHA256SUMS` 和对应二进制（名必须与 Release 资产一致）。
+3. 用本机 `sha256sum` / `shasum -a 256` 或 `Get-FileHash` 核对该文件；对不上或 SUMS 里没有这一行就退出。
+4. `chmod +x` 后 `exec ./opensider-<os>-<arch> install`（Windows 为 `.\opensider-windows-*.exe install`）。`--local` 只给仓库里的 `go run`，用户壳不传。
+5. 其它 OS / arch 立刻失败，文案写清支持范围。
+
+壳不负责解压扩展或写 Native Messaging 清单；那是 `opensider install` 的事。
+
+### 开发脚本
+
+根 `package.json`：`install-host` → `go run ./cmd/opensider install --local`；`build` 先编扩展再跑同一条。`dev` 仍只起 Vite。不再走 Node 安装器。
+
+### tag 发 Release
+
+`.github/workflows/release.yml` 在推送 `v*` tag 时跑，`contents: write` 以便 `gh release create`。
+
+| Job | Runner | 做什么 |
+|---|---|---|
+| `build-darwin` | `macos-latest` | Go 1.22+，`CGO_ENABLED=1`，产出 `opensider-darwin-arm64`；在同一台机器上再试 `GOARCH=amd64`（`CC=clang`），编得出来才上传 |
+| `build-cross` | `ubuntu-latest` | `CGO_ENABLED=0`，`GOOS=linux/windows` × `GOARCH=amd64/arm64`（Windows 带 `.exe`） |
+| `release` | `ubuntu-latest`（等前两个） | `pnpm install` + `pnpm --filter @opensider/extension build` **一次**，把 `packages/extension/dist` 打成 `extension.zip`；拷贝两份安装壳；下载二进制工件；写 `SHA256SUMS`；`scripts/release-notes.sh` 打 commit 列表；`gh release create` |
+
+扩展只在 `release` job 编一次，darwin / cross 不再装 Node。darwin 开 cgo 是为了本机 `pick`（AppKit）；linux / windows 交叉编译关 cgo，避免依赖目标系统的 C 工具链。macos-latest 现在是 Apple Silicon，darwin/amd64 属于尽力：SDK 够就编，不够就跳过，不挡发版。
+
+Release 资产名必须和壳一致：
+
+- `opensider-darwin-arm64` / `opensider-darwin-amd64`（后者可选）
+- `opensider-linux-amd64` / `opensider-linux-arm64`
+- `opensider-windows-amd64.exe` / `opensider-windows-arm64.exe`（后者可选，流水线仍编）
+- `extension.zip`
+- `install.sh` / `install.ps1`
+- `SHA256SUMS`
+
+`scripts/release-notes.sh` 找当前 tag/HEAD 之前最近的 `v*` tag（没有则为空），打印 `git log --pretty=format:'- %h %s'`。Release body 只有这份 commit 列表，不加产品介绍。
+
 ## 风险
 
 | 风险 | 处理 |
 |---|---|
 | Native Messaging 环境 PATH 很瘦 | Host 自己扫 nvm / npm-global / bun 等 bin；子进程 PATH 带上 CLI 所在目录。Cursor 仍默认同 `~/.local/bin/agent` |
-| macOS 拦 Chrome 执行 Desktop 上的 Host | `install-host` 把运行副本放到 `~/.opensider/runtime` |
+| macOS 拦 Chrome 执行 Desktop 上的 Host | `opensider install`（开发时 `--local`）把运行副本放到 `~/.opensider/runtime` |
+| macos-latest 编不出 darwin/amd64 | 该资产可缺；Intel Mac 用户要等能编出来的 tag，或用源码 `go run` |
 | 未登录 | 侧栏提示先跑 `agent login` |
 | `session/load` 不支持或失败 | 新建 ACP 会话，界面历史保留，下一条消息带前文 |
 | `session/fork` 不可用或不支持指定消息 | 新会话 + 首条 prompt 前缀截断记录 |

@@ -36,8 +36,10 @@ pnpm build
 `pnpm build` 会打扩展并执行 `go run ./cmd/opensider install --local`。只重新注册 Host：
 
 ```bash
-npm run install-host
+pnpm install-host
 ```
+
+推送 `v*` tag 会跑 `.github/workflows/release.yml`：macOS 开 cgo 编 darwin 二进制，Ubuntu 交叉编译 linux / windows，再打 `extension.zip`、安装壳和 `SHA256SUMS`，用该区间的 commit 列表发 GitHub Release。
 
 1. 浏览器打开扩展页，加载 `packages/extension/dist`
 2. 点工具栏图标打开侧栏
@@ -46,7 +48,7 @@ npm run install-host
 pnpm dev
 ```
 
-改扩展后在扩展页点刷新。改 Host 后重新 `npm run install-host`，再重连侧栏。
+改扩展后在扩展页点刷新。改 Host 后重新 `pnpm install-host`，再重连侧栏。
 
 ## 工作区
 
