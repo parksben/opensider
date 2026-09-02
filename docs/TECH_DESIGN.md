@@ -59,14 +59,14 @@ Cursor Agent 在 ACP 模式下仍然自己执行本地工具（读文件、写�
 - `starting` 有看门狗：连上后约 10s 还没离开 starting，广播 `error`（附 `~/.opensider/host.log`），避免点 Connection 空转。若已经收到非空 `agents`，看门狗直接当 detect 完成（回放名单并视为 idle），不要再报 starting。侧栏「没有找到 CLI」只在收到过 `agents` 且为空时出现。
 - 往 Native / 侧栏端口发消息一律 try/catch，断开时清掉引用并写出 `chrome.runtime.lastError`
 - 缓存最近一次 `status` / `session` / `page` / `models`，侧栏 `onConnect` 或 `ping` 时立即回放，避免 Host 已 ready 但面板因 React StrictMode 重挂而一直显示离线
-- 在 Side Panel、Content Script、Host 之间转发消息；`page.pick` 只走内容脚本，不进 Native Host。先 ping，失败则按 manifest 注入内容脚本再拾取
+- 在 Side Panel、Content Script、Host 之间转发消息；`page.pick` 只走内容脚本，不进 Native Host。内容脚本 `run_at: document_start`，避免 YouTube `/watch` 迟迟不到 `document_idle`。先在活动主框探测 picker API，失败则 `executeScript` 补注入（`injectImmediately`，先 `allFrames` 再退回主框），并轮询等到 CRXJS loader 的 `import()` 挂上 API，再在**当前活动文档的主框**里直接调用 `startPick`。不用 `tabs.sendMessage` 开拾取：YouTube 会预渲染下一个视频，消息可能打到隐藏文档。YouTube / youtu.be 是普通 http(s)，不当系统页。注入失败回 `error: inject`。
 - 监听 `tabs.onActivated` / `onUpdated` / `onRemoved` / `onReplaced` / `onCreated` / `onMoved` / `onAttached` / `onDetached` 以及 `windows.onFocusChanged` / `onRemoved`。活动标签可能变化时，解析焦点普通窗口里当前 `active` 的标签（不要用刚关掉的 tabId），立刻并在 250ms 防抖后再推 `page.update`，同时防抖写 `tabs.update`。Chrome 关掉活动标签后不一定再发 `onActivated`，所以 `onRemoved` 必须自己跟上替换标签，禁止 `current.json` 停在已关闭 tabId
 - 点击工具栏图标打开 Side Panel
 - Go Host 一启动就往 `~/.opensider/host.log` 打一行，便于判断 Chrome 有没有真正拉起 Host
 
 ### Content Script
 
-运行在隔离世界，不往 `window` 挂 API，也不执行任意 JS。元素定位优先级：`args.index`（`interactive.md` 里从 1 起的编号）→ `args.label` / `args.name`（对到控件本身，不是 label 节点）→ `args.selector`（CSS）→ `args.text`（先按控件标签 / placeholder / name 匹配，再退回可见文本包含），可选 `args.nth`。侧栏发起 `page.pick` 时进入拾取：悬停高亮、点击生成全局唯一 CSS selector（id 优先，否则 `tag:nth-of-type` 路径，并校验 `querySelectorAll` 唯一），Esc 取消。
+运行在隔离世界，不往 `window` 挂 API，也不执行任意 JS。元素定位优先级：`args.index`（`interactive.md` 里从 1 起的编号）→ `args.label` / `args.name`（对到控件本身，不是 label 节点）→ `args.selector`（CSS）→ `args.text`（先按控件标签 / placeholder / name 匹配，再退回可见文本包含），可选 `args.nth`。侧栏发起 `page.pick` 时进入拾取：悬停高亮、点击生成全局唯一 CSS selector（id 优先，否则 `tag:nth-of-type` 路径，并校验 `querySelectorAll` 唯一），Esc 取消。拾取层挂 closed Shadow + 尽量 `popover` 进顶层，避免压在 YouTube `#movie_player` 下面；遮罩自己吃指针（再 `elementsFromPoint` 看底下节点），忽略开拾取后约 200ms 内的残留 pointerdown，并在 `yt-navigate-*` / `fullscreenchange` 时把层补回去。预渲染文档上的 `startPick` 直接 return。
 
 交互快照（对齐 page-agent 的 numbered interactive elements，不引入他们的 DOM walker / 任意 JS）：
 
@@ -335,7 +335,7 @@ Read file/folder/image paths. For kind=element, use page tools with args.selecto
 
 `@` 按钮：focus 编辑器、caret 移到最前、插入 `@`、打开菜单。`AtMenu` portal 到 `document.body`，`position: fixed`，锚点用编辑器上次 range 的 caret 盒；优先放在光标上方（底边 = caret.top - 6），四边夹在视口内缩 16px，高度按上方可用空间收缩，列表 `flex-1 min-h-0` 滚动。mousedown `preventDefault` 以免抢焦点，插入前恢复上次 range。键盘与模型下拉同一套循环高亮 + `scrollIntoView({ block: "nearest" })`；Tab / 左右键切「标签页 / 附件」两个页。回车 / 点击只 `insertMention`。上次没兜住：AtMenu 的 `document` capture 把 `onSelect` 放进 effect 依赖，每次 ChatPane 渲染都拆掉重绑；`stopImmediatePropagation` 拦不住 React 根节点委托；`menuOpen` / `atOpen` 是异步 state，打开菜单的同一拍或 `flushSync` 插芯片之后 Composer 仍会 `onSubmit`；`submit()` 自己也不看菜单。现在用模块级同步锁 `atMenuLock`：输入 `@` 或点 `@` 的当帧就 `open=true`；`installAtMenuGuard` 在 `window` capture 常驻，Enter 只 `confirm` 插芯片；Composer 原生 capture + React `onKeyDown` + `beforeinput` 都认锁；`submit(fromEnter)` 见锁直接 return；菜单在该记 Enter 的 `keyup` 才关，避免同一记回车落到发送。芯片高度跟所在行行高对齐：`.cs-mention-wrap` / `.cs-mention-chip` 继承正文的 `font-size` 和 `line-height`，再 `height: 1lh`。上次写成芯片自己 `font-size: 11px` + `line-height: 1`，`1lh` 就变成 11px，视觉上塌成字高。标签仍 11px，内容 `align-items: center`。padding `0 12px 0 8px`。选中后用芯片替换光标前的 `@` 及紧跟搜索词（`readAtQuery` / `consumeAtBeforeCaret` 共用同一 text-node 规则：caret 须在 `@` 之后，query 不含换行）。**内联搜索**：菜单打开时 `ComposerEditor.getAtQuery()` 读 caret 前 `@` 到 caret 的文本作为 `query` 传给 `AtMenu`；`readAtQuery` 返回 `null`（删了 `@`、caret 移出触发区）则 `closeAtMenu`。`at-menu-search.ts`：`filterAtTabs` / `filterAtAttachments` 对 title+url / name+path 做 `toLowerCase().includes`；标题 / 名称命中排前，仅 URL / 路径命中排后；空 query 不过滤。`HighlightText` + `.cs-at-match` 把匹配子串改成 `color: var(--brass)`，无背景、无选中块。`insertMention` 在插入点看前后第一个非 zwsp 字符：不是空格（` ` / `nbsp`）就在芯片左/右各插一个普通空格，已有则不重复；光标仍落在芯片后的 zwsp 上。点芯片时 `mousedown` `preventDefault`，caret 放到 wrap 后的 zwsp；`.cs-mention-wrap` / `.cs-mention-chip` 及子孙 `user-select: none`，`selectstart` 也拦住，避免光标进芯片或划词。
 
-拾取元素不经过 Host：侧栏 `page.pick` → SW → 当前标签内容脚本。侧栏遮罩挂在 `App` 根上（`fixed inset-0` + `backdrop-blur`），盖住顶栏和会话列表，不因 ChatPane 高度裁切；点遮罩不取消。SW 用 `lastFocusedWindow` 找普通 http(s) 标签，`sendMessage` 失败则 `chrome.scripting.executeScript` 注入 manifest 里的内容脚本再试（扩展重载后旧标签默认没有脚本）。点中后回 `page.picked`，芯片 `kind: element`，`path`/`name` 都是唯一 CSS selector。Prompt 另附：
+拾取元素不经过 Host：侧栏 `page.pick` → SW → 当前标签内容脚本。侧栏遮罩挂在 `App` 根上（`fixed inset-0` + `backdrop-blur`），盖住顶栏和会话列表，不因 ChatPane 高度裁切；点遮罩不取消。SW 用 `lastFocusedWindow` 找普通 http(s) 标签（YouTube 不算 restricted）；内容脚本探测失败则立刻 `executeScript`（`injectImmediately: true`，避免 YouTube 视频页长期 `loading` 时等到 `document_idle` 挂死），并等到 CRXJS loader 真正就绪。开拾取走活动主框的隔离世界函数调用，不群发 `tabs.sendMessage`。点中后回 `page.picked`，芯片 `kind: element`，`path`/`name` 都是唯一 CSS selector。Prompt 另附：
 
 ```
 [Picked page elements]
@@ -537,7 +537,8 @@ Release 资产名必须和壳一致：
 | 元素截图像素比不对 | 用 `devicePixelRatio` 把 CSS 盒映射到截图像素 |
 | 扩展选文件没有真路径 | Host 用 `PickFiles.app`（`open -W`）弹出访达多选，回绝对路径 |
 | Chrome 子进程弹不出 NSOpenPanel | 直接 exec `PickFiles`（regular 激活）到前台；空退则访达 `choose file` |
-| 点拾取后旧标签没有内容脚本 | SW `scripting.executeScript` 按 manifest 补注入 |
+| 点拾取后旧标签没有内容脚本 | SW `scripting.executeScript` 按 manifest 补注入（`injectImmediately`，必要时 `allFrames`），并等 CRXJS loader 就绪 |
+| YouTube `/watch` 点拾取不进态 | `document_start` + 等 loader；不当系统页；活动主框直接 `startPick`；顶层遮罩 + 短臂保护；`yt-navigate` 后补挂层；注入失败可见报错 |
 | ACP 不广告模型列表 | 用 `agent models` 解析账号模型；有 `configOptions` 时合并并用于 set |
 | `session/set_model` 被拒 | 先 `session/set_config_option`；initialize 声明 `parameterizedModelPicker` |
 | ACP 拒绝 `auto` | Auto 只表示不指定；不调用 set_model / set_config_option |

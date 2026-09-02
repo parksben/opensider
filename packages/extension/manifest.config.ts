@@ -33,7 +33,7 @@ export default defineManifest({
     {
       matches: ["http://*/*", "https://*/*"],
       js: ["src/content.ts"],
-      run_at: "document_idle",
+      run_at: "document_start",
     },
   ],
   permissions: ["sidePanel", "nativeMessaging", "tabs", "windows", "storage", "scripting", "favicon"],

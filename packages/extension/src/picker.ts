@@ -1,30 +1,34 @@
 import { hideAgentCursor, isAgentCursorNode } from "./agent-cursor";
+import { isPickArmed } from "./page-pick";
 import { uniqueCssSelector } from "./selector";
 
 const ROOT_ID = "opensider-picker";
-const HIGHLIGHT_ID = "opensider-picker-box";
-const BANNER_ID = "opensider-picker-banner";
 
 let activeRequest: string | undefined;
+let activeHint = "";
+let startedAt = 0;
 let previousCursor = "";
-
-function root(): HTMLElement | null {
-  return document.getElementById(ROOT_ID);
-}
+let host: HTMLElement | undefined;
+let box: HTMLElement | undefined;
+let observer: MutationObserver | undefined;
 
 function isPickerNode(node: EventTarget | null): boolean {
-  return node instanceof Node && Boolean(root()?.contains(node));
+  return node instanceof Node && Boolean(host && (host === node || host.contains(node)));
+}
+
+function mountParent(): Element {
+  return document.fullscreenElement ?? document.documentElement;
 }
 
 function targetFromPoint(x: number, y: number): Element | undefined {
+  const prev = host?.style.pointerEvents;
+  if (host) host.style.pointerEvents = "none";
   const stack = document.elementsFromPoint(x, y);
-  return stack.find(
-    (node) => node instanceof Element && !isPickerNode(node) && !isAgentCursorNode(node),
-  );
+  if (host) host.style.pointerEvents = prev || "auto";
+  return stack.find((node) => node instanceof Element && !isPickerNode(node) && !isAgentCursorNode(node));
 }
 
 function moveHighlight(el: Element | undefined): void {
-  const box = document.getElementById(HIGHLIGHT_ID);
   if (!box) return;
   if (!el) {
     box.style.display = "none";
@@ -58,6 +62,7 @@ function onClick(event: PointerEvent): void {
   event.preventDefault();
   event.stopPropagation();
   event.stopImmediatePropagation();
+  if (!isPickArmed(startedAt, Date.now())) return;
   const requestId = activeRequest;
   const el = targetFromPoint(event.clientX, event.clientY);
   if (!el || !requestId) {
@@ -74,41 +79,124 @@ function onKey(event: KeyboardEvent): void {
   finish({ requestId: activeRequest, cancelled: true });
 }
 
+function onNavigate(): void {
+  if (!activeRequest) return;
+  mountOverlay();
+}
+
+function bind(): void {
+  window.addEventListener("pointermove", onMove, true);
+  window.addEventListener("pointerdown", onClick, true);
+  window.addEventListener("keydown", onKey, true);
+  document.addEventListener("yt-navigate-start", onNavigate, true);
+  document.addEventListener("yt-navigate-finish", onNavigate, true);
+  document.addEventListener("fullscreenchange", onNavigate);
+}
+
+function unbind(): void {
+  window.removeEventListener("pointermove", onMove, true);
+  window.removeEventListener("pointerdown", onClick, true);
+  window.removeEventListener("keydown", onKey, true);
+  document.removeEventListener("yt-navigate-start", onNavigate, true);
+  document.removeEventListener("yt-navigate-finish", onNavigate, true);
+  document.removeEventListener("fullscreenchange", onNavigate);
+}
+
+function watchMount(): void {
+  observer?.disconnect();
+  const parent = host?.parentElement ?? mountParent();
+  observer = new MutationObserver(() => {
+    if (!activeRequest || !host) return;
+    if (!host.isConnected) mountOverlay();
+  });
+  observer.observe(parent, { childList: true });
+}
+
+function showOverlay(layer: HTMLElement): void {
+  if (document.fullscreenElement || typeof layer.showPopover !== "function") {
+    layer.removeAttribute("popover");
+    return;
+  }
+  try {
+    layer.showPopover();
+  } catch {
+    layer.removeAttribute("popover");
+  }
+}
+
+function mountOverlay(): void {
+  const requestId = activeRequest;
+  const hint = activeHint;
+  if (!requestId) return;
+
+  host?.remove();
+  host = document.createElement("div");
+  host.id = ROOT_ID;
+  host.setAttribute("data-opensider-ignore", "true");
+  host.setAttribute("popover", "manual");
+  host.style.cssText =
+    "all:initial;position:fixed;inset:0;z-index:2147483646;pointer-events:auto;cursor:crosshair;";
+
+  const shadow = host.attachShadow({ mode: "closed" });
+  const style = document.createElement("style");
+  style.textContent = `
+    :host { all: initial; display: block; position: fixed; inset: 0; cursor: crosshair; }
+    .box {
+      position: fixed; display: none; pointer-events: none;
+      border: 2px solid #d4a054; background: rgba(212,160,84,0.16);
+      border-radius: 3px; box-sizing: border-box;
+    }
+    .banner {
+      position: fixed; top: 12px; left: 50%; transform: translateX(-50%);
+      pointer-events: none; max-width: min(90vw,28rem); padding: 8px 12px;
+      border-radius: 999px; background: #14160f; color: #ece6d4;
+      border: 1px solid #2c3124; font: 12px/1.4 sans-serif; text-align: center;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+    }
+  `;
+  box = document.createElement("div");
+  box.className = "box";
+  const banner = document.createElement("div");
+  banner.className = "banner";
+  banner.textContent = hint;
+  shadow.append(style, box, banner);
+  host.addEventListener("pointermove", onMove, true);
+  host.addEventListener("pointerdown", onClick, true);
+  mountParent().append(host);
+  showOverlay(host);
+  document.documentElement.style.cursor = "crosshair";
+  watchMount();
+}
+
 export function stopPick(): void {
   activeRequest = undefined;
-  document.removeEventListener("pointermove", onMove, true);
-  document.removeEventListener("pointerdown", onClick, true);
-  document.removeEventListener("keydown", onKey, true);
-  root()?.remove();
+  activeHint = "";
+  startedAt = 0;
+  unbind();
+  observer?.disconnect();
+  observer = undefined;
+  if (host) {
+    try {
+      host.hidePopover?.();
+    } catch {
+      // popover may already be gone
+    }
+    host.remove();
+  }
+  host = undefined;
+  box = undefined;
   document.documentElement.style.cursor = previousCursor;
 }
 
-export function startPick(requestId: string, hint: string): void {
+export function startPick(requestId: string, hint: string): boolean {
+  if (typeof document !== "undefined" && "prerendering" in document && document.prerendering) return false;
   stopPick();
   hideAgentCursor();
   activeRequest = requestId;
-
-  const host = document.createElement("div");
-  host.id = ROOT_ID;
-  host.style.cssText = "all:initial;position:fixed;inset:0;z-index:2147483646;pointer-events:none;";
-
-  const box = document.createElement("div");
-  box.id = HIGHLIGHT_ID;
-  box.style.cssText =
-    "position:fixed;display:none;pointer-events:none;border:2px solid #d4a054;background:rgba(212,160,84,0.16);border-radius:3px;box-sizing:border-box;";
-
-  const banner = document.createElement("div");
-  banner.id = BANNER_ID;
-  banner.textContent = hint;
-  banner.style.cssText =
-    "position:fixed;top:12px;left:50%;transform:translateX(-50%);pointer-events:none;max-width:min(90vw,28rem);padding:8px 12px;border-radius:999px;background:#14160f;color:#ece6d4;border:1px solid #2c3124;font:12px/1.4 sans-serif;text-align:center;box-shadow:0 8px 24px rgba(0,0,0,0.35);";
-
-  host.append(box, banner);
-  document.documentElement.append(host);
+  activeHint = hint;
+  startedAt = Date.now();
   previousCursor = document.documentElement.style.cursor;
-  document.documentElement.style.cursor = "crosshair";
-
-  document.addEventListener("pointermove", onMove, true);
-  document.addEventListener("pointerdown", onClick, true);
-  document.addEventListener("keydown", onKey, true);
+  mountOverlay();
+  bind();
+  return true;
 }

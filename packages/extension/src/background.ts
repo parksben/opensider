@@ -10,6 +10,7 @@ import type {
   TabsSnapshot,
 } from "@shared";
 import { HOST_NAME, isActionMethod, isCaptureMethod, isScriptMethod, isTabMethod, isWindowMethod } from "@shared";
+import { isPickablePageUrl, isRestrictedUrl, PAGE_PICK_API, pickFailureCode } from "./page-pick";
 import { captureViewport } from "./screenshot";
 import {
   isClosedCurrentTab,
@@ -744,21 +745,8 @@ async function requestPage(tabId: number, writeGen?: number): Promise<void> {
   }
 }
 
-function isRestrictedUrl(url?: string): boolean {
-  if (!url) return false;
-  return (
-    url.startsWith("chrome://") ||
-    url.startsWith("edge://") ||
-    url.startsWith("brave://") ||
-    url.startsWith("chrome-extension://") ||
-    url.startsWith("https://chrome.google.com/webstore") ||
-    url.startsWith("https://chromewebstore.google.com/") ||
-    url.startsWith("https://microsoftedge.microsoft.com/addons")
-  );
-}
-
 function isHttpTab(tab: chrome.tabs.Tab): boolean {
-  return Boolean(tab.id) && !isRestrictedUrl(tab.url) && (!tab.url || tab.url.startsWith("http://") || tab.url.startsWith("https://"));
+  return Boolean(tab.id) && (tab.url ? isPickablePageUrl(tab.url) : !isRestrictedUrl(tab.url));
 }
 
 async function activeHttpTab(): Promise<chrome.tabs.Tab | undefined> {
@@ -773,20 +761,83 @@ async function activeHttpTab(): Promise<chrome.tabs.Tab | undefined> {
   }
   const windows = await chrome.windows.getAll({ populate: true, windowTypes: ["normal"] });
   const focused = windows.find((window) => window.focused) ?? windows[0];
-  return focused?.tabs?.find((tab) => tab.active && isHttpTab(tab));
+  const fromWindow = focused?.tabs?.find((tab) => tab.active && isHttpTab(tab));
+  if (fromWindow) return fromWindow;
+  const remembered = lastKnownTabId();
+  if (!remembered) return undefined;
+  try {
+    const tab = await chrome.tabs.get(remembered);
+    if (tab.active && isHttpTab(tab)) return tab;
+  } catch {
+    // tab is gone
+  }
+  return undefined;
 }
 
-async function injectContent(tabId: number): Promise<void> {
+async function injectContent(tabId: number, allFrames: boolean): Promise<void> {
   const files = chrome.runtime.getManifest().content_scripts?.[0]?.js ?? [];
   if (files.length === 0) throw new Error("content script missing from manifest");
-  await chrome.scripting.executeScript({ target: { tabId }, files });
+  await chrome.scripting.executeScript({
+    target: { tabId, allFrames },
+    files,
+    injectImmediately: true,
+    world: "ISOLATED",
+  });
+}
+
+type PagePickCall = { ok: boolean; error?: string; value?: unknown };
+
+async function callPagePickApi(tabId: number, method: "ping" | "startPick" | "stopPick", methodArgs: unknown[] = []): Promise<PagePickCall> {
+  const results = await chrome.scripting.executeScript({
+    target: { tabId, frameIds: [0] },
+    world: "ISOLATED",
+    injectImmediately: true,
+    func: (apiName: string, apiMethod: string, args: unknown[]) => {
+      const api = (globalThis as unknown as Record<string, Record<string, (...fnArgs: unknown[]) => unknown>>)[apiName];
+      if (!api || typeof api[apiMethod] !== "function") return { ok: false, error: "not injected" };
+      try {
+        return { ok: true, value: api[apiMethod](...args) };
+      } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    },
+    args: [PAGE_PICK_API, method, methodArgs],
+  });
+  const result = results[0]?.result as PagePickCall | undefined;
+  return result ?? { ok: false, error: "not injected" };
+}
+
+async function pingPagePick(tabId: number): Promise<boolean> {
+  try {
+    const result = await callPagePickApi(tabId, "ping");
+    return result.ok === true;
+  } catch {
+    return false;
+  }
+}
+
+async function waitForPagePick(tabId: number, timeoutMs = 2_500): Promise<boolean> {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    if (await pingPagePick(tabId)) return true;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return false;
 }
 
 async function ensureContent(tabId: number): Promise<void> {
+  if (await pingPagePick(tabId)) return;
   try {
-    await chrome.tabs.sendMessage(tabId, { type: "page.ping" });
+    await injectContent(tabId, true);
   } catch {
-    await injectContent(tabId);
+    await injectContent(tabId, false);
+  }
+  // CRXJS injects a loader that import()s the real module; executeScript
+  // resolves before __opensiderPage exists.
+  if (await waitForPagePick(tabId)) return;
+  await injectContent(tabId, false);
+  if (!(await waitForPagePick(tabId))) {
+    throw new Error("Could not inject the page picker into this tab.");
   }
 }
 
@@ -806,14 +857,15 @@ async function startPagePick(requestId: string, hint?: string): Promise<void> {
   pickTabId = tab.id;
   try {
     await ensureContent(tab.id);
-    await chrome.tabs.sendMessage(tab.id, { type: "page.pick", requestId, hint });
+    const started = await callPagePickApi(tab.id, "startPick", [requestId, hint ?? ""]);
+    if (!started.ok || started.value === false) throw new Error(started.error ?? "not injected");
   } catch (error) {
     pickTabId = undefined;
     broadcast({
       type: "page.picked",
       requestId,
       items: [],
-      error: String(error),
+      error: pickFailureCode(error),
     });
   }
 }
@@ -823,9 +875,13 @@ async function cancelPagePick(): Promise<void> {
   pickTabId = undefined;
   if (!tabId) return;
   try {
-    await chrome.tabs.sendMessage(tabId, { type: "page.pick.cancel" });
+    await callPagePickApi(tabId, "stopPick");
   } catch {
-    // tab may not have the content script
+    try {
+      await chrome.tabs.sendMessage(tabId, { type: "page.pick.cancel" }, { frameId: 0 });
+    } catch {
+      // tab may not have the content script
+    }
   }
 }
 
@@ -855,7 +911,9 @@ chrome.runtime.onConnect.addListener((port) => {
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg?.type === "page.picked") {
+    const tabId = pickTabId;
     pickTabId = undefined;
+    if (tabId) void callPagePickApi(tabId, "stopPick").catch(() => undefined);
     broadcast({
       type: "page.picked",
       requestId: String(msg.requestId ?? ""),
