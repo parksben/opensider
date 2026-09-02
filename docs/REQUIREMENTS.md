@@ -10,7 +10,7 @@
 
 ## 文档分层
 
-- **`README.md`**：面向使用者的产品页。只写产品是什么、适用谁、如何从 GitHub Release 安装并打开侧栏，以及一段不超过 30 秒的侧栏演示视频。不写 pnpm / Go、仓库树、工作区内部协议，也不把 `packages/extension/dist` 当成用户加载路径。
+- **`README.md`**：面向使用者的产品页。只写产品是什么、适用谁、如何从 GitHub Release 安装并打开侧栏，以及一段侧栏演示视频（优先约 30 秒；要把打字、产物 Reveal、Finder 打开报告等真人操作留在 1x 时，完整版可到 45 秒）。不写 pnpm / Go、仓库树、工作区内部协议，也不把 `packages/extension/dist` 当成用户加载路径。
 - **`docs/DEVELOPMENT.md`**：面向开发。本地构建、`pnpm install-host`、工作区布局、仓库结构、打 CRX、推 `v*` tag 发 Release。
 - **本文件**：记产品做什么、为什么。
 - **`docs/TECH_DESIGN.md`**：记怎么做、为什么选这个方案。README 的 logo / 海报放 `docs/images/`，演示视频放 `docs/demo/`，避免依赖 `packages/` 路径。

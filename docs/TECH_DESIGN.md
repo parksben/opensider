@@ -455,7 +455,7 @@ docs/REQUIREMENTS.md  需求：做什么、为什么
 docs/TECH_DESIGN.md   本文件：怎么做、为什么选这个方案
 docs/DEVELOPMENT.md   开发构建、Host 注册、工作区、打 CRX、tag 发 Release
 docs/images/          README 用的 logo 与海报（不引用 packages/ 源码路径）
-docs/demo/            README 用的侧栏演示视频（H.264 MP4，≤30s）
+docs/demo/            README 用的侧栏演示视频（H.264 MP4，16:9；优先 ≤30s，完整真人操作可到 45s。Agent 流式/写文件段用 setpts 加速，打字、点击、Finder、预览滚动保持 1x；BGM 始终 1x）
 cmd/opensider       唯一 Go 入口（host / install / pick）
 internal/           Host / install / pick / ACP
 packages/shared     扩展 ↔ Host 消息类型（TS）

@@ -19,7 +19,7 @@ OpenSider 是一个 Chromium 侧栏：用自己的聊天面板连接本机 Agent
 
 ## 演示
 
-侧栏对着当前英文产品页提问，Agent 用英文回复。窗口 16:9。
+侧栏对着 [Linear](https://linear.app) 英文首页提问，让 Agent 写出 `outputs/` 下的可视化 HTML 报告，再从产物列表「Show in folder」用 Finder 打开。Agent 思考/写文件段加速，打字、点击和预览保持 1x。窗口 16:9，片长约 35 秒。
 
 <div align="center">
   <video src="docs/demo/opensider.mp4" width="720" controls poster="docs/images/demo-poster.png">
