@@ -21,13 +21,55 @@ let lastModels: HostToExt | undefined;
 let lastAgents: HostToExt | undefined;
 let lastProgress: HostToExt | undefined;
 let ignoreNextDisconnect = false;
+let missingRetryTimer = 0;
+
+const INSTALL_HINT = "Run the install script shown in the side panel.";
+
+function isHostMissingError(message: string): boolean {
+  const text = message.toLowerCase();
+  return (
+    text.includes("specified native messaging host not found") ||
+    text.includes("native messaging host not found") ||
+    text.includes("host not found") ||
+    text.includes("not installed") ||
+    text.includes("no such native application") ||
+    text.includes("failed to find native")
+  );
+}
+
+function clearMissingRetry(): void {
+  if (!missingRetryTimer) return;
+  clearTimeout(missingRetryTimer);
+  missingRetryTimer = 0;
+}
+
+function scheduleMissingRetry(): void {
+  if (missingRetryTimer || nativePort) return;
+  missingRetryTimer = setTimeout(() => {
+    missingRetryTimer = 0;
+    if (!nativePort) connectNative();
+  }, 1500) as unknown as number;
+}
+
+function reportMissing(detail: string): void {
+  broadcast({
+    type: "status",
+    state: "missing",
+    error: nativeError(`${detail} ${INSTALL_HINT}`),
+  });
+  scheduleMissingRetry();
+}
 
 function remember(msg: HostToExt): void {
   if (msg.type === "status") {
     lastStatus = msg;
-    if (msg.state === "idle" || msg.state === "connecting") {
+    if (msg.state === "idle" || msg.state === "connecting" || msg.state === "missing") {
       lastSession = undefined;
       lastModels = undefined;
+    }
+    if (msg.state === "missing") {
+      lastAgents = undefined;
+      lastProgress = undefined;
     }
   }
   if (msg.type === "page") lastPage = msg;
@@ -82,15 +124,21 @@ function connectNative(force = false): void {
     nativePort = chrome.runtime.connectNative(HOST_NAME);
   } catch (error) {
     nativePort = null;
+    const detail = String(error);
+    if (isHostMissingError(detail)) {
+      reportMissing(`Native host is not installed. ${detail}`);
+      return;
+    }
     broadcast({
       type: "status",
       state: "error",
-      error: nativeError(`Native host is not installed. ${String(error)}`),
+      error: nativeError(`Native host is not installed. ${detail}`),
     });
     return;
   }
 
   nativePort.onMessage.addListener((msg: HostToExt) => {
+    clearMissingRetry();
     if (msg.type === "browser.command") {
       void dispatchCommand(msg.command);
     }
@@ -103,21 +151,34 @@ function connectNative(force = false): void {
       ignoreNextDisconnect = false;
       return;
     }
-    const error =
-      chrome.runtime.lastError?.message ??
-      "Native host disconnected. Run `pnpm install-host`, then reload this extension.";
-    broadcast({ type: "status", state: "error", error: nativeError(error) });
+    const error = chrome.runtime.lastError?.message ?? "Native host disconnected.";
+    if (isHostMissingError(error)) {
+      reportMissing(error);
+      return;
+    }
+    broadcast({
+      type: "status",
+      state: "error",
+      error: nativeError(`${error} ${INSTALL_HINT}`),
+    });
   });
 
   try {
     nativePort.postMessage({ type: "hello" } satisfies ExtToHost);
+    clearMissingRetry();
     void publishTabs();
   } catch (error) {
     nativePort = null;
+    const detail = String(error);
+    const last = chrome.runtime.lastError?.message ?? detail;
+    if (isHostMissingError(last) || isHostMissingError(detail)) {
+      reportMissing(last);
+      return;
+    }
     broadcast({
       type: "status",
       state: "error",
-      error: nativeError(`Could not talk to the native host. ${String(error)}`),
+      error: nativeError(`Could not talk to the native host. ${detail}`),
     });
   }
 }
@@ -125,11 +186,16 @@ function connectNative(force = false): void {
 function sendNative(msg: ExtToHost): void {
   connectNative();
   if (!nativePort) {
-    broadcast({
-      type: "status",
-      state: "error",
-      error: "Native host is not connected. Retry the connection or run `pnpm install-host`.",
-    });
+    const missing = lastStatus.type === "status" && lastStatus.state === "missing";
+    if (missing) {
+      reportMissing("Native host is not connected.");
+    } else {
+      broadcast({
+        type: "status",
+        state: "error",
+        error: nativeError(`Native host is not connected. ${INSTALL_HINT}`),
+      });
+    }
     if (msg.type === "prompt") broadcast({ type: "turn.end", stopReason: "error" });
     return;
   }
@@ -558,9 +624,12 @@ function isRestrictedUrl(url?: string): boolean {
   if (!url) return false;
   return (
     url.startsWith("chrome://") ||
+    url.startsWith("edge://") ||
+    url.startsWith("brave://") ||
     url.startsWith("chrome-extension://") ||
     url.startsWith("https://chrome.google.com/webstore") ||
-    url.startsWith("https://chromewebstore.google.com/")
+    url.startsWith("https://chromewebstore.google.com/") ||
+    url.startsWith("https://microsoftedge.microsoft.com/addons")
   );
 }
 

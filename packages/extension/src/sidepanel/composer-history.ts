@@ -1,8 +1,5 @@
 import { useEffect, useState } from "react";
 
-const PREVIOUS_TAB_HISTORY_KEY = "cursor-sidebar/tab-history";
-const PREVIOUS_ATTACHMENT_HISTORY_KEY = "cursor-sidebar/attachment-history";
-
 export const TAB_HISTORY_KEY = "opensider/tab-history";
 export const ATTACHMENT_HISTORY_KEY = "opensider/attachment-history";
 
@@ -69,12 +66,7 @@ export function useComposerHistory(): { tabs: HistoryTab[] } {
       }, 50);
     };
 
-    void chrome.storage.local.remove([
-      TAB_HISTORY_KEY,
-      PREVIOUS_TAB_HISTORY_KEY,
-      ATTACHMENT_HISTORY_KEY,
-      PREVIOUS_ATTACHMENT_HISTORY_KEY,
-    ]);
+    void chrome.storage.local.remove([TAB_HISTORY_KEY, ATTACHMENT_HISTORY_KEY]);
     void refreshTabs();
 
     chrome.tabs.onCreated.addListener(scheduleTabs);

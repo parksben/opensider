@@ -1,4 +1,4 @@
-import type { AgentInfo, AgentProgress } from "@shared";
+import type { AgentInfo, AgentProgress, HostStatusState } from "@shared";
 import { Check, Monitor, Moon, PanelRight, PanelRightClose, Pencil, RotateCw, Sun, Unplug } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Locale } from "../i18n";
@@ -28,7 +28,7 @@ export function Header({
   onSelectAgent,
 }: {
   locale: Locale;
-  status: "starting" | "idle" | "connecting" | "ready" | "error";
+  status: HostStatusState;
   error?: string;
   progress?: AgentProgress;
   agents: AgentInfo[];
@@ -119,7 +119,7 @@ export function Header({
             <div className="flex shrink-0 items-center gap-1.5 rounded-full px-2 py-1 text-[11px]" title={error}>
               <Unplug
                 size={13}
-                className={status === "error" ? "text-[var(--bad)]" : "text-[var(--warn)]"}
+                className={status === "error" || status === "missing" ? "text-[var(--bad)]" : "text-[var(--warn)]"}
               />
               <span className="text-[var(--muted)]">
                 {status === "starting"
@@ -132,7 +132,7 @@ export function Header({
               </span>
             </div>
           )}
-          {status === "error" && onRetry ? (
+          {(status === "error" || status === "missing") && onRetry ? (
             <button
               type="button"
               onClick={onRetry}
@@ -242,7 +242,7 @@ export function Header({
           </p>
         </div>
       ) : null}
-      {error && status !== "ready" ? (
+      {error && status === "error" ? (
         <p className="mt-2 text-[11.5px] leading-relaxed text-[var(--bad)]">{error}</p>
       ) : null}
     </header>

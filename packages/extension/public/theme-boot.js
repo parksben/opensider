@@ -1,6 +1,6 @@
 (function () {
   try {
-    var pref = localStorage.getItem("opensider/theme") || localStorage.getItem("cursor-sidebar/theme");
+    var pref = localStorage.getItem("opensider/theme");
     if (pref !== "light" && pref !== "dark" && pref !== "system") pref = "dark";
     var resolved =
       pref === "system"
@@ -9,7 +9,7 @@
           : "light"
         : pref;
     document.documentElement.dataset.theme = resolved;
-    var locale = localStorage.getItem("opensider/locale") || localStorage.getItem("cursor-sidebar/locale");
+    var locale = localStorage.getItem("opensider/locale");
     if (locale === "zh" || locale === "en") {
       document.documentElement.lang = locale === "zh" ? "zh-CN" : "en";
     }

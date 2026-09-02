@@ -325,7 +325,7 @@ export type ExtToHost =
   | { type: "session.new" }
   | { type: "session.use"; sessionId: string }
   | { type: "session.fork"; sessionId: string }
-  | { type: "fs.pick"; requestId: string }
+  | { type: "fs.pick"; requestId: string; mode?: FsPickMode }
   | { type: "fs.save"; requestId: string; name?: string; imageBase64: string; mime: "image/jpeg" }
   | { type: "page.pick"; requestId: string; hint?: string }
   | { type: "page.pick.cancel"; requestId?: string }
@@ -340,9 +340,13 @@ export type ExtToHost =
     }
   | { type: "cursor.reply"; id: number; result: unknown };
 
+export type HostStatusState = "starting" | "idle" | "connecting" | "ready" | "error" | "missing";
+
+export type FsPickMode = "mixed" | "files" | "folders";
+
 export type HostToExt =
   | { type: "hello"; workspace: string; agentPath: string; providerId?: string }
-  | { type: "status"; state: "starting" | "idle" | "connecting" | "ready" | "error"; error?: string }
+  | { type: "status"; state: HostStatusState; error?: string }
   | { type: "agents"; agents: AgentInfo[]; selectedId?: string }
   | { type: "agent.progress"; progress: AgentProgress }
   | { type: "session"; sessionId: string; replay?: boolean; created?: boolean; forked?: boolean }

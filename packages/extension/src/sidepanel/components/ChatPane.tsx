@@ -1,4 +1,4 @@
-import type { AgentModel, AttachmentItem, CurrentPage } from "@shared";
+import type { AgentModel, AttachmentItem, CurrentPage, FsPickMode } from "@shared";
 import { ArrowDown, AtSign, Check, ChevronDown, Copy, FolderPen, GitFork, LoaderCircle, MousePointer2, Paperclip, RefreshCw, Send, Shield, Square, X, Zap } from "lucide-react";
 import logoUrl from "../../../assets/icon.svg?url";
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
@@ -9,8 +9,10 @@ import { t } from "../i18n";
 import { closeAtMenuLock, installAtMenuGuard, openAtMenuLock, shouldBlockSubmit } from "../at-menu-lock";
 import { composerHasContent, stripAttachmentMentions } from "../mentions";
 import { stripEnvPrompt, textOf, type AgentMode } from "../persist";
+import { detectDesktopOs } from "../platform";
 import { useRipple } from "../useRipple";
 import type { QueuedMessage } from "../queued-message";
+import { AttachMenu } from "./AttachMenu";
 import { AtMenu } from "./AtMenu";
 import { ComposerEditor, type ComposerHandle } from "./ComposerEditor";
 import { IconButton } from "./IconButton";
@@ -32,6 +34,7 @@ function stickToBottom(node: HTMLElement | null, smooth = false): void {
 
 export function ChatPane({
   locale,
+  hostReady,
   sessionId,
   messages,
   isRunning,
@@ -62,6 +65,7 @@ export function ChatPane({
   queue,
 }: {
   locale: Locale;
+  hostReady: boolean;
   sessionId: string;
   messages: ChatMessage[];
   isRunning: boolean;
@@ -81,7 +85,7 @@ export function ChatPane({
   onCancel: () => void;
   onFork: (messageId: string) => void;
   onRegenerate: (messageId: string) => void;
-  onPickAttachments: () => Promise<AttachmentItem[]>;
+  onPickAttachments: (mode?: FsPickMode) => Promise<AttachmentItem[]>;
   onPasteImages: (files: File[]) => Promise<AttachmentItem[]>;
   onPickElement: () => Promise<AttachmentItem[]>;
   onCancelElementPick: () => void;
@@ -94,6 +98,8 @@ export function ChatPane({
   const [draft, setDraft] = useState("");
   const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
   const [pickingFiles, setPickingFiles] = useState(false);
+  const [attachOpen, setAttachOpen] = useState(false);
+  const paperclipRef = useRef<HTMLSpanElement>(null);
   const [savingPaste, setSavingPaste] = useState(false);
   const [editingId, setEditingId] = useState<string>();
   const [editingQueueId, setEditingQueueId] = useState<string>();
@@ -257,6 +263,7 @@ export function ChatPane({
       setAttachments([]);
     }
     setAwayFromBottom(false);
+    setAttachOpen(false);
     requestAnimationFrame(() => stickToBottom(listRef.current));
   }, [sessionId]);
 
@@ -275,14 +282,28 @@ export function ChatPane({
     return () => observer.disconnect();
   }, [sessionId, messages.length]);
 
-  const addAttachments = async () => {
+  const addAttachments = async (mode: FsPickMode) => {
     if (busy) return;
+    setAttachOpen(false);
     setPickingFiles(true);
     try {
-      mergeAttachments(await onPickAttachments());
+      mergeAttachments(await onPickAttachments(mode));
     } finally {
       setPickingFiles(false);
     }
+  };
+
+  const onPaperclip = () => {
+    if (busy) return;
+    if (!hostReady) {
+      void addAttachments("mixed");
+      return;
+    }
+    if (detectDesktopOs() === "macos") {
+      void addAttachments("mixed");
+      return;
+    }
+    setAttachOpen((open) => !open);
   };
 
   const addPastedImages = async (files: File[]) => {
@@ -417,15 +438,27 @@ export function ChatPane({
           <div className="flex items-center justify-between gap-2">
             <div className="relative flex items-center gap-1">
               <div className="flex items-center gap-0">
+              <span ref={paperclipRef}>
               <IconButton
                 side="top"
                 label={label("attach")}
-                onClick={() => void addAttachments()}
+                onClick={onPaperclip}
                 disabled={busy}
-                className="flex h-7 w-7 items-center justify-center rounded-full text-[var(--text)] hover:bg-[var(--hover)] disabled:opacity-30 disabled:hover:bg-transparent"
+                className={`flex h-7 w-7 items-center justify-center rounded-full hover:bg-[var(--hover)] disabled:opacity-30 disabled:hover:bg-transparent ${
+                  attachOpen ? "bg-[var(--hover)] text-[var(--brass)]" : "text-[var(--text)]"
+                }`}
               >
                 {pickingFiles || savingPaste ? <LoaderCircle size={14} className="animate-spin" /> : <Paperclip size={14} />}
               </IconButton>
+              </span>
+              <AttachMenu
+                open={attachOpen}
+                locale={locale}
+                ignoreRef={paperclipRef}
+                getAnchorRect={() => paperclipRef.current?.getBoundingClientRect()}
+                onPick={(mode) => void addAttachments(mode)}
+                onClose={() => setAttachOpen(false)}
+              />
               <IconButton
                 side="top"
                 label={label("pickElement")}

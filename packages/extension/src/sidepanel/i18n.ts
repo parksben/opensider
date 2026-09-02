@@ -1,7 +1,6 @@
 export type Locale = "en" | "zh";
 
 export const LOCALE_CACHE_KEY = "opensider/locale";
-const PREVIOUS_LOCALE_CACHE_KEY = "cursor-sidebar/locale";
 
 export function isLocale(value: unknown): value is Locale {
   return value === "en" || value === "zh";
@@ -9,7 +8,7 @@ export function isLocale(value: unknown): value is Locale {
 
 export function readCachedLocale(): Locale | undefined {
   try {
-    const value = window.localStorage.getItem(LOCALE_CACHE_KEY) ?? window.localStorage.getItem(PREVIOUS_LOCALE_CACHE_KEY);
+    const value = window.localStorage.getItem(LOCALE_CACHE_KEY);
     return isLocale(value) ? value : undefined;
   } catch {
     return undefined;
@@ -94,6 +93,9 @@ const copy = {
     filterModels: "Filter models",
     noMatchingModels: "No matching models",
     pickFailed: "Could not open the file picker.",
+    pickFiles: "Select multiple files",
+    pickFolders: "Select multiple folders",
+    bridgeHint: "Copy the script below and run it in a terminal. When it finishes, you can connect to the local Agent.",
     pasteFailed: "Could not save the pasted screenshot.",
     pickPageFailed: "Open a regular http(s) page, then pick an element.",
     fork: "Fork from here",
@@ -217,6 +219,9 @@ const copy = {
     filterModels: "筛选...",
     noMatchingModels: "没有匹配的模型",
     pickFailed: "无法打开文件选择器。",
+    pickFiles: "选择多个文件",
+    pickFolders: "选择多个文件夹",
+    bridgeHint: "请复制下方脚本到终端/命令行中执行，完成后即可连接本地 Agent",
     pasteFailed: "无法保存粘贴的截图。",
     pickPageFailed: "请先打开普通的 http(s) 页面，再拾取元素。",
     fork: "从此处复制新会话",

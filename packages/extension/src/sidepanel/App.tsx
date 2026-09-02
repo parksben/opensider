@@ -8,6 +8,8 @@ import type {
   CurrentPage,
   ExtToHost,
   HostToExt,
+  HostStatusState,
+  FsPickMode,
 } from "@shared";
 import { MousePointer2 } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -16,6 +18,7 @@ import { applyAcpUpdate, applyBrowserTool, createUserMessage } from "./acp-messa
 import { connectSidebar } from "./bridge";
 import type { ChatMessage, PermissionRequest, PlanPrompt, QuestionPrompt, TodoItem } from "./chat-types";
 import { AgentSetup } from "./components/AgentSetup";
+import { BridgeSetup } from "./components/BridgeSetup";
 import { ChatPane } from "./components/ChatPane";
 import { Header } from "./components/Header";
 import { PermissionBar } from "./components/PermissionBar";
@@ -70,7 +73,7 @@ export function App() {
   const [progress, setProgress] = useState<AgentProgress>();
   const [sessionsOpen, setSessionsOpen] = useState(false);
   const [drawerWidth, setDrawerWidth] = useState(SESSION_DRAWER_DEFAULT);
-  const [status, setStatus] = useState<"starting" | "idle" | "connecting" | "ready" | "error">("starting");
+  const [status, setStatus] = useState<HostStatusState>("starting");
   const [error, setError] = useState<string>();
   const [page, setPage] = useState<CurrentPage>();
   const [runningIds, setRunningIds] = useState<string[]>([]);
@@ -305,7 +308,7 @@ export function App() {
     if (msg.type === "status") {
       setStatus(msg.state);
       setError(msg.error);
-      if (msg.state === "error") {
+      if (msg.state === "error" || msg.state === "missing") {
         pendingConnectRef.current = "";
         connectedProviderRef.current = "";
         pendingRegen.current = null;
@@ -705,7 +708,7 @@ export function App() {
     if (prev) flushQueue(prev.sessionId);
   };
 
-  const onPickAttachments = () =>
+  const onPickAttachments = (mode: FsPickMode = "mixed") =>
     new Promise<AttachmentItem[]>((resolve) => {
       if (statusRef.current !== "ready") {
         setError(t(localeRef.current, "pickFailed"));
@@ -714,7 +717,7 @@ export function App() {
       }
       const requestId = crypto.randomUUID();
       pickWaiters.current.set(requestId, resolve);
-      sendRef.current({ type: "fs.pick", requestId });
+      sendRef.current({ type: "fs.pick", requestId, mode });
     });
 
   const onPasteImages = async (files: File[]) => {
@@ -983,7 +986,7 @@ export function App() {
           progress={progress}
           agents={agents}
           selectedProviderId={selectedProviderId}
-          showAgentSelect={onboardingCompleted}
+          showAgentSelect={onboardingCompleted && status !== "missing"}
           sessionTitle={selected.title}
           sessionsOpen={sessionsOpen}
           theme={theme}
@@ -1009,7 +1012,10 @@ export function App() {
         />
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <div className="min-h-0 flex-1">
-            {!onboardingCompleted ? (
+            {status === "missing" ? (
+              <BridgeSetup locale={locale} />
+            ) : !onboardingCompleted ? (
+              status === "idle" || status === "connecting" || status === "ready" || status === "error" ? (
               <AgentSetup
                 locale={locale}
                 agents={agents}
@@ -1023,9 +1029,13 @@ export function App() {
                   reconnectRef.current();
                 }}
               />
+              ) : (
+                <div className="h-full bg-[var(--ink)]" />
+              )
             ) : (
             <ChatPane
               locale={locale}
+              hostReady={status === "ready"}
               sessionId={selected.id}
               messages={selected.messages}
               isRunning={runningIds.includes(selected.id)}

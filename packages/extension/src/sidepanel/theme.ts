@@ -2,7 +2,6 @@ export type ThemePreference = "light" | "dark" | "system";
 export type ResolvedTheme = "light" | "dark";
 
 export const THEME_CACHE_KEY = "opensider/theme";
-const PREVIOUS_THEME_CACHE_KEY = "cursor-sidebar/theme";
 export const THEME_ORDER: ThemePreference[] = ["light", "dark", "system"];
 
 export function isThemePreference(value: unknown): value is ThemePreference {
@@ -25,7 +24,7 @@ export function resolveTheme(preference: ThemePreference): ResolvedTheme {
 
 export function readCachedTheme(): ThemePreference | undefined {
   try {
-    const value = window.localStorage.getItem(THEME_CACHE_KEY) ?? window.localStorage.getItem(PREVIOUS_THEME_CACHE_KEY);
+    const value = window.localStorage.getItem(THEME_CACHE_KEY);
     return isThemePreference(value) ? value : undefined;
   } catch {
     return undefined;

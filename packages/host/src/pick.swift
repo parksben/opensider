@@ -23,8 +23,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     NSRunningApplication.current.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
 
     let panel = NSOpenPanel()
-    panel.canChooseFiles = true
-    panel.canChooseDirectories = true
+    let mode = CommandLine.arguments.dropFirst().dropFirst().first ?? "mixed"
+    panel.canChooseFiles = mode != "folders"
+    panel.canChooseDirectories = mode != "files"
     panel.allowsMultipleSelection = true
     panel.canCreateDirectories = false
     panel.resolvesAliases = true

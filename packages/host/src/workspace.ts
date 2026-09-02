@@ -83,7 +83,7 @@ Read \`browser/tabs.json\` for every normal Chrome window and tab (\`tabId\`, \`
 
 Do not invent tab IDs. To switch tabs, call \`switchTab\` with \`args.tabId\` from that file — it also focuses the tab's window. To open a site without replacing the current page, call \`openTab\` with \`args.url\` (http(s) only). To close a tab, call \`closeTab\` with \`args.tabId\` (or omit to close the active tab). To pull one or more tabs into their own window, call \`moveTabsToWindow\` with \`args.tabIds\`. Pass \`args.windowId\` to move them into an existing window instead of creating one.
 
-\`restricted: true\` means chrome://, chrome-extension://, or the Web Store. You may \`switchTab\` to those, but do not run page read / act / screenshot on them.
+\`restricted: true\` means chrome://, edge://, brave://, chrome-extension://, or a browser store page. You may \`switchTab\` to those, but do not run page read / act / screenshot on them.
 
 ### Protect unsaved page edits (required)
 

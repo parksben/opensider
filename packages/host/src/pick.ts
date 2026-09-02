@@ -69,13 +69,13 @@ function toItems(paths: string[]): AttachmentItem[] {
   return items;
 }
 
-async function pickWithApp(): Promise<string[]> {
+async function pickWithApp(mode: "mixed" | "files" | "folders"): Promise<string[]> {
   const out = join(tmpdir(), `opensider-pick-${process.pid}-${Date.now()}.txt`);
   writeFileSync(out, "");
   const started = Date.now();
   try {
-    log(`file pick exec ${PICK_BIN}`);
-    await execFileAsync(PICK_BIN, [out], { timeout: 0 });
+    log(`file pick exec ${PICK_BIN} mode=${mode}`);
+    await execFileAsync(PICK_BIN, [out, mode], { timeout: 0 });
     const paths = parsePaths(readFileSync(out, "utf8"));
     log(`file pick app done ms=${Date.now() - started} count=${paths.length}`);
     if (paths.length === 0 && Date.now() - started < 400) {
@@ -91,24 +91,42 @@ async function pickWithApp(): Promise<string[]> {
   }
 }
 
-async function pickWithFinder(): Promise<string[]> {
-  log("file pick fallback Finder choose file");
-  const { stdout } = await execFileAsync("/usr/bin/osascript", ["-e", FALLBACK_SCRIPT], {
+function finderScript(mode: "mixed" | "files" | "folders"): string {
+  if (mode === "folders") {
+    return `
+tell application "Finder" to activate
+delay 0.2
+set theFiles to choose folder with prompt "Select folders to attach" with multiple selections allowed
+set output to ""
+repeat with f in theFiles
+  set output to output & POSIX path of f & linefeed
+end repeat
+return output
+`;
+  }
+  return FALLBACK_SCRIPT;
+}
+
+async function pickWithFinder(mode: "mixed" | "files" | "folders"): Promise<string[]> {
+  log(`file pick fallback Finder mode=${mode}`);
+  const { stdout } = await execFileAsync("/usr/bin/osascript", ["-e", finderScript(mode)], {
     timeout: 0,
     maxBuffer: 2 * 1024 * 1024,
   });
   return parsePaths(stdout);
 }
 
-export async function pickLocalPaths(): Promise<{ items: AttachmentItem[]; cancelled: boolean }> {
+export async function pickLocalPaths(
+  mode: "mixed" | "files" | "folders" = "mixed",
+): Promise<{ items: AttachmentItem[]; cancelled: boolean }> {
   try {
-    const paths = existsSync(PICK_BIN) ? await pickWithApp() : await pickWithFinder();
+    const paths = existsSync(PICK_BIN) ? await pickWithApp(mode) : await pickWithFinder(mode);
     if (paths.length === 0) return { items: [], cancelled: true };
     return { items: toItems(paths), cancelled: false };
   } catch (first) {
     log(`file pick primary failed: ${String(first)}`);
     try {
-      const paths = await pickWithFinder();
+      const paths = await pickWithFinder(mode);
       if (paths.length === 0) return { items: [], cancelled: true };
       return { items: toItems(paths), cancelled: false };
     } catch (error) {

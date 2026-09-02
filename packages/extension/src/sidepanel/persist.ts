@@ -6,7 +6,6 @@ import { stampToolParts } from "./tool-label";
 import { isThemePreference, readCachedTheme, type ThemePreference } from "./theme";
 
 export const STATE_KEY = "opensider/state";
-const PREVIOUS_STATE_KEY = "cursor-sidebar/state";
 
 export type StoredMessage = {
   id: string;
@@ -371,8 +370,8 @@ function migrateSessionBindings(session: Session, providerId: string): Session {
 }
 
 export async function loadState(): Promise<LoadedState> {
-  const raw = await chrome.storage.local.get([STATE_KEY, PREVIOUS_STATE_KEY]);
-  const data = (raw[STATE_KEY] ?? raw[PREVIOUS_STATE_KEY]) as PersistedState | undefined;
+  const raw = await chrome.storage.local.get(STATE_KEY);
+  const data = raw[STATE_KEY] as PersistedState | undefined;
   if (!data || data.version !== 1 || !Array.isArray(data.sessions)) {
     return {
       locale: readCachedLocale() ?? "en",
