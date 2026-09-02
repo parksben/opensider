@@ -217,6 +217,7 @@ export type AttachmentItem = {
   path: string;
   name: string;
   kind: AttachmentKind;
+  missing?: boolean;
 };
 
 export type AgentModel = {
@@ -323,6 +324,7 @@ export type HostToExt =
       error?: string;
     }
   | { type: "models"; models: AgentModel[]; currentId: string }
+  | { type: "fs.revealed"; path: string; missing?: boolean; error?: string }
   | { type: "artifacts"; items: AttachmentItem[]; sessionId?: string }
   | {
       type: "page.picked";

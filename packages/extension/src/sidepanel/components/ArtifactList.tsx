@@ -78,13 +78,19 @@ export function ArtifactList({
               >
                 <Icon size={14} className="shrink-0 text-[var(--muted)]" />
                 <span className="min-w-0 flex-1 truncate text-[12px] text-[var(--text)]">{item.name}</span>
-                <IconButton
-                  label={t(locale, "revealArtifact")}
-                  onClick={() => onReveal(item.path)}
-                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-[var(--muted)] opacity-0 hover:text-[var(--text)] group-hover:opacity-100 group-focus-within:opacity-100"
-                >
-                  <FolderOpen size={13} />
-                </IconButton>
+                {item.missing ? (
+                  <span className="shrink-0 text-[11px] text-[var(--muted)] opacity-70">
+                    {t(locale, "artifactMissing")}
+                  </span>
+                ) : (
+                  <IconButton
+                    label={t(locale, "revealArtifact")}
+                    onClick={() => onReveal(item.path)}
+                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-[var(--muted)] opacity-0 hover:text-[var(--text)] group-hover:opacity-100 group-focus-within:opacity-100"
+                  >
+                    <FolderOpen size={13} />
+                  </IconButton>
+                )}
               </li>
             );
           })}

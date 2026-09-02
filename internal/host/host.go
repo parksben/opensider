@@ -827,6 +827,11 @@ func (h *Host) dispatch(typ string, msg map[string]any) error {
 		path := str(msg["path"])
 		if err := reveal.Path(path); err != nil {
 			log.Log("fs.reveal: " + err.Error())
+			out := map[string]any{"type": "fs.revealed", "path": path, "error": err.Error()}
+			if errors.Is(err, reveal.ErrNotFound) {
+				out["missing"] = true
+			}
+			h.send(out)
 		}
 		return nil
 	case "fs.save":

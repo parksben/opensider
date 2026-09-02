@@ -448,6 +448,21 @@ export function App() {
       patchSession(localId, (session) => ({ ...session, artifacts: items }));
       return;
     }
+    if (msg.type === "fs.revealed") {
+      if (!msg.missing || !msg.path) return;
+      const path = msg.path;
+      for (const session of sessionsRef.current) {
+        const items = session.artifacts ?? [];
+        if (!items.some((item) => item.path === path && !item.missing)) continue;
+        patchSession(session.id, (current) => ({
+          ...current,
+          artifacts: (current.artifacts ?? []).map((item) =>
+            item.path === path ? { ...item, missing: true } : item,
+          ),
+        }));
+      }
+      return;
+    }
     if (msg.type === "browser.command") {
       recordBrowserTool(msg.command);
       return;

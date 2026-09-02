@@ -195,7 +195,7 @@ Host 是一份 Go 二进制（`cmd/opensider` + `internal/`）。`browser/tools.
 
 Host 在 `session/new` 之前写好 `AGENTS.md` 和 `browser/tools.json`，这样 Agent 一进工作区就能感知读、操作、视觉、交互快照、标签/窗口方法和 `reportArtifacts`。SW 在标签/窗口变化时（250ms 防抖）发 `tabs.update`，Host 写 `browser/tabs.json`。`listTabs` 结果与该文件同形，给需要立刻拿到列表的命令用。`page.update` 同时写 `interactive.md`。
 
-`reportArtifacts` 不是页面方法。Agent 仍写 `browser/commands/<id>.json`，Host 监视时认出 `method` 后自己解析、写 `browser/results/<id>.json`，**不**转成 `browser.command`。参数接受 `args.files[{path, name?}]`、`args.paths[]` 或单个 `args.path`；相对路径相对工作区 cwd。每条须存在于本机，按路径去重，用和附件同一套规则标 `kind`。随后推 `{ type: "artifacts", items, sessionId? }`：`sessionId` 优先取正在 `prompt` 的 ACP 会话，侧栏映射到本地会话后 **整表覆盖** `Session.artifacts`。侧栏 `fs.reveal` 让 Host 调系统文件管理器打开目录并选中该文件。
+`reportArtifacts` 不是页面方法。Agent 仍写 `browser/commands/<id>.json`，Host 监视时认出 `method` 后自己解析、写 `browser/results/<id>.json`，**不**转成 `browser.command`。参数接受 `args.files[{path, name?}]`、`args.paths[]` 或单个 `args.path`；相对路径相对工作区 cwd。每条须存在于本机，按路径去重，用和附件同一套规则标 `kind`。随后推 `{ type: "artifacts", items, sessionId? }`：`sessionId` 优先取正在 `prompt` 的 ACP 会话，侧栏映射到本地会话后 **整表覆盖** `Session.artifacts`（新表不含 `missing`，上次打开位置失败留下的失效标记一起清掉，按路径替换而不是按路径合并）。侧栏 `fs.reveal` 让 Host 调系统文件管理器打开目录并选中该文件。路径不存在时 Host 回 `{ type: "fs.revealed", path, missing: true, error }`，不能只打日志；侧栏按 `path` 把该条 `missing: true` 写进 `Session.artifacts` 并随会话持久化。其它 reveal 失败（空路径、非绝对路径、系统文件管理器报错）也回 `fs.revealed` + `error`，但不标 `missing`，按钮保留。成功打开不回结果。
 
 ## 多会话与 fork
 
@@ -216,7 +216,7 @@ chrome.storage.local
   sessions[]:
     id, acpSessionId?, title, titleManual?, createdAt, updatedAt
     pinnedAt?                  # ISO；有值即置顶
-    artifacts[]?               # reportArtifacts 覆盖写入的本机产物 {path,name,kind}
+    artifacts[]?               # reportArtifacts 覆盖写入 {path,name,kind,missing?}；missing 在 reveal 找不到文件后写入，下次 report 整表覆盖会清掉
     parentId?, forkedFromMessageId?
     pendingForkContext?        # 下一条 prompt 要带的节点前文
     acpByProvider?             # { [providerId]: acpSessionId }；换 Agent 不丢本地消息
@@ -237,7 +237,8 @@ chrome.storage.local
 | `update` / `turn.end` / `permission` / `cursor` 带 `sessionId` | 侧栏按 ACP id 映射到本地会话，不按当前选中项 |
 | `fs.pick` | Host 弹出本机选文件/文件夹对话框，回 `fs.picked`（绝对路径 + kind） |
 | `fs.save` | Host 把侧栏压好的 JPEG 写到 `browser/pasted/`，回 `fs.saved`（绝对路径 + kind=image） |
-| `fs.reveal` + `path` | Host 打开系统文件管理器并选中该文件；不回结果 |
+| `fs.reveal` + `path` | Host 打开系统文件管理器并选中该文件；路径不存在则回 `fs.revealed`（`missing: true` + error），其它失败也回 error 但不标 missing；成功不回 |
+| `fs.revealed`（Host → 侧栏） | reveal 失败时带 `path` / `error` / 可选 `missing`；侧栏只在 `missing` 时按 path 把该条产物标失效并持久化 |
 | `artifacts`（Host → 侧栏） | `reportArtifacts` 成功后整表覆盖该会话产物列表 |
 | `page.pick` | SW 让当前标签内容脚本拾取元素，回 `page.picked`（CSS selector，kind=element）；不转发 Host |
 | `model.set` | 非 `auto` 时 `session/set_config_option`（`category: model`）；失败再试 `session/set_model` |
