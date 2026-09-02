@@ -5,4 +5,6 @@ dist
 .vite
 .turbo
 *.tsbuildinfo
-packages/host/bin/host.local.sh
+/tmp/
+/opensider
+/opensider.exe
