@@ -454,6 +454,7 @@ export function App() {
       pickWaiters.current.delete(msg.requestId);
       if (msg.type === "page.picked") setPickingElement(false);
       if (msg.error === "restricted") setError(t(localeRef.current, "pickPageFailed"));
+      else if (msg.error === "inject") setError(t(localeRef.current, "pickInjectFailed"));
       else if (msg.error) setError(msg.error);
       waiter?.(msg.items ?? []);
       return;
