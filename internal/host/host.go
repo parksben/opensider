@@ -66,26 +66,72 @@ func Run() {
 
 func (h *Host) main() {
 	h.setHostState("starting", "")
-	if err := h.scanAgents(); err != nil {
-		log.Log("detect failed: " + err.Error())
-		h.setHostState("error", err.Error())
-	} else {
-		h.setHostState("idle", "")
-		ids := make([]string, 0, len(h.lastAgents))
-		for _, item := range h.lastAgents {
-			ids = append(ids, item.ID)
-		}
-		joined := strings.Join(ids, ",")
-		if joined == "" {
-			joined = "none"
-		}
-		log.Log("idle agents=" + joined)
-	}
+	go h.scanAndIdle()
 	if err := watch.WatchCommands(func(command protocol.BrowserCommand) {
 		h.handleWorkspaceCommand(command)
 	}); err != nil {
 		log.Log("watch commands: " + err.Error())
 	}
+}
+
+func (h *Host) scanAndIdle() {
+	if err := h.scanAgents(); err != nil {
+		log.Log("detect failed: " + err.Error())
+		h.setHostState("error", err.Error())
+		return
+	}
+	h.setHostState("idle", "")
+	h.logIdleAgents()
+	go h.scanRegistry()
+}
+
+func (h *Host) scanRegistry() {
+	h.mu.Lock()
+	existing := append([]detect.ResolvedAgent{}, resolvedFromInfos(h.lastAgents)...)
+	h.mu.Unlock()
+	// Re-resolve from cache first; registry extras are merged by path.
+	cached := make([]detect.ResolvedAgent, 0, len(existing))
+	for _, item := range existing {
+		if hit := detect.CachedResolved(item.Profile.ID); hit != nil {
+			cached = append(cached, *hit)
+		}
+	}
+	infos, resolved := detect.DetectRegistryExtras(cached)
+	if len(resolved) == len(cached) {
+		return
+	}
+	h.mu.Lock()
+	h.lastAgents = infos
+	h.mu.Unlock()
+	for _, item := range resolved {
+		detect.RememberResolved(item)
+	}
+	h.sendAgents()
+	h.logIdleAgents()
+}
+
+func (h *Host) logIdleAgents() {
+	h.mu.Lock()
+	ids := make([]string, 0, len(h.lastAgents))
+	for _, item := range h.lastAgents {
+		ids = append(ids, item.ID)
+	}
+	h.mu.Unlock()
+	joined := strings.Join(ids, ",")
+	if joined == "" {
+		joined = "none"
+	}
+	log.Log("idle agents=" + joined)
+}
+
+func resolvedFromInfos(infos []protocol.AgentInfo) []detect.ResolvedAgent {
+	out := make([]detect.ResolvedAgent, 0, len(infos))
+	for _, item := range infos {
+		if hit := detect.CachedResolved(item.ID); hit != nil {
+			out = append(out, *hit)
+		}
+	}
+	return out
 }
 
 func (h *Host) send(msg any) {
@@ -552,16 +598,15 @@ func (h *Host) dispatch(typ string, msg map[string]any) error {
 	case "hello":
 		h.sendHello()
 		h.mu.Lock()
-		n := len(h.lastAgents)
 		state := h.hostState
+		n := len(h.lastAgents)
 		h.mu.Unlock()
 		if n > 0 {
 			h.sendAgents()
 		}
-		if state == "starting" {
-			state = "idle"
+		if state != "" && state != "starting" {
+			h.send(map[string]any{"type": "status", "state": state})
 		}
-		h.send(map[string]any{"type": "status", "state": state})
 		return nil
 	case "agents.detect":
 		return h.scanAgents()

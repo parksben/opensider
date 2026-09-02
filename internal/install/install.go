@@ -14,6 +14,7 @@ import (
 	"github.com/parksben/opensider/internal/log"
 	"github.com/parksben/opensider/internal/paths"
 	"github.com/parksben/opensider/internal/protocol"
+	"github.com/parksben/opensider/internal/workspace"
 )
 
 const (
@@ -29,6 +30,7 @@ func Run(local bool) error {
 	_ = os.MkdirAll(paths.ScreenshotsDir(), 0o755)
 	_ = os.MkdirAll(paths.PastedDir(), 0o755)
 	_ = os.MkdirAll(paths.RuntimeDir(), 0o755)
+	workspace.Ensure()
 
 	bin := paths.RuntimeBinaryPath()
 	if local {

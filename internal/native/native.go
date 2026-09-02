@@ -71,17 +71,30 @@ func (n *IO) Send(msg any) {
 		log.Log("native message too large: " + itoa(len(jsonBytes)))
 		return
 	}
-	var header [4]byte
-	binary.LittleEndian.PutUint32(header[:], uint32(len(jsonBytes)))
+	frame := make([]byte, 4+len(jsonBytes))
+	binary.LittleEndian.PutUint32(frame[:4], uint32(len(jsonBytes)))
+	copy(frame[4:], jsonBytes)
 	n.mu.Lock()
 	defer n.mu.Unlock()
-	if _, err := os.Stdout.Write(header[:]); err != nil {
-		log.Log("native write header: " + err.Error())
-		return
+	if err := writeAll(os.Stdout, frame); err != nil {
+		log.Log("native write: " + err.Error())
 	}
-	if _, err := os.Stdout.Write(jsonBytes); err != nil {
-		log.Log("native write body: " + err.Error())
+}
+
+func writeAll(w io.Writer, raw []byte) error {
+	for len(raw) > 0 {
+		n, err := w.Write(raw)
+		if n > 0 {
+			raw = raw[n:]
+		}
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return io.ErrShortWrite
+		}
 	}
+	return nil
 }
 
 func itoa(n int) string {

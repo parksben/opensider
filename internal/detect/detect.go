@@ -81,9 +81,15 @@ func isExecutable(path string) bool {
 	return false
 }
 
+const (
+	detectBudget = 8 * time.Second
+	probeTimeout = 1500 * time.Millisecond
+	waitLimit    = 400 * time.Millisecond
+)
+
 func ProbeACP(command string, args []string, timeout time.Duration) bool {
 	if timeout <= 0 {
-		timeout = 5 * time.Second
+		timeout = probeTimeout
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
@@ -92,6 +98,16 @@ func ProbeACP(command string, args []string, timeout time.Duration) bool {
 	env = setEnv(env, "HOME", paths.Home())
 	env = setEnv(env, "PATH", paths.AgentPathEnv(command))
 	cmd.Env = env
+	cmd.Stdin = nil
+	cmd.Stdout = nil
+	cmd.Stderr = io.Discard
+	cmd.ExtraFiles = nil
+	cmd.SysProcAttr = sysProcAttr()
+	cmd.WaitDelay = waitLimit
+	cmd.Cancel = func() error {
+		killCmd(cmd)
+		return nil
+	}
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return false
@@ -100,7 +116,6 @@ func ProbeACP(command string, args []string, timeout time.Duration) bool {
 	if err != nil {
 		return false
 	}
-	cmd.Stderr = io.Discard
 	if err := cmd.Start(); err != nil {
 		return false
 	}
@@ -118,7 +133,7 @@ func ProbeACP(command string, args []string, timeout time.Duration) bool {
 			if err := json.Unmarshal([]byte(line), &msg); err != nil {
 				continue
 			}
-			if result, ok := msg["result"].(map[string]any); ok {
+			if result, okResult := msg["result"].(map[string]any); okResult {
 				if _, has := result["protocolVersion"]; has {
 					ok = true
 					break
@@ -142,36 +157,40 @@ func ProbeACP(command string, args []string, timeout time.Duration) bool {
 	}
 	raw, _ := json.Marshal(init)
 	_, _ = stdin.Write(append(raw, '\n'))
+	_ = stdin.Close()
 	var ok bool
 	select {
 	case ok = <-done:
 	case <-ctx.Done():
 		ok = false
 	}
-	_ = cmd.Process.Kill()
-	_ = cmd.Wait()
+	finishCmd(cmd)
 	return ok
 }
 
-func resolveLaunch(profile AgentProfile) *ResolvedAgent {
-	var found *ResolvedAgent
+func finishCmd(cmd *exec.Cmd) {
+	killCmd(cmd)
+	waited := make(chan struct{})
+	go func() {
+		_ = cmd.Wait()
+		close(waited)
+	}()
+	select {
+	case <-waited:
+	case <-time.After(waitLimit):
+		log.Log("detect wait timeout " + cmd.Path)
+	}
+}
+
+func resolveLaunch(profile AgentProfile, _ time.Duration, seen map[string]bool) *ResolvedAgent {
 	for _, launch := range profile.Launches {
 		command := ResolveOnPath(launch.Command)
-		if command == "" {
+		if command == "" || seen[command] {
 			continue
 		}
-		if found == nil {
-			found = &ResolvedAgent{Profile: profile, Command: command, Args: launch.Args}
-		}
-		if ProbeACP(command, launch.Args, 5*time.Second) {
-			log.Log("detect " + profile.ID + " ok " + command + " " + strings.Join(launch.Args, " "))
-			return &ResolvedAgent{Profile: profile, Command: command, Args: launch.Args}
-		}
-		log.Log("detect " + profile.ID + " probe failed " + command + " " + strings.Join(launch.Args, " "))
-	}
-	if found != nil {
-		log.Log("detect " + profile.ID + " installed, handshake skipped " + found.Command)
-		return found
+		seen[command] = true
+		log.Log("detect " + profile.ID + " installed " + command + " " + strings.Join(launch.Args, " "))
+		return &ResolvedAgent{Profile: profile, Command: command, Args: launch.Args}
 	}
 	log.Log("detect " + profile.ID + " miss")
 	return nil
@@ -185,7 +204,7 @@ type registryAgent struct {
 }
 
 func registryExtras() []AgentProfile {
-	ctx, cancel := context.WithTimeout(context.Background(), 2500*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), 1200*time.Millisecond)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json", nil)
 	if err != nil {
@@ -245,13 +264,8 @@ func registryExtras() []AgentProfile {
 	return extras
 }
 
-func DetectAgents() (infos []protocol.AgentInfo, resolved []ResolvedAgent) {
-	catalog := append(Profiles(), registryExtras()...)
-	for _, profile := range catalog {
-		if hit := resolveLaunch(profile); hit != nil {
-			resolved = append(resolved, *hit)
-		}
-	}
+func infosFrom(resolved []ResolvedAgent) []protocol.AgentInfo {
+	infos := make([]protocol.AgentInfo, 0, len(resolved))
 	for _, item := range resolved {
 		cmd := strings.TrimSpace(item.Command + " " + strings.Join(item.Args, " "))
 		infos = append(infos, protocol.AgentInfo{
@@ -264,7 +278,36 @@ func DetectAgents() (infos []protocol.AgentInfo, resolved []ResolvedAgent) {
 			Caps:      item.Profile.Caps,
 		})
 	}
-	return infos, resolved
+	return infos
+}
+
+func DetectAgents() (infos []protocol.AgentInfo, resolved []ResolvedAgent) {
+	seen := map[string]bool{}
+	for _, profile := range Profiles() {
+		if hit := resolveLaunch(profile, 0, seen); hit != nil {
+			resolved = append(resolved, *hit)
+		}
+	}
+	return infosFrom(resolved), resolved
+}
+
+func DetectRegistryExtras(existing []ResolvedAgent) (infos []protocol.AgentInfo, resolved []ResolvedAgent) {
+	seen := map[string]bool{}
+	for _, item := range existing {
+		seen[item.Command] = true
+		resolved = append(resolved, item)
+	}
+	deadline := time.Now().Add(detectBudget)
+	for _, profile := range registryExtras() {
+		if time.Now().After(deadline) {
+			log.Log("detect budget reached")
+			break
+		}
+		if hit := resolveLaunch(profile, time.Until(deadline), seen); hit != nil {
+			resolved = append(resolved, *hit)
+		}
+	}
+	return infosFrom(resolved), resolved
 }
 
 var resolvedCache sync.Map
@@ -290,7 +333,7 @@ func ResolveProfile(id string) *ResolvedAgent {
 		g := GenericProfile(id, id, id, []string{"acp"})
 		profile = &g
 	}
-	hit := resolveLaunch(*profile)
+	hit := resolveLaunch(*profile, probeTimeout, map[string]bool{})
 	if hit != nil {
 		RememberResolved(*hit)
 	}

@@ -22,6 +22,8 @@ let lastAgents: HostToExt | undefined;
 let lastProgress: HostToExt | undefined;
 let ignoreNextDisconnect = false;
 let missingRetryTimer = 0;
+let startingWatchdog = 0;
+const STARTING_TIMEOUT_MS = 10_000;
 
 const INSTALL_HINT = "Run the install script shown in the side panel.";
 
@@ -41,6 +43,26 @@ function clearMissingRetry(): void {
   if (!missingRetryTimer) return;
   clearTimeout(missingRetryTimer);
   missingRetryTimer = 0;
+}
+
+function clearStartingWatchdog(): void {
+  if (!startingWatchdog) return;
+  clearTimeout(startingWatchdog);
+  startingWatchdog = 0;
+}
+
+function armStartingWatchdog(): void {
+  clearStartingWatchdog();
+  startingWatchdog = setTimeout(() => {
+    startingWatchdog = 0;
+    if (lastStatus.type === "status" && lastStatus.state === "starting") {
+      broadcast({
+        type: "status",
+        state: "error",
+        error: nativeError("Native host is still starting. Check ~/.opensider/host.log."),
+      });
+    }
+  }, STARTING_TIMEOUT_MS) as unknown as number;
 }
 
 function scheduleMissingRetry(): void {
@@ -63,6 +85,11 @@ function reportMissing(detail: string): void {
 function remember(msg: HostToExt): void {
   if (msg.type === "status") {
     lastStatus = msg;
+    if (msg.state === "starting") {
+      armStartingWatchdog();
+    } else {
+      clearStartingWatchdog();
+    }
     if (msg.state === "idle" || msg.state === "connecting" || msg.state === "missing") {
       lastSession = undefined;
       lastModels = undefined;
@@ -151,6 +178,7 @@ function connectNative(force = false): void {
       ignoreNextDisconnect = false;
       return;
     }
+    clearStartingWatchdog();
     const error = chrome.runtime.lastError?.message ?? "Native host disconnected.";
     if (isHostMissingError(error)) {
       reportMissing(error);
@@ -166,6 +194,9 @@ function connectNative(force = false): void {
   try {
     nativePort.postMessage({ type: "hello" } satisfies ExtToHost);
     clearMissingRetry();
+    if (lastStatus.type === "status" && lastStatus.state === "starting") {
+      armStartingWatchdog();
+    }
     void publishTabs();
   } catch (error) {
     nativePort = null;

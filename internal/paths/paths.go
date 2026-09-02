@@ -82,6 +82,7 @@ func versionManagerBins() []string {
 	consider := func(dir string) { considerDir(&dirs, seen, dir) }
 
 	consider(filepath.Join(home, ".local", "bin"))
+	consider(filepath.Join(home, ".opencode", "bin"))
 	consider(filepath.Join(home, ".npm-global", "bin"))
 	consider(filepath.Join(home, ".npm-global"))
 	consider(filepath.Join(home, ".bun", "bin"))
