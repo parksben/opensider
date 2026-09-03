@@ -125,7 +125,9 @@ export function Header({
   const titleCluster = (align: "left" | "center") => (
     <div
       ref={titleClusterRef}
-      className={`flex min-w-0 items-center gap-0.5 ${
+      className={`flex items-center gap-0.5 ${
+        renaming ? "min-w-[4em]" : "min-w-0"
+      } ${
         align === "left" ? "flex-1 justify-start" : renaming ? "w-full justify-center" : "w-max justify-center"
       }`}
       style={
@@ -155,7 +157,7 @@ export function Header({
           }}
           aria-label={label("rename")}
           placeholder={label("untitled")}
-          className={`min-w-0 w-full flex-1 rounded border border-[var(--line)] bg-[var(--ink)] px-1.5 py-0.5 text-[14px] font-medium tracking-tight text-[var(--text)] outline-none ${
+          className={`min-w-[4em] w-full flex-1 rounded border border-[var(--line)] bg-[var(--ink)] px-1.5 py-0.5 text-[14px] font-medium tracking-tight text-[var(--text)] outline-none ${
             align === "left" ? "text-left" : "text-center"
           }`}
         />
