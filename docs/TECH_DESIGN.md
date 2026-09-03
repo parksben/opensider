@@ -455,7 +455,7 @@ docs/REQUIREMENTS.md  需求：做什么、为什么
 docs/TECH_DESIGN.md   本文件：怎么做、为什么选这个方案
 docs/DEVELOPMENT.md   开发构建、Host 注册、工作区、打 CRX、tag 发 Release
 docs/images/          README 用的 logo 与海报（不引用 packages/ 源码路径）
-docs/demo/            README 用的侧栏演示视频（H.264 MP4）。`opensider.mp4` 是 Wikipedia → Gutenberg 跨页填框，成片保持采集原分辨率（本镜 2880×1800，不裁 16:9）。分镜在 `NEXT-TAKE.md`。打字可 setpts 加速，发送前空等硬切，Agent 流式/等待 4x–6x，新标签与填框/结果落地接近 1x–2x；BGM 用已下载的 CC 曲、始终 1x（见 MUSIC.md）
+docs/demo/            README 用的侧栏演示视频（H.264 MP4）。`opensider.mp4` 仍是上一镜 Wikipedia → Gutenberg 检索（2880×1800，不裁 16:9）；下一镜计划「今日 AI 新闻 TOP 10 → HTML → 浏览器滚动预览」，分镜在 `NEXT-TAKE.md`，点头前不替换成片。打字可 setpts 加速，发送前空等硬切，Agent 流式/等待 4x–6x，新标签/产物/打开简报 1x–2x，滚动预览 1x；BGM 用已下载的 CC 曲、始终 1x（见 MUSIC.md）
 cmd/opensider       唯一 Go 入口（host / install / pick）
 internal/           Host / install / pick / ACP
 packages/shared     扩展 ↔ Host 消息类型（TS）
@@ -472,9 +472,9 @@ pnpm workspace 只编扩展。Host 用 Go。扩展用 Vite + `@crxjs/vite-plugin
 
 产品侧栏 = Chrome **Side Panel**（manifest `side_panel` + `sidePanel` 权限 + `openPanelOnActionClick`），不是 `default_popup`。点工具栏图标时，聊天 UI 必须和网页停在同一窗口右侧。
 
-成片证明跨页，不证明写文件：当前片是页 A `getReadable` / snapshot → `openTab` Gutenberg → `fill` / `press`。不要引导 `reportArtifacts`。页 B 必须是英文-only（Gutenberg / 备用 arXiv），不要 Open Library。录制击键走 macOS ABC/US，禁止拼音候选条。
+下一镜证明 **跨页读多个真网站 + 交出能在浏览器打开的 HTML**。Agent `openTab` 英文科技媒体（TechCrunch / The Verge / Ars），`reportArtifacts` 后用 localhost `openTab`（或 `open -a Google Chrome` + 人手滚）预览 `outputs/ai-news-top10.html`。`openTab` 不能开 `file://`。不要把 Finder 当高潮。源站必须英文-only。击键走 macOS ABC/US，禁止拼音候选条。
 
-录制约束：侧栏约窗口 1/4 靠右；只采 Mac 内建屏（ffmpeg screen 0）。成片 **保持采集原分辨率**（本机内建屏常见 1440×900@2x → 2880×1800），禁止 crop / scale-to-1080 / pad 成 16:9——裁顶会切掉菜单栏，鼠标轨迹不完整。剪辑：打字 1.8x–2.5x；打完到发送的停顿硬切；Agent 思考/工具/流式 4x–6x；新标签与填框/结果 1x–2x；用户点击 1x。BGM 用网上已授权的开源曲（CC0 / CC-BY），1x、不跟 setpts 升调；禁止 ffmpeg 合成鼓点或其它自造音床（见 MUSIC.md）。结尾留到 Gutenberg 结果入画；素材里若没有写完的 Agent 终稿，不要假造。
+录制约束：侧栏约窗口 1/4 靠右；只采 Mac 内建屏（ffmpeg screen 0）。成片 **保持采集原分辨率**（本机内建屏常见 1440×900@2x → 2880×1800），禁止 crop / scale-to-1080 / pad 成 16:9。剪辑：打字 1.8x–2.5x；打完到发送的停顿硬切；Agent 思考/工具/流式 4x–6x；新标签落地、产物条、打开简报 1x–2x；滚动预览与用户点击 1x。BGM 用网上已授权的开源曲（CC0 / CC-BY），1x、不跟 setpts 升调（见 MUSIC.md）。结尾留到简报已打开并滚过、侧栏回合结束；不要在流式中途 SIGINT。
 
 ## 发布与安装壳
 

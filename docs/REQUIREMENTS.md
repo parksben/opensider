@@ -10,7 +10,7 @@
 
 ## 文档分层
 
-- **`README.md`**：面向使用者的产品页。只写产品是什么、适用谁、如何从 GitHub Release 安装并打开侧栏，以及一段侧栏演示视频（跨页填框：维基 → Gutenberg；成片保持采集原分辨率、不裁顶；打字可加速，发送前停顿要切掉，Agent 流式/等待可加速）。不写 pnpm / Go、仓库树、工作区内部协议，也不把 `packages/extension/dist` 当成用户加载路径。
+- **`README.md`**：面向使用者的产品页。只写产品是什么、适用谁、如何从 GitHub Release 安装并打开侧栏，以及一段侧栏演示视频（当前成片仍是上一镜：维基 → Gutenberg 检索；下一镜计划反过来：Gutenberg 书页 → 维基检索作者并写成一段话。成片保持采集原分辨率、不裁顶；打字可加速，发送前停顿要切掉，Agent 流式/等待可加速）。不写 pnpm / Go、仓库树、工作区内部协议，也不把 `packages/extension/dist` 当成用户加载路径。
 - **`docs/DEVELOPMENT.md`**：面向开发。本地构建、`pnpm install-host`、工作区布局、仓库结构、打 CRX、推 `v*` tag 发 Release；演示分镜见 `docs/demo/NEXT-TAKE.md`。
 - **本文件**：记产品做什么、为什么。
 - **`docs/TECH_DESIGN.md`**：记怎么做、为什么选这个方案。README 的 logo / 海报放 `docs/images/`，演示视频放 `docs/demo/`，避免依赖 `packages/` 路径。
@@ -102,12 +102,13 @@
 
 ### 演示视频
 
-README 上的片子要让人一眼看出：**Chrome 窗口内的 Side Panel**，以及 **跨页**（页 A 取数 → 页 B 填输入）。
+README 上的片子要让人一眼看出：**Chrome 窗口内的 Side Panel**，以及 **跨页取数 + 能打开的产物**。
 
-- **当前成片**：页 A `https://en.wikipedia.org/wiki/Ada_Lovelace` 用页面工具读出姓名/生卒/一句评价；Agent `openTab` 页 B `https://www.gutenberg.org/`（不预开），检索框填恰好 `Ada Lovelace` 并提交，结果入画。侧栏是 Chrome **窗口内右侧 Side Panel**。成片保持 ffmpeg 采集原分辨率（内建屏 Retina，本镜 **2880×1800**），**禁止**中心裁 16:9 / 缩到 1920×1080 / 加黑边——裁顶会切掉菜单栏，鼠标操作看起来不完整。分镜见 [`docs/demo/NEXT-TAKE.md`](./demo/NEXT-TAKE.md)。录前输入法锁 macOS **ABC / U.S.**，禁止整段粘贴。
-- **成片**：用户点击、侧栏开关 1x；打字可 1.8x–2.5x；片头空坐只留约 2s；打完到点发送之间的空等硬切掉；Agent 思考/工具/流式 4x–6x；新标签出现与 Gutenberg 填框/结果落地 1x–2x。结尾要留到 Gutenberg 结果可见，并且侧栏已写出姓名/生卒/一句评价、回合收成耗时行；素材若在流式中被停录，如实停在素材末尾，不要假结尾。
-- **几何**：侧栏在 **窗口右侧**，宽约 1/4；菜单栏、标签栏和地址栏必须入画。点工具栏图标打开的是 Chrome Side Panel API 停靠栏（`openPanelOnActionClick`），**禁止**拖成独立窗口。只采 Mac 内建屏；成片 = 采集原尺寸，不要事后改成 16:9。
-- **明确不做**：不再以「写 `outputs/` HTML + Finder Reveal」当主叙事；不做三点卖点片。
+- **当前成片（上一镜，先留着）**：页 A `https://en.wikipedia.org/wiki/Ada_Lovelace` → `openTab` Gutenberg 检索 `Ada Lovelace`。take7 工艺可用，故事已否。点头重录前 **不替换** [`docs/demo/opensider.mp4`](./demo/opensider.mp4)。
+- **下一镜（计划中，未录）**：停在 TechCrunch AI 栏目；Agent `openTab` The Verge AI + Ars Technica AI，用页面工具读今日头条，写成 `outputs/ai-news-top10.html` 并 `reportArtifacts`，再在 **同一 Chrome 窗口打开这张 HTML 并滚动预览**。高潮是浏览器里的简报，不是 Finder。分镜见 [`docs/demo/NEXT-TAKE.md`](./demo/NEXT-TAKE.md)。
+- **成片工艺（下一镜沿用 take7）**：采集原分辨率（本机常见 **2880×1800**），禁止裁 16:9 / 缩到 1080 / 裁顶。打字 1.8x–2.5x；发送前空等硬切；Agent 读页/等待 4x–6x；**新标签落地、产物条、打开简报 1x–2x；滚动预览 1x**。等到回合结束且简报已滚过再停。IME 锁 ABC/US。新会话 → 关历史抽屉 → 再录。
+- **几何**：侧栏窗口右侧约 1/4；菜单栏、标签栏、地址栏入画。禁止拖成独立窗口。只采内建屏。
+- **明确不做**：不再拍维基 ↔ Gutenberg 人名互搜；不做三点卖点；不把 Finder Reveal 当高潮；不用中文媒体 / 中文 prompt。
 
 ### 状态持久化
 

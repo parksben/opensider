@@ -28,7 +28,7 @@ pnpm dev
 
 改扩展后在扩展页点刷新。改 Host 后重新 `pnpm install-host`，再重连侧栏。
 
-当前 README 成片是 Wikipedia → Gutenberg 跨页填框（`docs/demo/opensider.mp4`，采集原分辨率 2880×1800，不裁 16:9）。分镜见 [docs/demo/NEXT-TAKE.md](./demo/NEXT-TAKE.md)。不要把侧栏拖成独立窗口。
+当前 README 成片仍是 Wikipedia → Gutenberg（`docs/demo/opensider.mp4`，2880×1800）。下一镜计划见 [docs/demo/NEXT-TAKE.md](./demo/NEXT-TAKE.md)（今日 AI 新闻 TOP 10 → HTML → 浏览器滚动）。不要把侧栏拖成独立窗口。
 
 ## 工作区
 
@@ -57,7 +57,7 @@ cmd/opensider         唯一 Go 入口（无参=Host，install，pick）
 internal/             Host / install / pick / ACP
 docs/                 需求、技术设计、本文件
 docs/images/          README logo / 海报
-docs/demo/            README 演示视频与分镜 `NEXT-TAKE.md`（当前片 Wikipedia → Gutenberg，2880×1800）
+docs/demo/            README 演示视频与分镜 `NEXT-TAKE.md`（当前片 Wikipedia → Gutenberg；下一镜 AI 新闻 TOP 10）
 packages/shared       扩展 ↔ Host 消息类型
 packages/extension    Chrome MV3 侧栏 / 内容脚本 / Service Worker
 scripts/install       用户壳脚本
