@@ -455,7 +455,7 @@ docs/REQUIREMENTS.md  需求：做什么、为什么
 docs/TECH_DESIGN.md   本文件：怎么做、为什么选这个方案
 docs/DEVELOPMENT.md   开发构建、Host 注册、工作区、打 CRX、tag 发 Release
 docs/images/          README 用的 logo 与海报（不引用 packages/ 源码路径）
-docs/demo/            README 用的侧栏演示视频（H.264 MP4，16:9）。`NEXT-TAKE.md` 是下一镜脚本（跨页填框 + 窗口内 Side Panel 1920×1080）；`opensider.mp4` 在重录前仍是旧镜。优先 ≤30s，完整版可到 45s。Agent 流式/等待用 setpts 加速，打字、点击、新标签出现保持 1x；BGM 始终 1x（见 MUSIC.md）
+docs/demo/            README 用的侧栏演示视频（H.264 MP4，16:9）。`opensider.mp4` 是 Wikipedia → Gutenberg 跨页填框；分镜在 `NEXT-TAKE.md`（ABC/US 输入法、英文-only 站点）。Agent 流式/等待用 setpts 加速，打字、点击、新标签出现保持 1x；BGM 始终 1x（见 MUSIC.md）
 cmd/opensider       唯一 Go 入口（host / install / pick）
 internal/           Host / install / pick / ACP
 packages/shared     扩展 ↔ Host 消息类型（TS）
@@ -468,13 +468,13 @@ scripts/keys        扩展 CRX 签名钥（固定打包 ID）
 
 pnpm workspace 只编扩展。Host 用 Go。扩展用 Vite + `@crxjs/vite-plugin` 打包。开发命令与加载 `packages/extension/dist` 的步骤只写在 `docs/DEVELOPMENT.md`，根目录 README 只服务使用者。
 
-## 演示录制（下一镜）
+## 演示录制
 
 产品侧栏 = Chrome **Side Panel**（manifest `side_panel` + `sidePanel` 权限 + `openPanelOnActionClick`），不是 `default_popup`。点工具栏图标时，聊天 UI 必须和网页停在同一窗口右侧。
 
-下一镜要证明跨页，不证明写文件：Agent 在页 A 用 `getReadable` / snapshot，再 `openTab` 页 B，用 `fill` / `fillForm` / `press`。不要引导 `reportArtifacts`。完整 URL、prompt、镜头表、备用 DuckDuckGo、中止条件在 `docs/demo/NEXT-TAKE.md`。
+成片证明跨页，不证明写文件：Agent 在页 A 用 `getReadable` / snapshot，再 `openTab` 页 B（`gutenberg.org`，备用 `arxiv.org/search`），用 `fill` / `fillForm` / `press`。不要引导 `reportArtifacts`。站点必须英文、不会 geo 本地化（不用 Open Library / DDG / Google）。录制击键必须走 macOS ABC/US 键盘布局，禁止拼音候选条。完整 URL、prompt、镜头表、IME、中止条件在 `docs/demo/NEXT-TAKE.md`。
 
-录制约束（与需求一致）：Chrome 窗口 1920×1080；侧栏约 480px 靠右；只采 Mac 内建屏（ffmpeg screen 0）；成片 16:9；Agent 等待 2x–6x，用户打字/新标签 1x；BGM 1x。重录前不覆盖 `opensider.mp4`。
+录制约束：侧栏约窗口 1/4 靠右；只采 Mac 内建屏（ffmpeg screen 0）；成片 16:9（1920×1080）；Agent 等待 2x–6x，用户打字/新标签 1x；BGM 1x。
 
 ## 发布与安装壳
 

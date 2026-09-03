@@ -10,8 +10,8 @@
 
 ## 文档分层
 
-- **`README.md`**：面向使用者的产品页。只写产品是什么、适用谁、如何从 GitHub Release 安装并打开侧栏，以及一段侧栏演示视频（优先约 30 秒；用户打字/点击/新标签出现留 1x，Agent 等待可加速；完整版可到 45 秒）。**下一镜**叙事是跨页填框（维基 → 另一站点检索），不是 HTML 报告 + Finder；未重录前 README 须标明仓库内 mp4 仍是旧镜。不写 pnpm / Go、仓库树、工作区内部协议，也不把 `packages/extension/dist` 当成用户加载路径。
-- **`docs/DEVELOPMENT.md`**：面向开发。本地构建、`pnpm install-host`、工作区布局、仓库结构、打 CRX、推 `v*` tag 发 Release；演示下一镜的录制规格见 `docs/demo/NEXT-TAKE.md`。
+- **`README.md`**：面向使用者的产品页。只写产品是什么、适用谁、如何从 GitHub Release 安装并打开侧栏，以及一段侧栏演示视频（跨页填框：维基 → Gutenberg；用户打字/点击/新标签出现留 1x，Agent 等待可加速）。不写 pnpm / Go、仓库树、工作区内部协议，也不把 `packages/extension/dist` 当成用户加载路径。
+- **`docs/DEVELOPMENT.md`**：面向开发。本地构建、`pnpm install-host`、工作区布局、仓库结构、打 CRX、推 `v*` tag 发 Release；演示分镜见 `docs/demo/NEXT-TAKE.md`。
 - **本文件**：记产品做什么、为什么。
 - **`docs/TECH_DESIGN.md`**：记怎么做、为什么选这个方案。README 的 logo / 海报放 `docs/images/`，演示视频放 `docs/demo/`，避免依赖 `packages/` 路径。
 
@@ -100,16 +100,14 @@
 
 因为工作区固定，用户可以在 A 页讨论、切到 B 页继续，让当前会话结合两页信息和本机文件做更复杂的事。换一个会话不会丢掉工作区里的页面快照，只是换一条聊天上下文。跨页的默认做法是 `openTab` 新开 http(s)，而不是 `navigate` 覆盖正在看的页（未保存编辑时扩展还会拦住覆盖）。
 
-### 演示视频（下一镜，计划中）
+### 演示视频
 
 README 上的片子要让人一眼看出：**Chrome 窗口内的 Side Panel**，以及 **跨页**（页 A 取数 → 页 B 填输入）。
 
-- **下一镜（已写脚本，未录）**：页 A `https://en.wikipedia.org/wiki/Ada_Lovelace` 用页面工具读出姓名/生卒/一句评价；Agent `openTab` 页 B `https://openlibrary.org/`，把目录检索填成 `Ada Lovelace Analytical Engine` 并提交。备用页 B 为 `https://duckduckgo.com/`。全程英文 UI + 英文 prompt。分镜、几何、中止条件见 [`docs/demo/NEXT-TAKE.md`](./demo/NEXT-TAKE.md)。
-- **成片**：优先 ≤30 秒，跳切等待后 ≤45 秒。用户打字、点击、新标签出现 1x；Agent 流式/空等 2x–6x。
-- **几何**：浏览器窗口 1920×1080；侧栏在 **窗口右侧**，宽约 1/4（≈480px）；标签栏和地址栏必须入画。点工具栏图标打开的是 Chrome Side Panel API 停靠栏（`openPanelOnActionClick`），**禁止**拖成独立窗口。只采 Mac 内建屏。
-- **明确不做**：不再以「写 `outputs/` HTML + Finder Reveal」当主叙事；不做三点卖点片；对齐脚本前不覆盖 `docs/demo/opensider.mp4`。仓库内现成 mp4 仍是上一镜（Linear 英文首页 → 本地 HTML 报告 → Finder），不能代表下一镜。
-
-上一镜失败：故事没有跨页用浏览器；录制窗口不像侧栏扩展。
+- **当前成片**：页 A `https://en.wikipedia.org/wiki/Ada_Lovelace` 用页面工具读出姓名/生卒/一句评价；Agent `openTab` 页 B `https://www.gutenberg.org/`（不预开），检索框填恰好 `Ada Lovelace` 并提交。备用页 B 为 `https://arxiv.org/search`。**禁止** Open Library、DuckDuckGo、Google 等会按地区切语言的站。录前输入法必须锁到 macOS **ABC / U.S.**（不是拼音英文模式），试打无候选条后再逐字击键，禁止整段粘贴。分镜见 [`docs/demo/NEXT-TAKE.md`](./demo/NEXT-TAKE.md)。
+- **成片**：用户打字、点击、新标签出现 1x；Agent 流式/空等 2x–6x。长 prompt 按键 1x，成片会比 30–45 秒故事板更长。
+- **几何**：侧栏在 **窗口右侧**，宽约 1/4；标签栏和地址栏必须入画。点工具栏图标打开的是 Chrome Side Panel API 停靠栏（`openPanelOnActionClick`），**禁止**拖成独立窗口。只采 Mac 内建屏，成片 16:9（1920×1080）。
+- **明确不做**：不再以「写 `outputs/` HTML + Finder Reveal」当主叙事；不做三点卖点片。
 
 ### 状态持久化
 
