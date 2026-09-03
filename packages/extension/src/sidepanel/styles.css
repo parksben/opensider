@@ -1,5 +1,13 @@
 @import "tailwindcss";
 
+@theme {
+  --font-weight-medium: 500;
+  --font-weight-semibold: 500;
+  --font-weight-bold: 500;
+  --font-weight-extrabold: 500;
+  --font-weight-black: 500;
+}
+
 :root,
 [data-theme="dark"] {
   color-scheme: dark;
@@ -66,6 +74,18 @@ body,
   background: var(--ink);
   color: var(--text);
   font-family: "IBM Plex Sans", sans-serif;
+  font-weight: 400;
+}
+
+b,
+strong,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-weight: 500;
 }
 
 body {
@@ -388,7 +408,7 @@ mark.cs-at-match {
 .markdown h1,
 .markdown h2,
 .markdown h3 {
-  font-weight: 600;
+  font-weight: 500;
   margin: 0.8em 0 0.35em;
 }
 
@@ -414,7 +434,7 @@ mark.cs-at-match {
 
 .markdown th {
   background: var(--panel-2);
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .cs-mermaid {
