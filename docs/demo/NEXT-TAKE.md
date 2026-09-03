@@ -1,8 +1,8 @@
 # 演示成片与下一镜
 
-> 状态：**已上架** [`opensider.mp4`](./opensider.mp4)（采集原分辨率 **2880×1800**，**45s**）：页 A Wikipedia Ada Lovelace → Agent `openTab` 页 B [Project Gutenberg](https://www.gutenberg.org/)，检索框恰好 `Ada Lovelace`，结果列表入画。侧栏是 Chrome **窗口内右侧 Side Panel**（约 1/4 宽），菜单栏、标签栏与地址栏入画。打字约 2.2x，发送前空等硬切，Agent 等待 5x，新标签 / 填框 / 结果 1.5x–1.8x，点击 1x。BGM 为 Kevin MacLeod《Wallpaper》（CC BY 3.0，1x）。
+> 状态：**已上架** [`opensider.mp4`](./opensider.mp4)（采集原分辨率 **2880×1800**，**43.8s**）：页 A Wikipedia Ada Lovelace → Agent `openTab` 页 B [Project Gutenberg](https://www.gutenberg.org/)，检索框恰好 `Ada Lovelace`，结果列表入画，侧栏写出姓名 / 生卒 / 一句评价后停在 `Worked for 1m 15s`。侧栏是 Chrome **窗口内右侧 Side Panel**（约 1/4 宽），菜单栏、标签栏与地址栏入画。打字约 2.2x，片头空坐切到约 2s，发送前空等硬切，Agent 等待 5x，新标签 / 填框 / 结果 1.6x，终稿约 2.5x 后留 1x 收住。BGM 为 Kevin MacLeod《Wallpaper》（CC BY 3.0，1x）。
 >
-> 素材 `/tmp/opensider-take6/raw.mp4`（144.5s，2880×1800）在结果入画后、Agent 仍停在工具行（`Read` / “page may still be loading”），**没有**写出姓名/生卒/一句评价的终稿。成片收到素材末尾，不假造回复。
+> take6 raw（144.5s）在结果入画后被 SIGINT，Agent 仍停在 `Read` / “page may still be loading”，终稿不在素材里。本镜是 take7 raw（237.1s，2880×1800），等到回合结束后再停录。
 >
 > 录前输入法锁 **ABC / U.S.**，禁止拼音候选条。
 
@@ -74,13 +74,13 @@ Gutenberg 检索框填 **恰好** `Ada Lovelace`（框短时用这个；框够�
 
 | 成片 | 谁 | 倍率 | 观众必须看见 |
 |---|---|---|---|
-| 建立 | — | 1x（只留约 2s，切掉开录后空坐） | Chrome **采集原尺寸**，右侧 Side Panel，深色英文 UI，**已有空会话**，页 A 维基 + 侧栏。菜单栏、标签栏、地址栏都在画面里。鼠标可见。 |
+| 建立 | — | 1x（只留约 2s，切掉开录后空坐） | Chrome **采集原尺寸**，右侧 Side Panel，深色英文 UI，**新空会话且历史抽屉已关**，页 A 维基 + 侧栏。菜单栏、标签栏、地址栏都在画面里。鼠标可见。 |
 | 打字 | 用户 | 1.8x–2.5x | 点击输入框，**逐字键入**上面整段 prompt（ABC/US 键盘；禁止整段粘贴；禁止 Chrome 页内查找 Cmd+F）。 |
 | 发送 | 用户 | 1x；**删掉打完到点发送之间的停顿** | Enter / 点发送。用户气泡出现，输入框四色进行中描边。 |
 | Agent 读维基 | Agent | 4x–6x | 侧栏灰字工具：读 `snapshot` / `getReadable` / `interactive.md`。**主区仍是维基**。 |
 | 新标签 | Agent | 1x–2x | `openTab`：标签栏 **多出** Gutenberg；地址栏变为 `gutenberg.org`。若 Agent 误用 `navigate` 把维基覆盖掉：本条作废，重来。 |
 | 填框 / 结果 | Agent | 填框与结果落地 1x–2x；中间空等 4x–6x | 页上 Agent 光标滑到检索框，`fill`/`fillForm` 出现 `Ada Lovelace`，提交。结果列表出现。 |
-| 收住 | Agent | 1x–2x | 双标签仍在；Gutenberg 结果可见。**尽量**等到侧栏出现写完的英文确认。素材若在流式中被停录，收到素材末尾，不要假结尾。**不要** 打开产物条、不要切出浏览器。 |
+| 收住 | Agent | 1x–2x | 双标签仍在；Gutenberg 结果可见；侧栏已写出姓名/生卒/一句评价且无转圈。录完后再空等 10–20s 确认回合结束再停 ffmpeg。**不要** 打开产物条、不要切出浏览器。 |
 
 BGM：`MUSIC.md` 那条已下载的 CC 曲，成片 **1x**，头尾淡入淡出 0.4–0.5s，不跟 setpts 升调。不要自己合成。
 

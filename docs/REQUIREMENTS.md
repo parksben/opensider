@@ -105,7 +105,7 @@
 README 上的片子要让人一眼看出：**Chrome 窗口内的 Side Panel**，以及 **跨页**（页 A 取数 → 页 B 填输入）。
 
 - **当前成片**：页 A `https://en.wikipedia.org/wiki/Ada_Lovelace` 用页面工具读出姓名/生卒/一句评价；Agent `openTab` 页 B `https://www.gutenberg.org/`（不预开），检索框填恰好 `Ada Lovelace` 并提交，结果入画。侧栏是 Chrome **窗口内右侧 Side Panel**。成片保持 ffmpeg 采集原分辨率（内建屏 Retina，本镜 **2880×1800**），**禁止**中心裁 16:9 / 缩到 1920×1080 / 加黑边——裁顶会切掉菜单栏，鼠标操作看起来不完整。分镜见 [`docs/demo/NEXT-TAKE.md`](./demo/NEXT-TAKE.md)。录前输入法锁 macOS **ABC / U.S.**，禁止整段粘贴。
-- **成片**：用户点击、侧栏开关 1x；打字可 1.8x–2.5x；打完到点发送之间的空等硬切掉；Agent 思考/工具/流式 4x–6x；新标签出现与 Gutenberg 填框/结果落地 1x–2x。结尾要留到 Gutenberg 结果可见；若素材里 Agent 终稿还没写完，如实停在素材末尾，不要假结尾。
+- **成片**：用户点击、侧栏开关 1x；打字可 1.8x–2.5x；片头空坐只留约 2s；打完到点发送之间的空等硬切掉；Agent 思考/工具/流式 4x–6x；新标签出现与 Gutenberg 填框/结果落地 1x–2x。结尾要留到 Gutenberg 结果可见，并且侧栏已写出姓名/生卒/一句评价、回合收成耗时行；素材若在流式中被停录，如实停在素材末尾，不要假结尾。
 - **几何**：侧栏在 **窗口右侧**，宽约 1/4；菜单栏、标签栏和地址栏必须入画。点工具栏图标打开的是 Chrome Side Panel API 停靠栏（`openPanelOnActionClick`），**禁止**拖成独立窗口。只采 Mac 内建屏；成片 = 采集原尺寸，不要事后改成 16:9。
 - **明确不做**：不再以「写 `outputs/` HTML + Finder Reveal」当主叙事；不做三点卖点片。
 
