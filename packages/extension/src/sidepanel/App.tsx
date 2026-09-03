@@ -1225,7 +1225,6 @@ export function App() {
           sessionsOpen={sessionsOpen}
           onSelectAgent={requestConnect}
           onCancelConnect={cancelConnect}
-          onRename={(title) => renameSession(selected.id, title)}
           onToggleSessions={() => setSessionsOpen((open) => !open)}
           onRetry={() => {
             pendingBinds.current = [];

@@ -1,6 +1,6 @@
 import type { AgentInfo, AgentProgress, HostStatusState } from "@shared";
-import { Check, ChevronsLeft, ChevronsRight, Pencil, RotateCw, Unplug } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { ChevronsLeft, ChevronsRight, RotateCw, Unplug } from "lucide-react";
+import { useLayoutEffect, useRef, useState } from "react";
 import type { Locale } from "../i18n";
 import { t } from "../i18n";
 import { isPlaceholderTitle } from "../persist";
@@ -33,7 +33,6 @@ export function Header({
   onRetry,
   onCancelConnect,
   onToggleSessions,
-  onRename,
   onSelectAgent,
 }: {
   locale: Locale;
@@ -49,40 +48,18 @@ export function Header({
   onRetry?: () => void;
   onCancelConnect?: () => void;
   onToggleSessions: () => void;
-  onRename: (title: string) => void;
   onSelectAgent: (id: string) => void;
 }) {
   const label = (key: Parameters<typeof t>[1]) => t(locale, key);
   const unnamed = isPlaceholderTitle(sessionTitle);
   const title = unnamed ? label("untitled") : sessionTitle.trim();
-  const titleInputRef = useRef<HTMLInputElement>(null);
-  const titleClusterRef = useRef<HTMLDivElement>(null);
   const leftRef = useRef<HTMLDivElement>(null);
   const rightRef = useRef<HTMLDivElement>(null);
   const barRef = useRef<HTMLDivElement>(null);
   const [sidePad, setSidePad] = useState({ left: TITLE_GAP, right: TITLE_GAP });
-  const [renaming, setRenaming] = useState(false);
-  const [draft, setDraft] = useState(unnamed ? "" : sessionTitle);
-  const renamingRef = useRef(false);
-  const draftRef = useRef(draft);
-  renamingRef.current = renaming;
-  draftRef.current = draft;
   const showSwitcher =
     !compact && showAgentSelect && agents.length > 0 && status !== "connecting" && status !== "starting";
   const showStatus = !showSwitcher && (!compact || status !== "ready");
-
-  useEffect(() => {
-    setRenaming(false);
-    setDraft(isPlaceholderTitle(sessionTitle) ? "" : sessionTitle);
-  }, [sessionTitle]);
-
-  useLayoutEffect(() => {
-    if (!renaming) return;
-    const node = titleInputRef.current;
-    if (!node) return;
-    node.focus();
-    node.setSelectionRange(0, 0);
-  }, [renaming]);
 
   useLayoutEffect(() => {
     if (compact) return;
@@ -102,83 +79,19 @@ export function Header({
     observer.observe(left);
     observer.observe(right);
     return () => observer.disconnect();
-  }, [compact, showAgentSelect, status, agents.length, selectedProviderId, error, sessionsOpen, renaming]);
-
-  const commitRename = () => {
-    if (!renamingRef.current) return;
-    renamingRef.current = false;
-    onRename(draftRef.current);
-    setRenaming(false);
-  };
-
-  const cancelRename = () => {
-    if (!renamingRef.current) return;
-    renamingRef.current = false;
-    setDraft(isPlaceholderTitle(sessionTitle) ? "" : sessionTitle);
-    setRenaming(false);
-  };
-
-  const startRename = () => {
-    setDraft(isPlaceholderTitle(sessionTitle) ? "" : sessionTitle);
-    setRenaming(true);
-  };
+  }, [compact, showAgentSelect, status, agents.length, selectedProviderId, error, sessionsOpen]);
 
   const titleCluster = (align: "left" | "center") => (
     <div
-      ref={titleClusterRef}
-      className={`flex min-w-0 items-center gap-0.5 ${
-        align === "left" || renaming ? "w-full justify-start" : "w-full justify-center"
+      title={title}
+      className={`min-w-0 truncate whitespace-nowrap text-[14px] font-medium tracking-tight text-[var(--text)] ${
+        align === "left" ? "w-full text-left" : "text-center"
       }`}
       style={
         align === "center" ? { width: `calc(100% - ${sidePad.left + sidePad.right}px)` } : undefined
       }
     >
-      {renaming ? (
-        <input
-          ref={titleInputRef}
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          onBlur={(event) => {
-            const next = event.relatedTarget;
-            if (next instanceof Node && titleClusterRef.current?.contains(next)) return;
-            commitRename();
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              commitRename();
-            }
-            if (event.key === "Escape") {
-              event.preventDefault();
-              cancelRename();
-            }
-          }}
-          aria-label={label("rename")}
-          placeholder={label("untitled")}
-          className="min-w-0 w-full flex-1 rounded border border-[var(--line)] bg-[var(--ink)] px-1.5 py-0.5 text-left text-[14px] font-medium tracking-tight text-[var(--text)] outline-none"
-        />
-      ) : (
-        <div
-          title={title}
-          className={`min-w-0 truncate whitespace-nowrap text-[14px] font-medium tracking-tight text-[var(--text)] ${
-            align === "left" ? "text-left" : "text-center"
-          }`}
-        >
-          {title}
-        </div>
-      )}
-      <IconButton
-        ripple={false}
-        label={renaming ? label("saveTitle") : label("rename")}
-        onClick={() => (renaming ? commitRename() : startRename())}
-        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--muted)] hover:text-[var(--text)] ${
-          renaming
-            ? "opacity-100"
-            : "opacity-0 group-hover/header:opacity-100 focus-visible:opacity-100"
-        }`}
-      >
-        {renaming ? <Check size={14} /> : <Pencil size={14} />}
-      </IconButton>
+      {title}
     </div>
   );
 
@@ -225,9 +138,9 @@ export function Header({
   );
 
   return (
-    <header className="group/header relative z-40 border-b border-[var(--line)] bg-[color-mix(in_oklab,var(--panel)_88%,transparent)] px-3 py-2.5 backdrop-blur">
+    <header className="relative z-40 border-b border-[var(--line)] bg-[color-mix(in_oklab,var(--panel)_88%,transparent)] px-3 py-2.5 backdrop-blur">
       {compact ? (
-        <div className={`flex min-w-0 items-center ${renaming ? "gap-8" : "gap-1.5"}`}>
+        <div className="flex min-w-0 items-center gap-1.5">
           <div className="flex min-w-0 flex-1 items-center gap-1.5">
             {statusChip}
             {retryButton}
@@ -251,9 +164,7 @@ export function Header({
             {retryButton}
           </div>
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-            <div className="pointer-events-auto flex w-full min-w-0 items-center justify-center">
-              {titleCluster("center")}
-            </div>
+            <div className="flex w-full min-w-0 items-center justify-center">{titleCluster("center")}</div>
           </div>
           <div ref={rightRef} className="flex shrink-0 items-center justify-end gap-1.5">
             {drawerButton}
