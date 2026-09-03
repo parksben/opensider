@@ -116,6 +116,7 @@ export function autoQuestionAnswers(
 
 export type PersistedState = {
   version: 1;
+  savedAt?: string;
   locale: Locale;
   theme: ThemePreference;
   selectedId: string;
@@ -364,7 +365,26 @@ export function wrapForkContext(context: string): string {
   return `[Forked thread context — prior messages only. Do not mention this wrapper. Wait for the user's question below.]\n\n${context}`;
 }
 
+export function hasSessionHistory(sessions: Array<{ messages?: unknown[]; acpSessionId?: string; acpByProvider?: Record<string, string> }>): boolean {
+  return sessions.some(
+    (session) =>
+      (session.messages?.length ?? 0) > 0 || Boolean(session.acpSessionId) || Boolean(session.acpByProvider && Object.keys(session.acpByProvider).length),
+  );
+}
+
+export function preferHostState(local: LoadedState, host: LoadedState): boolean {
+  const hostHas = hasSessionHistory(host.sessions);
+  const localHas = hasSessionHistory(local.sessions);
+  if (hostHas && !localHas) return true;
+  if (!hostHas) return false;
+  const hostAt = Date.parse(host.savedAt ?? "");
+  const localAt = Date.parse(local.savedAt ?? "");
+  if (Number.isFinite(hostAt) && Number.isFinite(localAt)) return hostAt > localAt;
+  return false;
+}
+
 export type LoadedState = {
+  savedAt?: string;
   locale: Locale;
   theme: ThemePreference;
   selectedId: string;
@@ -389,27 +409,28 @@ function migrateSessionBindings(session: Session, providerId: string): Session {
   };
 }
 
-export async function loadState(): Promise<LoadedState> {
-  const raw = await chrome.storage.local.get(STATE_KEY);
-  const data = raw[STATE_KEY] as PersistedState | undefined;
+function emptyLoaded(savedAt?: string): LoadedState {
+  return {
+    savedAt,
+    locale: readCachedLocale() ?? "en",
+    theme: readCachedTheme() ?? "dark",
+    selectedId: "",
+    selectedModelId: "",
+    selectedModelByProvider: {},
+    agentMode: "ask",
+    selectedProviderId: "",
+    onboardingCompleted: false,
+    sessionsOpen: false,
+    sessionDrawerWidth: SESSION_DRAWER_DEFAULT,
+    sessions: [],
+  };
+}
+
+export function fromPersisted(data: PersistedState | undefined | null): LoadedState {
   if (!data || data.version !== 1 || !Array.isArray(data.sessions)) {
-    return {
-      locale: readCachedLocale() ?? "en",
-      theme: readCachedTheme() ?? "dark",
-      selectedId: "",
-      selectedModelId: "",
-      selectedModelByProvider: {},
-      agentMode: "ask",
-      selectedProviderId: "",
-      onboardingCompleted: false,
-      sessionsOpen: false,
-      sessionDrawerWidth: SESSION_DRAWER_DEFAULT,
-      sessions: [],
-    };
+    return emptyLoaded(data?.savedAt);
   }
-  const hasHistory = data.sessions.some(
-    (session) => session.messages.length > 0 || Boolean(session.acpSessionId) || Boolean(session.acpByProvider),
-  );
+  const hasHistory = hasSessionHistory(data.sessions);
   const onboardingCompleted = data.onboardingCompleted === true || hasHistory;
   const selectedProviderId = data.selectedProviderId || (onboardingCompleted ? "cursor" : "");
   const sessions = data.sessions
@@ -422,6 +443,7 @@ export async function loadState(): Promise<LoadedState> {
   const selectedModelId =
     (selectedProviderId && selectedModelByProvider[selectedProviderId]) || data.selectedModelId || "";
   return {
+    savedAt: data.savedAt,
     locale: data.locale === "zh" || data.locale === "en" ? data.locale : (readCachedLocale() ?? "en"),
     theme: isThemePreference(data.theme) ? data.theme : (readCachedTheme() ?? "dark"),
     selectedId,
@@ -436,7 +458,12 @@ export async function loadState(): Promise<LoadedState> {
   };
 }
 
-export async function saveState(state: {
+export function parseHostState(raw: Record<string, unknown> | null): LoadedState | undefined {
+  if (!raw || raw.version !== 1 || !Array.isArray(raw.sessions)) return undefined;
+  return fromPersisted(raw as PersistedState);
+}
+
+export function toPersistedState(state: {
   locale: Locale;
   theme: ThemePreference;
   selectedId: string;
@@ -448,9 +475,10 @@ export async function saveState(state: {
   sessionsOpen: boolean;
   sessionDrawerWidth: number;
   sessions: Session[];
-}): Promise<void> {
-  const payload: PersistedState = {
+}): PersistedState {
+  return {
     version: 1,
+    savedAt: new Date().toISOString(),
     locale: state.locale,
     theme: state.theme,
     selectedId: state.selectedId,
@@ -463,7 +491,17 @@ export async function saveState(state: {
     sessionDrawerWidth: clampSessionDrawerWidth(state.sessionDrawerWidth),
     sessions: state.sessions.map(serializeSession),
   };
+}
+
+export async function loadState(): Promise<LoadedState> {
+  const raw = await chrome.storage.local.get(STATE_KEY);
+  return fromPersisted(raw[STATE_KEY] as PersistedState | undefined);
+}
+
+export async function saveState(state: Parameters<typeof toPersistedState>[0]): Promise<PersistedState> {
+  const payload = toPersistedState(state);
   await chrome.storage.local.set({ [STATE_KEY]: payload });
+  return payload;
 }
 
 export function wrapAttachments(text: string, items: AttachmentItem[]): string {

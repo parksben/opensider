@@ -156,10 +156,11 @@ Host 是一份 Go 二进制（`cmd/opensider` + `internal/`）。`browser/tools.
       screenshots/<id>.jpg   # 视口 / 元素截图
       pasted/<id>.jpg        # 用户从输入框粘贴的截图
   session.json               # 最近一次选中的 ACP sessionId（兼容旧版）
+  ui-state.json              # 侧栏权威状态（会话列表/消息/偏好）；扩展卸载后仍在
   host.log
 ```
 
-侧栏状态（语言、会话目录、消息、选中项）存在 `chrome.storage.local`，key 为 `opensider/state`。Host 只记当前 ACP `sessionId`，方便进程重启后 `session/load`。
+侧栏状态（语言、会话目录、消息、选中项、权限模式、模型、抽屉）写两份：`chrome.storage.local` key `opensider/state` 是热缓存；权威副本是 `~/.opensider/ui-state.json`（不进 workspace，免得和 Agent 文件混在一起）。Host `hello` 之后发 `{ type: "ui.state", state }`（没有文件则 `state: null`）。侧栏 `ui.state.set` 把同一份 JSON 交给 Host 落盘，带 `savedAt`。扩展存储为空或 `savedAt` 更旧时用 Host 灌回；**空会话表不得覆盖已有镜像**（避免重装后首帧空态把历史写丢）。Native Messaging 单帧约 1MB，工具输出仍先截到 8KB 再写入。Host 只另记 ACP `sessionId` 到 `session.json`，方便 `session/load`。
 
 `current.json` 示例：
 
@@ -204,7 +205,8 @@ Host 在 `session/new` 之前写好 `AGENTS.md` 和 `browser/tools.json`，这�
 工作区仍是一个。ACP 会话可以有多条，侧栏用本地 `id` 和 `acpSessionId` 对应。
 
 ```
-chrome.storage.local
+chrome.storage.local 与 ~/.opensider/ui-state.json（同形）
+  savedAt?: ISO time           # 镜像比较用
   locale: "en" | "zh"          # 默认 en
   theme: "light" | "dark" | "system"  # 默认 dark；system 跟 prefers-color-scheme
   selectedId: <local session id>
@@ -535,6 +537,7 @@ Release 资产名必须和壳一致：
 | `session/load` 不支持或失败 | 新建 ACP 会话，界面历史保留，下一条消息带前文 |
 | `session/fork` 不可用或不支持指定消息 | 新会话 + 首条 prompt 前缀截断记录 |
 | chrome.storage 变大 | 工具输出超长时截断再写入 |
+| 卸载/重装扩展清空 chrome.storage | 权威副本在 `~/.opensider/ui-state.json`；空态不得覆盖已有镜像 |
 | 内容脚本无法注入 | `current.json` 只写 url/title，命令返回明确错误；Host 超时仍落 `results/<id>.json` |
 | 扩展重载 / CRXJS 异步 loader 后旧标签没有接收端 | 页面命令与快照走同一套 `ensureContent` + 主框 `__opensiderPage` 调用，不用 `tabs.sendMessage` |
 | Chrome 杀 Service Worker | 重连 Native Host；ACP 子进程随 Host 退出，重连后 load/new |

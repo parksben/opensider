@@ -45,6 +45,8 @@ import {
   emptySession,
   isWorkspaceWritePermission,
   loadState,
+  parseHostState,
+  preferHostState,
   saveState,
   SESSION_DRAWER_DEFAULT,
   sessionAcpIds,
@@ -56,11 +58,14 @@ import {
   wrapForkContext,
   textOf,
   type AgentMode,
+  type LoadedState,
   type Session,
 } from "./persist";
 
 export function App() {
   const [hydrated, setHydrated] = useState(false);
+  const [hostMirrorReady, setHostMirrorReady] = useState(false);
+  const loadedRef = useRef<LoadedState | null>(null);
   const [locale, setLocale] = useState<Locale>(() => readCachedLocale() ?? "en");
   const [theme, setTheme] = useState<ThemePreference>(() => readCachedTheme() ?? "dark");
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -145,6 +150,27 @@ export function App() {
   agentModeRef.current = agentMode;
   selectedProviderRef.current = selectedProviderId;
   onboardingRef.current = onboardingCompleted;
+
+  const applyLoaded = (state: LoadedState) => {
+    const nextSessions = state.sessions.length > 0 ? state.sessions : [emptySession()];
+    const nextSelectedId = nextSessions.some((session) => session.id === state.selectedId)
+      ? state.selectedId
+      : nextSessions[0].id;
+    applyLocale(state.locale);
+    setLocale(state.locale);
+    applyThemePreference(state.theme);
+    setTheme(state.theme);
+    setSessions(nextSessions);
+    setSelectedId(nextSelectedId);
+    setSelectedModelId(state.selectedModelId);
+    setSelectedModelByProvider(state.selectedModelByProvider);
+    setAgentMode(state.agentMode);
+    setSelectedProviderId(state.selectedProviderId);
+    setOnboardingCompleted(state.onboardingCompleted);
+    setSessionsOpen(state.sessionsOpen);
+    setDrawerWidth(state.sessionDrawerWidth);
+    loadedRef.current = { ...state, sessions: nextSessions, selectedId: nextSelectedId };
+  };
 
   const enqueueBind = (item: { localId: string; kind: "new" | "use" | "fork" }) => {
     pendingBinds.current.push(item);
@@ -378,6 +404,15 @@ export function App() {
     }
     if (msg.type === "hello") {
       if (msg.providerId) connectedProviderRef.current = msg.providerId;
+      return;
+    }
+    if (msg.type === "ui.state") {
+      const host = parseHostState(msg.state);
+      const local = loadedRef.current;
+      if (host && (!local || preferHostState(local, host))) {
+        applyLoaded(host);
+      }
+      setHostMirrorReady(true);
       return;
     }
     if (msg.type === "status") {
@@ -670,23 +705,7 @@ export function App() {
 
   useEffect(() => {
     void loadState().then((state) => {
-      const sessions = state.sessions.length > 0 ? state.sessions : [emptySession()];
-      const selectedId = sessions.some((session) => session.id === state.selectedId)
-        ? state.selectedId
-        : sessions[0].id;
-      applyLocale(state.locale);
-      setLocale(state.locale);
-      applyThemePreference(state.theme);
-      setTheme(state.theme);
-      setSessions(sessions);
-      setSelectedId(selectedId);
-      setSelectedModelId(state.selectedModelId);
-      setSelectedModelByProvider(state.selectedModelByProvider);
-      setAgentMode(state.agentMode);
-      setSelectedProviderId(state.selectedProviderId);
-      setOnboardingCompleted(state.onboardingCompleted);
-      setSessionsOpen(state.sessionsOpen);
-      setDrawerWidth(state.sessionDrawerWidth);
+      applyLoaded(state);
       setHydrated(true);
     });
   }, []);
@@ -709,9 +728,13 @@ export function App() {
       sessionsOpen,
       sessionDrawerWidth: drawerWidth,
       sessions,
+    }).then((payload) => {
+      if (!hostMirrorReady) return;
+      sendRef.current({ type: "ui.state.set", state: payload as Record<string, unknown> });
     });
   }, [
     hydrated,
+    hostMirrorReady,
     locale,
     theme,
     selectedId,

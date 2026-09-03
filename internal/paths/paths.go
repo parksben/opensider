@@ -39,6 +39,7 @@ func InteractivePath() string { return filepath.Join(BrowserDir(), "interactive.
 func AgentsMDPath() string    { return filepath.Join(WorkspaceDir(), "AGENTS.md") }
 func ClaudeMDPath() string    { return filepath.Join(WorkspaceDir(), "CLAUDE.md") }
 func SessionPath() string     { return filepath.Join(SidebarHome(), "session.json") }
+func UIStatePath() string     { return filepath.Join(SidebarHome(), "ui-state.json") }
 func HostLogPath() string     { return filepath.Join(SidebarHome(), "host.log") }
 func RuntimeDir() string      { return filepath.Join(SidebarHome(), "runtime") }
 func ExtensionDir() string    { return filepath.Join(SidebarHome(), "extension") }

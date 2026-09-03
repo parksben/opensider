@@ -19,6 +19,7 @@ import (
 	"github.com/parksben/opensider/internal/preview"
 	"github.com/parksben/opensider/internal/protocol"
 	"github.com/parksben/opensider/internal/reveal"
+	"github.com/parksben/opensider/internal/uistate"
 	"github.com/parksben/opensider/internal/watch"
 	"github.com/parksben/opensider/internal/workspace"
 )
@@ -239,6 +240,15 @@ func (h *Host) sendHello() {
 		msg["providerId"] = providerID
 	}
 	h.send(msg)
+	h.sendUIState()
+}
+
+func (h *Host) sendUIState() {
+	if state, ok := uistate.LoadMap(); ok {
+		h.send(map[string]any{"type": "ui.state", "state": state})
+		return
+	}
+	h.send(map[string]any{"type": "ui.state", "state": nil})
 }
 
 func (h *Host) scanAgents() error {
@@ -731,6 +741,15 @@ func (h *Host) handleExt(msg map[string]any) {
 
 func (h *Host) dispatch(typ string, msg map[string]any) error {
 	switch typ {
+	case "ui.state.set":
+		var state map[string]any
+		if raw, err := json.Marshal(msg["state"]); err == nil {
+			_ = json.Unmarshal(raw, &state)
+		}
+		if err := uistate.Save(state); err != nil {
+			log.Log("ui.state.set: " + err.Error())
+		}
+		return nil
 	case "hello":
 		h.sendHello()
 		h.mu.Lock()

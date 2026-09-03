@@ -34,6 +34,7 @@ let lastSession: HostToExt | undefined;
 let lastModels: HostToExt | undefined;
 let lastAgents: HostToExt | undefined;
 let lastProgress: HostToExt | undefined;
+let lastUiState: HostToExt | undefined;
 let ignoreNextDisconnect = false;
 let missingRetryTimer = 0;
 let startingWatchdog = 0;
@@ -136,6 +137,7 @@ function remember(msg: HostToExt): void {
     lastModels = msg;
   }
   if (msg.type === "agent.progress") lastProgress = msg;
+  if (msg.type === "ui.state") lastUiState = msg;
 }
 
 function replay(port: chrome.runtime.Port): void {
@@ -148,6 +150,7 @@ function replay(port: chrome.runtime.Port): void {
     if (lastSession) port.postMessage(lastSession);
     if (lastPage) port.postMessage(lastPage);
     if (lastModels) port.postMessage(lastModels);
+    if (lastUiState) port.postMessage(lastUiState);
   } catch {
     sidebars.delete(port);
   }

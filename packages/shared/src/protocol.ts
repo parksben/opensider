@@ -292,7 +292,8 @@ export type ExtToHost =
       id: number;
       outcome: { outcome: "selected"; optionId: string } | { outcome: "cancelled" };
     }
-  | { type: "cursor.reply"; id: number; result: unknown };
+  | { type: "cursor.reply"; id: number; result: unknown }
+  | { type: "ui.state.set"; state: Record<string, unknown> };
 
 export type HostStatusState = "starting" | "idle" | "connecting" | "ready" | "error" | "missing";
 
@@ -300,6 +301,7 @@ export type FsPickMode = "mixed" | "files" | "folders";
 
 export type HostToExt =
   | { type: "hello"; workspace: string; agentPath: string; providerId?: string }
+  | { type: "ui.state"; state: Record<string, unknown> | null }
   | { type: "status"; state: HostStatusState; error?: string }
   | { type: "agents"; agents: AgentInfo[]; selectedId?: string }
   | { type: "agent.progress"; progress: AgentProgress }
