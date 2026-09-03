@@ -302,8 +302,8 @@ export function SessionDrawer({
             label={label("settingLanguage")}
             value={locale}
             options={[
-              { id: "zh", name: label("languageChinese") },
-              { id: "en", name: label("languageEnglish") },
+              { id: "zh", name: "简体中文" },
+              { id: "en", name: "English" },
             ]}
             onChange={onLocale}
           />

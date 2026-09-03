@@ -55,7 +55,7 @@ const copy = {
     drawerTabSettings: "Settings",
     settingTheme: "Theme",
     settingLanguage: "Language",
-    languageChinese: "Simplified Chinese",
+    languageChinese: "简体中文",
     languageEnglish: "English",
     themeLight: "Light",
     themeDark: "Dark",
