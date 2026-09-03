@@ -25,12 +25,13 @@ import { Header } from "./components/Header";
 import { COMPACT_MAIN_PX } from "./layout";
 import { PermissionBar } from "./components/PermissionBar";
 import { SessionDrawer } from "./components/SessionDrawer";
-import { applyLocale, readCachedLocale, t, type Locale } from "./i18n";
+import { applyLocale, detectBrowserLocale, readCachedLocale, t, type Locale } from "./i18n";
 import {
   applyResolvedTheme,
   resolveTheme,
   watchSystemTheme,
   applyThemePreference,
+  detectBrowserTheme,
   readCachedTheme,
   type ThemePreference,
 } from "./theme";
@@ -67,8 +68,8 @@ export function App() {
   const [hydrated, setHydrated] = useState(false);
   const [hostMirrorReady, setHostMirrorReady] = useState(false);
   const loadedRef = useRef<LoadedState | null>(null);
-  const [locale, setLocale] = useState<Locale>(() => readCachedLocale() ?? "en");
-  const [theme, setTheme] = useState<ThemePreference>(() => readCachedTheme() ?? "dark");
+  const [locale, setLocale] = useState<Locale>(() => readCachedLocale() ?? detectBrowserLocale());
+  const [theme, setTheme] = useState<ThemePreference>(() => readCachedTheme() ?? detectBrowserTheme());
   const [sessions, setSessions] = useState<Session[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [models, setModels] = useState<AgentModel[]>([]);

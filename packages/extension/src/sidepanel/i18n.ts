@@ -6,6 +6,21 @@ export function isLocale(value: unknown): value is Locale {
   return value === "en" || value === "zh";
 }
 
+/** Map a BCP-47 / Chrome UI language tag to the side-panel locale. */
+export function localeFromLanguageTag(tag: string): Locale {
+  return /^zh([-_]|$)/i.test(tag.trim()) ? "zh" : "en";
+}
+
+/** First-run default: browser UI Chinese → 简体中文, otherwise English. */
+export function detectBrowserLocale(): Locale {
+  const fromChrome =
+    typeof chrome !== "undefined" && typeof chrome.i18n?.getUILanguage === "function"
+      ? chrome.i18n.getUILanguage()
+      : "";
+  const fromNav = typeof navigator !== "undefined" ? navigator.language : "";
+  return localeFromLanguageTag(fromChrome || fromNav || "en");
+}
+
 export function readCachedLocale(): Locale | undefined {
   try {
     const value = window.localStorage.getItem(LOCALE_CACHE_KEY);

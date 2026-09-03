@@ -80,7 +80,7 @@ irm https://github.com/parksben/opensider/releases/latest/download/install.ps1 |
 
 点工具栏上的 OpenSider 图标打开侧栏。选一个本机已登录的 Agent，在空会话里发第一条消息即可。顶栏「Connection」可以真正重连桥接。
 
-界面默认英文；语言和主题在右侧抽屉的「Settings」里用下拉切换。
+首次打开时语言跟浏览器（中文界面用简体中文，否则英文），主题默认跟随设备；之后在右侧抽屉的「Settings」里用下拉切换。
 
 ## 开发
 

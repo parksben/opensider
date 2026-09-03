@@ -8,6 +8,11 @@ export function isThemePreference(value: unknown): value is ThemePreference {
   return value === "light" || value === "dark" || value === "system";
 }
 
+/** First-run default. Chrome does not expose Light/Dark/Device, so match Device. */
+export function detectBrowserTheme(): ThemePreference {
+  return "system";
+}
+
 export function nextTheme(current: ThemePreference): ThemePreference {
   const index = THEME_ORDER.indexOf(current);
   return THEME_ORDER[(index + 1) % THEME_ORDER.length];

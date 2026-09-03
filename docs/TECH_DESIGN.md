@@ -207,8 +207,8 @@ Host 在 `session/new` 之前写好 `AGENTS.md` 和 `browser/tools.json`，这�
 ```
 chrome.storage.local 与 ~/.opensider/ui-state.json（同形）
   savedAt?: ISO time           # 镜像比较用
-  locale: "en" | "zh"          # 默认 en
-  theme: "light" | "dark" | "system"  # 默认 dark；system 跟 prefers-color-scheme
+  locale: "en" | "zh"          # 首次无偏好：浏览器 UI 中文→zh，否则 en
+  theme: "light" | "dark" | "system"  # 首次无偏好：system；system 跟 prefers-color-scheme
   selectedId: <local session id>
   selectedModelId?: string     # 具体模型 id；auto / 空 = 不指定，不调用 set_model
   agentMode: "ask" | "workspace" | "auto" | "unattended"  # 默认 ask
@@ -285,11 +285,11 @@ chrome.storage.local 与 ~/.opensider/ui-state.json（同形）
 
 ## 语言
 
-`packages/extension/src/sidepanel/i18n.ts` 提供 `en` / `zh` 词条。默认 `en`。完整 state 仍写 `chrome.storage.local`；切换时同步镜像 `localStorage` 的 `opensider/locale`。`theme-boot.js` 同时读这份镜像并设 `document.documentElement.lang`，避免每次打开先闪英文。React 初始 state 也从镜像读。连接错误原文（Host / Chrome `lastError`）不翻译。composer `placeholder` 在发送提示后补一句 `@` 引用：中「输入@可引用内容」、英「Type @ to mention」。输入框上方 todo 标题走 `todoList`：英「Todo List - {done}/{total}」，中「待办项 - {done}/{total}」。
+`packages/extension/src/sidepanel/i18n.ts` 提供 `en` / `zh` 词条。首次无镜像、无 `chrome.storage` / Host 偏好时，`detectBrowserLocale()` 读 `chrome.i18n.getUILanguage()`（备 `navigator.language`）：`zh*` → `zh`，否则 `en`。已有偏好不再重探测。完整 state 仍写 `chrome.storage.local`；切换时同步镜像 `localStorage` 的 `opensider/locale`。`theme-boot.js` 同时读这份镜像并设 `document.documentElement.lang`；无镜像时当场按浏览器 UI 语言设 lang，避免先闪英文。React 初始 state 也从镜像或探测结果读。连接错误原文（Host / Chrome `lastError`）不翻译。composer `placeholder` 在发送提示后补一句 `@` 引用：中「输入@可引用内容」、英「Type @ to mention」。输入框上方 todo 标题走 `todoList`：英「Todo List - {done}/{total}」，中「待办项 - {done}/{total}」。
 
 ## 主题
 
-`theme.ts`：偏好 `light | dark | system`，解析后给 `document.documentElement.dataset.theme`。`system` 时听 `prefers-color-scheme`。完整 state 仍写 `chrome.storage.local`（`theme` 必填）；切换时同步镜像 `localStorage` 的 `opensider/theme`。`index.html` 只在 `<head>` 用 `<script src="./theme-boot.js">` 加载同目录的 `src/sidepanel/theme-boot.js`（独立 classic script、非 inline，避免 MV3 CSP），在 React 之前读这份镜像并设 `data-theme`，避免每次打开先闪默认深色。不要放进 `public/`，也不要从 React/TS `import`：Vite 7 + CRXJS serve 会把 HTML script 转成 `import()`，而 public 资源禁止被 import，dev 会 Internal server error、侧栏白屏。构建时 Vite 不会打包无 `type="module"` 的 script，所以 `vite.config.ts` 把同一份文件发到 `dist/src/sidepanel/theme-boot.js`，与 HTML 相对路径对齐。React 初始 state 也从镜像读，`useLayoutEffect` 再 apply。颜色全走 CSS 变量：`:root` / `[data-theme=dark]` 是现有橄榄黑；`[data-theme=light]` 是中性浅灰层次（画布 `--ink` `#f3f4f6` → 抬升 `--panel` 近白 → 凹陷 `--panel-2`），少蓝、少脏；正文冷灰黑（muted 用石板灰）+ 钢蓝强调（仍走 `--brass` token）。`--hover` / `--code` / `--user` / `--on-brass` / `--overlay` 两套分开，组件不再写死 `#161910` 这类只适合深色的底。图走 CSS 变量配色，不跑 mermaid `initialize`。顶栏 `Sun` / `Moon` / `Monitor` 循环三态。
+`theme.ts`：偏好 `light | dark | system`，解析后给 `document.documentElement.dataset.theme`。`system` 时听 `prefers-color-scheme`。Chrome 不向扩展暴露外观三项（浅色 / 深色 / 设备），所以首次无偏好时 `detectBrowserTheme()` 固定为 `system`：浏览器设为跟随系统时设置项也是跟随设备；实际明暗仍跟 `prefers-color-scheme`（Chrome 锁浅色/深色时该查询也会变）。已有偏好不再重探测。完整 state 仍写 `chrome.storage.local`（`theme` 必填）；切换时同步镜像 `localStorage` 的 `opensider/theme`。`index.html` 只在 `<head>` 用 `<script src="./theme-boot.js">` 加载同目录的 `src/sidepanel/theme-boot.js`（独立 classic script、非 inline，避免 MV3 CSP），在 React 之前读这份镜像并设 `data-theme`；无镜像时按 `system` 解析，避免每次打开先闪默认深色。不要放进 `public/`，也不要从 React/TS `import`：Vite 7 + CRXJS serve 会把 HTML script 转成 `import()`，而 public 资源禁止被 import，dev 会 Internal server error、侧栏白屏。构建时 Vite 不会打包无 `type="module"` 的 script，所以 `vite.config.ts` 把同一份文件发到 `dist/src/sidepanel/theme-boot.js`，与 HTML 相对路径对齐。React 初始 state 也从镜像读，`useLayoutEffect` 再 apply。颜色全走 CSS 变量：`:root` / `[data-theme=dark]` 是现有橄榄黑；`[data-theme=light]` 是中性浅灰层次（画布 `--ink` `#f3f4f6` → 抬升 `--panel` 近白 → 凹陷 `--panel-2`），少蓝、少脏；正文冷灰黑（muted 用石板灰）+ 钢蓝强调（仍走 `--brass` token）。`--hover` / `--code` / `--user` / `--on-brass` / `--overlay` 两套分开，组件不再写死 `#161910` 这类只适合深色的底。图走 CSS 变量配色，不跑 mermaid `initialize`。顶栏 `Sun` / `Moon` / `Monitor` 循环三态。
 
 ## 附件（只传路径）
 

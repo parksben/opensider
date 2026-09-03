@@ -1,10 +1,10 @@
 import type { AttachmentItem } from "@shared";
 import type { ChatMessage, ChatPart, TodoItem } from "./chat-types";
-import { readCachedLocale, type Locale } from "./i18n";
+import { detectBrowserLocale, readCachedLocale, type Locale } from "./i18n";
 import { displayMentionText, wrapUserMentions } from "./mentions";
 import { isBenignStreamCloseText, stripBenignStreamClose } from "./stream-close";
 import { stampToolParts } from "./tool-label";
-import { isThemePreference, readCachedTheme, type ThemePreference } from "./theme";
+import { detectBrowserTheme, isThemePreference, readCachedTheme, type ThemePreference } from "./theme";
 
 export const STATE_KEY = "opensider/state";
 
@@ -412,8 +412,8 @@ function migrateSessionBindings(session: Session, providerId: string): Session {
 function emptyLoaded(savedAt?: string): LoadedState {
   return {
     savedAt,
-    locale: readCachedLocale() ?? "en",
-    theme: readCachedTheme() ?? "dark",
+    locale: readCachedLocale() ?? detectBrowserLocale(),
+    theme: readCachedTheme() ?? detectBrowserTheme(),
     selectedId: "",
     selectedModelId: "",
     selectedModelByProvider: {},
@@ -444,8 +444,8 @@ export function fromPersisted(data: PersistedState | undefined | null): LoadedSt
     (selectedProviderId && selectedModelByProvider[selectedProviderId]) || data.selectedModelId || "";
   return {
     savedAt: data.savedAt,
-    locale: data.locale === "zh" || data.locale === "en" ? data.locale : (readCachedLocale() ?? "en"),
-    theme: isThemePreference(data.theme) ? data.theme : (readCachedTheme() ?? "dark"),
+    locale: data.locale === "zh" || data.locale === "en" ? data.locale : (readCachedLocale() ?? detectBrowserLocale()),
+    theme: isThemePreference(data.theme) ? data.theme : (readCachedTheme() ?? detectBrowserTheme()),
     selectedId,
     selectedModelId,
     selectedModelByProvider,
