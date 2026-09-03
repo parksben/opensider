@@ -105,7 +105,7 @@
 README 上的片子要让人一眼看出：**Chrome 窗口内的 Side Panel**，以及 **跨站取数 + 能打开的产物**。
 
 - **当前成片（上一镜，先留着）**：页 A `https://en.wikipedia.org/wiki/Ada_Lovelace` → `openTab` Gutenberg 检索 `Ada Lovelace`。take7 工艺可用，故事已否。在新镜落地前 **不替换** [`docs/demo/opensider.mp4`](./demo/opensider.mp4)。
-- **下一镜（已点头，按此录）**：停在常用英文资讯站（`https://www.bbc.com/news`，备 `reuters.com` / `theverge.com`）。侧栏只打 **两句人话**：全网找今天最热的 AI 新闻、按热度排榜、写成 HTML。禁止在 prompt 里列 URL、工具名或 HTML 规格。Agent 自己去开其它站。产物出来后 **操作者用鼠标在 Chrome 打开 HTML**，再 **用鼠标滚动**。高潮是浏览器里的榜单，不是 Finder，也不是 Agent 代开。分镜见 [`docs/demo/NEXT-TAKE.md`](./demo/NEXT-TAKE.md)。
+- **下一镜（已点头，按此录）**：停在英文科技 / 产品资讯站（`https://www.theverge.com/`，备 `techcrunch.com` / `wired.com`）。不要 BBC、Reuters、CNN 这类综合/政治新闻。侧栏只打 **两句人话**：全网找今天最热的 AI 新闻、按热度排榜、写成 HTML。禁止在 prompt 里列 URL、工具名或 HTML 规格。Agent 自己去开其它站。产物出来后 **操作者用鼠标在 Chrome 打开 HTML**，再 **用鼠标滚动**。高潮是浏览器里的榜单，不是 Finder，也不是 Agent 代开。分镜见 [`docs/demo/NEXT-TAKE.md`](./demo/NEXT-TAKE.md)。
 - **成片工艺（沿用 take7）**：采集原分辨率（本机常见 **2880×1800**），禁止裁 16:9 / 缩到 1080 / 裁顶。打字 1.8x–2.5x；发送前空等硬切；Agent 读页/等待 4x–6x；**新标签落地、产物条 1x–2x；人手打开与滚动 1x**。等到回合结束且简报已滚过再停。IME 锁 ABC/US。新会话 → 关历史抽屉 → 再录。
 - **几何**：侧栏窗口右侧约 1/4；菜单栏、标签栏、地址栏入画。禁止拖成独立窗口。只采内建屏。
 - **明确不做**：不再拍维基 ↔ Gutenberg；不做三点卖点；不把 Finder Reveal 当高潮；不用中文媒体 / 中文 prompt；prompt 不超过三句。

@@ -457,7 +457,7 @@ docs/REQUIREMENTS.md  需求：做什么、为什么
 docs/TECH_DESIGN.md   本文件：怎么做、为什么选这个方案
 docs/DEVELOPMENT.md   开发构建、Host 注册、工作区、打 CRX、tag 发 Release
 docs/images/          README 用的 logo 与海报（不引用 packages/ 源码路径）
-docs/demo/            README 用的侧栏演示视频（H.264 MP4）。`opensider.mp4` 仍是上一镜 Wikipedia → Gutenberg 检索（2880×1800，不裁 16:9）；下一镜「常用英文资讯站 → 两句人话搜今日最热 AI 新闻 → HTML → 人手鼠标打开并滚动」，分镜在 `NEXT-TAKE.md`。打字可 setpts 加速，发送前空等硬切，Agent 流式/等待 4x–6x，新标签/产物 1x–2x，人手打开与滚动 1x；BGM 用已下载的 CC 曲、始终 1x（见 MUSIC.md）
+docs/demo/            README 用的侧栏演示视频（H.264 MP4）。`opensider.mp4` 仍是上一镜 Wikipedia → Gutenberg 检索（2880×1800，不裁 16:9）；下一镜「The Verge 等科技/产品站 → 两句人话搜今日最热 AI 新闻 → HTML → 人手鼠标打开并滚动」，分镜在 `NEXT-TAKE.md`。打字可 setpts 加速，发送前空等硬切，Agent 流式/等待 4x–6x，新标签/产物 1x–2x，人手打开与滚动 1x；BGM 用已下载的 CC 曲、始终 1x（见 MUSIC.md）
 cmd/opensider       唯一 Go 入口（host / install / pick）
 internal/           Host / install / pick / ACP
 packages/shared     扩展 ↔ Host 消息类型（TS）
@@ -474,7 +474,7 @@ pnpm workspace 只编扩展。Host 用 Go。扩展用 Vite + `@crxjs/vite-plugin
 
 产品侧栏 = Chrome **Side Panel**（manifest `side_panel` + `sidePanel` 权限 + `openPanelOnActionClick`），不是 `default_popup`。点工具栏图标时，聊天 UI 必须和网页停在同一窗口右侧。
 
-下一镜证明 **人用两三句话拜托侧栏、Agent 自己跨站取数、再交出能打开的 HTML**。开录停在 BBC News（备 Reuters / Verge）；prompt 只有两句人话，不列 URL。产物由 **操作者鼠标在 Chrome 打开并滚动**，不要 Agent `openTab` 代开，不要把 Finder 当高潮。源站必须英文-only。击键走 macOS ABC/US，禁止拼音候选条。
+下一镜证明 **人用两三句话拜托侧栏、Agent 自己跨站取数、再交出能打开的 HTML**。开录停在 The Verge（备 TechCrunch / Wired）；不要 BBC / Reuters / CNN；prompt 只有两句人话，不列 URL。产物由 **操作者鼠标在 Chrome 打开并滚动**，不要 Agent `openTab` 代开，不要把 Finder 当高潮。源站必须英文-only。击键走 macOS ABC/US，禁止拼音候选条。
 
 录制约束：侧栏约窗口 1/4 靠右；只采 Mac 内建屏（ffmpeg screen 0）。成片 **保持采集原分辨率**（本机内建屏常见 1440×900@2x → 2880×1800），禁止 crop / scale-to-1080 / pad 成 16:9。剪辑：打字 1.8x–2.5x；打完到发送的停顿硬切；Agent 思考/工具/流式 4x–6x；新标签落地、产物条、打开简报 1x–2x；滚动预览与用户点击 1x。BGM 用网上已授权的开源曲（CC0 / CC-BY），1x、不跟 setpts 升调（见 MUSIC.md）。结尾留到简报已打开并滚过、侧栏回合结束；不要在流式中途 SIGINT。
 

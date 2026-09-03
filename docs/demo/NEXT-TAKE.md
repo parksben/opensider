@@ -2,7 +2,7 @@
 
 > **当前成片（上一镜，先留着）**：[`opensider.mp4`](./opensider.mp4)（采集原分辨率 **2880×1800**，**43.8s**）仍是 **Wikipedia → Gutenberg 检索**。
 >
-> **下一镜（用户已点头，按此录）**：常用英文资讯站 → 两三句人话让 Agent 全网搜今日最热 AI 新闻、按热度出榜、写成 HTML → **人手用鼠标在 Chrome 打开** → **人手滚动**。
+> **下一镜（用户已点头，按此录）**：英文科技 / 产品资讯站（The Verge）→ 两三句人话让 Agent 全网搜今日最热 AI 新闻、按热度出榜、写成 HTML → **人手用鼠标在 Chrome 打开** → **人手滚动**。
 >
 > 录前输入法锁 **ABC / U.S.**，禁止拼音候选条。
 
@@ -14,7 +14,7 @@
 
 **标题：** Today's hottest AI news → HTML list → open and scroll
 
-**一句话：** 人停在一张常用英文新闻站；侧栏用两三句人话拜托 Agent 去全网找今天最热的 AI 新闻、按热度排榜、写成一张 HTML；产物出来后 **操作者自己用鼠标在浏览器打开**，再 **用鼠标滚完**。
+**一句话：** 人停在 The Verge 这类科技 / 产品站；侧栏用两三句人话拜托 Agent 去全网找今天最热的 AI 新闻、按热度排榜、写成一张 HTML；产物出来后 **操作者自己用鼠标在浏览器打开**，再 **用鼠标滚完**。
 
 **为什么这样讲：**
 
@@ -25,20 +25,20 @@
 **观众必须看见：**
 
 - 一个 Chrome 窗口：菜单栏 + 标签栏 + 地址栏 + 网页 + **右侧停靠侧栏**。
-- 先是常用资讯站，再是 Agent 自己去开其它站（不要预开）。
+- 先是科技 / 产品站，再是 Agent 自己去开其它站（不要预开）。
 - 侧栏出现产物文件名后，**鼠标**打开 HTML（同一窗口新标签），再 **鼠标**向下滚。高潮是浏览器里的榜单，不是 Finder，也不是 Agent 自己 `openTab` 打开产物。
 
 ---
 
 ## 开录停在哪
 
-只用 **英文资讯站**，首屏像新闻，不要维基 / 书站 / 检索框站。
+只用 **英文科技 / 产品资讯站**。禁止综合新闻和政治站（BBC、Reuters、CNN 等）。不要维基 / 书站 / 检索框站。
 
 | 角色 | URL | 说明 |
 |---|---|---|
-| 页 A（开录前停在这） | `https://www.bbc.com/news` | 常用英文资讯首页。Cookie / 订阅条录前关掉。 |
-| Backup | `https://www.reuters.com/` | BBC 登录墙 / 整页中文 / 打不开时换。 |
-| Backup 2 | `https://www.theverge.com/` | 再不行用这家（仍是资讯，不是 HN）。 |
+| 页 A（开录前停在这） | `https://www.theverge.com/` | 英文科技 + 产品资讯首页。Cookie / 订阅条录前关掉。 |
+| Backup | `https://techcrunch.com/` | The Verge 登录墙 / 整页中文 / 打不开时换。 |
+| Backup 2 | `https://www.wired.com/` | 再不行用这家（仍是科技，不是综合新闻）。 |
 
 不要预开其它媒体标签。Agent 要自己去搜、自己 `openTab`。禁止 36kr / 少数派 / 机器之心，禁止 `openlibrary.org`。
 
@@ -80,7 +80,7 @@ Find today's hottest AI news across the web and rank them. Put the list in an HT
 
 | 成片 | 谁 | 倍率 | 观众必须看见 |
 |---|---|---|---|
-| 建立 | — | 1x（约 2s） | Chrome **采集原尺寸**，右侧 Side Panel ≈1/4，深色英文 UI，**新空会话且历史抽屉已关**，页 A BBC News（或 Backup）。菜单栏、标签栏、地址栏入画。鼠标可见。 |
+| 建立 | — | 1x（约 2s） | Chrome **采集原尺寸**，右侧 Side Panel ≈1/4，深色英文 UI，**新空会话且历史抽屉已关**，页 A The Verge（或 Backup）。菜单栏、标签栏、地址栏入画。鼠标可见。 |
 | 打字 | 用户 | 1.8x–2.5x | 点输入框，**逐字**打上面两句（ABC/US；禁止粘贴；禁止 Cmd+F）。 |
 | 发送 | 用户 | 1x；**删掉打完到发送的停顿** | Enter / 点发送。 |
 | 全网取数 | Agent | 空等 4x–6x；**每个新标签落地 1x–2x** | 标签栏陆续多出其它英文站。始终只有一个标签且 10 条像背课文：作废。 |
@@ -132,6 +132,7 @@ BGM：`MUSIC.md` 已下载的 CC 曲（Kevin MacLeod《Wallpaper》），成片 
 |---|---|
 | 标签栏始终只有页 A，10 条像背课文 | 停。必须看见跨页。 |
 | 源站 CAPTCHA / 硬登录墙 | 换 Backup；两家都挂当天不录。 |
+| 开录停在 BBC / Reuters / CNN 等综合或政治新闻 | 停。换 The Verge / TechCrunch / Wired。 |
 | 源站 UI 变成中文 | 停。换英文-only 备用。 |
 | 只写 Markdown / 侧栏长文、不写 HTML、无产物条 | 停。重来。 |
 | Agent 自己打开了 HTML、片子里看不见鼠标打开 | 停。打开必须是人手鼠标。 |
