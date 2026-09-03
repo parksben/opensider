@@ -129,7 +129,7 @@ const copy = {
     deleteSessionConfirmDetail: "This cannot be undone.",
     deleteSessionConfirmAction: "Delete",
     deleteSessionCancel: "Cancel",
-    untitled: "New chat",
+    untitled: "New Chat",
     forked: "Forked",
     sessionRunning: "Running",
     offlineSend: "Local agent is offline. Retry the connection, then send again.",

@@ -3,6 +3,7 @@ import { Check, ChevronsRight, History, Monitor, Moon, Pencil, RotateCw, Sun, Un
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Locale } from "../i18n";
 import { t } from "../i18n";
+import { isPlaceholderTitle } from "../persist";
 import { nextTheme, type ThemePreference } from "../theme";
 import { AgentSelect } from "./AgentSelect";
 import { IconButton } from "./IconButton";
@@ -59,7 +60,8 @@ export function Header({
   onSelectAgent: (id: string) => void;
 }) {
   const label = (key: Parameters<typeof t>[1]) => t(locale, key);
-  const title = sessionTitle.trim() || label("untitled");
+  const unnamed = isPlaceholderTitle(sessionTitle);
+  const title = unnamed ? label("untitled") : sessionTitle.trim();
   const titleInputRef = useRef<HTMLInputElement>(null);
   const titleClusterRef = useRef<HTMLDivElement>(null);
   const leftRef = useRef<HTMLDivElement>(null);
@@ -67,7 +69,7 @@ export function Header({
   const barRef = useRef<HTMLDivElement>(null);
   const [sidePad, setSidePad] = useState({ left: TITLE_GAP, right: TITLE_GAP });
   const [renaming, setRenaming] = useState(false);
-  const [draft, setDraft] = useState(sessionTitle);
+  const [draft, setDraft] = useState(unnamed ? "" : sessionTitle);
   const renamingRef = useRef(false);
   const draftRef = useRef(draft);
   renamingRef.current = renaming;
@@ -78,7 +80,7 @@ export function Header({
 
   useEffect(() => {
     setRenaming(false);
-    setDraft(sessionTitle);
+    setDraft(isPlaceholderTitle(sessionTitle) ? "" : sessionTitle);
   }, [sessionTitle]);
 
   useLayoutEffect(() => {
@@ -118,8 +120,13 @@ export function Header({
   const cancelRename = () => {
     if (!renamingRef.current) return;
     renamingRef.current = false;
-    setDraft(sessionTitle);
+    setDraft(isPlaceholderTitle(sessionTitle) ? "" : sessionTitle);
     setRenaming(false);
+  };
+
+  const startRename = () => {
+    setDraft(isPlaceholderTitle(sessionTitle) ? "" : sessionTitle);
+    setRenaming(true);
   };
 
   const titleCluster = (align: "left" | "center") => (
@@ -162,7 +169,7 @@ export function Header({
       ) : (
         <div
           title={title}
-          className={`min-w-0 truncate whitespace-nowrap text-[14px] font-medium tracking-tight ${
+          className={`min-w-0 truncate whitespace-nowrap text-[14px] font-medium tracking-tight text-[var(--text)] ${
             align === "left" ? "text-left" : "text-center"
           }`}
         >
@@ -172,7 +179,7 @@ export function Header({
       <IconButton
         ripple={false}
         label={renaming ? label("saveTitle") : label("rename")}
-        onClick={() => (renaming ? commitRename() : setRenaming(true))}
+        onClick={() => (renaming ? commitRename() : startRename())}
         className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[var(--muted)] hover:text-[var(--text)] ${
           renaming
             ? "opacity-100"

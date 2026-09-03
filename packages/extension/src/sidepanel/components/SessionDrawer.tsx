@@ -2,7 +2,7 @@ import { ChevronDown, ChevronRight, GitFork, Pencil, Pin, Plus, Trash2 } from "l
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import type { Locale, MessageKey } from "../i18n";
 import { t } from "../i18n";
-import { clampSessionDrawerWidth, SESSION_DRAWER_MAX, SESSION_DRAWER_MIN, type Session } from "../persist";
+import { clampSessionDrawerWidth, isPlaceholderTitle, SESSION_DRAWER_MAX, SESSION_DRAWER_MIN, type Session } from "../persist";
 import { groupSessions, type SessionGroupId } from "../session-groups";
 import { ConfirmPopover } from "./ConfirmPopover";
 import { IconButton } from "./IconButton";
@@ -16,7 +16,7 @@ const GROUP_KEYS = {
 } as const satisfies Record<SessionGroupId, MessageKey>;
 
 function displayTitle(session: Session, locale: Locale): string {
-  return session.title.trim() || t(locale, "untitled");
+  return isPlaceholderTitle(session.title) ? t(locale, "untitled") : session.title.trim();
 }
 
 function matchesSession(session: Session, query: string, locale: Locale): boolean {
@@ -341,7 +341,8 @@ export function SessionDrawer({
                           {editing ? (
                             <div className="flex h-6 min-w-0 items-center">
                               <SessionTitleInput
-                                initial={session.title || label("untitled")}
+                                initial={isPlaceholderTitle(session.title) ? "" : session.title}
+                                placeholder={label("untitled")}
                                 onCancel={() => setEditingId(undefined)}
                                 onCommit={(title) => {
                                   onRename(session.id, title);
@@ -475,10 +476,12 @@ function SessionMeta({
 
 function SessionTitleInput({
   initial,
+  placeholder,
   onCommit,
   onCancel,
 }: {
   initial: string;
+  placeholder?: string;
   onCommit: (title: string) => void;
   onCancel: () => void;
 }) {
@@ -495,6 +498,7 @@ function SessionTitleInput({
     <input
       ref={ref}
       value={value}
+      placeholder={placeholder}
       onChange={(event) => setValue(event.target.value)}
       onBlur={() => {
         if (skipBlur.current) return;
