@@ -2,7 +2,7 @@
 
 > **当前成片（上一镜，先留着）**：[`opensider.mp4`](./opensider.mp4)（采集原分辨率 **2880×1800**，**43.8s**）仍是 **Wikipedia → Gutenberg 检索**。
 >
-> **下一镜（用户已点头，按此录）**：英文科技 / 产品资讯站（The Verge）→ 两三句人话让 Agent 全网搜今日最热 AI 新闻、按热度出榜、写成 HTML → **人手用鼠标在 Chrome 打开** → **人手滚动**。
+> **下一镜（用户已点头，按此录）**：英文科技 / 产品资讯站（The Verge）→ 两三句人话让 Agent 全网搜今日最热 AI 新闻、按热度出榜、写成 HTML，并 **自己在浏览器打开**。不要人手 File → Open。
 >
 > 录前输入法锁 **ABC / U.S.**，禁止拼音候选条。
 
@@ -14,7 +14,7 @@
 
 **标题：** Today's hottest AI news → HTML list → open and scroll
 
-**一句话：** 人停在 The Verge 这类科技 / 产品站；侧栏用两三句人话拜托 Agent 去全网找今天最热的 AI 新闻、按热度排榜、写成一张 HTML；产物出来后 **操作者自己用鼠标在浏览器打开**，再 **用鼠标滚完**。
+**一句话：** 人停在 The Verge 这类科技 / 产品站；侧栏用两三句人话拜托 Agent 去全网找今天最热的 AI 新闻、按热度排榜、写成一张 HTML，并 **直接在这个浏览器打开**。
 
 **为什么这样讲：**
 
@@ -26,7 +26,7 @@
 
 - 一个 Chrome 窗口：菜单栏 + 标签栏 + 地址栏 + 网页 + **右侧停靠侧栏**。
 - 先是科技 / 产品站，再是 Agent 自己去开其它站（不要预开）。
-- 侧栏出现产物文件名后，**鼠标**打开 HTML（同一窗口新标签），再 **鼠标**向下滚。高潮是浏览器里的榜单，不是 Finder，也不是 Agent 自己 `openTab` 打开产物。
+- 侧栏出现产物后，**同一窗口新标签**打开 HTML 简报。高潮是浏览器里的榜单，不是 Finder，也不要人手去点「打开文件」。
 
 ---
 
@@ -49,7 +49,7 @@
 看起来要像人随手打的，禁止列 URL、禁止列 HTML 规格、禁止念工具名。
 
 ```
-Find today's hottest AI news across the web and rank them. Put the list in an HTML file I can open in the browser.
+Find today's hottest AI news across the web and rank them. Put the list in an HTML file and open it in this browser.
 ```
 
 **禁止**整段粘贴。逐字击键。中途冒出拼音候选条：中止重录。
@@ -59,24 +59,23 @@ Find today's hottest AI news across the web and rank them. Put the list in an HT
 - Agent 用页面工具 / `openTab` 去真实站点读，不要只靠记忆编 10 条「假今日新闻」。
 - 工作区出现一张 HTML（文件名不限，常见 `outputs/ai-news-top10.html` 或相近）。
 - 侧栏产物条出现该文件。
-- **操作者**用鼠标在 Chrome 打开它（File → Open File，或把文件拖进标签栏）。不要让 Agent `openTab` / localhost 当打开高潮。
-- 打开后 **操作者**用鼠标滚轮或拖滚动条扫过榜单。
+- Agent 写完后 **自己在同一 Chrome 窗口打开** 这张 HTML（localhost `openTab` 优先；`open -a "Google Chrome"` 作备）。不要人手 File → Open，不要把 Finder 当高潮。
 
 ---
 
-## 打开产物（人手，鼠标，浏览器）
+## 打开产物（Agent 自己开，不要人手点文件框）
 
-`openTab` 打不开 `file://`。本镜也不走「Agent 起 localhost 再 openTab」——那不像人。
+`openTab` 只接受 http(s)。推荐：
 
-1. 产物条出现后，用鼠标在 **同一 Chrome 窗口** 打开该 HTML：优先 **File → Open File…** 选 `~/.opensider/workspace/outputs/…html`；或从访达把文件 **拖到标签栏**（访达只当中转，不要停在访达当高潮）。
-2. 新标签出现后，**鼠标向下滚**，至少扫过前若干条，能看出这是热度榜。
-3. 「打开文件位置 / Show in folder」可以点，但不要把 Finder 窗口当成片主画面。
+1. Agent 在 `outputs/` 起短时 `python3 -m http.server`，再 `openTab http://127.0.0.1:<port>/….html`。
+2. 备：`open -a "Google Chrome"` 打开该文件，新标签须落在 **同一窗口**。
+3. 不要人手 File → Open，不要把 Finder 当高潮。
 
 ---
 
 ## 镜头表（成片时钟；括号内是剪辑倍率）
 
-成片目标 **≤45s**（工艺对齐 take7）。打字可加速；发送前空等硬切；Agent 空等/流式可跳切。 **打开 HTML、滚动预览必须 1x、光标可见。**
+成片目标 **≤45s**（工艺对齐 take7）。打字可加速；发送前空等硬切；Agent 空等/流式可跳切。 **Agent 打开简报必须能看清（1x–2x）。**
 
 | 成片 | 谁 | 倍率 | 观众必须看见 |
 |---|---|---|---|
@@ -85,8 +84,7 @@ Find today's hottest AI news across the web and rank them. Put the list in an HT
 | 发送 | 用户 | 1x；**删掉打完到发送的停顿** | Enter / 点发送。 |
 | 全网取数 | Agent | 空等 4x–6x；**每个新标签落地 1x–2x** | 标签栏陆续多出其它英文站。始终只有一个标签且 10 条像背课文：作废。 |
 | 写 HTML + 产物 | Agent | 写文件 4x–6x；产物条 **1x–2x** | 侧栏 Artifacts 出现 HTML 文件名。 |
-| 打开简报 | 用户鼠标 | **1x** | 鼠标打开 HTML，同一窗口新标签。不要 Agent 代开。 |
-| 滚动预览 | 用户鼠标 | **1x** | 主区向下滚，能看出热度榜。光标/滚动条可见。 |
+| 打开简报 | Agent | **1x–2x** | 同一窗口 **新标签** 打开 TOP 榜 HTML。 |
 | 收住 | — | 1x | 简报标签仍在；侧栏回合已结束（耗时行、无转圈）。停 ffmpeg 前再空等 10–20s。 |
 
 BGM：`MUSIC.md` 已下载的 CC 曲（Kevin MacLeod《Wallpaper》），成片 **1x**，头尾淡入淡出，不跟 setpts 升调。
@@ -135,7 +133,7 @@ BGM：`MUSIC.md` 已下载的 CC 曲（Kevin MacLeod《Wallpaper》），成片 
 | 开录停在 BBC / Reuters / CNN 等综合或政治新闻 | 停。换 The Verge / TechCrunch / Wired。 |
 | 源站 UI 变成中文 | 停。换英文-only 备用。 |
 | 只写 Markdown / 侧栏长文、不写 HTML、无产物条 | 停。重来。 |
-| Agent 自己打开了 HTML、片子里看不见鼠标打开 | 停。打开必须是人手鼠标。 |
+| 写了 HTML 但浏览器里没有打开简报 | 停。必须看见新标签打开榜单。 |
 | 高潮停在 Finder | 停。必须在 Chrome 里打开并滚动。 |
 | 简报 0 条 / 明显编造 | 停。 |
 | 权限卡 / 计划卡 | 停。确认 Allow all，新会话。 |

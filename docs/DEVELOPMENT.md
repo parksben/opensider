@@ -28,7 +28,7 @@ pnpm dev
 
 改扩展后在扩展页点刷新。改 Host 后重新 `pnpm install-host`，再重连侧栏。
 
-当前 README 成片仍是 Wikipedia → Gutenberg（`docs/demo/opensider.mp4`，2880×1800）。下一镜见 [docs/demo/NEXT-TAKE.md](./demo/NEXT-TAKE.md)（The Verge 等科技/产品站 → 两句人话搜今日最热 AI 新闻 → HTML → 人手打开并滚动）。不要把侧栏拖成独立窗口。
+当前 README 成片仍是 Wikipedia → Gutenberg（`docs/demo/opensider.mp4`，2880×1800）。下一镜见 [docs/demo/NEXT-TAKE.md](./demo/NEXT-TAKE.md)（The Verge 等科技/产品站 → 两句人话搜今日最热 AI 新闻 → HTML → Agent 在浏览器打开）。不要把侧栏拖成独立窗口。
 
 ## 工作区
 

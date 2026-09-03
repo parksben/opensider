@@ -20,7 +20,7 @@ OpenSider 是一个 Chromium 侧栏：用自己的聊天面板连接本机 Agent
 
 ## 演示
 
-下一镜：在英文科技 / 产品资讯站上用两三句人话，让 Agent 去全网找今天最热的 AI 新闻、按热度排榜并写成 HTML，再用鼠标在浏览器打开、滚动预览。当前 README 成片仍是上一镜 Wikipedia → Gutenberg，新片落地前不替换。成片保持采集原分辨率（**2880×1800**，不裁 16:9），Chrome **窗口内右侧 Side Panel**（约四分之一宽），菜单栏、标签栏和地址栏入画。分镜见 [docs/demo/NEXT-TAKE.md](docs/demo/NEXT-TAKE.md)。打字可加速，发送前空等切掉，Agent 思考/等待段加速；人手打开与滚动保持原速。
+下一镜：在英文科技 / 产品资讯站上用两三句人话，让 Agent 去全网找今天最热的 AI 新闻、按热度排榜、写成 HTML 并在这个浏览器打开。当前 README 成片仍是上一镜 Wikipedia → Gutenberg，新片落地前不替换。成片保持采集原分辨率（**2880×1800**，不裁 16:9），Chrome **窗口内右侧 Side Panel**（约四分之一宽），菜单栏、标签栏和地址栏入画。分镜见 [docs/demo/NEXT-TAKE.md](docs/demo/NEXT-TAKE.md)。打字可加速，发送前空等切掉，Agent 思考/等待段加速；新标签和打开简报放慢到能看清。
 
 <div align="center">
   <video src="docs/demo/opensider.mp4" width="720" controls poster="docs/images/demo-poster.png">
