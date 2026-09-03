@@ -203,11 +203,11 @@ mark.cs-at-match {
   --cs-spin: 0deg;
   position: relative;
   border: 1px solid var(--line);
-  transition: border-color 480ms ease;
+  transition: border-color 160ms ease;
 }
 
 .cs-composer:focus-within:not(.is-running) {
-  border-bottom-color: var(--line-focus);
+  border-color: var(--line-focus);
 }
 
 .cs-composer::before {
