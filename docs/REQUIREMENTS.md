@@ -104,7 +104,7 @@
 
 README 上的片子要让人一眼看出：**Chrome 窗口内的 Side Panel**，以及 **跨页**（页 A 取数 → 页 B 填输入）。
 
-- **当前成片**：页 A `https://en.wikipedia.org/wiki/Ada_Lovelace` 用页面工具读出姓名/生卒/一句评价；Agent `openTab` 页 B `https://www.gutenberg.org/`（不预开），检索框填恰好 `Ada Lovelace` 并提交。备用页 B 为 `https://arxiv.org/search`。**禁止** Open Library、DuckDuckGo、Google 等会按地区切语言的站。录前输入法必须锁到 macOS **ABC / U.S.**（不是拼音英文模式），试打无候选条后再逐字击键，禁止整段粘贴。分镜见 [`docs/demo/NEXT-TAKE.md`](./demo/NEXT-TAKE.md)。
+- **当前成片**：页 A `https://en.wikipedia.org/wiki/Ada_Lovelace` 用页面工具读出姓名/生卒/一句评价；Agent `openTab` 页 B `https://openlibrary.org/`（不预开），检索框填恰好 `Ada Lovelace Analytical Engine` 并提交，结果入画。成片 44s / 1920×1080，窗口内右侧 Side Panel。页 B 可能 geo 切到中文 UI——要英文-only 页 B 时下一镜改 Gutenberg（脚本仍在 [`docs/demo/NEXT-TAKE.md`](./demo/NEXT-TAKE.md)）。录前输入法锁 macOS **ABC / U.S.**，禁止整段粘贴。
 - **成片**：用户打字、点击、新标签出现 1x；Agent 流式/空等 2x–6x。长 prompt 按键 1x，成片会比 30–45 秒故事板更长。
 - **几何**：侧栏在 **窗口右侧**，宽约 1/4；标签栏和地址栏必须入画。点工具栏图标打开的是 Chrome Side Panel API 停靠栏（`openPanelOnActionClick`），**禁止**拖成独立窗口。只采 Mac 内建屏，成片 16:9（1920×1080）。
 - **明确不做**：不再以「写 `outputs/` HTML + Finder Reveal」当主叙事；不做三点卖点片。

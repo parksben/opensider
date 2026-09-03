@@ -1,8 +1,8 @@
-# 演示下一镜（计划中）
+# 演示成片与下一镜
 
-> 状态：**脚本已按上一镜驳回项改过**。页 B 用 Project Gutenberg（不用 Open Library）。录前必须把输入法锁到 **ABC / U.S.**，禁止拼音候选条入画。
+> 状态：**已上架** [`opensider.mp4`](./opensider.mp4)（**44s**，**1920×1080**）：页 A Wikipedia Ada Lovelace → Agent `openTab` 页 B [Open Library](https://openlibrary.org/)，检索框恰好 `Ada Lovelace Analytical Engine`，结果列表入画。侧栏是 Chrome **窗口内右侧 Side Panel**（约 1/4 宽），标签栏与地址栏入画。打字 / 发送 / 新标签 / 填框 1x，Agent 等待 2x–6x，BGM 1x。
 >
-> 上一镜失败原因：① 中文 IME 候选气泡在打英文时来回翻 中/EN；② Open Library 自动切到中文 UI。
+> 已知瑕疵（不挡「跨页」证明）：页 B Open Library 会 geo 切到中文 UI；维基荷兰筹款条未关。若要英文-only 页 B，下一镜改 Gutenberg（下文脚本仍保留）。录前输入法锁 **ABC / U.S.**，禁止拼音候选条。
 
 片中口播 / UI / Agent 回复一律 **英文**。本文件给录制的人看，所以规格用中文。
 
