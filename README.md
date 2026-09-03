@@ -19,7 +19,7 @@ OpenSider 是一个 Chromium 侧栏：用自己的聊天面板连接本机 Agent
 
 ## 演示
 
-在 [Ada Lovelace 英文维基](https://en.wikipedia.org/wiki/Ada_Lovelace) 上让 Agent 读出事实，再 **新开标签** 到 [Open Library](https://openlibrary.org/) 填入 `Ada Lovelace Analytical Engine` 并出结果——证明侧栏 Agent 会跨页操作真实网页，而不是只写本地 HTML。成片是 Chrome **窗口内右侧 Side Panel**（约四分之一宽），标签栏和地址栏入画。分镜见 [docs/demo/NEXT-TAKE.md](docs/demo/NEXT-TAKE.md)。Agent 思考/等待段加速，打字、发送和新标签保持 1x。
+在 [Ada Lovelace 英文维基](https://en.wikipedia.org/wiki/Ada_Lovelace) 上让 Agent 读出事实，再 **新开标签** 到 [Project Gutenberg](https://www.gutenberg.org/) 填入 `Ada Lovelace` 并出结果——证明侧栏 Agent 会跨页操作真实网页，而不是只写本地 HTML。站点必须保持英文（不用会本地化的目录站）。成片是 Chrome **窗口内右侧 Side Panel**（约四分之一宽），标签栏和地址栏入画；输入法锁 **ABC / U.S.**，禁止拼音候选条。分镜与备用站点（arXiv）见 [docs/demo/NEXT-TAKE.md](docs/demo/NEXT-TAKE.md)。Agent 思考/等待段加速，打字、发送和新标签保持 1x。
 
 <div align="center">
   <video src="docs/demo/opensider.mp4" width="720" controls poster="docs/images/demo-poster.png">

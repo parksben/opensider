@@ -28,7 +28,7 @@ pnpm dev
 
 改扩展后在扩展页点刷新。改 Host 后重新 `pnpm install-host`，再重连侧栏。
 
-演示分镜（跨页填框、窗口内 Side Panel）见 [docs/demo/NEXT-TAKE.md](./demo/NEXT-TAKE.md)。不要把侧栏拖成独立窗口。重录时再覆盖 `docs/demo/opensider.mp4`。
+演示分镜（维基 → Gutenberg 跨页填框、窗口内 Side Panel、ABC/US 输入法无候选条）见 [docs/demo/NEXT-TAKE.md](./demo/NEXT-TAKE.md)。不要把侧栏拖成独立窗口。不要用 Open Library 或会 geo 切中文的站。
 
 ## 工作区
 
@@ -57,7 +57,7 @@ cmd/opensider         唯一 Go 入口（无参=Host，install，pick）
 internal/             Host / install / pick / ACP
 docs/                 需求、技术设计、本文件
 docs/images/          README logo / 海报
-docs/demo/            README 演示视频与分镜 `NEXT-TAKE.md`
+docs/demo/            README 演示视频与分镜 `NEXT-TAKE.md`（Gutenberg + ABC/US IME）
 packages/shared       扩展 ↔ Host 消息类型
 packages/extension    Chrome MV3 侧栏 / 内容脚本 / Service Worker
 scripts/install       用户壳脚本
