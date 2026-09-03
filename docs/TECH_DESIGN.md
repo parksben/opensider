@@ -61,7 +61,7 @@ Cursor Agent 在 ACP 模式下仍然自己执行本地工具（读文件、写�
 - 缓存最近一次 `status` / `session` / `page` / `models`，侧栏 `onConnect` 或 `ping` 时立即回放，避免 Host 已 ready 但面板因 React StrictMode 重挂而一直显示离线。连接中的空 `models` 不写入缓存（那是还在加载，不是确认空名单）。Host 在 `hello` 且已 `ready` 时再推一次 catalog。
 - 在 Side Panel、Content Script、Host 之间转发消息；`page.pick` 只走内容脚本，不进 Native Host。内容脚本 `run_at: document_start`，避免 YouTube `/watch` 迟迟不到 `document_idle`。先在活动主框探测 `__opensiderPage` API，失败则 `executeScript` 补注入（`injectImmediately`，先 `allFrames` 再退回主框），并轮询等到 CRXJS loader 的 `import()` 挂上 API。**页面命令、快照、量测、未保存探测与拾取走同一通道**：就绪后在**当前活动文档的主框**里直接调用 `runCommand` / `snapshot` / `measure` / `viewport` / `startPick`。不用 `tabs.sendMessage` 做页面 RPC：扩展重载后旧标签内容脚本已成孤儿、CRXJS loader 尚未 `import`、YouTube 预渲染文档都会变成 `Receiving end does not exist`。`dispatchCommand` 的目标标签与 `current.json` 相同——焦点普通窗口的活动标签，不用 Service Worker 的 `currentWindow`。YouTube / youtu.be 是普通 http(s)，不当系统页。系统页不注入，命令回明确 restricted 错误；http(s) 注入失败则 `ok: false` 并写清原因。`requestPage` 同样先 ensure 再 snapshot，避免 `snapshot.md` / `interactive.md` 只剩 url/title。
 - 监听 `tabs.onActivated` / `onUpdated` / `onRemoved` / `onReplaced` / `onCreated` / `onMoved` / `onAttached` / `onDetached` 以及 `windows.onFocusChanged` / `onRemoved`。活动标签可能变化时，解析焦点普通窗口里当前 `active` 的标签（不要用刚关掉的 tabId），立刻并在 250ms 防抖后再推 `page.update`，同时防抖写 `tabs.update`。Chrome 关掉活动标签后不一定再发 `onActivated`，所以 `onRemoved` 必须自己跟上替换标签，禁止 `current.json` 停在已关闭 tabId
-- 点击工具栏图标打开 Side Panel
+- 点击工具栏图标打开 Side Panel（`setPanelBehavior({ openPanelOnActionClick: true })`）。manifest **没有** `default_popup`：工具栏点击不会弹出独立 action 窗，侧栏画在当前浏览器窗口里。录演示时禁止把 Side Panel 拖出窗口。
 - Go Host 一启动就往 `~/.opensider/host.log` 打一行，便于判断 Chrome 有没有真正拉起 Host
 
 ### Content Script
@@ -455,7 +455,7 @@ docs/REQUIREMENTS.md  需求：做什么、为什么
 docs/TECH_DESIGN.md   本文件：怎么做、为什么选这个方案
 docs/DEVELOPMENT.md   开发构建、Host 注册、工作区、打 CRX、tag 发 Release
 docs/images/          README 用的 logo 与海报（不引用 packages/ 源码路径）
-docs/demo/            README 用的侧栏演示视频（H.264 MP4，16:9；优先 ≤30s，完整真人操作可到 45s。Agent 流式/写文件段用 setpts 加速，打字、点击、Finder、预览滚动保持 1x；BGM 始终 1x）
+docs/demo/            README 用的侧栏演示视频（H.264 MP4，16:9）。`NEXT-TAKE.md` 是下一镜脚本（跨页填框 + 窗口内 Side Panel 1920×1080）；`opensider.mp4` 在重录前仍是旧镜。优先 ≤30s，完整版可到 45s。Agent 流式/等待用 setpts 加速，打字、点击、新标签出现保持 1x；BGM 始终 1x（见 MUSIC.md）
 cmd/opensider       唯一 Go 入口（host / install / pick）
 internal/           Host / install / pick / ACP
 packages/shared     扩展 ↔ Host 消息类型（TS）
@@ -467,6 +467,14 @@ scripts/keys        扩展 CRX 签名钥（固定打包 ID）
 ```
 
 pnpm workspace 只编扩展。Host 用 Go。扩展用 Vite + `@crxjs/vite-plugin` 打包。开发命令与加载 `packages/extension/dist` 的步骤只写在 `docs/DEVELOPMENT.md`，根目录 README 只服务使用者。
+
+## 演示录制（下一镜）
+
+产品侧栏 = Chrome **Side Panel**（manifest `side_panel` + `sidePanel` 权限 + `openPanelOnActionClick`），不是 `default_popup`。点工具栏图标时，聊天 UI 必须和网页停在同一窗口右侧。
+
+下一镜要证明跨页，不证明写文件：Agent 在页 A 用 `getReadable` / snapshot，再 `openTab` 页 B，用 `fill` / `fillForm` / `press`。不要引导 `reportArtifacts`。完整 URL、prompt、镜头表、备用 DuckDuckGo、中止条件在 `docs/demo/NEXT-TAKE.md`。
+
+录制约束（与需求一致）：Chrome 窗口 1920×1080；侧栏约 480px 靠右；只采 Mac 内建屏（ffmpeg screen 0）；成片 16:9；Agent 等待 2x–6x，用户打字/新标签 1x；BGM 1x。重录前不覆盖 `opensider.mp4`。
 
 ## 发布与安装壳
 

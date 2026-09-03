@@ -28,6 +28,8 @@ pnpm dev
 
 改扩展后在扩展页点刷新。改 Host 后重新 `pnpm install-host`，再重连侧栏。
 
+演示下一镜（跨页填框、窗口内 Side Panel、1920×1080）的脚本与采集步骤见 [docs/demo/NEXT-TAKE.md](./demo/NEXT-TAKE.md)。不要把侧栏拖成独立窗口。对齐并重录之前不要覆盖 `docs/demo/opensider.mp4`。
+
 ## 工作区
 
 会话 cwd 固定为 `~/.opensider/workspace`。页面快照、命令和截图都在 `workspace/browser/`。用户可见的任务产物约定写在 `workspace/outputs/`（引导，不拦截 Agent 本地工具）。Host 启动时写入 `AGENTS.md` 与 `browser/tools.json`，并确保 `outputs/` 存在。
@@ -55,7 +57,7 @@ cmd/opensider         唯一 Go 入口（无参=Host，install，pick）
 internal/             Host / install / pick / ACP
 docs/                 需求、技术设计、本文件
 docs/images/          README logo / 海报
-docs/demo/            README 演示视频
+docs/demo/            README 演示视频；下一镜脚本 `NEXT-TAKE.md`（未重录前不要覆盖 mp4）
 packages/shared       扩展 ↔ Host 消息类型
 packages/extension    Chrome MV3 侧栏 / 内容脚本 / Service Worker
 scripts/install       用户壳脚本

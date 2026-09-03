@@ -19,7 +19,9 @@ OpenSider 是一个 Chromium 侧栏：用自己的聊天面板连接本机 Agent
 
 ## 演示
 
-侧栏对着 [Linear](https://linear.app) 英文首页提问，让 Agent 写出 `outputs/` 下的可视化 HTML 报告，再从产物列表「Show in folder」用 Finder 打开。Agent 思考/写文件段加速，打字、点击和预览保持 1x。窗口 16:9，片长约 35 秒。
+**下一镜（计划中，尚未替换视频文件）：** 在 [Ada Lovelace 英文维基](https://en.wikipedia.org/wiki/Ada_Lovelace) 上让 Agent 读出事实，再 **新开标签** 到 [Open Library](https://openlibrary.org/) 填入检索并出结果——证明侧栏 Agent 会跨页操作真实网页，而不是只写本地 HTML。录制必须是 **1920×1080 的 Chrome 窗口内右侧 Side Panel**（约四分之一宽），标签栏和地址栏入画。完整分镜与备用站点（DuckDuckGo）见 [docs/demo/NEXT-TAKE.md](docs/demo/NEXT-TAKE.md)。
+
+下面这条片子仍是 **上一镜**（Linear 首页 → `outputs/` HTML 报告 → Finder），对齐下一镜之前不要把它当成产品叙事。Agent 思考/等待段加速，打字和点击保持 1x。
 
 <div align="center">
   <video src="docs/demo/opensider.mp4" width="720" controls poster="docs/images/demo-poster.png">
