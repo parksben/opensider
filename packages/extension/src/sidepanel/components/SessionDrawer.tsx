@@ -4,9 +4,12 @@ import type { Locale, MessageKey } from "../i18n";
 import { t } from "../i18n";
 import { clampSessionDrawerWidth, isPlaceholderTitle, SESSION_DRAWER_MAX, SESSION_DRAWER_MIN, type Session } from "../persist";
 import { groupSessions, type SessionGroupId } from "../session-groups";
+import type { ThemePreference } from "../theme";
 import { ConfirmPopover } from "./ConfirmPopover";
 import { IconButton } from "./IconButton";
 import { RippleButton } from "./RippleButton";
+
+type DrawerTab = "sessions" | "settings";
 
 const GROUP_KEYS = {
   pinned: "sessionGroupPinned",
@@ -44,6 +47,7 @@ function formatSessionWhen(iso: string, locale: Locale): string {
 
 export function SessionDrawer({
   locale,
+  theme,
   width,
   sessions,
   selectedId,
@@ -55,8 +59,11 @@ export function SessionDrawer({
   onPin,
   onNewSession,
   onClose,
+  onLocale,
+  onTheme,
 }: {
   locale: Locale;
+  theme: ThemePreference;
   width: number;
   sessions: Session[];
   selectedId: string;
@@ -68,8 +75,11 @@ export function SessionDrawer({
   onPin: (id: string) => void;
   onNewSession: () => void;
   onClose: () => void;
+  onLocale: (locale: Locale) => void;
+  onTheme: (theme: ThemePreference) => void;
 }) {
   const label = (key: MessageKey) => t(locale, key);
+  const [tab, setTab] = useState<DrawerTab>("sessions");
   const [query, setQuery] = useState("");
   const [highlightId, setHighlightId] = useState(selectedId);
   const [editingId, setEditingId] = useState<string>();
@@ -119,10 +129,11 @@ export function SessionDrawer({
   };
 
   useEffect(() => {
+    if (tab !== "sessions") return;
     const focus = () => filterRef.current?.focus();
     const frame = requestAnimationFrame(focus);
     return () => cancelAnimationFrame(frame);
-  }, []);
+  }, [tab]);
 
   useEffect(() => {
     setHighlightId((id) => (visible.some((session) => session.id === id) ? id : (selectedId || visible[0]?.id || "")));
@@ -150,7 +161,7 @@ export function SessionDrawer({
         if (!inField) onClose();
         return;
       }
-      if (!inDrawer || editingId) return;
+      if (tab !== "sessions" || !inDrawer || editingId) return;
       if (event.key === "ArrowDown") {
         event.preventDefault();
         moveHighlight(1);
@@ -169,7 +180,7 @@ export function SessionDrawer({
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [confirmDelete, editingId, highlightId, onClose, onSelect, query, visible]);
+  }, [confirmDelete, editingId, highlightId, onClose, onSelect, query, tab, visible]);
 
   useEffect(() => {
     if (confirmDelete && !sessions.some((session) => session.id === confirmDelete.id)) {
@@ -225,7 +236,7 @@ export function SessionDrawer({
     <aside
       ref={rootRef}
       role="complementary"
-      aria-label={label("sessions")}
+      aria-label={tab === "settings" ? label("drawerTabSettings") : label("drawerTabSessions")}
       style={{ width }}
       className={`relative flex h-full min-h-0 shrink-0 flex-col border-l border-[var(--line)] bg-[var(--panel)] ${
         dragging ? "" : "transition-[width] duration-150 ease-out"
@@ -257,6 +268,47 @@ export function SessionDrawer({
           dragging ? "bg-[var(--brass)]" : "bg-transparent"
         }`}
       />
+      <div className="flex shrink-0 border-b border-[var(--line)]">
+        {(["sessions", "settings"] as const).map((id) => {
+          const active = tab === id;
+          return (
+            <RippleButton
+              key={id}
+              onClick={() => setTab(id)}
+              aria-selected={active}
+              className={`flex-1 px-2.5 py-1.5 text-[12px] ${
+                active ? "bg-[var(--hover-strong)] text-[var(--text)]" : "text-[var(--muted)]"
+              }`}
+            >
+              {label(id === "sessions" ? "drawerTabSessions" : "drawerTabSettings")}
+            </RippleButton>
+          );
+        })}
+      </div>
+      {tab === "settings" ? (
+        <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-2.5 py-3">
+          <PrefixedSelect
+            label={label("settingTheme")}
+            value={theme}
+            options={[
+              { id: "light", name: label("themeLight") },
+              { id: "dark", name: label("themeDark") },
+              { id: "system", name: label("themeSystem") },
+            ]}
+            onChange={onTheme}
+          />
+          <PrefixedSelect
+            label={label("settingLanguage")}
+            value={locale}
+            options={[
+              { id: "zh", name: label("languageChinese") },
+              { id: "en", name: label("languageEnglish") },
+            ]}
+            onChange={onLocale}
+          />
+        </div>
+      ) : (
+        <>
       <div className="flex shrink-0 items-center px-2.5 pt-2">
         <input
           ref={filterRef}
@@ -419,6 +471,8 @@ export function SessionDrawer({
           })
         )}
       </div>
+        </>
+      )}
       <ConfirmPopover
         open={Boolean(confirmDelete)}
         title={label("deleteSessionConfirmTitle")}
@@ -446,6 +500,78 @@ export function SessionDrawer({
         }}
       />
     </aside>
+  );
+}
+
+function PrefixedSelect<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: T;
+  options: Array<{ id: T; name: string }>;
+  onChange: (value: T) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const current = options.find((option) => option.id === value)?.name ?? value;
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointer = (event: Event) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.stopImmediatePropagation();
+        setOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", onPointer);
+    document.addEventListener("keydown", onKey, true);
+    return () => {
+      document.removeEventListener("pointerdown", onPointer);
+      document.removeEventListener("keydown", onKey, true);
+    };
+  }, [open]);
+
+  return (
+    <div ref={rootRef} className="relative">
+      <button
+        type="button"
+        aria-label={`${label}: ${current}`}
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+        className="flex h-8 w-full min-w-0 items-center gap-2 rounded-md border border-[var(--line)] bg-[color-mix(in_oklab,var(--panel-2)_80%,transparent)] px-2.5 text-left hover:bg-[var(--hover)]"
+      >
+        <span className="shrink-0 text-[12px] text-[var(--muted)]">{label}</span>
+        <span className="min-w-0 flex-1 truncate text-[12.5px] text-[var(--text)]">{current}</span>
+        <ChevronDown size={14} className="shrink-0 text-[var(--muted)]" />
+      </button>
+      {open ? (
+        <div className="absolute left-0 right-0 top-full z-[80] mt-1 overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--panel)] py-1 shadow-xl">
+          {options.map((option) => {
+            const active = option.id === value;
+            return (
+              <RippleButton
+                key={option.id}
+                onClick={() => {
+                  onChange(option.id);
+                  setOpen(false);
+                }}
+                className={`flex w-full items-center px-2.5 py-1.5 text-left text-[12.5px] ${
+                  active ? "bg-[var(--hover-strong)] text-[var(--text)]" : "text-[var(--muted)] hover:text-[var(--text)]"
+                }`}
+              >
+                {option.name}
+              </RippleButton>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
   );
 }
 

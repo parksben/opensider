@@ -1223,17 +1223,8 @@ export function App() {
           compact={compact}
           sessionTitle={selected.title}
           sessionsOpen={sessionsOpen}
-          theme={theme}
           onSelectAgent={requestConnect}
           onCancelConnect={cancelConnect}
-          onLocale={(next) => {
-            applyLocale(next);
-            setLocale(next);
-          }}
-          onTheme={(next) => {
-            applyThemePreference(next);
-            setTheme(next);
-          }}
           onRename={(title) => renameSession(selected.id, title)}
           onToggleSessions={() => setSessionsOpen((open) => !open)}
           onRetry={() => {
@@ -1390,6 +1381,7 @@ export function App() {
       {sessionsOpen ? (
         <SessionDrawer
           locale={locale}
+          theme={theme}
           width={drawerWidth}
           sessions={sessions}
           selectedId={selected.id}
@@ -1401,6 +1393,14 @@ export function App() {
           onPin={pinSession}
           onNewSession={newSession}
           onClose={() => setSessionsOpen(false)}
+          onLocale={(next) => {
+            applyLocale(next);
+            setLocale(next);
+          }}
+          onTheme={(next) => {
+            applyThemePreference(next);
+            setTheme(next);
+          }}
         />
       ) : null}
       {pickingElement ? (

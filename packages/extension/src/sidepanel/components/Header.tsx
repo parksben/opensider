@@ -1,10 +1,9 @@
 import type { AgentInfo, AgentProgress, HostStatusState } from "@shared";
-import { Check, ChevronsRight, History, Monitor, Moon, Pencil, RotateCw, Sun, Unplug } from "lucide-react";
+import { Check, ChevronsLeft, ChevronsRight, Pencil, RotateCw, Unplug } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Locale } from "../i18n";
 import { t } from "../i18n";
 import { isPlaceholderTitle } from "../persist";
-import { nextTheme, type ThemePreference } from "../theme";
 import { AgentSelect } from "./AgentSelect";
 import { IconButton } from "./IconButton";
 import { RippleButton } from "./RippleButton";
@@ -31,11 +30,8 @@ export function Header({
   compact,
   sessionTitle,
   sessionsOpen,
-  theme,
   onRetry,
   onCancelConnect,
-  onLocale,
-  onTheme,
   onToggleSessions,
   onRename,
   onSelectAgent,
@@ -50,11 +46,8 @@ export function Header({
   compact?: boolean;
   sessionTitle: string;
   sessionsOpen: boolean;
-  theme: ThemePreference;
   onRetry?: () => void;
   onCancelConnect?: () => void;
-  onLocale: (locale: Locale) => void;
-  onTheme: (theme: ThemePreference) => void;
   onToggleSessions: () => void;
   onRename: (title: string) => void;
   onSelectAgent: (id: string) => void;
@@ -108,7 +101,7 @@ export function Header({
     observer.observe(left);
     observer.observe(right);
     return () => observer.disconnect();
-  }, [compact, showAgentSelect, status, agents.length, selectedProviderId, error, theme, sessionsOpen]);
+  }, [compact, showAgentSelect, status, agents.length, selectedProviderId, error, sessionsOpen]);
 
   const commitRename = () => {
     if (!renamingRef.current) return;
@@ -229,7 +222,7 @@ export function Header({
       aria-expanded={sessionsOpen}
       className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-[var(--line)] text-[var(--text)]"
     >
-      {sessionsOpen ? <ChevronsRight size={14} /> : <History size={14} />}
+      {sessionsOpen ? <ChevronsRight size={14} /> : <ChevronsLeft size={14} />}
     </IconButton>
   );
 
@@ -265,22 +258,6 @@ export function Header({
             </div>
           </div>
           <div ref={rightRef} className="flex shrink-0 items-center justify-end gap-1.5">
-            <IconButton
-              ripple={false}
-              label={theme === "light" ? label("themeLight") : theme === "dark" ? label("themeDark") : label("themeSystem")}
-              onClick={() => onTheme(nextTheme(theme))}
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-[var(--line)] text-[var(--text)]"
-            >
-              {theme === "light" ? <Sun size={14} /> : theme === "dark" ? <Moon size={14} /> : <Monitor size={14} />}
-            </IconButton>
-            <IconButton
-              ripple={false}
-              label={label("switchLanguage")}
-              onClick={() => onLocale(locale === "en" ? "zh" : "en")}
-              className="flex h-7 min-w-7 shrink-0 items-center justify-center rounded-md border border-[var(--line)] px-1 text-[11px] font-medium text-[var(--text)]"
-            >
-              {locale === "en" ? "中" : "EN"}
-            </IconButton>
             {drawerButton}
           </div>
         </div>
