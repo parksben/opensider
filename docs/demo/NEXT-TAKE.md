@@ -1,6 +1,6 @@
 # 演示成片与下一镜
 
-> **当前成片**：[`opensider.mp4`](./opensider.mp4)（**2880×1800**，**44.5s**）：The Verge → 两句人话搜今日最热 AI 新闻 → HTML → Agent 在本窗口打开 `localhost` 简报。
+> **当前成片**：[`opensider.mp4`](./opensider.mp4)（**2880×1800**，**35.3s**）：The Verge → 两句人话搜今日最热 AI 新闻 → HTML → Agent 打开简报 → **人手滚动预览**。打开到开滚之间的空等要切掉。
 >
 > 录前输入法锁 **ABC / U.S.**，禁止拼音候选条。
 
@@ -83,7 +83,8 @@ Find today's hottest AI news across the web and rank them. Put the list in an HT
 | 全网取数 | Agent | 空等 4x–6x；**每个新标签落地 1x–2x** | 标签栏陆续多出其它英文站。始终只有一个标签且 10 条像背课文：作废。 |
 | 写 HTML + 产物 | Agent | 写文件 4x–6x；产物条 **1x–2x** | 侧栏 Artifacts 出现 HTML 文件名。 |
 | 打开简报 | Agent | **1x–2x** | 同一窗口 **新标签** 打开 TOP 榜 HTML。 |
-| 收住 | — | 1x | 简报标签仍在；侧栏回合已结束（耗时行、无转圈）。停 ffmpeg 前再空等 10–20s。 |
+| 滚动预览 | 用户 | **1x** | 主区向下滚，扫过若干条。打开到开滚的空等切掉。 |
+| 收住 | — | 1x | 简报仍在画面里。 |
 
 BGM：`MUSIC.md` 已下载的 CC 曲（Kevin MacLeod《Wallpaper》），成片 **1x**，头尾淡入淡出，不跟 setpts 升调。
 
