@@ -260,12 +260,6 @@ export function ChatPane({
   }, []);
 
   useEffect(() => {
-    if (!compact) return;
-    setAttachOpen(false);
-    closeAtMenu();
-  }, [compact]);
-
-  useEffect(() => {
     const wasEditing = editingRef.current;
     const wasQueueEdit = editingQueueRef.current;
     setEditingId(undefined);
@@ -453,69 +447,65 @@ export function ChatPane({
           />
           <div className="flex min-w-0 items-center gap-2">
             <div className="relative flex min-w-0 flex-1 items-center gap-1">
-              {!compact ? (
-                <>
-                  <div className="flex shrink-0 items-center gap-0">
-                    <span ref={paperclipRef}>
-                      <IconButton
-                        side="top"
-                        label={label("attach")}
-                        onClick={onPaperclip}
-                        disabled={busy}
-                        className={`flex h-7 w-7 items-center justify-center rounded-full hover:bg-[var(--hover)] disabled:opacity-30 disabled:hover:bg-transparent ${
-                          attachOpen ? "bg-[var(--hover)] text-[var(--brass)]" : "text-[var(--text)]"
-                        }`}
-                      >
-                        {pickingFiles || savingPaste ? (
-                          <LoaderCircle size={14} className="animate-spin" />
-                        ) : (
-                          <Paperclip size={14} />
-                        )}
-                      </IconButton>
-                    </span>
-                    <AttachMenu
-                      open={attachOpen}
-                      locale={locale}
-                      ignoreRef={paperclipRef}
-                      getAnchorRect={() => paperclipRef.current?.getBoundingClientRect()}
-                      onPick={(mode) => void addAttachments(mode)}
-                      onClose={() => setAttachOpen(false)}
-                    />
-                    <IconButton
-                      side="top"
-                      label={label("pickElement")}
-                      onClick={() => void startElementPick()}
-                      disabled={locking}
-                      className={`flex h-7 w-7 items-center justify-center rounded-full hover:bg-[var(--hover)] disabled:opacity-30 disabled:hover:bg-transparent ${
-                        pickingElement ? "bg-[var(--hover)] text-[var(--brass)]" : "text-[var(--text)]"
-                      }`}
-                    >
-                      <MousePointer2 size={14} />
-                    </IconButton>
-                    <span ref={atButtonRef}>
-                      <IconButton
-                        side="top"
-                        label={label("mention")}
-                        onClick={() => {
-                          if (atOpen) {
-                            closeAtMenu();
-                            return;
-                          }
-                          composerRef.current?.insertAtStart("@");
-                          openAtMenu();
-                        }}
-                        disabled={locking}
-                        className={`flex h-7 w-7 items-center justify-center rounded-full hover:bg-[var(--hover)] disabled:opacity-30 disabled:hover:bg-transparent ${
-                          atOpen ? "bg-[var(--hover)] text-[var(--brass)]" : "text-[var(--text)]"
-                        }`}
-                      >
-                        <AtSign size={14} />
-                      </IconButton>
-                    </span>
-                  </div>
-                  <ModeSelect locale={locale} mode={agentMode} onMode={onAgentMode} />
-                </>
-              ) : null}
+              <div className="flex shrink-0 items-center gap-0">
+                <span ref={paperclipRef}>
+                  <IconButton
+                    side="top"
+                    label={label("attach")}
+                    onClick={onPaperclip}
+                    disabled={busy}
+                    className={`flex h-7 w-7 items-center justify-center rounded-full hover:bg-[var(--hover)] disabled:opacity-30 disabled:hover:bg-transparent ${
+                      attachOpen ? "bg-[var(--hover)] text-[var(--brass)]" : "text-[var(--text)]"
+                    }`}
+                  >
+                    {pickingFiles || savingPaste ? (
+                      <LoaderCircle size={14} className="animate-spin" />
+                    ) : (
+                      <Paperclip size={14} />
+                    )}
+                  </IconButton>
+                </span>
+                <AttachMenu
+                  open={attachOpen}
+                  locale={locale}
+                  ignoreRef={paperclipRef}
+                  getAnchorRect={() => paperclipRef.current?.getBoundingClientRect()}
+                  onPick={(mode) => void addAttachments(mode)}
+                  onClose={() => setAttachOpen(false)}
+                />
+                <IconButton
+                  side="top"
+                  label={label("pickElement")}
+                  onClick={() => void startElementPick()}
+                  disabled={locking}
+                  className={`flex h-7 w-7 items-center justify-center rounded-full hover:bg-[var(--hover)] disabled:opacity-30 disabled:hover:bg-transparent ${
+                    pickingElement ? "bg-[var(--hover)] text-[var(--brass)]" : "text-[var(--text)]"
+                  }`}
+                >
+                  <MousePointer2 size={14} />
+                </IconButton>
+                <span ref={atButtonRef}>
+                  <IconButton
+                    side="top"
+                    label={label("mention")}
+                    onClick={() => {
+                      if (atOpen) {
+                        closeAtMenu();
+                        return;
+                      }
+                      composerRef.current?.insertAtStart("@");
+                      openAtMenu();
+                    }}
+                    disabled={locking}
+                    className={`flex h-7 w-7 items-center justify-center rounded-full hover:bg-[var(--hover)] disabled:opacity-30 disabled:hover:bg-transparent ${
+                      atOpen ? "bg-[var(--hover)] text-[var(--brass)]" : "text-[var(--text)]"
+                    }`}
+                  >
+                    <AtSign size={14} />
+                  </IconButton>
+                </span>
+              </div>
+              {!compact ? <ModeSelect locale={locale} mode={agentMode} onMode={onAgentMode} /> : null}
               <AtMenu
                 open={atOpen}
                 locale={locale}
