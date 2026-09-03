@@ -10,7 +10,7 @@
 
 ## 文档分层
 
-- **`README.md`**：面向使用者的产品页。只写产品是什么、适用谁、如何从 GitHub Release 安装并打开侧栏，以及一段侧栏演示视频（跨页填框：维基 → Gutenberg；用户打字/点击/新标签出现留 1x，Agent 等待可加速）。不写 pnpm / Go、仓库树、工作区内部协议，也不把 `packages/extension/dist` 当成用户加载路径。
+- **`README.md`**：面向使用者的产品页。只写产品是什么、适用谁、如何从 GitHub Release 安装并打开侧栏，以及一段侧栏演示视频（跨页填框：维基 → Gutenberg；成片保持采集原分辨率、不裁顶；打字可加速，发送前停顿要切掉，Agent 流式/等待可加速）。不写 pnpm / Go、仓库树、工作区内部协议，也不把 `packages/extension/dist` 当成用户加载路径。
 - **`docs/DEVELOPMENT.md`**：面向开发。本地构建、`pnpm install-host`、工作区布局、仓库结构、打 CRX、推 `v*` tag 发 Release；演示分镜见 `docs/demo/NEXT-TAKE.md`。
 - **本文件**：记产品做什么、为什么。
 - **`docs/TECH_DESIGN.md`**：记怎么做、为什么选这个方案。README 的 logo / 海报放 `docs/images/`，演示视频放 `docs/demo/`，避免依赖 `packages/` 路径。
@@ -104,9 +104,9 @@
 
 README 上的片子要让人一眼看出：**Chrome 窗口内的 Side Panel**，以及 **跨页**（页 A 取数 → 页 B 填输入）。
 
-- **当前成片**：页 A `https://en.wikipedia.org/wiki/Ada_Lovelace` 用页面工具读出姓名/生卒/一句评价；Agent `openTab` 页 B `https://openlibrary.org/`（不预开），检索框填恰好 `Ada Lovelace Analytical Engine` 并提交，结果入画。成片 44s / 1920×1080，窗口内右侧 Side Panel。页 B 可能 geo 切到中文 UI——要英文-only 页 B 时下一镜改 Gutenberg（脚本仍在 [`docs/demo/NEXT-TAKE.md`](./demo/NEXT-TAKE.md)）。录前输入法锁 macOS **ABC / U.S.**，禁止整段粘贴。
-- **成片**：用户打字、点击、新标签出现 1x；Agent 流式/空等 2x–6x。长 prompt 按键 1x，成片会比 30–45 秒故事板更长。
-- **几何**：侧栏在 **窗口右侧**，宽约 1/4；标签栏和地址栏必须入画。点工具栏图标打开的是 Chrome Side Panel API 停靠栏（`openPanelOnActionClick`），**禁止**拖成独立窗口。只采 Mac 内建屏，成片 16:9（1920×1080）。
+- **当前成片**：页 A `https://en.wikipedia.org/wiki/Ada_Lovelace` 用页面工具读出姓名/生卒/一句评价；Agent `openTab` 页 B `https://www.gutenberg.org/`（不预开），检索框填恰好 `Ada Lovelace` 并提交，结果入画。侧栏是 Chrome **窗口内右侧 Side Panel**。成片保持 ffmpeg 采集原分辨率（内建屏 Retina，本镜 **2880×1800**），**禁止**中心裁 16:9 / 缩到 1920×1080 / 加黑边——裁顶会切掉菜单栏，鼠标操作看起来不完整。分镜见 [`docs/demo/NEXT-TAKE.md`](./demo/NEXT-TAKE.md)。录前输入法锁 macOS **ABC / U.S.**，禁止整段粘贴。
+- **成片**：用户点击、侧栏开关 1x；打字可 1.8x–2.5x；打完到点发送之间的空等硬切掉；Agent 思考/工具/流式 4x–6x；新标签出现与 Gutenberg 填框/结果落地 1x–2x。结尾要留到 Gutenberg 结果可见；若素材里 Agent 终稿还没写完，如实停在素材末尾，不要假结尾。
+- **几何**：侧栏在 **窗口右侧**，宽约 1/4；菜单栏、标签栏和地址栏必须入画。点工具栏图标打开的是 Chrome Side Panel API 停靠栏（`openPanelOnActionClick`），**禁止**拖成独立窗口。只采 Mac 内建屏；成片 = 采集原尺寸，不要事后改成 16:9。
 - **明确不做**：不再以「写 `outputs/` HTML + Finder Reveal」当主叙事；不做三点卖点片。
 
 ### 状态持久化

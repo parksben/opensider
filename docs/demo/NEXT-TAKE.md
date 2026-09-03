@@ -1,8 +1,10 @@
 # 演示成片与下一镜
 
-> 状态：**已上架** [`opensider.mp4`](./opensider.mp4)（**44s**，**1920×1080**）：页 A Wikipedia Ada Lovelace → Agent `openTab` 页 B [Open Library](https://openlibrary.org/)，检索框恰好 `Ada Lovelace Analytical Engine`，结果列表入画。侧栏是 Chrome **窗口内右侧 Side Panel**（约 1/4 宽），标签栏与地址栏入画。打字 / 发送 / 新标签 / 填框 1x，Agent 等待 2x–6x，BGM 1x。
+> 状态：**已上架** [`opensider.mp4`](./opensider.mp4)（采集原分辨率 **2880×1800**，**45s**）：页 A Wikipedia Ada Lovelace → Agent `openTab` 页 B [Project Gutenberg](https://www.gutenberg.org/)，检索框恰好 `Ada Lovelace`，结果列表入画。侧栏是 Chrome **窗口内右侧 Side Panel**（约 1/4 宽），菜单栏、标签栏与地址栏入画。打字约 2.2x，发送前空等硬切，Agent 等待 5x，新标签 / 填框 / 结果 1.5x–1.8x，点击 1x。BGM 为 Kevin MacLeod《Wallpaper》（CC BY 3.0，1x）。
 >
-> 已知瑕疵（不挡「跨页」证明）：页 B Open Library 会 geo 切到中文 UI；维基荷兰筹款条未关。若要英文-only 页 B，下一镜改 Gutenberg（下文脚本仍保留）。录前输入法锁 **ABC / U.S.**，禁止拼音候选条。
+> 素材 `/tmp/opensider-take6/raw.mp4`（144.5s，2880×1800）在结果入画后、Agent 仍停在工具行（`Read` / “page may still be loading”），**没有**写出姓名/生卒/一句评价的终稿。成片收到素材末尾，不假造回复。
+>
+> 录前输入法锁 **ABC / U.S.**，禁止拼音候选条。
 
 片中口播 / UI / Agent 回复一律 **英文**。本文件给录制的人看，所以规格用中文。
 
@@ -16,7 +18,7 @@
 
 **为什么能证明「浏览器扩展 + 跨页 Agent」：**
 
-- 画面始终是 **一个** Chrome 窗口：标签栏 + 地址栏 + 网页 + **右侧停靠侧栏**（不是 popup、不是拖出去的 App 窗）。
+- 画面始终是 **一个** Chrome 窗口：菜单栏 + 标签栏 + 地址栏 + 网页 + **右侧停靠侧栏**（不是 popup、不是拖出去的 App 窗）。
 - Agent 用现有页面工具读 **源站 A**，再用 `openTab` 打开 **另一源站 B**（`en.wikipedia.org` → `gutenberg.org`），在 B 上 `fill` / `fillForm` / `press`。
 - 观众能看见 **第二条标签出现**、地址栏换成 Gutenberg、页面上的 **Agent 光标** 滑到检索框并填字。不是写本地 HTML，也不进 Finder。
 
@@ -68,21 +70,19 @@ Gutenberg 检索框填 **恰好** `Ada Lovelace`（框短时用这个；框够�
 
 ### 镜头表（成片时钟；括号内是剪辑倍率）
 
-成片目标 **≤30s**；Agent 空等太长可 **≤45s**，只对等待/流式跳切。用户打字、点发送、标签出现、光标填框必须 **1x**。
+成片目标 **≤45s**。打字可加速；发送前空等必须硬切；Agent 空等/流式可跳切。用户点击、新标签出现、填框与结果落地要能看清。
 
 | 成片 | 谁 | 倍率 | 观众必须看见 |
 |---|---|---|---|
-| 0:00–0:02 | — | 1x | 建立镜头：Chrome **1920×1080**，右侧 Side Panel ≈480px，深色英文 UI，**已有空会话**（不要再新建），页 A 维基正文 + 侧栏。标签栏、地址栏都在画面里。鼠标可见。 |
-| 0:02–0:11 | 用户 | 1x | 点击输入框，**逐字键入**上面整段 prompt（ABC/US 键盘；禁止整段粘贴；禁止 Chrome 页内查找 Cmd+F）。不要加速打字。 |
-| 0:11–0:12 | 用户 | 1x | Enter 发送。用户气泡出现，输入框四色进行中描边。 |
-| 0:12–0:20 | Agent | 3x–6x | 侧栏灰字工具：读 `snapshot` / `getReadable` / `interactive.md`。**主区仍是维基**，不要切走。可跳切掉空转。 |
-| 0:20–0:24 | Agent | 1x（标签出现的那几帧） | `openTab`：标签栏 **多出** Gutenberg；地址栏变为 `gutenberg.org`。若 Agent 误用 `navigate` 把维基覆盖掉：本条作废，重来。 |
-| 0:24–0:34 | Agent | 填框/点击 1x；中间等待 2x–6x | 页上 Agent 光标滑到检索框，`fill`/`fillForm` 出现 `Ada Lovelace`（或 `Ada Lovelace Analytical Engine`），提交。结果列表出现。 |
-| 0:34–0:38 | Agent | 1x 定住 | 双标签仍在；侧栏可有一句英文确认。**不要** 打开产物条、不要切出浏览器。 |
+| 建立 | — | 1x（只留约 2s，切掉开录后空坐） | Chrome **采集原尺寸**，右侧 Side Panel，深色英文 UI，**已有空会话**，页 A 维基 + 侧栏。菜单栏、标签栏、地址栏都在画面里。鼠标可见。 |
+| 打字 | 用户 | 1.8x–2.5x | 点击输入框，**逐字键入**上面整段 prompt（ABC/US 键盘；禁止整段粘贴；禁止 Chrome 页内查找 Cmd+F）。 |
+| 发送 | 用户 | 1x；**删掉打完到点发送之间的停顿** | Enter / 点发送。用户气泡出现，输入框四色进行中描边。 |
+| Agent 读维基 | Agent | 4x–6x | 侧栏灰字工具：读 `snapshot` / `getReadable` / `interactive.md`。**主区仍是维基**。 |
+| 新标签 | Agent | 1x–2x | `openTab`：标签栏 **多出** Gutenberg；地址栏变为 `gutenberg.org`。若 Agent 误用 `navigate` 把维基覆盖掉：本条作废，重来。 |
+| 填框 / 结果 | Agent | 填框与结果落地 1x–2x；中间空等 4x–6x | 页上 Agent 光标滑到检索框，`fill`/`fillForm` 出现 `Ada Lovelace`，提交。结果列表出现。 |
+| 收住 | Agent | 1x–2x | 双标签仍在；Gutenberg 结果可见。**尽量**等到侧栏出现写完的英文确认。素材若在流式中被停录，收到素材末尾，不要假结尾。**不要** 打开产物条、不要切出浏览器。 |
 
-原始素材会更长：只加速「思考 / 读文件 / 等 results.json」；**不要**加速用户击键和 `openTab` 那一下。
-
-BGM：`MUSIC.md` 那条合成床，成片 **1x**，头尾淡入淡出 0.4–0.5s，不跟 setpts 升调。
+BGM：`MUSIC.md` 那条已下载的 CC 曲，成片 **1x**，头尾淡入淡出 0.4–0.5s，不跟 setpts 升调。不要自己合成。
 
 ---
 
@@ -129,9 +129,9 @@ Do not write local HTML, Markdown, or PDF. Do not call reportArtifacts. Do not u
 ### 窗口
 
 - 只用 **Mac 内建屏**（ffmpeg `Capture screen 0`）。外接屏禁止。
-- Chrome 窗口 **1920×1080**。能在系统显示器里选 1920×1080 就选，然后 Chrome 铺满该逻辑分辨率（保留系统菜单栏也可以，事后中心裁 16:9）。源已经是 1920×1080 时，裁切应接近恒等。
-- **不要** 把侧栏拖成独立窗口，**不要** 用 Side Panel 的「在新标签打开 / 弹出」类控件，**不要** 只录侧栏、不要裁掉标签栏和地址栏。
-- 侧栏宽度拖到约窗口的 **1/4**：1920 上约 **480px**（用分隔条；不要停在 Chrome 默认偏窄）。
+- Chrome 铺满内建屏即可。ffmpeg 在 Retina 上会采到逻辑分辨率的 2 倍（本机常见 **1440×900 → 2880×1800**）。**成片必须等于这份采集尺寸**：不要中心裁 16:9，不要 scale 到 1920×1080，不要加黑边。上一镜裁掉顶上菜单栏后，鼠标点按看起来不完整。
+- **不要** 把侧栏拖成独立窗口，**不要** 用 Side Panel 的「在新标签打开 / 弹出」类控件，**不要** 只录侧栏、不要裁掉菜单栏、标签栏和地址栏。
+- 侧栏宽度拖到约窗口的 **1/4**（用分隔条；不要停在 Chrome 默认偏窄）。
 - 侧栏必须在 **右边**（Chrome Side Panel 可改左边：录前确认在右）。
 
 ### 扩展如何打开（避免录成 popup）
@@ -141,7 +141,7 @@ Do not write local HTML, Markdown, or PDF. Do not call reportArtifacts. Do not u
 录前自检（缺一条就停）：
 
 1. 聊天 UI 与维基 **同一窗口**，中间有竖向分隔条。
-2. 上方仍是 Chrome 标签条 + 地址栏；维基 URL 在地址栏里。
+2. 上方仍是菜单栏 + Chrome 标签条 + 地址栏；维基 URL 在地址栏里。
 3. 扩展页 `chrome://extensions` 为 **未打包** 加载（开发 `packages/extension/dist` 或用户 `~/.opensider/extension`），不是商店包。
 4. 关掉 Chrome「停用开发者模式扩展」、测试模式、翻译条、维基筹款/cookie 条。
 5. 界面语言 **English**；侧栏语言 **EN**；**已有会话不要再新建**。
@@ -150,13 +150,15 @@ Do not write local HTML, Markdown, or PDF. Do not call reportArtifacts. Do not u
 8. 输入法已锁 ABC/US，试打无候选条（见上文）。
 9. 不要重启 Chrome、不要重载扩展（除非连接已死）。不要预开 Gutenberg 标签（预检用抛开窗口）。
 
-### ffmpeg（与上一镜质量规则相同）
+### ffmpeg（剪辑规则）
 
 - 采集：内建屏 `Capture screen 0` + 系统指针。
-- 成片 H.264、16:9。先中心裁 16:9（源已是 1920×1080 则几乎不用裁），再必要时 scale。
-- 只对 Agent 流式/等待 `setpts` **2x–6x**；用户打字、点击、导航、新标签出现保持 1x。
+- 成片 H.264，**分辨率 = raw**。禁止 crop / scale / pad。
+- 打字 `setpts` **1.8x–2.5x**（能读，不要 8x）。
+- 打完字到点发送：硬切，不要留空镜。
+- Agent 流式/等待 **4x–6x**；新标签出现、填框、结果落地 **1x–2x**；用户点击 1x。
 - 跳切只切「无变化的等待」，不要切掉 `openTab`。
-- 音床见 `MUSIC.md`，BGM 1x。
+- 音床见 `MUSIC.md`：下载的 CC 曲，BGM 1x，不升调。
 
 ---
 
@@ -171,8 +173,9 @@ Do not write local HTML, Markdown, or PDF. Do not call reportArtifacts. Do not u
 | 维基/Gutenberg 弹层挡住正文或检索框 | 录前关掉；录到了就重来。 |
 | Agent 提问卡 / 计划卡 | 停。确认已是 Allow all 再开新会话。 |
 | 检索框没填上（SPA 未吃到 fill） | 可允许 Agent 再 `type`/`press`；超过 ~20s 墙钟仍空则改 Backup。 |
-| 打字时出现 IME 候选条 / 中英切换气泡 | 停。锁回 ABC/US，试打通过后再录。 |
+| 打字时出现 IME 候选条 / 中英切换气泡 | 停。锁回 ABC/US，试打通过后再试。 |
 | 页 B UI 变成中文或其他本地化语言 | 停。改 Backup arXiv。不要用 Open Library / DDG / Google。 |
+| 成片被裁成 16:9 / 1920×1080 | 停。从 raw 重剪，保持采集尺寸。 |
 
 ---
 
@@ -185,3 +188,5 @@ Do not write local HTML, Markdown, or PDF. Do not call reportArtifacts. Do not u
 - 不用拼音打英文、不整段粘贴 prompt。
 - 不在本轮改产品 UI（脚本用现有工具即可完成）。
 - 不要重启 Chrome / 重载扩展（连接已死除外）。
+- 不要把采集画面裁成 16:9 或垫到 1920×1080。
+- 不要用 ffmpeg 合成或 AI 生成的音床。
