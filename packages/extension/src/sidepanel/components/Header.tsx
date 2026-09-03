@@ -79,8 +79,9 @@ export function Header({
   useLayoutEffect(() => {
     if (!renaming) return;
     const node = titleInputRef.current;
-    node?.focus();
-    node?.select();
+    if (!node) return;
+    node.focus();
+    node.setSelectionRange(0, 0);
   }, [renaming]);
 
   useLayoutEffect(() => {
@@ -101,7 +102,7 @@ export function Header({
     observer.observe(left);
     observer.observe(right);
     return () => observer.disconnect();
-  }, [compact, showAgentSelect, status, agents.length, selectedProviderId, error, sessionsOpen]);
+  }, [compact, showAgentSelect, status, agents.length, selectedProviderId, error, sessionsOpen, renaming]);
 
   const commitRename = () => {
     if (!renamingRef.current) return;
@@ -125,19 +126,16 @@ export function Header({
   const titleCluster = (align: "left" | "center") => (
     <div
       ref={titleClusterRef}
-      className={`flex items-center gap-0.5 ${
-        renaming ? "min-w-[4em]" : "min-w-0"
-      } ${
-        align === "left" ? "flex-1 justify-start" : renaming ? "w-full justify-center" : "w-max justify-center"
+      className={`flex min-w-0 items-center gap-0.5 ${
+        align === "left" || renaming ? "w-full justify-start" : "w-full justify-center"
       }`}
       style={
-        align === "center" ? { maxWidth: `calc(100% - ${sidePad.left + sidePad.right}px)` } : undefined
+        align === "center" ? { width: `calc(100% - ${sidePad.left + sidePad.right}px)` } : undefined
       }
     >
       {renaming ? (
         <input
           ref={titleInputRef}
-          size={1}
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           onBlur={(event) => {
@@ -157,9 +155,7 @@ export function Header({
           }}
           aria-label={label("rename")}
           placeholder={label("untitled")}
-          className={`min-w-[4em] w-full flex-1 rounded border border-[var(--line)] bg-[var(--ink)] px-1.5 py-0.5 text-[14px] font-medium tracking-tight text-[var(--text)] outline-none ${
-            align === "left" ? "text-left" : "text-center"
-          }`}
+          className="min-w-0 w-full flex-1 rounded border border-[var(--line)] bg-[var(--ink)] px-1.5 py-0.5 text-left text-[14px] font-medium tracking-tight text-[var(--text)] outline-none"
         />
       ) : (
         <div
@@ -255,7 +251,7 @@ export function Header({
             {retryButton}
           </div>
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-            <div className="pointer-events-auto flex min-w-0 max-w-full items-center justify-center">
+            <div className="pointer-events-auto flex w-full min-w-0 items-center justify-center">
               {titleCluster("center")}
             </div>
           </div>
