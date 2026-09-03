@@ -27,7 +27,7 @@
 **为什么能证明「浏览器扩展 + 跨页 Agent + 产物」：**
 
 - 画面始终是 **一个** Chrome 窗口：菜单栏 + 标签栏 + 地址栏 + 网页 + **右侧停靠侧栏**。
-- 标签栏会 **陆续多出** TechCrunch / The Verge / Ars Technica（或 HN）——这是跨页，不是只读当前页、也不是只写本地文件。
+- 标签栏会 **陆续多出** The Verge / Ars Technica（或其它备用源）——这是跨页，不是只读当前页、也不是只写本地文件。
 - 侧栏出现产物条后，主区切到 **生成的 HTML**，鼠标 **向下滚动** 扫过 TOP 10。不是停在 Finder，也不把「打开文件位置」当高潮。
 
 ### 站点语言（强制）
@@ -52,7 +52,7 @@
 
 | 角色 | URL | 说明 |
 |---|---|---|
-| 页 A（开录前停在这） | `https://techcrunch.com/category/artificial-intelligence/` | 英文 AI 栏目，首屏就是科技媒体。 |
+| 页 A（开录前停在这） | `https://news.ycombinator.com/` | 英文-only，广告少，首屏就是头条列表。 |
 | 页 B（Agent `openTab`，禁止预开） | `https://www.theverge.com/ai-artificial-intelligence` | The Verge AI。 |
 | 页 C（Agent `openTab`，禁止预开） | `https://arstechnica.com/ai/` | Ars Technica AI。若 404 / 软 404，改 `https://arstechnica.com/information-technology/`。 |
 
@@ -68,7 +68,7 @@
 ### 精确用户 Prompt（原样打进侧栏，英文）
 
 ```
-Read today's AI headlines from major English tech outlets using page tools. Start with this TechCrunch AI page. Then openTab these URLs (do not navigate away from existing tabs):
+Read today's AI headlines from major English tech outlets using page tools. Start with this Hacker News page. Then openTab these URLs (do not navigate away from existing tabs):
 
 https://www.theverge.com/ai-artificial-intelligence
 https://arstechnica.com/ai/
@@ -85,12 +85,12 @@ Then call reportArtifacts on that file.
 
 After the file exists, serve the outputs folder over localhost HTTP if needed and openTab the briefing in this Chrome window. Do not use Finder. Stay in the browser.
 
-Do not write Markdown or PDF. Do not replace the TechCrunch tab with navigate.
+Do not write Markdown or PDF. Do not replace the Hacker News tab with navigate.
 ```
 
 期望核对（不要写进 prompt）：
 
-- 标签栏至少 **3 个** 媒体标签（TechCrunch + Verge + Ars，或 Backup 替换后仍 ≥3）。
+- 标签栏至少 **3 个** 媒体标签（HN + Verge + Ars，或 Backup 替换后仍 ≥3）。
 - `~/.opensider/workspace/outputs/ai-news-top10.html` 存在，侧栏产物条出现该文件名。
 - 新标签打开简报（`http://127.0.0.1:…/ai-news-top10.html` 优先；`file://` 仅当 localhost 失败）。
 - HTML 上能读到 **TOP 10** 和日期；滚动能扫完列表。
@@ -109,10 +109,10 @@ Do not write Markdown or PDF. Do not replace the TechCrunch tab with navigate.
 
 | 成片 | 谁 | 倍率 | 观众必须看见 |
 |---|---|---|---|
-| 建立 | — | 1x（只留约 2s） | Chrome **采集原尺寸**，右侧 Side Panel ≈1/4，深色英文 UI，**新空会话且历史抽屉已关**，页 A TechCrunch AI。菜单栏、标签栏、地址栏入画。鼠标可见。 |
+| 建立 | — | 1x（只留约 2s） | Chrome **采集原尺寸**，右侧 Side Panel ≈1/4，深色英文 UI，**新空会话且历史抽屉已关**，页 A Hacker News。菜单栏、标签栏、地址栏入画。鼠标可见。 |
 | 打字 | 用户 | 1.8x–2.5x | 点击输入框，**逐字键入**上面整段 prompt（ABC/US；禁止整段粘贴；禁止 Cmd+F）。 |
 | 发送 | 用户 | 1x；**删掉打完到发送的停顿** | Enter / 点发送。 |
-| 读当前页 | Agent | 4x–6x | 侧栏出现读页工具；**主区仍是 TechCrunch**。 |
+| 读当前页 | Agent | 4x–6x | 侧栏出现读页工具；**主区仍是 Hacker News**。 |
 | 跨页开标签 | Agent | **每个新标签落地 1x–2x**；中间空等 4x–6x | 标签栏 **陆续多出** The Verge、Ars Technica。若始终只有一个标签（纯记忆编新闻）：作废。 |
 | 写 HTML + 产物 | Agent | 写文件/工具 4x–6x；产物条出现 **1x–2x** | 侧栏「Artifacts」出现 `ai-news-top10.html`。 |
 | 打开简报 | Agent / 用户 | 1x–2x | 同一窗口 **新标签** 打开 TOP 10 页（地址栏是 localhost 或 file）。不要切到 Finder 当主画面。 |
@@ -128,7 +128,7 @@ BGM：`MUSIC.md` 已下载的 CC 曲（Kevin MacLeod《Wallpaper》），成片 
 某个栏目 404 / 硬登录墙 / CAPTCHA / 整页中文：
 
 - 用上表 Backup 源替换 **那一个** URL，prompt 里同步改那一行。
-- 至少保住 **两个不同源站 + 当前 TechCrunch**，标签栏仍能看出跨页。
+- 至少保住 **两个不同源站 + 当前 HN**，标签栏仍能看出跨页。
 - 三个官方栏目全挂：当天改停在 HN 首页，prompt 改为「从 HN 头条里挑 AI 相关再 openTab 进讨论链的外链」。仍要写成 HTML + 浏览器预览。不要退回 Gutenberg / 维基人名。
 
 localhost 起不来：改 Backup 打开方式（`open -a Google Chrome` + **人手滚动**）。不要改成只在侧栏贴 Markdown。
@@ -161,12 +161,12 @@ localhost 起不来：改 Backup 打开方式（`open -a Google Chrome` + **人�
 
 产品是 MV3 Side Panel（`openPanelOnActionClick`），没有 popup。录前自检：
 
-1. 聊天与 TechCrunch **同一窗口**，中间有竖分隔条。
+1. 聊天与 Hacker News **同一窗口**，中间有竖分隔条。
 2. 未打包扩展；关掉开发者模式横幅、翻译条、订阅弹层。
 3. 界面 **English**；权限 **Allow all**；Cursor **Auto**；**新会话 → 再关历史抽屉 → 再开录**。
 4. 系统指针可见。禁止 Chrome 页内查找。
 5. IME 已锁 ABC/US。不要重启 Chrome / 重载扩展（连接已死除外）。
-6. 不要预开 Verge / Ars 标签。
+6. 不要预开 Verge / Ars 标签（只要 HN）。
 
 ### ffmpeg（剪辑规则）
 
@@ -183,7 +183,7 @@ localhost 起不来：改 Backup 打开方式（`open -a Google Chrome` + **人�
 
 | 现象 | 处理 |
 |---|---|
-| 标签栏始终只有 TechCrunch，10 条像背课文 | 停。必须看见跨页新标签。 |
+| 标签栏始终只有 HN，10 条像背课文 | 停。必须看见跨页新标签。 |
 | 源站 CAPTCHA / 硬登录墙 | 换 Backup 源；三个都挂当天不录这条。 |
 | 源站 UI 变成中文 | 停。换英文-only 备用。 |
 | Agent 只写 Markdown / 侧栏长文、不写 HTML、无产物条 | 停。重来。 |

@@ -763,7 +763,7 @@ function ModeSelect({
   }, [open]);
 
   return (
-    <div ref={rootRef} className="relative min-w-[5rem] max-w-full flex-1 overflow-hidden">
+    <div ref={rootRef} className="relative min-w-[5rem] max-w-full flex-1">
       <button
         type="button"
         title={current.name}
@@ -787,7 +787,7 @@ function ModeSelect({
         ))}
       </button>
       {open ? (
-        <div className="absolute bottom-full left-0 z-30 mb-1.5 w-64 overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--panel)] py-1 shadow-xl">
+        <div className="absolute bottom-full left-0 z-[80] mb-1.5 w-64 overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--panel)] py-1 shadow-xl">
           {options.map((option) => {
             const Icon = option.icon;
             const active = option.id === mode;

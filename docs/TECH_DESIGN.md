@@ -371,7 +371,7 @@ on them with page tools using args.selector.
 
 Host `session/set_mode` 仍按 Profile `modeMap` 推。**Cursor ACP 没有第四种 session mode**：`ask` / `workspace` / `auto` / `unattended` 都映射到 `agent`，真正的「允许一切」只在侧栏拦卡。其它 CLI 的 `unattended` 复用该家最宽的已有 mode（与 `auto` 相同：`bypassPermissions` / `autopilot` / `agent-full-access` 等）；没有 `session/set_mode` 则只在客户端拦卡。提问/计划自动答不经过 Host，侧栏直接 `cursor.reply`。
 
-侧栏 `ModeSelect` 文案走 `i18n`，按系统设置口吻写（短标题 + 一句说明，不要营销句）：`ask`「所有工具需授权 / Ask every time」灰字「每次用工具都要先同意 / Confirm each tool」；`workspace`「工作区改文件免确认 / Allow workspace edits」灰字「改工作区文件不用问，命令和上网仍要问 / Workspace file edits skip confirmation; commands and network still ask」；`auto`「工具免确认 / Auto-run tools」灰字「工具直接跑，提问和计划仍要你点 / Tools skip confirmation; questions and plans still need a click」；`unattended`「允许一切操作 / Allow all」灰字「工具、提问、计划都不再问 / Don't ask about tools, questions, or plans」。图标：`Shield` / `FolderPen` / `Zap` / `Unlock`。`isWorkspaceWritePermission` 按 `toolCall.kind` / `title` 启发式：命中 execute/shell/bash/terminal/command/fetch/http/network/web_search/mcp 则仍弹卡，命中 edit/write/delete/move/create/patch/apply 才自动过。客户端不按路径判断是否出目录；出目录仍问靠 Agent 的 `acceptEdits`。`autoQuestionAnswers`：每题取 `options[0].id`，没有则 `selectedOptionIds: []`。
+侧栏 `ModeSelect` 外壳与 `ModelSelect` 一样**不要** `overflow-hidden`：省略只写在触发钮的 `truncate` 上。菜单用 `absolute bottom-full`（或 portal + `fixed`）画在按钮上方；外壳一裁，点击就像没反应（模型下拉能开、权限下拉不能，就是这个差）。文案走 `i18n`，按系统设置口吻写（短标题 + 一句说明，不要营销句）：`ask`「所有工具需授权 / Ask every time」灰字「每次用工具都要先同意 / Confirm each tool」；`workspace`「工作区改文件免确认 / Allow workspace edits」灰字「改工作区文件不用问，命令和上网仍要问 / Workspace file edits skip confirmation; commands and network still ask」；`auto`「工具免确认 / Auto-run tools」灰字「工具直接跑，提问和计划仍要你点 / Tools skip confirmation; questions and plans still need a click」；`unattended`「允许一切操作 / Allow all」灰字「工具、提问、计划都不再问 / Don't ask about tools, questions, or plans」。图标：`Shield` / `FolderPen` / `Zap` / `Unlock`。`isWorkspaceWritePermission` 按 `toolCall.kind` / `title` 启发式：命中 execute/shell/bash/terminal/command/fetch/http/network/web_search/mcp 则仍弹卡，命中 edit/write/delete/move/create/patch/apply 才自动过。客户端不按路径判断是否出目录；出目录仍问靠 Agent 的 `acceptEdits`。`autoQuestionAnswers`：每题取 `options[0].id`，没有则 `selectedOptionIds: []`。
 
 ## 多 Agent CLI
 
@@ -472,7 +472,7 @@ pnpm workspace 只编扩展。Host 用 Go。扩展用 Vite + `@crxjs/vite-plugin
 
 产品侧栏 = Chrome **Side Panel**（manifest `side_panel` + `sidePanel` 权限 + `openPanelOnActionClick`），不是 `default_popup`。点工具栏图标时，聊天 UI 必须和网页停在同一窗口右侧。
 
-下一镜证明 **跨页读多个真网站 + 交出能在浏览器打开的 HTML**。Agent `openTab` 英文科技媒体（TechCrunch / The Verge / Ars），`reportArtifacts` 后用 localhost `openTab`（或 `open -a Google Chrome` + 人手滚）预览 `outputs/ai-news-top10.html`。`openTab` 不能开 `file://`。不要把 Finder 当高潮。源站必须英文-only。击键走 macOS ABC/US，禁止拼音候选条。
+下一镜证明 **跨页读多个真网站 + 交出能在浏览器打开的 HTML**。开录停在 Hacker News（广告少）；Agent `openTab` The Verge / Ars，`reportArtifacts` 后用 localhost `openTab`（或 `open -a Google Chrome` + 人手滚）预览 `outputs/ai-news-top10.html`。`openTab` 不能开 `file://`。不要把 Finder 当高潮。源站必须英文-only。击键走 macOS ABC/US，禁止拼音候选条。
 
 录制约束：侧栏约窗口 1/4 靠右；只采 Mac 内建屏（ffmpeg screen 0）。成片 **保持采集原分辨率**（本机内建屏常见 1440×900@2x → 2880×1800），禁止 crop / scale-to-1080 / pad 成 16:9。剪辑：打字 1.8x–2.5x；打完到发送的停顿硬切；Agent 思考/工具/流式 4x–6x；新标签落地、产物条、打开简报 1x–2x；滚动预览与用户点击 1x。BGM 用网上已授权的开源曲（CC0 / CC-BY），1x、不跟 setpts 升调（见 MUSIC.md）。结尾留到简报已打开并滚过、侧栏回合结束；不要在流式中途 SIGINT。
 
