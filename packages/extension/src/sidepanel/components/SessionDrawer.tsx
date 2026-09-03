@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, GitFork, Pencil, Pin, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, GitFork, MessageSquare, Monitor, Moon, Pencil, Pin, Plus, Settings, Sun, Trash2, type LucideIcon } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import type { Locale, MessageKey } from "../i18n";
 import { t } from "../i18n";
@@ -276,10 +276,11 @@ export function SessionDrawer({
               key={id}
               onClick={() => setTab(id)}
               aria-selected={active}
-              className={`flex-1 px-2.5 py-1.5 text-[12px] ${
+              className={`flex flex-1 items-center justify-center gap-1 px-2.5 py-1.5 text-[12px] ${
                 active ? "bg-[var(--hover-strong)] text-[var(--text)]" : "text-[var(--muted)]"
               }`}
             >
+              {id === "sessions" ? <MessageSquare size={13} /> : <Settings size={13} />}
               {label(id === "sessions" ? "drawerTabSessions" : "drawerTabSettings")}
             </RippleButton>
           );
@@ -291,9 +292,9 @@ export function SessionDrawer({
             label={label("settingTheme")}
             value={theme}
             options={[
-              { id: "light", name: label("themeLight") },
-              { id: "dark", name: label("themeDark") },
-              { id: "system", name: label("themeSystem") },
+              { id: "light", name: label("themeLight"), icon: Sun },
+              { id: "dark", name: label("themeDark"), icon: Moon },
+              { id: "system", name: label("themeSystem"), icon: Monitor },
             ]}
             onChange={onTheme}
           />
@@ -511,12 +512,14 @@ function PrefixedSelect<T extends string>({
 }: {
   label: string;
   value: T;
-  options: Array<{ id: T; name: string }>;
+  options: Array<{ id: T; name: string; icon?: LucideIcon }>;
   onChange: (value: T) => void;
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
-  const current = options.find((option) => option.id === value)?.name ?? value;
+  const selected = options.find((option) => option.id === value);
+  const current = selected?.name ?? value;
+  const CurrentIcon = selected?.icon;
 
   useEffect(() => {
     if (!open) return;
@@ -547,6 +550,7 @@ function PrefixedSelect<T extends string>({
         className="flex h-8 w-full min-w-0 items-center gap-2 rounded-md border border-[var(--line)] bg-[color-mix(in_oklab,var(--panel-2)_80%,transparent)] px-2.5 text-left hover:bg-[var(--hover)]"
       >
         <span className="shrink-0 text-[12px] text-[var(--muted)]">{label}</span>
+        {CurrentIcon ? <CurrentIcon size={14} className="shrink-0 text-[var(--text)]" /> : null}
         <span className="min-w-0 flex-1 truncate text-[12.5px] text-[var(--text)]">{current}</span>
         <ChevronDown size={14} className="shrink-0 text-[var(--muted)]" />
       </button>
@@ -554,6 +558,7 @@ function PrefixedSelect<T extends string>({
         <div className="absolute left-0 right-0 top-full z-[80] mt-1 overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--panel)] py-1 shadow-xl">
           {options.map((option) => {
             const active = option.id === value;
+            const Icon = option.icon;
             return (
               <RippleButton
                 key={option.id}
@@ -561,10 +566,11 @@ function PrefixedSelect<T extends string>({
                   onChange(option.id);
                   setOpen(false);
                 }}
-                className={`flex w-full items-center px-2.5 py-1.5 text-left text-[12.5px] ${
+                className={`flex w-full items-center gap-1.5 px-2.5 py-1.5 text-left text-[12.5px] ${
                   active ? "bg-[var(--hover-strong)] text-[var(--text)]" : "text-[var(--muted)] hover:text-[var(--text)]"
                 }`}
               >
+                {Icon ? <Icon size={14} className="shrink-0" /> : null}
                 {option.name}
               </RippleButton>
             );
