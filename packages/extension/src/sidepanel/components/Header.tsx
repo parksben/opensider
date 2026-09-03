@@ -227,13 +227,13 @@ export function Header({
   return (
     <header className="group/header relative z-40 border-b border-[var(--line)] bg-[color-mix(in_oklab,var(--panel)_88%,transparent)] px-3 py-2.5 backdrop-blur">
       {compact ? (
-        <div className="flex min-w-0 items-center gap-1.5">
+        <div className={`flex min-w-0 items-center ${renaming ? "gap-8" : "gap-1.5"}`}>
           <div className="flex min-w-0 flex-1 items-center gap-1.5">
             {statusChip}
             {retryButton}
             {titleCluster("left")}
           </div>
-          <div className="flex shrink-0 items-center justify-end gap-1.5">{drawerButton}</div>
+          <div className="flex shrink-0 items-center justify-end">{drawerButton}</div>
         </div>
       ) : (
         <div ref={barRef} className="relative flex items-center justify-between">
