@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, GitFork, MessageSquarePlus, Pencil, Pin, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, GitFork, Pencil, Pin, Plus, Trash2 } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import type { Locale, MessageKey } from "../i18n";
 import { t } from "../i18n";
@@ -275,7 +275,7 @@ export function SessionDrawer({
           onClick={onNewSession}
           className="flex w-full items-center justify-center gap-1.5 rounded-md border border-[var(--line)] bg-[color-mix(in_oklab,var(--panel-2)_80%,transparent)] px-2.5 py-1.5 text-[12.5px] text-[var(--text)]"
         >
-          <MessageSquarePlus size={14} />
+          <Plus size={14} />
           {label("newChat")}
         </RippleButton>
       </div>

@@ -22,6 +22,7 @@ import { AgentSetup } from "./components/AgentSetup";
 import { BridgeSetup } from "./components/BridgeSetup";
 import { ChatPane } from "./components/ChatPane";
 import { Header } from "./components/Header";
+import { COMPACT_MAIN_PX } from "./layout";
 import { PermissionBar } from "./components/PermissionBar";
 import { SessionDrawer } from "./components/SessionDrawer";
 import { applyLocale, readCachedLocale, t, type Locale } from "./i18n";
@@ -81,6 +82,8 @@ export function App() {
   const [progress, setProgress] = useState<AgentProgress>();
   const [sessionsOpen, setSessionsOpen] = useState(false);
   const [drawerWidth, setDrawerWidth] = useState(SESSION_DRAWER_DEFAULT);
+  const [compact, setCompact] = useState(false);
+  const mainColumnRef = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState<HostStatusState>("starting");
   const [error, setError] = useState<string>();
   const [page, setPage] = useState<CurrentPage>();
@@ -754,6 +757,16 @@ export function App() {
     return watchSystemTheme(() => applyResolvedTheme(resolveTheme("system")));
   }, [theme]);
 
+  useLayoutEffect(() => {
+    const node = mainColumnRef.current;
+    if (!node) return;
+    const update = () => setCompact(node.clientWidth < COMPACT_MAIN_PX);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [hydrated, selectedId]);
+
   useEffect(() => {
     const { send, reconnect, disconnect } = connectSidebar((msg) => handleHostRef.current(msg));
     sendRef.current = send;
@@ -1198,7 +1211,7 @@ export function App() {
 
   return (
     <div className="flex h-full min-h-0">
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div ref={mainColumnRef} className="flex min-h-0 min-w-0 flex-1 flex-col">
         <Header
           locale={locale}
           status={status}
@@ -1207,6 +1220,7 @@ export function App() {
           agents={agents}
           selectedProviderId={selectedProviderId}
           showAgentSelect={onboardingCompleted && status !== "missing"}
+          compact={compact}
           sessionTitle={selected.title}
           sessionsOpen={sessionsOpen}
           theme={theme}
@@ -1278,6 +1292,7 @@ export function App() {
               onPreviewImage={onPreviewImage}
               onModel={onModel}
               agentMode={agentMode}
+              compact={compact}
               onAgentMode={(mode) => {
                 setAgentMode(mode);
                 sendRef.current({ type: "agent.setPolicy", policy: mode });
