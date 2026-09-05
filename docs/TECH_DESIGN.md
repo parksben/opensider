@@ -456,8 +456,10 @@ README.md           面向用户的产品页与安装（不写开发命令或仓
 docs/REQUIREMENTS.md  需求：做什么、为什么
 docs/TECH_DESIGN.md   本文件：怎么做、为什么选这个方案
 docs/DEVELOPMENT.md   开发构建、Host 注册、工作区、打 CRX、tag 发 Release
-docs/images/          README 用的 logo 与海报（不引用 packages/ 源码路径）
-docs/demo/            README 用的侧栏演示视频（H.264 MP4）。`opensider.mp4` 是 The Verge → 今日最热 AI 新闻 HTML → Agent 在本窗口打开 → 人手滚动预览（2880×1800，11.8s，不裁 16:9；头 4s 压成 1.5s，原 4–31s 压成 6s），分镜在 `NEXT-TAKE.md`。打字可 setpts 加速，发送前空等硬切，Agent 流式/等待 4x–6x，新标签/产物/打开简报 1x–2x；BGM 用已下载的 CC 曲、始终 1x（见 MUSIC.md）
+docs/logo.svg         README logo
+docs/opensider.mp4    README 演示视频（H.264）。The Verge → 今日最热 AI 新闻 HTML → Agent 在本窗口打开 → 人手滚动预览（2880×1800，11.8s，不裁 16:9；头 4s 压成 1.5s，原 4–31s 压成 6s）
+docs/NEXT-TAKE.md     演示分镜
+docs/MUSIC.md         成片 BGM 出处（CC BY）。打字可 setpts 加速，发送前空等硬切，Agent 流式/等待 4x–6x，新标签/产物/打开简报 1x–2x；BGM 始终 1x
 cmd/opensider       唯一 Go 入口（host / install / pick）
 internal/           Host / install / pick / ACP
 packages/shared     扩展 ↔ Host 消息类型（TS）

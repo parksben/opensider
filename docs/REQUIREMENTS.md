@@ -11,9 +11,9 @@
 ## 文档分层
 
 - **`README.md`**：面向使用者的产品页。只写产品是什么、适用谁、如何从 GitHub Release 安装并打开侧栏，以及一段侧栏演示视频（当前成片：The Verge 上两句人话搜今日最热 AI 新闻，写成 HTML 并由 Agent 在本窗口打开，再人手滚动预览。成片保持采集原分辨率、不裁顶；打字可加速，发送前停顿要切掉，打开到开滚的空等要切掉，Agent 流式/等待可加速）。不写 pnpm / Go、仓库树、工作区内部协议，也不把 `packages/extension/dist` 当成用户加载路径。
-- **`docs/DEVELOPMENT.md`**：面向开发。本地构建、`pnpm install-host`、工作区布局、仓库结构、打 CRX、推 `v*` tag 发 Release；演示分镜见 `docs/demo/NEXT-TAKE.md`。
+- **`docs/DEVELOPMENT.md`**：面向开发。本地构建、`pnpm install-host`、工作区布局、仓库结构、打 CRX、推 `v*` tag 发 Release；演示分镜见 `docs/NEXT-TAKE.md`。
 - **本文件**：记产品做什么、为什么。
-- **`docs/TECH_DESIGN.md`**：记怎么做、为什么选这个方案。README 的 logo / 海报放 `docs/images/`，演示视频放 `docs/demo/`，避免依赖 `packages/` 路径。
+- **`docs/TECH_DESIGN.md`**：记怎么做、为什么选这个方案。README 的 logo 与演示视频放 `docs/` 第一层（`docs/logo.svg`、`docs/opensider.mp4`），避免依赖 `packages/` 路径。不要再拆 `docs/images/` / `docs/demo/`。
 
 ## 非目标（v1）
 
@@ -104,7 +104,7 @@
 
 README 上的片子要让人一眼看出：**Chrome 窗口内的 Side Panel**，以及 **跨站取数 + 能打开的产物**。
 
-- **当前成片**：[`docs/demo/opensider.mp4`](./demo/opensider.mp4)（**2880×1800**，**11.8s**）。停在 The Verge；侧栏两句人话：全网找今天最热的 AI 新闻、按热度排榜、写成 HTML 并在这个浏览器打开。Agent 起 localhost 后 `openTab` 打开简报，再人手滚动预览；打开到开滚的空等要切掉。头 4s 压成 1.5s；原片 4–31s（打字到打开简报）4.5x 压成 6s。不要 BBC / Reuters / CNN。分镜见 [`docs/demo/NEXT-TAKE.md`](./demo/NEXT-TAKE.md)。
+- **当前成片**：[`docs/opensider.mp4`](./opensider.mp4)（**2880×1800**，**11.8s**）。停在 The Verge；侧栏两句人话：全网找今天最热的 AI 新闻、按热度排榜、写成 HTML 并在这个浏览器打开。Agent 起 localhost 后 `openTab` 打开简报，再人手滚动预览；打开到开滚的空等要切掉。头 4s 压成 1.5s；原片 4–31s（打字到打开简报）4.5x 压成 6s。不要 BBC / Reuters / CNN。分镜见 [`docs/NEXT-TAKE.md`](./NEXT-TAKE.md)。
 - **成片工艺（沿用 take7）**：采集原分辨率（本机常见 **2880×1800**），禁止裁 16:9 / 缩到 1080 / 裁顶。打字 1.8x–2.5x；发送前空等硬切；Agent 读页/等待可再压（当前成片把头 4s 压成 1.5s、原 4–31s 压成 6s）。等到回合结束、简报已打开并滚过再停。打开到开滚的空等硬切。IME 锁 ABC/US。新会话 → 关历史抽屉 → 再录。
 - **几何**：侧栏窗口右侧约 1/4；菜单栏、标签栏、地址栏入画。禁止拖成独立窗口。只采内建屏。
 - **明确不做**：不再拍维基 ↔ Gutenberg；不做三点卖点；不把 Finder Reveal 当高潮；不用中文媒体 / 中文 prompt；prompt 不超过三句。

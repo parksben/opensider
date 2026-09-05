@@ -1,6 +1,6 @@
 <div align="center">
   <br />
-  <img src="docs/images/logo.svg" width="96" height="96" alt="OpenSider" />
+  <img src="docs/logo.svg" width="96" height="96" alt="OpenSider" />
   <h1>OpenSider</h1>
   <p>
     Chat with your local coding Agent from a Chromium side panel — no extra HTTP server, no cloud relay.
@@ -20,11 +20,11 @@ OpenSider 是一个 Chromium 侧栏：用自己的聊天面板连接本机 Agent
 
 ## 演示
 
-在 [The Verge](https://www.theverge.com/) 上用两句人话，让 Agent 去全网找今天最热的 AI 新闻、按热度排榜、写成 HTML，并在这个浏览器打开简报，再人手滚动预览。成片 **2880×1800**（不裁 16:9），Chrome **窗口内右侧 Side Panel**（约四分之一宽），菜单栏、标签栏和地址栏入画。分镜见 [docs/demo/NEXT-TAKE.md](docs/demo/NEXT-TAKE.md)。打字可加速，发送前空等切掉，打开到开滚的空等切掉，Agent 思考/等待段加速；打开简报放慢到能看清。
+在 [The Verge](https://www.theverge.com/) 上用两句人话，让 Agent 去全网找今天最热的 AI 新闻、按热度排榜、写成 HTML，并在这个浏览器打开简报，再人手滚动预览。成片 **2880×1800**（不裁 16:9），Chrome **窗口内右侧 Side Panel**（约四分之一宽），菜单栏、标签栏和地址栏入画。分镜见 [docs/NEXT-TAKE.md](docs/NEXT-TAKE.md)。打字可加速，发送前空等切掉，打开到开滚的空等切掉，Agent 思考/等待段加速；打开简报放慢到能看清。
 
 <div align="center">
-  <video src="docs/demo/opensider.mp4" width="720" controls poster="docs/images/demo-poster.png">
-    <a href="docs/demo/opensider.mp4">Watch the demo</a>
+  <video src="docs/opensider.mp4" width="720" controls>
+    <a href="docs/opensider.mp4">Watch the demo</a>
   </video>
 </div>
 
