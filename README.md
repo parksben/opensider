@@ -1,6 +1,6 @@
 <div align="center">
   <br />
-  <img width="96" height="96" alt="OpenSider" src="https://github.com/user-attachments/assets/194031f2-ba0f-46e0-838a-140ce86ed360" />
+  <img width="96" height="96" alt="OpenSider" src="./docs/opensider.svg" />
   <h1>OpenSider</h1>
   <p>
     Chat with your local coding Agent from a Chromium side panel — no extra HTTP server, no cloud relay.
