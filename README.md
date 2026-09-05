@@ -48,19 +48,19 @@ https://github.com/user-attachments/assets/f0a9c654-b66e-43ef-a233-6942a30e83c6
 
 ### 2. 运行本机桥接
 
-macOS / Linux：
+macOS / Linux 在终端整段粘贴：
 
 ```bash
 curl -fsSL https://github.com/parksben/opensider/releases/latest/download/install.sh | bash
 ```
 
-Windows（在 PowerShell 或 Windows 终端里整段粘贴，不要用命令提示符）：
+Windows 先打开 **Windows PowerShell**（开始菜单搜 “PowerShell”，或按 Win+X 选「终端」/「Windows PowerShell」）。不要用「命令提示符」，也不要在命令前面再加 `powershell`。打开后整段粘贴回车：
 
 ```
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://github.com/parksben/opensider/releases/latest/download/install.ps1'))
 ```
 
-脚本会从同一个 Release 拉取对应系统的 Host 二进制，校验后再执行 `opensider install`。
+脚本会从同一个 Release 拉取对应系统的 Host 二进制，校验后再执行 `opensider install`。侧栏未连接时复制出来的也是这一行，请贴到 PowerShell 里跑。
 
 ### 3. 打开开发者模式并加载扩展
 
@@ -70,7 +70,7 @@ Windows（在 PowerShell 或 Windows 终端里整段粘贴，不要用命令提�
 
 也可以把 `opensider.crx` 拖进扩展页。Chrome 常常会拒绝拖入未上架的 `.crx`；被拒就改用上面的已解压目录，或先解压 `extension.zip`。桥接仍然要跑安装壳。
 
-若还没跑过脚本，侧栏会给出同一行命令。跑完后会自动连上，不必刷新扩展。
+若还没跑过脚本，侧栏会给出上面同一行命令（Windows 请贴进 PowerShell）。跑完后会自动连上，不必刷新扩展。
 
 ## 装好之后
 
