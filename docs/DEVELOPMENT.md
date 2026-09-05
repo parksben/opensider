@@ -28,7 +28,7 @@ pnpm dev
 
 改扩展后在扩展页点刷新。改 Host 后重新 `pnpm install-host`，再重连侧栏。
 
-当前 README 成片是 The Verge → 今日最热 AI 新闻 HTML → 人手滚动预览（`docs/opensider.mp4`，2880×1800，11.8s）。分镜见 [docs/NEXT-TAKE.md](./NEXT-TAKE.md)。不要把侧栏拖成独立窗口。
+当前 README 成片是 The Verge → 今日最热 AI 新闻 HTML → 人手滚动预览（`docs/opensider.mp4`，2880×1800，11.8s）。不要把侧栏拖成独立窗口。
 
 ## 工作区
 
@@ -55,7 +55,7 @@ Release 资产名必须和用户安装壳一致，见 TECH_DESIGN「发布与安
 ```
 cmd/opensider         唯一 Go 入口（无参=Host，install，pick）
 internal/             Host / install / pick / ACP
-docs/                 需求、技术设计、本文件；README logo / 成片 / 分镜也在这一层
+docs/                 需求、技术设计、本文件；README logo / 成片也在这一层
 packages/shared       扩展 ↔ Host 消息类型
 packages/extension    Chrome MV3 侧栏 / 内容脚本 / Service Worker
 scripts/install       用户壳脚本

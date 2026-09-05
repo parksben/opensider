@@ -458,8 +458,6 @@ docs/TECH_DESIGN.md   本文件：怎么做、为什么选这个方案
 docs/DEVELOPMENT.md   开发构建、Host 注册、工作区、打 CRX、tag 发 Release
 docs/logo.svg         README logo
 docs/opensider.mp4    README 演示视频（H.264）。The Verge → 今日最热 AI 新闻 HTML → Agent 在本窗口打开 → 人手滚动预览（2880×1800，11.8s，不裁 16:9；头 4s 压成 1.5s，原 4–31s 压成 6s）
-docs/NEXT-TAKE.md     演示分镜
-docs/MUSIC.md         成片 BGM 出处（CC BY）。打字可 setpts 加速，发送前空等硬切，Agent 流式/等待 4x–6x，新标签/产物/打开简报 1x–2x；BGM 始终 1x
 cmd/opensider       唯一 Go 入口（host / install / pick）
 internal/           Host / install / pick / ACP
 packages/shared     扩展 ↔ Host 消息类型（TS）
@@ -478,7 +476,7 @@ pnpm workspace 只编扩展。Host 用 Go。扩展用 Vite + `@crxjs/vite-plugin
 
 下一镜证明 **人用两三句话拜托侧栏、Agent 自己跨站取数、再交出能打开的 HTML**。开录停在 The Verge（备 TechCrunch / Wired）；不要 BBC / Reuters / CNN；prompt 只有两句人话，不列 URL。产物由 **Agent 在同一 Chrome 窗口打开**（localhost `openTab` 优先），不要人手 File → Open，不要把 Finder 当高潮。源站必须英文-only。击键走 macOS ABC/US，禁止拼音候选条。
 
-录制约束：侧栏约窗口 1/4 靠右；只采 Mac 内建屏（ffmpeg screen 0）。成片 **保持采集原分辨率**（本机内建屏常见 1440×900@2x → 2880×1800），禁止 crop / scale-to-1080 / pad 成 16:9。剪辑：打字 1.8x–2.5x；打完到发送的停顿硬切；Agent 思考/工具/流式 4x–6x；新标签落地、产物条、打开简报 1x–2x；滚动预览与用户点击 1x。BGM 用网上已授权的开源曲（CC0 / CC-BY），1x、不跟 setpts 升调（见 MUSIC.md）。结尾留到简报已打开并滚过、侧栏回合结束；不要在流式中途 SIGINT。
+录制约束：侧栏约窗口 1/4 靠右；只采 Mac 内建屏（ffmpeg screen 0）。成片 **保持采集原分辨率**（本机内建屏常见 1440×900@2x → 2880×1800），禁止 crop / scale-to-1080 / pad 成 16:9。剪辑：打字 1.8x–2.5x；打完到发送的停顿硬切；Agent 思考/工具/流式 4x–6x；新标签落地、产物条、打开简报 1x–2x；滚动预览与用户点击 1x。BGM 用已授权开源曲、1x、不跟 setpts 升调（当前成片：Wallpaper by Kevin MacLeod，[CC BY 3.0](https://creativecommons.org/licenses/by/3.0/)）。结尾留到简报已打开并滚过、侧栏回合结束；不要在流式中途 SIGINT。
 
 ## 发布与安装壳
 
