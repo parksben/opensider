@@ -428,7 +428,7 @@ CRX 安装包用 `scripts/keys/extension.pem` 签 CRX3，打包 ID 为 `clnpnldm
 Host 注册名：`com.opensider.host`  
 macOS 清单路径：`~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.opensider.host.json`
 
-用户：`releases/latest` 的 `install.sh` / `install.ps1` 下一份 `opensider` 并 `opensider install`，清单 `path` 指向 `~/.opensider/runtime/opensider`。开发：`pnpm install-host` = `go run ./cmd/opensider install --local`，必须 `go build` 出真实二进制拷到 runtime（**禁止**把 `go run` 写成 Native Host path，Chrome 保不住这个进程）。`install` 同时 `workspace.Ensure()`，马上就有 `AGENTS.md` / `browser/tools.json` / `outputs/`。macOS TCC 仍要求二进制不在 Desktop / Documents / Downloads。Host 日志只写 `~/.opensider/host.log`，不写 stderr。从 Node 时代留下的 `~/.opensider`（`PickFiles.app`、`runtime/packages`、旧 `session.json`）可能和 Go Host 打架；开发机应备份后重新 `install --local`。推送 `v*` tag 触发 Actions：darwin 在 macOS 开 cgo 编，linux/windows 交叉编译；Release 说明只列该版本 commit。桥接未注册时 SW 轮询 `connectNative`。不迁旧目录。
+用户：`releases/latest` 的 `install.sh` / `install.ps1` 下一份 `opensider` 并 `opensider install`，清单 `path` 指向 `~/.opensider/runtime/opensider`。开发：`pnpm install-host` = `go run ./cmd/opensider install --local`，必须 `go build` 出真实二进制拷到 runtime（**禁止**把 `go run` 写成 Native Host path，Chrome 保不住这个进程）。`install` 同时 `workspace.Ensure()`，马上就有 `AGENTS.md` / `browser/tools.json` / `outputs/`。macOS TCC 仍要求二进制不在 Desktop / Documents / Downloads。Host 日志只写 `~/.opensider/host.log`，不写 stderr。从 Node 时代留下的 `~/.opensider`（`PickFiles.app`、`runtime/packages`、旧 `session.json`）可能和 Go Host 打架；开发机应备份后重新 `install --local`。推送 `v*` tag 触发 Actions：darwin 在 macOS 开 cgo 编，linux/windows 交叉编译；Release 说明只列最近 3 个 commit。桥接未注册时 SW 轮询 `connectNative`。不迁旧目录。
 
 ## UI
 
@@ -506,7 +506,7 @@ pnpm workspace 只编扩展。Host 用 Go。扩展用 Vite + `@crxjs/vite-plugin
 |---|---|---|
 | `build-darwin` | `macos-latest` | Go 1.22+，`CGO_ENABLED=1`，产出 `opensider-darwin-arm64`；在同一台机器上再试 `GOARCH=amd64`（`CC=clang`），编得出来才上传 |
 | `build-cross` | `ubuntu-latest` | `CGO_ENABLED=0`，`GOOS=linux/windows` × `GOARCH=amd64/arm64`（Windows 带 `.exe`） |
-| `release` | `ubuntu-latest`（等前两个） | `pnpm install` + `pnpm --filter @opensider/extension build` **一次**，再跑 `pnpm pack-extension` 产出 `extension.zip` 与 `opensider.crx`；拷贝两份安装壳；下载二进制工件；写 `SHA256SUMS`；`scripts/release-notes.sh` 打 commit 列表；`gh release create` |
+| `release` | `ubuntu-latest`（等前两个） | `pnpm install` + `pnpm --filter @opensider/extension build` **一次**，再跑 `pnpm pack-extension` 产出 `extension.zip` 与 `opensider.crx`；拷贝两份安装壳；下载二进制工件；写 `SHA256SUMS`；`scripts/release-notes.sh` 打最近 3 个 commit；`gh release create` |
 
 扩展只在 `release` job 编一次，darwin / cross 不再装 Node。darwin 开 cgo 是为了本机 `pick`（AppKit）；linux / windows 交叉编译关 cgo，避免依赖目标系统的 C 工具链。macos-latest 现在是 Apple Silicon，darwin/amd64 属于尽力：SDK 够就编，不够就跳过，不挡发版。
 
@@ -520,7 +520,7 @@ Release 资产名必须和壳一致：
 - `install.sh` / `install.ps1`
 - `SHA256SUMS`
 
-`scripts/release-notes.sh` 找当前 tag/HEAD 之前最近的 `v*` tag（没有则为空），打印 `git log --pretty=format:'- %h %s'`。Release body 只有这份 commit 列表，不加产品介绍。
+`scripts/release-notes.sh` 对当前 tag/HEAD 打印 `git log --pretty=format:'- %h %s' -n 3`。Release body 只有最近 3 个 commit，不加产品介绍、不回溯整个 tag 区间。`.github/workflows/release.yml` 的 notes 步骤只跑这个脚本。
 
 ## 风险
 

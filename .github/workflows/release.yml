@@ -124,8 +124,8 @@ jobs:
             > SHA256SUMS
           ls -l
 
-      - name: Release notes
-        run: bash scripts/release-notes.sh > dist-release/NOTES.md
+      - name: Release notes (last 3 commits)
+        run: bash scripts/release-notes.sh HEAD 3 > dist-release/NOTES.md
 
       - name: Create GitHub Release
         env:

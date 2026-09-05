@@ -46,7 +46,7 @@ pnpm pack-extension
 
 ## tag 发 Release
 
-推送 `v*` tag 会跑 `.github/workflows/release.yml`：macOS 开 cgo 编 darwin 二进制，Ubuntu 交叉编译 linux / windows，再打 `opensider.crx`、`extension.zip`、安装壳和 `SHA256SUMS`，用该区间的 commit 列表发 GitHub Release。
+推送 `v*` tag 会跑 `.github/workflows/release.yml`：macOS 开 cgo 编 darwin 二进制，Ubuntu 交叉编译 linux / windows，再打 `opensider.crx`、`extension.zip`、安装壳和 `SHA256SUMS`，用最近 3 个 commit 发 GitHub Release。
 
 Release 资产名必须和用户安装壳一致，见 TECH_DESIGN「发布与安装壳」。
 
