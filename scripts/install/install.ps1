@@ -2,15 +2,58 @@
 # releases/latest, verify SHA-256, then run `opensider install`.
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
-# Windows PowerShell 5.1 defaults to TLS 1.0; GitHub requires 1.2+.
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-
-$RepoDownload = "https://github.com/parksben/opensider/releases/latest/download"
 
 function Write-InstallError {
     param([string]$Message)
     [Console]::Error.WriteLine("opensider install: $Message")
 }
+
+function Enable-Tls12 {
+    try {
+        $tls = [Net.SecurityProtocolType]::Tls12
+        if ([enum]::GetNames([Net.SecurityProtocolType]) -contains "Tls13") {
+            $tls = $tls -bor [Net.SecurityProtocolType]::Tls13
+        }
+        [Net.ServicePointManager]::SecurityProtocol = $tls
+    } catch {
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    }
+
+    # Make later Windows PowerShell 5.1 sessions default to TLS 1.2 (no admin).
+    foreach ($key in @(
+            "HKCU:\SOFTWARE\Microsoft\.NETFramework\v4.0.30319",
+            "HKCU:\SOFTWARE\Wow6432Node\Microsoft\.NETFramework\v4.0.30319"
+        )) {
+        try {
+            if (-not (Test-Path $key)) {
+                New-Item -Path $key -Force | Out-Null
+            }
+            New-ItemProperty -Path $key -Name SchUseStrongCrypto -Value 1 -PropertyType DWord -Force | Out-Null
+        } catch {
+            # roaming / locked profile
+        }
+    }
+}
+
+function Get-ReleaseFile {
+    param(
+        [Parameter(Mandatory = $true)][string]$Url,
+        [Parameter(Mandatory = $true)][string]$OutFile
+    )
+    $curl = Get-Command curl.exe -ErrorAction SilentlyContinue
+    if ($curl) {
+        & curl.exe -fsSL $Url -o $OutFile
+        if ($LASTEXITCODE -ne 0) {
+            throw "curl.exe exited $LASTEXITCODE"
+        }
+        return
+    }
+    Invoke-WebRequest -Uri $Url -OutFile $OutFile -UseBasicParsing
+}
+
+Enable-Tls12
+
+$RepoDownload = "https://github.com/parksben/opensider/releases/latest/download"
 
 $arch = $env:PROCESSOR_ARCHITECTURE
 switch ($arch) {
@@ -30,13 +73,13 @@ try {
     $binPath = Join-Path $work $name
 
     try {
-        Invoke-WebRequest -Uri "$RepoDownload/SHA256SUMS" -OutFile $sumsPath -UseBasicParsing
+        Get-ReleaseFile -Url "$RepoDownload/SHA256SUMS" -OutFile $sumsPath
     } catch {
         Write-InstallError "failed to download SHA256SUMS"
         throw
     }
     try {
-        Invoke-WebRequest -Uri "$RepoDownload/$name" -OutFile $binPath -UseBasicParsing
+        Get-ReleaseFile -Url "$RepoDownload/$name" -OutFile $binPath
     } catch {
         Write-InstallError "failed to download $name"
         throw
