@@ -2,6 +2,8 @@
 # releases/latest, verify SHA-256, then run `opensider install`.
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
+# Windows PowerShell 5.1 defaults to TLS 1.0; GitHub requires 1.2+.
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 $RepoDownload = "https://github.com/parksben/opensider/releases/latest/download"
 

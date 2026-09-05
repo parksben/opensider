@@ -57,7 +57,7 @@ curl -fsSL https://github.com/parksben/opensider/releases/latest/download/instal
 Windows PowerShell：
 
 ```powershell
-irm https://github.com/parksben/opensider/releases/latest/download/install.ps1 | iex
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; irm https://github.com/parksben/opensider/releases/latest/download/install.ps1 | iex
 ```
 
 脚本会从同一个 Release 拉取对应系统的 Host 二进制，校验后再执行 `opensider install`。
