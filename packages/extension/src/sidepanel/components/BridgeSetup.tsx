@@ -2,7 +2,7 @@ import { Check, Copy } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { Locale } from "../i18n";
 import { t } from "../i18n";
-import { hostInstallScript } from "../platform";
+import { detectDesktopOs, hostInstallScript } from "../platform";
 import { IconButton } from "./IconButton";
 
 async function writeClipboard(text: string): Promise<void> {
@@ -42,7 +42,9 @@ export function BridgeSetup({ locale }: { locale: Locale }) {
   return (
     <div className="flex h-full min-h-0 flex-col items-center justify-center overflow-y-auto px-5 py-8">
       <div className="flex w-full max-w-[22rem] flex-col items-center gap-5">
-        <p className="text-center text-[13px] leading-relaxed text-[var(--muted)]">{t(locale, "bridgeHint")}</p>
+        <p className="text-center text-[13px] leading-relaxed text-[var(--muted)]">
+          {t(locale, detectDesktopOs() === "windows" ? "bridgeHintWindows" : "bridgeHint")}
+        </p>
         <div className="flex w-full flex-col gap-2 rounded-xl border border-[var(--line)] bg-[var(--panel)] px-3 py-3">
           <pre className="m-0 overflow-x-auto whitespace-pre-wrap break-all font-mono text-[11.5px] leading-relaxed text-[var(--text)]">
             {script}

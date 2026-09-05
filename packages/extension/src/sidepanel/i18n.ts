@@ -112,6 +112,8 @@ const copy = {
     pickFiles: "Select multiple files",
     pickFolders: "Select multiple folders",
     bridgeHint: "Copy the script below and run it in a terminal. When it finishes, you can connect to the local Agent.",
+    bridgeHintWindows:
+      "Copy the script below and run it in PowerShell, not Command Prompt. When it finishes, you can connect to the local Agent.",
     pasteFailed: "Could not save the pasted screenshot.",
     pickPageFailed: "Open a regular http(s) page, then pick an element.",
     pickInjectFailed: "Could not start the page picker on this tab.",
@@ -245,6 +247,7 @@ const copy = {
     pickFiles: "选择多个文件",
     pickFolders: "选择多个文件夹",
     bridgeHint: "请复制下方脚本到终端/命令行中执行，完成后即可连接本地 Agent",
+    bridgeHintWindows: "请复制下方脚本到 PowerShell 中执行（不要用命令提示符），完成后即可连接本地 Agent",
     pasteFailed: "无法保存粘贴的截图。",
     pickPageFailed: "请先打开普通的 http(s) 页面，再拾取元素。",
     pickInjectFailed: "无法在这个标签页启动元素拾取。",

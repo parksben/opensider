@@ -16,7 +16,7 @@ export function detectDesktopOs(): DesktopOs {
 
 export function hostInstallScript(os: DesktopOs = detectDesktopOs()): string {
   if (os === "windows") {
-    return 'powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString(\'https://github.com/parksben/opensider/releases/latest/download/install.ps1\'))"';
+    return "[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://github.com/parksben/opensider/releases/latest/download/install.ps1'))";
   }
   return "curl -fsSL https://github.com/parksben/opensider/releases/latest/download/install.sh | bash";
 }
