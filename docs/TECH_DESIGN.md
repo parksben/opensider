@@ -486,8 +486,8 @@ pnpm workspace 只编扩展。Host 用 Go。扩展用 Vite + `@crxjs/vite-plugin
 
 `scripts/install/install.sh`（darwin / linux）与 `scripts/install/install.ps1`（Windows）是薄包装，不内嵌 Host 逻辑：
 
-1. 识别 OS / arch。POSIX：`uname -s` → `darwin` / `linux`；`uname -m` 把 `aarch64` 映射成 `arm64`、`x86_64` 映射成 `amd64`。Windows：`PROCESSOR_ARCHITECTURE` 为 `ARM64` 时下 `opensider-windows-arm64.exe`，否则 `opensider-windows-amd64.exe`。
-2. 从 `https://github.com/parksben/opensider/releases/latest/download/` 拉 `SHA256SUMS` 和对应二进制（名必须与 Release 资产一致）。代码与 Release 都在公开仓 `parksben/opensider`。Windows 安装一行用系统 `curl.exe`（自带现代 TLS），不要 `irm`：PowerShell 5.1 默认还是 TLS 1.0，GitHub 会报「未能创建 SSL/TLS 安全通道」。`install.ps1` 一进来就把 `[Net.ServicePointManager]::SecurityProtocol` 设成 `Tls12`，并写 HKCU `SchUseStrongCrypto`，让这台机器之后的 PS 5.1 默认走 TLS 1.2；下载优先 `curl.exe`，没有再退回 `Invoke-WebRequest`。
+1. 识别 OS / arch。POSIX：`uname -s` → `darwin` / `linux`；`uname -m` 把 `aarch64` 映射成 `arm64`、`x86_64` 映射成 `amd64`。Windows：先看 `PROCESSOR_ARCHITEW6432`（32 位 PowerShell 跑在 64 位系统上时 `PROCESSOR_ARCHITECTURE` 会是 `x86`），再看 `PROCESSOR_ARCHITECTURE`；`ARM64` 下 `opensider-windows-arm64.exe`，`AMD64` 下 `opensider-windows-amd64.exe`，纯 32 位 Windows 直接失败。
+2. 从 `https://github.com/parksben/opensider/releases/latest/download/` 拉 `SHA256SUMS` 和对应二进制（名必须与 Release 资产一致）。代码与 Release 都在公开仓 `parksben/opensider`。Windows 给小白的一行必须在「命令提示符」和 PowerShell 都能整段粘贴，所以外包 `powershell -NoProfile -ExecutionPolicy Bypass -Command "..."`，不依赖 `curl.exe`。下载前用 `-bor 3072` 打开 TLS 1.2（数值写法，旧 .NET 可能没有 `Tls12` 枚举），再用 `System.Net.WebClient.DownloadString` 拉脚本——PowerShell 5.1 默认还是 TLS 1.0，`irm` 打 GitHub 会报「未能创建 SSL/TLS 安全通道」。`install.ps1` 一进来同样 `-bor 3072`，写 HKCU `SchUseStrongCrypto` 让之后的 PS 5.1 默认走 TLS 1.2；脚本内下载只用 `WebClient`（走系统代理），下完 `Unblock-File` 去掉 MOTW，避免 SmartScreen 拦住刚下的 exe。
 3. 用本机 `sha256sum` / `shasum -a 256` 或 `Get-FileHash` 核对该文件；对不上或 SUMS 里没有这一行就退出。
 4. `chmod +x` 后 `exec ./opensider-<os>-<arch> install`（Windows 为 `.\opensider-windows-*.exe install`）。`--local` 只给仓库里的 `go run`，用户壳不传。
 5. 其它 OS / arch 立刻失败，文案写清支持范围。

@@ -1,5 +1,6 @@
 # Thin user installer: download the matching OpenSider binary from GitHub
 # releases/latest, verify SHA-256, then run `opensider install`.
+# Built for stock Windows 10/11: Windows PowerShell 5.1, no curl.exe, no admin.
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
@@ -9,14 +10,13 @@ function Write-InstallError {
 }
 
 function Enable-Tls12 {
-    try {
-        $tls = [Net.SecurityProtocolType]::Tls12
-        if ([enum]::GetNames([Net.SecurityProtocolType]) -contains "Tls13") {
-            $tls = $tls -bor [Net.SecurityProtocolType]::Tls13
+    # 3072 = Tls12, 12288 = Tls13. Numeric so older .NET without the enum still works.
+    foreach ($flag in @(12288, 3072)) {
+        try {
+            [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor $flag
+        } catch {
+            # Tls13 is missing on older OS
         }
-        [Net.ServicePointManager]::SecurityProtocol = $tls
-    } catch {
-        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
     }
 
     # Make later Windows PowerShell 5.1 sessions default to TLS 1.2 (no admin).
@@ -35,32 +35,37 @@ function Enable-Tls12 {
     }
 }
 
+function Get-WindowsArch {
+    if ($env:PROCESSOR_ARCHITEW6432) {
+        return $env:PROCESSOR_ARCHITEW6432
+    }
+    return $env:PROCESSOR_ARCHITECTURE
+}
+
 function Get-ReleaseFile {
     param(
         [Parameter(Mandatory = $true)][string]$Url,
         [Parameter(Mandatory = $true)][string]$OutFile
     )
-    $curl = Get-Command curl.exe -ErrorAction SilentlyContinue
-    if ($curl) {
-        & curl.exe -fsSL $Url -o $OutFile
-        if ($LASTEXITCODE -ne 0) {
-            throw "curl.exe exited $LASTEXITCODE"
-        }
-        return
+    $wc = New-Object System.Net.WebClient
+    try {
+        $wc.Headers.Add("User-Agent", "opensider-install")
+        $wc.DownloadFile($Url, $OutFile)
+    } finally {
+        $wc.Dispose()
     }
-    Invoke-WebRequest -Uri $Url -OutFile $OutFile -UseBasicParsing
 }
 
 Enable-Tls12
 
 $RepoDownload = "https://github.com/parksben/opensider/releases/latest/download"
 
-$arch = $env:PROCESSOR_ARCHITECTURE
+$arch = Get-WindowsArch
 switch ($arch) {
     "ARM64" { $name = "opensider-windows-arm64.exe" }
     "AMD64" { $name = "opensider-windows-amd64.exe" }
     default {
-        Write-InstallError "unsupported architecture '$arch' (need AMD64 or ARM64)"
+        Write-InstallError "unsupported architecture '$arch' (need 64-bit Windows: AMD64 or ARM64)"
         exit 1
     }
 }
@@ -75,14 +80,18 @@ try {
     try {
         Get-ReleaseFile -Url "$RepoDownload/SHA256SUMS" -OutFile $sumsPath
     } catch {
-        Write-InstallError "failed to download SHA256SUMS"
+        Write-InstallError "failed to download SHA256SUMS (check network access to github.com)"
         throw
     }
     try {
         Get-ReleaseFile -Url "$RepoDownload/$name" -OutFile $binPath
     } catch {
-        Write-InstallError "failed to download $name"
+        Write-InstallError "failed to download $name (check network access to github.com)"
         throw
+    }
+
+    if (Get-Command Unblock-File -ErrorAction SilentlyContinue) {
+        Unblock-File -LiteralPath $binPath -ErrorAction SilentlyContinue
     }
 
     $expected = $null

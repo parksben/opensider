@@ -54,10 +54,10 @@ macOS / Linux：
 curl -fsSL https://github.com/parksben/opensider/releases/latest/download/install.sh | bash
 ```
 
-Windows PowerShell：
+Windows（命令提示符或 PowerShell 均可整段粘贴）：
 
-```powershell
-curl.exe -fsSL https://github.com/parksben/opensider/releases/latest/download/install.ps1 | iex
+```
+powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://github.com/parksben/opensider/releases/latest/download/install.ps1'))"
 ```
 
 脚本会从同一个 Release 拉取对应系统的 Host 二进制，校验后再执行 `opensider install`。
