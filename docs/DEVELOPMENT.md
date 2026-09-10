@@ -1,6 +1,6 @@
 # OpenSider — 开发文档
 
-> 给改代码的人看。使用者安装请看仓库根目录 [README.md](../README.md)。需求与方案分别在 [REQUIREMENTS.md](./REQUIREMENTS.md)、[TECH_DESIGN.md](./TECH_DESIGN.md)。README 只写产品、演示和使用者安装/使用，不含开发搭建。
+> 给改代码的人看。使用者安装请看仓库根目录 [README.md](../README.md)。需求与方案分别在 [REQUIREMENTS.md](./REQUIREMENTS.md)、[TECH_DESIGN.md](./TECH_DESIGN.md)。开发协作约定见仓库根 [AGENTS.md](../AGENTS.md)（不是 `~/.opensider/workspace/AGENTS.md`）。README 只写产品、演示和使用者安装/使用，不含开发搭建。
 
 本机需要 Go、Node 22+、pnpm。用户侧不需要这些。
 
@@ -53,6 +53,7 @@ Release 资产名必须和用户安装壳一致，见 TECH_DESIGN「发布与安
 ## 仓库结构
 
 ```
+AGENTS.md             仓库根开发协作约定（不是 ~/.opensider/workspace/AGENTS.md）
 cmd/opensider         唯一 Go 入口（无参=Host，install，pick）
 internal/             Host / install / pick / ACP
 docs/                 需求、技术设计、本文件；README logo / 成片也在这一层
