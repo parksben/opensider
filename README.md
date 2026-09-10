@@ -2,7 +2,7 @@
   <br />
   <img alt="OpenSider" src="./docs/banner.svg" />
   <p>
-    你期待已久的浏览器自动化工具
+    为你的浏览器插上AI的翅膀
   </p>
 </div>
 

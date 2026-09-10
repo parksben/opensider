@@ -2,7 +2,7 @@
   <br />
   <img alt="OpenSider" src="./docs/banner.svg" />
   <p>
-    The browser automation tool you've been waiting for
+    Give your browser AI wings
   </p>
 </div>
 
