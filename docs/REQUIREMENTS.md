@@ -10,12 +10,12 @@
 
 ## 文档分层
 
-- **`README.md`**：面向使用者的产品页。居中标题下只放一句中文 slogan（你期待已久的浏览器自动化工具），不要英文副标题。接着一段产品介绍：OpenSider 是浏览器扩展，支持在浏览器中驱动本地 Agent（Claude Code CLI、Copilot CLI、OpenCode CLI、Cursor CLI 等，不要把 Cursor 写在最前）进行网页信息采集、网页自动化操作等工作。再列恰好 3 条加粗要点（在浏览器中与 Agent 协作 / 自动载入网页上下文 / 数据持久化），不要第 4 条，不要单独开「适用场景」。然后是演示视频（Agent 提炼网页信息、生成资讯榜单并在浏览器打开；不要写分辨率 / 加速 / IME 等录制规格），再是从 GitHub Release 下载 `extension.zip` 未打包加载的四步安装（安装段前先以引文说明适用于 Chrome / Edge / Brave 等 Chromium 内核浏览器、需本机已有 Agent CLI）。桥接安装命令由侧栏给出，不要把一行壳 / SHA256 / Host 二进制下载写成 README 主流程。不写 pnpm / Go、仓库树、开发入口或「见 DEVELOPMENT.md」，也不把 `packages/extension/dist` 当成用户加载路径。
+- **`README.md`**：面向使用者的产品页。居中标题下只放一句中文 slogan（你期待已久的浏览器自动化工具），不要英文副标题。接着一段产品介绍：OpenSider 是浏览器扩展，支持在浏览器中驱动本地 Agent（Claude Code CLI、Copilot CLI、OpenCode CLI、Cursor CLI 等，不要把 Cursor 写在最前）进行网页信息采集、网页自动化操作等工作。再列恰好 3 条加粗要点（在浏览器中与 Agent 协作 / 自动载入网页上下文 / 数据持久化），不要第 4 条，不要单独开「适用场景」。然后是演示视频（Agent 提炼网页信息、生成资讯榜单并在浏览器打开；不要写分辨率 / 加速 / IME 等录制规格），再是从 GitHub Release 下载 `extension.zip` 未打包加载的四步安装（安装段前先以引文说明适用于 Chrome / Edge / Brave 等 Chromium 内核浏览器、需本机已有 Agent CLI）。桥接安装命令由侧栏给出，不要把一行壳 / SHA256 / Host 二进制下载写成 README 主流程。不写 pnpm / Go、仓库树、开发入口或「见 DEVELOPMENT.md」，也不把 `packages/extension/dist` 当成用户加载路径。GitHub 仓库简介取这段正文的首句：英文在前、中文在后，中间一个全角「｜」（简介字段只能单行、上限 350 字符；两句逐字保留正好 350，不要再加空格或其他分隔符，也不要只放中文或只放英文）。
 - **`README-en.md`**（仓库根）：README 的英文版，与中文版同构（英文 slogan + 同样 3 条要点、视频演示、四步安装）。两版正文首句前各以引文（blockquote）互链：中文版指 `./README-en.md`，英文版指 `./README.md`。
 - **`AGENTS.md`**（仓库根）：开发协作约定（先文档后代码、小步 commit 等）。**不是** Host 写入的 `~/.opensider/workspace/AGENTS.md`（Agent 工作区页面协议）。
 - **`docs/DEVELOPMENT.md`**：面向开发。本地构建、`pnpm install-host`、工作区布局、仓库结构、打 `extension.zip`、推 `v*` tag 发 Release。
 - **本文件**：记产品做什么、为什么。
-- **`docs/TECH_DESIGN.md`**：记怎么做、为什么选这个方案。README 的 logo 与演示视频放 `docs/` 第一层（`docs/logo.svg`、`docs/opensider.mp4`），避免依赖 `packages/` 路径。不要再拆 `docs/images/` / `docs/demo/`。
+- **`docs/TECH_DESIGN.md`**：记怎么做、为什么选这个方案。README 的 logo、banner 与演示视频放 `docs/` 第一层（`docs/logo.svg`、`docs/banner.svg`、`docs/opensider.mp4`），避免依赖 `packages/` 路径。不要再拆 `docs/images/` / `docs/demo/`。
 
 ## 非目标（v1）
 
@@ -101,6 +101,24 @@
 ### 跨页工作
 
 因为工作区固定，用户可以在 A 页讨论、切到 B 页继续，让当前会话结合两页信息和本机文件做更复杂的事。换一个会话不会丢掉工作区里的页面快照，只是换一条聊天上下文。跨页的默认做法是 `openTab` 新开 http(s)，而不是 `navigate` 覆盖正在看的页（未保存编辑时扩展还会拦住覆盖）。
+
+### README Banner 概念图
+
+README 顶部概念图，一段横幅（约 3.1:1）说清产品形态。成片放 [`docs/banner.svg`](./banner.svg)。**当前只是候选稿，尚未挂进 README**，定稿后再决定插入位置。
+
+画面从左到右三段，位置固定：
+
+1. **左：浏览器窗口**。带窗口外观（红黄绿 / 灰点、标签页、地址栏）和一张抽象网页线框；窗口**内部右侧**画出侧栏聊天面板，表明对话入口在浏览器里（不是独立窗口）。
+2. **中：产品本体**。扩展品牌图标 + 产品名 **OpenSider**，作为浏览器与本机 Agent 之间的连接枢纽。
+3. **右：本机 Agent**。Claude Code、GitHub Copilot、OpenCode、Cursor 四家自上而下各占一行，带标记与名字。顺序沿用 README 的 CLI 顺序，Cursor 不放最前。
+
+要求：
+
+- **用图形表达连接，不靠文字说明**：浏览器到枢纽是**双向**数据流（两条并行的线 + 流动光点，方向相反），枢纽到四家 Agent 是四条扇形分叉的线（光点向外流）。
+- 不自造文案。除了产品名与四家的名字，最多只写分区标签（BROWSER / LOCAL AGENTS）。
+- 四家的标记用**示意性简化几何**，不引入官方素材、不引外链图片；只用于说明「可连接哪些 Agent」，不代表这些品牌为本产品背书。
+- 深浅两种主题下都要能读（README 可能被系统深色模式渲染），自适应不靠调用方传参。
+- 图上文字与形状不含 emoji。
 
 ### 演示视频
 
