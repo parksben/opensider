@@ -3,18 +3,22 @@
   <img width="96" height="96" alt="OpenSider" src="./docs/logo.svg" />
   <h1>OpenSider</h1>
   <p>
-    Chat with your local coding Agent from a Chromium side panel — no extra HTTP server, no cloud relay.
+    你期待已久的浏览器自动化工具
   </p>
 </div>
 
 <br />
 
-OpenSider 把本机 Agent 接到 Chromium 侧栏里。已经在用 Claude Code CLI、Copilot CLI、OpenCode CLI、Cursor 或其它 ACP CLI 的话，打开侧栏就能对着当前页聊。
+OpenSider 是一个浏览器扩展程序，支持在浏览器侧边栏中连接本地 Agent（Claude Code CLI、Copilot CLI、OpenCode CLI、Cursor CLI 等本地 Agent 工具）。打开侧边栏即可指挥 Agent 干活，对浏览器中的多个网页进行自动化操作。
 
-- 一边看文档、产品页或后台，一边在侧栏里和本机 Agent 说话
-- Agent 能读当前页、点按钮、填表、截图，不用只在终端里猜页面长什么样
-- 多条会话，记录留在本机；卸了扩展再装回来还在
-- 工具调用要不要先问你，可以自己调
+- **在浏览器中与 Agent 协作**  
+  在浏览器侧边栏中直接与本地 Agent 对话，不用开启命令行或终端工具。
+
+- **自动载入浏览器上下文**  
+  无需告诉 Agent 当前你在看什么网页，Agent 能够自动拿到浏览器中所加载的网页的信息，并进行自动化操作。
+
+- **数据持久化**  
+  所有会话数据持久保存在本地，扩展更新或重装后数据不会丢。
 
 ## 演示
 

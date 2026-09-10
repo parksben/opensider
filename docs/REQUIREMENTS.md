@@ -10,7 +10,7 @@
 
 ## 文档分层
 
-- **`README.md`**：面向使用者的产品页。标题下一句说是什么；接着把支持的 CLI（Claude Code、Copilot、OpenCode、Cursor 等，不要把 Cursor 写在最前）和 3–4 条使用场景揉在一段里，放在「演示」前面，不要单独开「适用场景」。然后是演示视频（Agent 提炼网页信息、生成资讯榜单并在浏览器打开；不要写分辨率 / 加速 / IME 等录制规格），再是从 GitHub Release 下载 `extension.zip` 未打包加载的五步安装。桥接安装命令由侧栏给出，不要把一行壳 / SHA256 / Host 二进制下载写成 README 主流程。不写 pnpm / Go、仓库树、开发入口或「见 DEVELOPMENT.md」，也不把 `packages/extension/dist` 当成用户加载路径。
+- **`README.md`**：面向使用者的产品页。居中标题下只放一句中文 slogan（你期待已久的浏览器自动化工具），不要英文副标题。接着一段产品介绍：OpenSider 是浏览器扩展，在侧边栏连接本地 Agent（Claude Code CLI、Copilot CLI、OpenCode CLI、Cursor CLI 等，不要把 Cursor 写在最前），打开侧边栏即可指挥 Agent 对多个网页做自动化。再列恰好 3 条加粗要点（在浏览器中与 Agent 协作 / 自动载入浏览器上下文 / 数据持久化），不要第 4 条，不要单独开「适用场景」。然后是演示视频（Agent 提炼网页信息、生成资讯榜单并在浏览器打开；不要写分辨率 / 加速 / IME 等录制规格），再是从 GitHub Release 下载 `extension.zip` 未打包加载的五步安装。桥接安装命令由侧栏给出，不要把一行壳 / SHA256 / Host 二进制下载写成 README 主流程。不写 pnpm / Go、仓库树、开发入口或「见 DEVELOPMENT.md」，也不把 `packages/extension/dist` 当成用户加载路径。
 - **`docs/DEVELOPMENT.md`**：面向开发。本地构建、`pnpm install-host`、工作区布局、仓库结构、打 `extension.zip`、推 `v*` tag 发 Release。
 - **本文件**：记产品做什么、为什么。
 - **`docs/TECH_DESIGN.md`**：记怎么做、为什么选这个方案。README 的 logo 与演示视频放 `docs/` 第一层（`docs/logo.svg`、`docs/opensider.mp4`），避免依赖 `packages/` 路径。不要再拆 `docs/images/` / `docs/demo/`。
