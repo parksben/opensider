@@ -29,7 +29,8 @@
     .wordmark{font-size:58px;font-weight:600;letter-spacing:-0.8px;fill:var(--ink)}
     .sub{font-size:19px;letter-spacing:1.4px;fill:var(--muted)}
     .chipname{font-size:27px;font-weight:500;fill:var(--ink)}
-    .chipcli{font-size:21px;font-weight:500;fill:var(--muted)}
+    /* 不设 font-size：继承 .chipname，跟品牌名同字号，改上面不会脱节 */
+    .chipcli{fill:var(--muted)}
     .bgf{fill:url(#bg-grad)}
     .stop-a{stop-color:var(--bg-a)}
     .stop-b{stop-color:var(--bg-b)}
