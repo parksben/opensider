@@ -459,7 +459,7 @@ docs/REQUIREMENTS.md  需求：做什么、为什么
 docs/TECH_DESIGN.md   本文件：怎么做、为什么选这个方案
 docs/DEVELOPMENT.md   开发构建、Host 注册、工作区、打 CRX、tag 发 Release
 docs/logo.svg         README logo
-docs/opensider.mp4    README 演示视频（H.264）。The Verge → 今日最热 AI 新闻 HTML → Agent 在本窗口打开 → 人手滚动预览（2880×1800，11.8s，不裁 16:9；头 4s 压成 1.5s，原 4–31s 压成 6s）
+docs/opensider.mp4    README 演示视频：Agent 提炼网页信息、生成资讯榜单并在浏览器打开
 cmd/opensider       唯一 Go 入口（host / install / pick）
 internal/           Host / install / pick / ACP
 packages/shared     扩展 ↔ Host 消息类型（TS）
@@ -474,11 +474,7 @@ pnpm workspace 只编扩展。Host 用 Go。扩展用 Vite + `@crxjs/vite-plugin
 
 ## 演示录制
 
-产品侧栏 = Chrome **Side Panel**（manifest `side_panel` + `sidePanel` 权限 + `openPanelOnActionClick`），不是 `default_popup`。点工具栏图标时，聊天 UI 必须和网页停在同一窗口右侧。
-
-下一镜证明 **人用两三句话拜托侧栏、Agent 自己跨站取数、再交出能打开的 HTML**。开录停在 The Verge（备 TechCrunch / Wired）；不要 BBC / Reuters / CNN；prompt 只有两句人话，不列 URL。产物由 **Agent 在同一 Chrome 窗口打开**（localhost `openTab` 优先），不要人手 File → Open，不要把 Finder 当高潮。源站必须英文-only。击键走 macOS ABC/US，禁止拼音候选条。
-
-录制约束：侧栏约窗口 1/4 靠右；只采 Mac 内建屏（ffmpeg screen 0）。成片 **保持采集原分辨率**（本机内建屏常见 1440×900@2x → 2880×1800），禁止 crop / scale-to-1080 / pad 成 16:9。剪辑：打字 1.8x–2.5x；打完到发送的停顿硬切；Agent 思考/工具/流式 4x–6x；新标签落地、产物条、打开简报 1x–2x；滚动预览与用户点击 1x。BGM 用已授权开源曲、1x、不跟 setpts 升调（当前成片：Wallpaper by Kevin MacLeod，[CC BY 3.0](https://creativecommons.org/licenses/by/3.0/)）。结尾留到简报已打开并滚过、侧栏回合结束；不要在流式中途 SIGINT。
+产品侧栏 = Chrome **Side Panel**（manifest `side_panel` + `sidePanel` 权限 + `openPanelOnActionClick`），不是 `default_popup`。README「演示」只写视频在演示什么：OpenSider 会话里让 Agent 提炼网页信息、生成资讯榜单并在浏览器打开。不要把分辨率、加速、IME 等录制规格写进 README。
 
 ## 发布与安装壳
 

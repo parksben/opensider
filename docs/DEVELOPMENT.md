@@ -28,7 +28,7 @@ pnpm dev
 
 改扩展后在扩展页点刷新。改 Host 后重新 `pnpm install-host`，再重连侧栏。
 
-当前 README 成片是 The Verge → 今日最热 AI 新闻 HTML → 人手滚动预览（`docs/opensider.mp4`，2880×1800，11.8s）。不要把侧栏拖成独立窗口。
+README 演示视频见 `docs/opensider.mp4`：Agent 提炼网页信息、生成资讯榜单并在浏览器打开。不要把侧栏拖成独立窗口。
 
 ## 工作区
 

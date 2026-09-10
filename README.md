@@ -20,7 +20,7 @@ OpenSider 是一个 Chromium 侧栏：用自己的聊天面板连接本机 Agent
 
 ## 演示
 
-在 [The Verge](https://www.theverge.com/) 上用两句人话，让 Agent 去全网找今天最热的 AI 新闻、按热度排榜、写成 HTML，并在这个浏览器打开简报，再人手滚动预览。成片 **2880×1800**（不裁 16:9），Chrome **窗口内右侧 Side Panel**（约四分之一宽），菜单栏、标签栏和地址栏入画。打字可加速，发送前空等切掉，打开到开滚的空等切掉，Agent 思考/等待段加速；打开简报放慢到能看清。
+这段视频演示如何在 OpenSider 会话里让 Agent 提炼网页信息，并生成一份资讯榜单。生成后由 Agent 在浏览器中打开，方便直接预览。
 
 https://github.com/user-attachments/assets/f0a9c654-b66e-43ef-a233-6942a30e83c6
 
