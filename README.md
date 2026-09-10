@@ -60,7 +60,7 @@ Windows 先打开 **Windows PowerShell**（开始菜单搜 “PowerShell”，�
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://github.com/parksben/opensider/releases/latest/download/install.ps1'))
 ```
 
-脚本会从同一个 Release 拉取对应系统的 Host 二进制，校验后再执行 `opensider install`。侧栏未连接时复制出来的也是这一行，请贴到 PowerShell 里跑。
+脚本会从同一个 Release 拉取对应系统的 Host 二进制，校验后再执行 `opensider install`。若本机已装 Claude Code，`opensider install` 还会自动把 ACP 适配器装到 `~/.opensider/runtime/claude-acp`。侧栏未连接时复制出来的也是这一行，请贴到 PowerShell 里跑。
 
 ### 3. 打开开发者模式并加载扩展
 

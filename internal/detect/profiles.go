@@ -117,6 +117,8 @@ func Profiles() []AgentProfile {
 			Name: "Claude Code",
 			Mark: "claude",
 			Launches: []Launch{
+				{Command: filepath.Join(paths.ClaudeACPBinDir(), "claude-agent-acp"), Args: nil},
+				{Command: filepath.Join(paths.ClaudeACPBinDir(), "claude-code-acp"), Args: nil},
 				{Command: "claude-agent-acp", Args: nil},
 				{Command: "claude-code-acp", Args: nil},
 				{Command: filepath.Join(home, ".local", "bin", "claude-agent-acp"), Args: nil},
@@ -131,7 +133,7 @@ func Profiles() []AgentProfile {
 			ContextFiles:   []string{"AGENTS.md", "CLAUDE.md"},
 			VendorPrefixes: []string{"_claude/"},
 			Caps:           stdCaps(protocol.AgentCaps{Todos: true}),
-			LoginHint:      "Install Claude Code and `npm i -g @agentclientprotocol/claude-agent-acp`, then sign in.",
+			LoginHint:      "Re-run OpenSider install to add the ACP adapter, then sign in with `claude`.",
 		},
 		{
 			ID:   "codex",

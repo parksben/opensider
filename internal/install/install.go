@@ -67,6 +67,10 @@ func Run(local bool) error {
 	fmt.Printf("Workspace: %s\n", paths.WorkspaceDir())
 	fmt.Printf("Extension: %s\n", paths.ExtensionDir())
 	fmt.Printf("Manifests: %s\n", strings.Join(dirs, ", "))
+	if err := EnsureClaudeACP(); err != nil {
+		fmt.Printf("Claude Code ACP setup did not finish: %s\nHost install succeeded.\n", err)
+		log.Log("claude acp setup failed: " + err.Error())
+	}
 	log.Log("install complete host=" + abs)
 	return nil
 }
