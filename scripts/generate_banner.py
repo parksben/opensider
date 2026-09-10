@@ -18,6 +18,7 @@
 """
 
 import math
+import re
 import sys
 from pathlib import Path
 
@@ -25,6 +26,8 @@ from pathlib import Path
 sys.dont_write_bytecode = True
 
 import generate_icon as gi
+
+BRAND_DIR = Path(__file__).resolve().parent / "brand"
 
 # ---------------------------------------------------------------- 画布与布局
 
@@ -64,17 +67,20 @@ def chip_cy(i: int) -> float:
 # ---------------------------------------------------------------- 中段图标
 
 
-def icon_group(cx: float, cy: float, size: float) -> str:
-    """把 generate_icon 的立方体 + conic 风车按 size 居中画在 (cx, cy)。"""
+def icon_group(cx: float, cy: float, size: float, step: int = WEDGE_STEP) -> str:
+    """把 generate_icon 的立方体 + conic 风车按 size 居中画在 (cx, cy)。
+
+    step 是扇形步长：164px 的枢纽用 2°，20px 的侧栏小图标用 6° 就够。
+    """
     scale = size / 512.0
     wedges = []
-    for deg in range(0, 360, WEDGE_STEP):
-        a1, a2 = math.radians(deg), math.radians(deg + WEDGE_STEP)
+    for deg in range(0, 360, step):
+        a1, a2 = math.radians(deg), math.radians(deg + step)
         x1 = gi.CX + gi.WEDGE_R * math.cos(a1)
         y1 = gi.CY + gi.WEDGE_R * math.sin(a1)
         x2 = gi.CX + gi.WEDGE_R * math.cos(a2)
         y2 = gi.CY + gi.WEDGE_R * math.sin(a2)
-        r, g, b = gi.color_at(deg + WEDGE_STEP / 2)
+        r, g, b = gi.color_at(deg + step / 2)
         wedges.append(
             f'<polygon points="{gi.CX},{gi.CY} {x1:.1f},{y1:.1f} {x2:.1f},{y2:.1f}"'
             f' fill="#{r:02X}{g:02X}{b:02X}"/>'
@@ -118,68 +124,105 @@ def fan_path(i: int) -> str:
 
 
 # ---------------------------------------------------------------- 卡片标记
+#
+# 四家标记都用各品牌官方矢量，不手抄 path、不改形状，只换填充色。
+# 上游文件整份存 scripts/brand/（来源与商标说明见 docs/TECH_DESIGN.md）。
+
+MARK_SIZE = 42.0  # 标记在 48 方框里的目标高度，各留 3 的余量
+_PATH_TAG = re.compile(r"<path\b[^>]*>")
+_D_ATTR = re.compile(r'\sd="([^"]*)"')
+_FILL_ATTR = re.compile(r'\sfill="([^"]*)"')
+
+
+def upstream_paths(filename: str) -> list:
+    """读 scripts/brand/<filename>，每条 <path> 给一个 {d, fill, fill-rule, clip-rule}。
+
+    上游 fill 只用来认出「是哪条 path」，不直接沿用：颜色由 banner 自己给，
+    同一条 path 才能在深浅两套主题里复用。
+    """
+    svg = (BRAND_DIR / filename).read_text(encoding="utf-8")
+    tags = _PATH_TAG.findall(svg)
+    if not tags:
+        raise ValueError("{}: 没找到 <path>".format(filename))
+    out = []
+    for tag in tags:
+        fm = _FILL_ATTR.search(tag)
+        item = {"d": _D_ATTR.search(tag).group(1), "fill": fm.group(1) if fm else None}
+        for name in ("fill-rule", "clip-rule"):
+            m = re.search(r'\s{0}="([^"]*)"'.format(name), tag)
+            if m:
+                item[name] = m.group(1)
+        out.append(item)
+    return out
+
+
+def _mark_group(cx: float, cy: float, box: tuple, body: str) -> str:
+    """把上游坐标系里的标记按实测 bbox 归一后居中画在 (cx, cy)。
+
+    box 是标记本体的实测 bbox（x, y, w, h），不是上游 viewBox——上游
+    viewBox 里常带无关留白或整块底板，按它缩放会偏小、偏位。
+    """
+    bx, by, bw, bh = box
+    scale = MARK_SIZE / bh
+    return (
+        f'  <g transform="translate({cx} {cy}) scale({scale:.6f})'
+        f' translate({-bx:.3f} {-by:.3f})">\n    {body}\n  </g>'
+    )
+
+
+def _path_tag(item: dict, cls=None, fill=None) -> str:
+    attrs = ['d="{}"'.format(item["d"])]
+    for name in ("fill-rule", "clip-rule"):
+        if name in item:
+            attrs.append('{}="{}"'.format(name, item[name]))
+    if fill:
+        attrs.append('fill="{}"'.format(fill))
+    if cls:
+        attrs.append('class="{}"'.format(cls))
+    return "<path {} />".format(" ".join(attrs))
+
+
+def _pick(filename: str, fill: str) -> dict:
+    """按上游 fill 认出要的那条 path；认不出就报错，别静默画少一笔。"""
+    hits = [p for p in upstream_paths(filename) if p["fill"] == fill]
+    if len(hits) != 1:
+        raise ValueError(
+            "{}: 期望 1 条 fill={} 的 <path>，实际 {} 条".format(filename, fill, len(hits))
+        )
+    return hits[0]
 
 
 def mark_claude(cx: float, cy: float) -> str:
-    """放射花：12 片由中心向外收尖的细花瓣。花瓣要细，粗了就糊成一坨。"""
-    petal = (
-        "M0,-22 C1.8,-22 2.6,-11 2.6,-6 C2.6,-2 1.6,0 0,0 "
-        "C-1.6,0 -2.6,-2 -2.6,-6 C-2.6,-11 -1.8,-22 0,-22 Z"
+    """Claude 星标：官方橙那条 path，同文件其余 path 是 "Claude Code" 字标。"""
+    star = _pick("claude-code.svg", "#D97757")
+    return _mark_group(
+        cx, cy, (0.17, 1.10, 25.00, 25.00), _path_tag(star, fill="#D97757")
     )
-    rays = "".join(
-        f'<path d="{petal}" transform="rotate({i * 30})"/>' for i in range(12)
-    )
-    return f'  <g transform="translate({cx} {cy})" fill="#D97757">{rays}</g>'
 
 
 def mark_copilot(cx: float, cy: float) -> str:
-    """护目面罩：圆角头盔 + 下颌缺口，中间两个镂空竖眼。
-
-    别做成「圆角方框 + 两个居中竖条」——缩到 README 宽度就只剩一对白棍，
-    看着像暂停键。下颌缺口是把它读成「脸」的关键。
-    """
-    face = (
-        "M0,-19 C-11.6,-19 -21,-9.6 -21,2 V19 H-8 V15 "
-        "C-8,12.4 -3.6,10.4 0,10.4 C3.6,10.4 8,12.4 8,15 V19 H21 V2 "
-        "C21,-9.6 11.6,-19 0,-19 Z"
+    """GitHub Octicons 的 copilot-24：头部轮廓 + 两只眼。"""
+    body = "\n    ".join(
+        _path_tag(p, cls="mkf") for p in upstream_paths("github-copilot.svg")
     )
-    return (
-        f'  <g transform="translate({cx} {cy})" class="mkf">\n'
-        f'    <path d="{face}"/>\n'
-        f'    <rect x="-8.5" y="-8" width="6" height="11" rx="3" class="eyef"/>\n'
-        f'    <rect x="2.5" y="-8" width="6" height="11" rx="3" class="eyef"/>\n'
-        f"  </g>"
-    )
+    return _mark_group(cx, cy, (0.0, 0.0, 24.0, 24.0), body)
 
 
 def mark_opencode(cx: float, cy: float) -> str:
-    """终端框：圆角方框 + 提示符 `>_`。"""
-    return (
-        f'  <g transform="translate({cx} {cy})" class="mk">\n'
-        f'    <rect x="-19" y="-19" width="38" height="38" rx="11"/>\n'
-        f'    <path d="M-8,-6 L-1,1 L-8,8"/>\n'
-        f'    <path d="M2,8 H9"/>\n'
-        f"  </g>"
-    )
+    """opencode favicon：外框 + 内方块，丢掉深色底板（banner 里不需要垫底）。"""
+    inner = _pick("opencode.svg", "#5A5858")
+    outer = [p for p in upstream_paths("opencode.svg") if p["fill"] != "#5A5858"]
+    if len(outer) != 1:
+        raise ValueError("opencode.svg: 外框 path 不止一条（{} 条）".format(len(outer)))
+    body = _path_tag(outer[0], cls="mkf") + _path_tag(inner, cls="mkdim")
+    return _mark_group(cx, cy, (128.0, 96.0, 256.0, 320.0), body)
 
 
 def mark_cursor(cx: float, cy: float) -> str:
-    """等轴立方体：尖顶六边形 + 中心三条棱。"""
-    r = 21.0
-    rx = r * math.sqrt(3) / 2
-    hexagon = (
-        f"M0,{-r:.1f} L{rx:.1f},{-r / 2:.1f} L{rx:.1f},{r / 2:.1f} "
-        f"L0,{r:.1f} L{-rx:.1f},{r / 2:.1f} L{-rx:.1f},{-r / 2:.1f} Z"
-    )
-    spokes = "".join(
-        f'<path d="M0,0 L{px:.1f},{py:.1f}"/>'
-        for px, py in ((0, -r), (rx, r / 2), (-rx, r / 2))
-    )
-    return (
-        f'  <g transform="translate({cx} {cy})" class="mk3">\n'
-        f'    <path d="{hexagon}"/>\n'
-        f"    {spokes}\n"
-        f"  </g>"
+    """Cursor 立方体：取官方 favicon 里那条立方体，丢掉圆角底板与描边层。"""
+    cube = _pick("cursor.svg", "#edecec")
+    return _mark_group(
+        cx, cy, (96.0, 73.0, 320.735, 365.65), _path_tag(cube, cls="mkf")
     )
 
 
@@ -260,8 +303,8 @@ def browser_window() -> str:
 
     <!-- 窗口内置侧栏聊天面板 -->
     <rect x="{panel_x}" y="{inner_y}" width="{PANEL_W}" height="{inner_b - inner_y}" rx="12" class="panelf stk"/>
-    <rect x="442" y="154" width="16" height="16" rx="5" class="brandf"/>
-    <rect x="466" y="159" width="50" height="7" rx="3.5" class="wire2f"/>
+{icon_group(452, 162, 20, step=6)}
+    <rect x="470" y="159" width="46" height="7" rx="3.5" class="wire2f"/>
     {bubbles}
     <rect x="442" y="382" width="104" height="42" rx="10" class="cardf stk"/>
     <rect x="454" y="396" width="52" height="6" rx="3" class="wiref"/>
@@ -386,9 +429,6 @@ STYLE = """
     .accentf{fill:var(--accent)}
     .accentsoftf{fill:var(--accent-soft)}
     .accentline{fill:var(--accent);opacity:.5}
-    /* #brand-grad 用 objectBoundingBox，小元素才不会掉到渐变的端色上 */
-    .brandf{fill:url(#brand-grad)}
-    .eyef{fill:var(--card)}
     .stk{stroke:var(--line);stroke-width:1.2}
     .hairline{fill:none;stroke:var(--line);stroke-width:1.2}
     .lock{fill:none;stroke:var(--muted);stroke-width:1.5}
@@ -397,8 +437,7 @@ STYLE = """
     .ripple{fill:none;stroke:var(--accent);stroke-width:1.6;opacity:.35}
     .cursorring{fill:none;stroke:var(--accent);stroke-width:2.6}
     .mkf{fill:var(--ink)}
-    .mk{fill:none;stroke:var(--ink);stroke-width:3.2;stroke-linecap:round;stroke-linejoin:round}
-    .mk3{fill:none;stroke:var(--ink);stroke-width:3;stroke-linecap:round;stroke-linejoin:round}
+    .mkdim{fill:var(--muted)}
     .cable{fill:none;stroke:var(--cable);stroke-width:2.4}
     .ring{fill:none;stroke:var(--ring);stroke-width:1.4;stroke-dasharray:3 7}
     .node{fill:var(--node)}
@@ -429,12 +468,6 @@ DEFS = f"""  <defs>
       <stop offset=".6" stop-color="#34A853" stop-opacity=".06"/>
       <stop offset="1" stop-color="#34A853" stop-opacity="0"/>
     </radialGradient>
-    <linearGradient id="brand-grad" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#EA4335"/>
-      <stop offset=".4" stop-color="#FBBC05"/>
-      <stop offset=".72" stop-color="#34A853"/>
-      <stop offset="1" stop-color="#4285F4"/>
-    </linearGradient>
     <clipPath id="opensider-cube">
       <path d="{cube_clip_path()}"/>
     </clipPath>
