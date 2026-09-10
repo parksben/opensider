@@ -425,12 +425,12 @@ Host 是 ACP Client，`clientCapabilities` 关闭 `fs` / `terminal`，让 Agent 
 
 未打包扩展的 ID 必须稳定，Native Messaging 的 `allowed_origins` 才能写死。`manifest.json` 带固定 `key`，未打包 ID 为 `gcblddgaifebccglndkaccmibhechimj`。
 
-CRX 安装包用 `scripts/keys/extension.pem` 签 CRX3，打包 ID 为 `clnpnldmjaklambmaglpckjlgkicmcpb`。当初生成 `key` 时私钥没有留档，不能用同一把钥匙签包，否则会改未打包 ID、侧栏 `chrome.storage` 会丢。因此打包 ID 与未打包 ID 不同，Host 清单 `allowed_origins` 同时写这两个 origin。私钥只用来固定打包 ID，不代表商店发布者身份，跟仓库一起走，保证本地 `pnpm build` 和 tag Release 签出同一份 ID。
+历史上用 `scripts/keys/extension.pem` 签过 CRX3，打包 ID 为 `clnpnldmjaklambmaglpckjlgkicmcpb`。当初生成 `key` 时私钥没有留档，不能用同一把钥匙再签，否则会改未打包 ID、侧栏 `chrome.storage` 会丢。因此打包 ID 与未打包 ID 不同，Host 清单 `allowed_origins` 仍同时写这两个 origin（兼容曾经 sideload 过打包扩展的机器）。**不再把 CRX 当作安装路径，Release 也不再上传 `opensider.crx`。** 私钥只用来在 `pack-extension.mjs` 里校验仍能算出同一打包 ID，不代表商店发布者身份，也不再写出 `.crx` 文件。
 
 Host 注册名：`com.opensider.host`  
 macOS 清单路径：`~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.opensider.host.json`
 
-用户：`releases/latest` 的 `install.sh` / `install.ps1` 下一份 `opensider` 并 `opensider install`，清单 `path` 指向 `~/.opensider/runtime/opensider`。开发：`pnpm install-host` = `go run ./cmd/opensider install --local`，必须 `go build` 出真实二进制拷到 runtime（**禁止**把 `go run` 写成 Native Host path，Chrome 保不住这个进程）。`install` 同时 `workspace.Ensure()`，马上就有 `AGENTS.md` / `browser/tools.json` / `outputs/`。macOS TCC 仍要求二进制不在 Desktop / Documents / Downloads。Host 日志只写 `~/.opensider/host.log`，不写 stderr。从 Node 时代留下的 `~/.opensider`（`PickFiles.app`、`runtime/packages`、旧 `session.json`）可能和 Go Host 打架；开发机应备份后重新 `install --local`。推送 `v*` tag 触发 Actions：darwin 在 macOS 开 cgo 编，linux/windows 交叉编译；Release 说明只列最近 3 个 commit。桥接未注册时 SW 轮询 `connectNative`。不迁旧目录。
+使用者主路径：从 `releases/latest` 下 `extension.zip`，解压后 Load unpacked，打开侧栏；缺桥接时侧栏给出 `install.sh` / `install.ps1`，壳再下一份 `opensider` 并 `opensider install`。清单 `path` 指向 `~/.opensider/runtime/opensider`。README 只写产品、演示和这条使用者安装/使用路径，不含开发搭建。开发：`pnpm install-host` = `go run ./cmd/opensider install --local`，必须 `go build` 出真实二进制拷到 runtime（**禁止**把 `go run` 写成 Native Host path，Chrome 保不住这个进程）。`install` 同时 `workspace.Ensure()`，马上就有 `AGENTS.md` / `browser/tools.json` / `outputs/`。macOS TCC 仍要求二进制不在 Desktop / Documents / Downloads。Host 日志只写 `~/.opensider/host.log`，不写 stderr。从 Node 时代留下的 `~/.opensider`（`PickFiles.app`、`runtime/packages`、旧 `session.json`）可能和 Go Host 打架；开发机应备份后重新 `install --local`。推送 `v*` tag 触发 Actions：darwin 在 macOS 开 cgo 编，linux/windows 交叉编译；Release 说明只列最近 3 个 commit。桥接未注册时 SW 轮询 `connectNative`。不迁旧目录。
 
 ## UI
 
@@ -454,10 +454,10 @@ macOS 清单路径：`~/Library/Application Support/Google/Chrome/NativeMessagin
 ## 仓库结构
 
 ```
-README.md           面向用户的产品页与安装（不写开发命令或仓库树）
+README.md           面向使用者的产品页：产品是什么、演示、安装/使用（不写开发搭建）
 docs/REQUIREMENTS.md  需求：做什么、为什么
 docs/TECH_DESIGN.md   本文件：怎么做、为什么选这个方案
-docs/DEVELOPMENT.md   开发构建、Host 注册、工作区、打 CRX、tag 发 Release
+docs/DEVELOPMENT.md   开发构建、Host 注册、工作区、打 extension.zip、tag 发 Release
 docs/logo.svg         README logo
 docs/opensider.mp4    README 演示视频：Agent 提炼网页信息、生成资讯榜单并在浏览器打开
 cmd/opensider       唯一 Go 入口（host / install / pick）
@@ -465,12 +465,12 @@ internal/           Host / install / pick / ACP
 packages/shared     扩展 ↔ Host 消息类型（TS）
 packages/extension  Chrome MV3（background / content / sidepanel）
 scripts/install     用户壳 install.sh / install.ps1
-scripts/pack-extension.mjs  把 dist 打成 zip + CRX3
-scripts/keys        扩展 CRX 签名钥（固定打包 ID）
+scripts/pack-extension.mjs  把 dist 打成 extension.zip（并用 pem 校验历史打包 ID）
+scripts/keys        扩展签名钥（只用来固定历史打包 ID，不再出 CRX）
 .github/workflows   tag 发 Release
 ```
 
-pnpm workspace 只编扩展。Host 用 Go。扩展用 Vite + `@crxjs/vite-plugin` 打包。开发命令与加载 `packages/extension/dist` 的步骤只写在 `docs/DEVELOPMENT.md`，根目录 README 只服务使用者。
+pnpm workspace 只编扩展。Host 用 Go。扩展用 Vite + `@crxjs/vite-plugin` 打包。README 只写使用者安装/使用，不含开发搭建；开发者看 `docs/DEVELOPMENT.md`（含 `pnpm install-host`、加载 `packages/extension/dist`）。
 
 ## 演示录制
 
@@ -478,7 +478,7 @@ pnpm workspace 只编扩展。Host 用 Go。扩展用 Vite + `@crxjs/vite-plugin
 
 ## 发布与安装壳
 
-用户侧不克隆仓库。一行壳永远打 `releases/latest`，按本机只下一份 Host 二进制，校验后再把安装交给该二进制。
+用户侧不克隆仓库。README 主路径是下载 `extension.zip` 并 Load unpacked；本机桥接一行壳由侧栏在缺 Host 时给出，永远打 `releases/latest`，按本机只下一份 Host 二进制，校验后再把安装交给该二进制。
 
 ### 用户壳
 
@@ -494,7 +494,7 @@ pnpm workspace 只编扩展。Host 用 Go。扩展用 Vite + `@crxjs/vite-plugin
 
 ### 开发脚本
 
-根 `package.json`：`install-host` → `go run ./cmd/opensider install --local`；`pack-extension` → `node scripts/pack-extension.mjs`（把 `packages/extension/dist` 打成 `dist-release/extension.zip` 和 CRX3 `dist-release/opensider.crx`）；`build` 先编扩展，再打包，再跑 `install --local`。`dev` 仍只起 Vite。不再走 Node 安装器。打包脚本只用 Node 内置 `crypto` / `zlib`，不另加 crx 依赖。`dist-release/` 不入库。
+根 `package.json`：`install-host` → `go run ./cmd/opensider install --local`；`pack-extension` → `node scripts/pack-extension.mjs`（把 `packages/extension/dist` 打成 `dist-release/extension.zip`，用 pem 校验历史打包 ID，**不写出** `opensider.crx`）；`build` 先编扩展，再打包，再跑 `install --local`。`dev` 仍只起 Vite。不再走 Node 安装器。打包脚本只用 Node 内置 `crypto` / `zlib`。`dist-release/` 不入库。
 
 ### tag 发 Release
 
@@ -504,7 +504,7 @@ pnpm workspace 只编扩展。Host 用 Go。扩展用 Vite + `@crxjs/vite-plugin
 |---|---|---|
 | `build-darwin` | `macos-latest` | Go 1.22+，`CGO_ENABLED=1`，产出 `opensider-darwin-arm64`；在同一台机器上再试 `GOARCH=amd64`（`CC=clang`），编得出来才上传 |
 | `build-cross` | `ubuntu-latest` | `CGO_ENABLED=0`，`GOOS=linux/windows` × `GOARCH=amd64/arm64`（Windows 带 `.exe`） |
-| `release` | `ubuntu-latest`（等前两个） | `pnpm install` + `pnpm --filter @opensider/extension build` **一次**，再跑 `pnpm pack-extension` 产出 `extension.zip` 与 `opensider.crx`；拷贝两份安装壳；下载二进制工件；写 `SHA256SUMS`；`scripts/release-notes.sh` 打最近 3 个 commit；`gh release create` |
+| `release` | `ubuntu-latest`（等前两个） | `pnpm install` + `pnpm --filter @opensider/extension build` **一次**，再跑 `pnpm pack-extension` 产出 `extension.zip`（不发 CRX）；拷贝两份安装壳；下载二进制工件；写 `SHA256SUMS`；`scripts/release-notes.sh` 打最近 3 个 commit；`gh release create` |
 
 扩展只在 `release` job 编一次，darwin / cross 不再装 Node。darwin 开 cgo 是为了本机 `pick`（AppKit）；linux / windows 交叉编译关 cgo，避免依赖目标系统的 C 工具链。macos-latest 现在是 Apple Silicon，darwin/amd64 属于尽力：SDK 够就编，不够就跳过，不挡发版。
 
@@ -514,7 +514,6 @@ Release 资产名必须和壳一致：
 - `opensider-linux-amd64` / `opensider-linux-arm64`
 - `opensider-windows-amd64.exe` / `opensider-windows-arm64.exe`（后者可选，流水线仍编）
 - `extension.zip`
-- `opensider.crx`
 - `install.sh` / `install.ps1`
 - `SHA256SUMS`
 

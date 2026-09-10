@@ -1,6 +1,6 @@
 # OpenSider — 开发文档
 
-> 给改代码的人看。使用者安装请看仓库根目录 [README.md](../README.md)。需求与方案分别在 [REQUIREMENTS.md](./REQUIREMENTS.md)、[TECH_DESIGN.md](./TECH_DESIGN.md)。
+> 给改代码的人看。使用者安装请看仓库根目录 [README.md](../README.md)。需求与方案分别在 [REQUIREMENTS.md](./REQUIREMENTS.md)、[TECH_DESIGN.md](./TECH_DESIGN.md)。README 只写产品、演示和使用者安装/使用，不含开发搭建。
 
 本机需要 Go、Node 22+、pnpm。用户侧不需要这些。
 
@@ -11,7 +11,7 @@ pnpm install
 pnpm build
 ```
 
-`pnpm build` 会打扩展、写出 `dist-release/opensider.crx` 与 `dist-release/extension.zip`，并执行 `go run ./cmd/opensider install --local`。只重新注册 Host：
+`pnpm build` 会打扩展、写出 `dist-release/extension.zip`，并执行 `go run ./cmd/opensider install --local`。只重新注册 Host：
 
 ```bash
 pnpm install-host
@@ -36,17 +36,17 @@ README 演示视频见 `docs/opensider.mp4`：Agent 提炼网页信息、生成�
 
 布局与协议细节见 [TECH_DESIGN.md](./TECH_DESIGN.md) 的「工作区布局」。
 
-## 打 CRX
+## 打 extension.zip
 
 ```bash
 pnpm pack-extension
 ```
 
-把 `packages/extension/dist` 打成 `dist-release/extension.zip` 和 CRX3 `dist-release/opensider.crx`。`dist-release/` 不入库。完整 `pnpm build` 会先编扩展再打包，再跑 `install --local`。
+把 `packages/extension/dist` 打成 `dist-release/extension.zip`（校验历史打包 ID，不写出 CRX）。`dist-release/` 不入库。完整 `pnpm build` 会先编扩展再打包，再跑 `install --local`。
 
 ## tag 发 Release
 
-推送 `v*` tag 会跑 `.github/workflows/release.yml`：macOS 开 cgo 编 darwin 二进制，Ubuntu 交叉编译 linux / windows，再打 `opensider.crx`、`extension.zip`、安装壳和 `SHA256SUMS`，用最近 3 个 commit 发 GitHub Release。
+推送 `v*` tag 会跑 `.github/workflows/release.yml`：macOS 开 cgo 编 darwin 二进制，Ubuntu 交叉编译 linux / windows，再打 `extension.zip`、安装壳和 `SHA256SUMS`，用最近 3 个 commit 发 GitHub Release。不上传 `opensider.crx`。
 
 Release 资产名必须和用户安装壳一致，见 TECH_DESIGN「发布与安装壳」。
 
@@ -58,8 +58,8 @@ internal/             Host / install / pick / ACP
 docs/                 需求、技术设计、本文件；README logo / 成片也在这一层
 packages/shared       扩展 ↔ Host 消息类型
 packages/extension    Chrome MV3 侧栏 / 内容脚本 / Service Worker
-scripts/install       用户壳脚本
-scripts/pack-extension.mjs  扩展 zip / CRX 打包
+scripts/install       用户壳脚本（由侧栏提示执行，不写进 README 主流程）
+scripts/pack-extension.mjs  扩展 zip 打包
 .github/workflows     推 v* tag 发 Release
 ```
 

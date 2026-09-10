@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { createHash, createPublicKey, createSign } from "node:crypto";
+import { createHash, createPublicKey } from "node:crypto";
 import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
@@ -11,29 +11,12 @@ const distDir = join(root, "packages", "extension", "dist");
 const keyPath = join(root, "scripts", "keys", "extension.pem");
 const outDir = join(root, "dist-release");
 const zipPath = join(outDir, "extension.zip");
-const crxPath = join(outDir, "opensider.crx");
 const expectedPackedId = "clnpnldmjaklambmaglpckjlgkicmcpb";
 const skipNames = new Set([".DS_Store", "Thumbs.db"]);
 
 function fail(message) {
   console.error(message);
   process.exit(1);
-}
-
-function encodeVarint(value) {
-  const bytes = [];
-  let n = value >>> 0;
-  while (n > 0x7f) {
-    bytes.push((n & 0x7f) | 0x80);
-    n >>>= 7;
-  }
-  bytes.push(n);
-  return Buffer.from(bytes);
-}
-
-function encodeBytes(fieldNumber, data) {
-  const tag = encodeVarint((fieldNumber << 3) | 2);
-  return Buffer.concat([tag, encodeVarint(data.length), data]);
 }
 
 function extensionIdFromSpki(spki) {
@@ -152,26 +135,10 @@ function buildZip(files) {
   return Buffer.concat([...locals, centralBuf, eocd]);
 }
 
-function packCrx3(zip, pem) {
+function packedIdFromPem(pem) {
   const publicKey = createPublicKey(pem);
   const spki = publicKey.export({ type: "spki", format: "der" });
-  const crxId = createHash("sha256").update(spki).digest().subarray(0, 16);
-  const signedHeaderData = encodeBytes(1, crxId);
-  const signed = Buffer.concat([
-    Buffer.from("CRX3 SignedData\x00"),
-    u32(signedHeaderData.length),
-    signedHeaderData,
-  ]);
-  const signer = createSign("sha256");
-  signer.update(signed);
-  signer.end();
-  const signature = signer.sign(pem);
-  const proof = Buffer.concat([encodeBytes(1, spki), encodeBytes(2, signature)]);
-  const header = Buffer.concat([encodeBytes(2, proof), encodeBytes(10000, signedHeaderData)]);
-  return {
-    id: extensionIdFromSpki(spki),
-    crx: Buffer.concat([Buffer.from("Cr24"), u32(3), u32(header.length), header, zip]),
-  };
+  return extensionIdFromSpki(spki);
 }
 
 async function main() {
@@ -192,16 +159,14 @@ async function main() {
     fail("packages/extension/dist is empty");
   }
   const zip = buildZip(files);
-  const { id, crx } = packCrx3(zip, pem);
+  const id = packedIdFromPem(pem);
   if (id !== expectedPackedId) {
     fail(`packed extension id ${id} != ${expectedPackedId}; update protocol constants if the key changed`);
   }
 
   mkdirSync(outDir, { recursive: true });
   writeFileSync(zipPath, zip);
-  writeFileSync(crxPath, crx);
-  console.log(`wrote ${relative(root, zipPath)} (${zip.length} bytes)`);
-  console.log(`wrote ${relative(root, crxPath)} (${crx.length} bytes, id ${id})`);
+  console.log(`wrote ${relative(root, zipPath)} (${zip.length} bytes, packed id ${id})`);
 }
 
 await main();

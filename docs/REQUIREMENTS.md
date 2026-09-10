@@ -10,8 +10,8 @@
 
 ## 文档分层
 
-- **`README.md`**：面向使用者的产品页。只写产品是什么、适用谁、如何从 GitHub Release 安装并打开侧栏，以及一段侧栏演示视频（Agent 提炼网页信息、生成资讯榜单并在浏览器打开；不要写分辨率 / 加速 / IME 等录制规格）。不写 pnpm / Go、仓库树、工作区内部协议，也不把 `packages/extension/dist` 当成用户加载路径。
-- **`docs/DEVELOPMENT.md`**：面向开发。本地构建、`pnpm install-host`、工作区布局、仓库结构、打 CRX、推 `v*` tag 发 Release。
+- **`README.md`**：面向使用者的产品页。只写产品是什么、适用谁、如何从 GitHub Release 下载 `extension.zip` 未打包加载并打开侧栏，以及一段侧栏演示视频（Agent 提炼网页信息、生成资讯榜单并在浏览器打开；不要写分辨率 / 加速 / IME 等录制规格）。桥接安装命令由侧栏给出，不要把一行壳 / SHA256 / Host 二进制下载写成 README 主流程。不写 pnpm / Go、仓库树、开发入口或「见 DEVELOPMENT.md」，也不把 `packages/extension/dist` 当成用户加载路径。
+- **`docs/DEVELOPMENT.md`**：面向开发。本地构建、`pnpm install-host`、工作区布局、仓库结构、打 `extension.zip`、推 `v*` tag 发 Release。
 - **本文件**：记产品做什么、为什么。
 - **`docs/TECH_DESIGN.md`**：记怎么做、为什么选这个方案。README 的 logo 与演示视频放 `docs/` 第一层（`docs/logo.svg`、`docs/opensider.mp4`），避免依赖 `packages/` 路径。不要再拆 `docs/images/` / `docs/demo/`。
 
@@ -23,7 +23,7 @@
 - 不支持 Firefox / Safari（本机 Core 与浏览器扩展分离，Firefox 后做）
 - 不通过页面脚本开放无约束的 Chrome 扩展 API；`runScript` 仅在 http(s) 页内跑、有超时与结果大小限制
 - 不把聊天同步到云端
-- 不上架 Chrome Web Store。扩展以未打包目录或单个 `.crx` 安装包分发（不走商店）
+- 不上架 Chrome Web Store。扩展只以 `extension.zip` 分发，用户解压后用开发者模式「加载已解压的扩展程序」（不走商店，不发 CRX）
 - 不接入 Claude Cowork（没有 CLI / ACP）
 
 ## 用户可见行为
@@ -31,7 +31,7 @@
 ### 安装与连接
 
 1. 用户完成本机要使用的 Agent CLI 登录（Cursor `agent login`、Copilot `copilot login` 等）。不必装 Node。
-2. 用户用一行壳安装桥接（始终拉 GitHub `releases/latest`），并以未打包方式加载扩展（`~/.opensider/extension`，或开发时的 `packages/extension/dist`）。也可以只下载 Release 里的单个 `opensider.crx`，打开 `chrome://extensions`（或 Edge / Brave 对应页），打开开发者模式后把该文件拖进去安装。macOS / Linux：`curl -fsSL https://github.com/parksben/opensider/releases/latest/download/install.sh | bash`。Windows：`[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072; iex ((New-Object System.Net.WebClient).DownloadString('https://github.com/parksben/opensider/releases/latest/download/install.ps1'))`（只在 PowerShell / Windows 终端里粘贴，不要外包一层 `powershell`：很多机器 PATH 里没有这个命令，已经在 PS 里会报「无法将 powershell 项识别为 cmdlet」。不要用「命令提示符」。不依赖 `curl.exe`。`3072` 是 TLS 1.2 的数值写法。`install.ps1` 同样打开 TLS 1.2、写 HKCU `SchUseStrongCrypto`、用 `WebClient` 走系统代理下载、识别 32 位终端里的 64 位系统，并 `Unblock-File` 去掉下载标记以免 SmartScreen 拦住）。壳只认 darwin / linux / Windows，架构只认 arm64（含 aarch64）与 amd64（含 x86_64）；其它组合直接失败并写明原因。壳先下 `SHA256SUMS` 和对应的 `opensider-<os>-<arch>`（Windows 带 `.exe`），校验 sha256 后再 `chmod +x` 并执行 `opensider install`。`opensider install` 会探测本机 Claude Code：若已装且缺少 ACP 适配器，就把 `@agentclientprotocol/claude-agent-acp` 装进 `~/.opensider/runtime/claude-acp` 并校验。交互式 `claude` 本身仍不是 ACP。没装 Claude 则跳过；没有 Node 18+（npm / pnpm / bun）只提示，不让整次 Host 安装失败。Native Host 由浏览器按需拉起，不是常驻服务；可执行文件在 `~/.opensider/runtime/opensider`。Chrome 若拒绝拖入 `.crx`，仍用壳解压出的目录或 `extension.zip` 加载已解压扩展。桥接仍然要跑安装壳，只装扩展连不上本机 Agent。
+2. **使用者主路径**（README 只写这五步）：从 GitHub [`releases/latest`](https://github.com/parksben/opensider/releases/latest) 下载 `extension.zip` 并在本机解压 → 在 Chrome / Edge / Brave 打开开发者模式、「加载已解压的扩展程序」、指向解压出的文件夹 → 点工具栏 OpenSider 图标打开侧栏 → 按侧栏提示连接本机 Agent（缺桥接时侧栏才给出安装命令）→ 连上后开始聊天。不要把 CRX 当作安装路径，也不要在 README 把一行壳 / SHA256 / Host 二进制下载写成主流程。开发加载 `packages/extension/dist` 只写在 DEVELOPMENT.md。`opensider install`（由侧栏那行命令拉起）会探测本机 Claude Code：若已装且缺少 ACP 适配器，就把 `@agentclientprotocol/claude-agent-acp` 装进 `~/.opensider/runtime/claude-acp` 并校验。交互式 `claude` 本身仍不是 ACP。没装 Claude 则跳过；没有 Node 18+（npm / pnpm / bun）只提示，不让整次 Host 安装失败。Native Host 由浏览器按需拉起，不是常驻服务；可执行文件在 `~/.opensider/runtime/opensider`。安装壳仍可能把扩展解到 `~/.opensider/extension`，但使用者主路径是自己解压的 zip 目录。
 3. **桥接未注册**：侧栏打开后若 `connectNative` 报找不到 Host，内容区居中提示：macOS / Linux「请复制下方脚本到终端/命令行中执行，完成后即可连接本地 Agent」（英：Copy the script below and run it in a terminal. When it finishes, you can connect to the local Agent）；Windows「请复制下方脚本到 PowerShell 中执行（不要用命令提示符），完成后即可连接本地 Agent」（英：Copy the script below and run it in PowerShell, not Command Prompt. When it finishes, you can connect to the local Agent）。下面是按浏览器 UA 选好的那一行脚本，可复制。Service Worker 约每 1–2s 重试连接；用户跑完脚本后**不必刷新扩展**，提示消失，进入 Agent 列表。Host 已安装但进程崩了只走重连，不再铺安装脚本。
 4. **连接状态机**（桥接已注册）：侧栏只能走 `missing` → `starting` → `idle` / `ready`，或落到可见的 `error`。**禁止永远停在 starting**：Host 必须立刻应答 `hello` / `status`（先报 starting，CLI 探测在后台做）；探测有总时限，不能卡住 Native Messaging 读循环。若约 10s 还停在 starting，Service Worker 改报 `error`，文案指向 `~/.opensider/host.log`（扩展 ID / Host 名仍附上）。**「没有找到可用的 ACP CLI」只在探测已经完成且名单为空时出现**；Host 还在 starting、看门狗超时、或还没收到 `agents` 时，只说明连接/启动失败并给重试，不能假装本机没装 CLI。已收到非空 `agents` 就画名单，即使随后有一条 starting 超时。点顶栏「重连 / Connection」必须真正拆掉旧 Native 端口再连，不能因为上一次探测没结束就空转。从 Node Host / 旧目录迁过来的 `~/.opensider`（`PickFiles.app`、旧 `session.json`、`runtime/packages` 等）可能不兼容，开发时可备份后重新 `pnpm install-host` 重建。
 5. **首次选择 Agent**（桥接已就绪、本机还没有完成过引导）：Host 探测本机已安装、且能用 ACP 握手的 CLI（不限于内置名单：已知启动方式 + 本机 PATH + nvm / npm-global / bun / `~/.opencode/bin` 等版本管理目录 + ACP Registry）。Chrome 拉起 Native Host 时 PATH 很瘦，不能只搜 `/usr/bin`，否则会漏掉装在 nvm 里的 Copilot 等 CLI。探测只用来列名单：二进制在即可列入，短超时握手失败也保留；真正连接再走完整握手。**Claude Code 的交互式 `claude` 本身不是 ACP**，探测的是 `claude-agent-acp`（`@agentclientprotocol/claude-agent-acp`）；只装了 `claude` 不会出现在名单里。`opensider install` 若发现 Claude Code 但适配器缺失，会自动装到 `~/.opensider/runtime/claude-acp` 并校验，装好后探测即可列入；没有 Node 只提示，不失败。重新跑一次 OpenSider 安装，或用 `claude` 登录，即可补上。引导区相对标题栏下方的内容区垂直居中。不画 CLI logo（本机没有产品标）。提示「点击 Agent 以开始连接」，下面是一排较大的纯文本按钮，点哪家就连哪家，不要再加确认钮；按钮有和别处一样的涟漪。探测尚未完成时转圈「正在查找本机 Agent CLI」，不要先甩一张空名单。连接若超过约 300ms，展示分步进度（解析 / 拉起 / 握手 / 鉴权 / 会话 / 模型）。进度条文案同一行最右侧是纯文本「取消 / Cancel」（不要 emoji）。进行中或卡住都可以取消**这一次**连接，但已经 `ready` 的连接不能用这个按钮拆掉。取消后回到**取消前**的状态：若之前已连上另一家 Agent，保持那一家（旧进程尽量不停，必要时再握手）；若之前没有已连接的 Agent，回到名单 / 未连接，不要停在新一家的半连接或失败态。成功后进入聊天。之后顶栏左上角是 Agent 下拉（纯文本 + 名），可换家；下拉必须浮在消息之上，点得到。换 Agent 时同一套进度条和取消钮出现在顶栏进度区（状态文案「4/6 · Signing in」右侧）。模型列表跟当前 Agent 的 `configOptions` / `session.models` / 其 list 命令走（Cursor：`agent models`；OpenCode：`opencode models` 的 `provider/model` 行，连上后若会话里还没有名单再拉一次）。只展示 Host 真正拿到的条目，不编一份假目录。Copilot 若 CAPI 名单为空，用它 CLI 内置的公开模型表兜底。**只有确认名单为空才藏下拉**，不能因为 `ready` 比模型列表先到就留一个空槽。换 Agent **不丢**本机会话：历史仍是侧栏自己的消息；老会话用新 Agent 继续聊时，把本地前文交给新的 ACP 会话。Gemini 若报 `EACCES` 写 `~/.gemini`，是本机目录属主不对（常见于曾经 `sudo` 装过），不是侧栏协议实现错了，错误文案要写明 `sudo chown -R "$(whoami)" ~/.gemini`。macOS 切 Agent 时若弹出「未打开 `.xxxx.node` / Apple 无法验证」的 Gatekeeper 对话框，那是本机 CLI 启动时加载或解到临时目录的 **未公证 native addon**，不是侧栏在拷贝或解压二进制；终端里直接跑同一条命令也可能出现。已知：**OpenCode 官方二进制（含最新 `~/.opencode/bin/opencode`）仍是 adhoc/linker-signed，官方重装不能变成 Apple 公证**；**Gemini**（`@google/gemini-cli`）和 **Claude ACP**（`claude-agent-acp` / `@agentclientprotocol/claude-agent-acp`）是 npm 脚本，附带 adhoc `.node`（如 `pty.node` / `keytar.node`），Apple 无法公证这类解包 addon。**GitHub Copilot 官方 Homebrew cask**（`brew install --cask copilot-cli` → `/opt/homebrew/bin/copilot`）是 GitHub Developer ID + 公证的 Mach-O，OpenSider 会搜到；npm 版 `@github/copilot` 仍带未公证 addon。Homebrew 的 `gemini-cli` formula 已弃用，替代品 `antigravity-cli`（`agy`）**不是** OpenSider 探测的 `gemini`。不要点「移到废纸篓」（会拆掉 CLI 自己的 addon）。应点「完成」，再到系统设置 → 隐私与安全性允许该文件。OpenSider 不去用户 CLI 安装上的隔离属性。
@@ -123,9 +123,9 @@ README 用一段视频说明产品：在 OpenSider 会话里让 Agent 提炼网�
 | UI | 自研 ChatPane（lucide） | assistant-ui ExternalStore 的 `useAuiState` 与消息状态不同步，表现为发了没动效、也停不了 |
 | 浏览器 | Chromium（Chrome / Edge / Brave 等） | Side Panel + Native Messaging；Firefox / Safari 不做 |
 | 与 CLI 的连接 | 预编译 Go 二进制作 Native Host，按需拉起 `agent acp` | 扩展无法 spawn 进程；用户侧不装 Node；每个平台只发一份二进制 |
-| 用户安装 | latest 壳脚本 + 侧栏展示同一行 | 不克隆仓库；装完 SW 轮询即可连上 |
+| 用户安装 | Release `extension.zip` 未打包加载；桥接命令由侧栏给出 | 先装扩展、打开侧栏；缺 Host 时侧栏再给一行壳。README 不写开发入口 |
 | Claude ACP 适配器 | `opensider install` 探测到 Claude Code 后 prefix-local 安装 | 官方交互式 `claude` 不带 ACP；缺适配器时自动装进 `~/.opensider/runtime/claude-acp` 并校验；没装 Claude 跳过，没 Node 只提示 |
-| 扩展安装包 | 构建产出 CRX3 `opensider.crx`，同时保留 `extension.zip` | 用户只要一个文件就能在扩展页拖入；zip 仍给安装壳解压到 `~/.opensider/extension` |
+| 扩展安装包 | 只发 `extension.zip`，开发者模式 Load unpacked | 不上架；不发 CRX。zip 也可给安装壳解压到 `~/.opensider/extension` |
 | 附件选文件 | macOS 混选；其它系统侧栏先选文件/文件夹 | Windows / Linux 系统框互斥，不自绘资源管理器 |
 | 页面工具 | 内容脚本 + 工作区文件 RPC | 读和写都走同一通道，不必上 MCP、不必再开端口 |
 | 填表定位 | 编号交互快照 + label/index + fillForm（参考 page-agent / browser-use） | 正文抽取看不到 placeholder；`innerText` 匹配会打到 label/标题，输入框本身填不进去 |
