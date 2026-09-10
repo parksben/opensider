@@ -451,6 +451,15 @@ macOS 清单路径：`~/Library/Application Support/Google/Chrome/NativeMessagin
 - PNG 用 `rsvg-convert` 从 SVG 导出（16/32/48/128，保留透明），放 `packages/extension/public/icons/`，crxjs 构建时拷到 `dist/icons/`
 - manifest 的 `icons` 与 `action.default_icon` 都指向这四张图
 
+### README Banner
+
+- 成片 `docs/banner.svg`，由 `scripts/generate_banner.py` 生成（勿手改）。画布 1600×520，README 里靠容器宽度缩放
+- 只有一份自包含矢量：不引外链图片、不嵌位图、不依赖字体文件。README 只给 `<img>`，外部引用在 `img` 上下文里根本不加载；位图在高 DPI 下糊。文字用 `IBM Plex Sans` → 系统无衬线兜底，不转路径（转路径要打包字体，收益只在字体缺省时的度量差异，且中文字重不可控）
+- 中段图标不复制几何：`generate_banner.py` 直接 `import generate_icon`，复用同一套 `color_at` conic 算法、立方体 clipPath 与扇形半径，只把扇形步长从 1° 放到 2°（banner 里图标约 164px，1° 与 2° 肉眼无差，文件小一半）
+- 双主题在 SVG 内部用 CSS 变量 + `@media (prefers-color-scheme: dark)` 切换。GitHub 不会把页面主题告诉 `<img>`，也没有 `#gh-dark-mode-only` 这种片段可用，只能跟系统；两套调色板都按可读对比度给，不依赖背景色
+- 连接关系用视觉表达：左右各一条基线与一条 `.flow` 覆盖线，靠 `stroke-dasharray` + `stroke-linecap: round` 得到流动光点，动画只改 `stroke-dashoffset`；`prefers-reduced-motion: reduce` 下关掉动画，静态圆点仍在，**语义不依赖动画**
+- 四家 Agent 的标记是手写简化几何（Claude 放射花、Copilot 护目面罩、OpenCode 终端提示符、Cursor 等轴立方体），不用官方素材、不引外链 logo，商标归属留给文字名；具体文案与分区要求见 `REQUIREMENTS.md` 的「README Banner 概念图」
+
 ## 仓库结构
 
 ```
@@ -461,6 +470,7 @@ docs/REQUIREMENTS.md  需求：做什么、为什么
 docs/TECH_DESIGN.md   本文件：怎么做、为什么选这个方案
 docs/DEVELOPMENT.md   开发构建、Host 注册、工作区、打 extension.zip、tag 发 Release
 docs/logo.svg         README logo
+docs/banner.svg       README banner 概念图（由 scripts/generate_banner.py 生成）
 docs/opensider.mp4    README 演示视频：Agent 提炼网页信息、生成资讯榜单并在浏览器打开
 cmd/opensider       唯一 Go 入口（host / install / pick）
 internal/           Host / install / pick / ACP
