@@ -42,7 +42,7 @@ README 演示视频见 `docs/opensider.mp4`：Agent 提炼网页信息、生成�
 pnpm pack-extension
 ```
 
-把 `packages/extension/dist` 打成 `dist-release/extension.zip`（校验历史打包 ID，不写出 CRX）。`dist-release/` 不入库。完整 `pnpm build` 会先编扩展再打包，再跑 `install --local`。
+把 `packages/extension/dist` 打成 `dist-release/extension.zip`（校验历史打包 ID，不写出 CRX）。校验**只用仓库里的公钥** `scripts/keys/extension.pub.pem`，不需要私钥——私钥被 `.gitignore` 挡在库外，所以任何人（含 CI）拉下代码就能打包，**不需要配任何签名 secret**。`dist-release/` 不入库。完整 `pnpm build` 会先编扩展再打包，再跑 `install --local`。
 
 ## tag 发 Release
 
@@ -56,7 +56,7 @@ Release 资产名必须和用户安装壳一致，见 TECH_DESIGN「发布与安
 AGENTS.md             仓库根开发协作约定（不是 ~/.opensider/workspace/AGENTS.md）
 cmd/opensider         唯一 Go 入口（无参=Host，install，pick）
 internal/             Host / install / pick / ACP
-docs/                 需求、技术设计、本文件；README logo / 成片也在这一层
+docs/                 需求、技术设计、本文件；README banner / 成片也在这一层
 packages/shared       扩展 ↔ Host 消息类型
 packages/extension    Chrome MV3 侧栏 / 内容脚本 / Service Worker
 scripts/install       用户壳脚本（由侧栏提示执行，不写进 README 主流程）

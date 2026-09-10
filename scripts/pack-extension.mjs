@@ -8,7 +8,9 @@ import { crc32, deflateRawSync } from "node:zlib";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const distDir = join(root, "packages", "extension", "dist");
-const keyPath = join(root, "scripts", "keys", "extension.pem");
+// 只拿公钥算打包 ID——算 ID 不需要私钥，所以私钥不入库（.gitignore 挡住），
+// CI 也不需要任何签名 secret。可用 EXTENSION_PUBKEY_PEM 覆盖（内容即 PEM）。
+const publicKeyPath = join(root, "scripts", "keys", "extension.pub.pem");
 const outDir = join(root, "dist-release");
 const zipPath = join(outDir, "extension.zip");
 const expectedPackedId = "clnpnldmjaklambmaglpckjlgkicmcpb";
@@ -135,7 +137,7 @@ function buildZip(files) {
   return Buffer.concat([...locals, centralBuf, eocd]);
 }
 
-function packedIdFromPem(pem) {
+function packedIdFromPublicKey(pem) {
   const publicKey = createPublicKey(pem);
   const spki = publicKey.export({ type: "spki", format: "der" });
   return extensionIdFromSpki(spki);
@@ -147,11 +149,16 @@ async function main() {
   } catch {
     fail("packages/extension/dist/manifest.json missing; run the extension build first");
   }
-  let pem;
-  try {
-    pem = readFileSync(keyPath, "utf8");
-  } catch {
-    fail(`missing signing key: ${keyPath}`);
+  let publicKeyPem = process.env.EXTENSION_PUBKEY_PEM;
+  if (!publicKeyPem) {
+    try {
+      publicKeyPem = readFileSync(publicKeyPath, "utf8");
+    } catch {
+      fail(
+        `missing extension public key: ${publicKeyPath} ` +
+          "(set EXTENSION_PUBKEY_PEM to override)",
+      );
+    }
   }
 
   const files = await listFiles(distDir);
@@ -159,7 +166,7 @@ async function main() {
     fail("packages/extension/dist is empty");
   }
   const zip = buildZip(files);
-  const id = packedIdFromPem(pem);
+  const id = packedIdFromPublicKey(publicKeyPem);
   if (id !== expectedPackedId) {
     fail(`packed extension id ${id} != ${expectedPackedId}; update protocol constants if the key changed`);
   }
