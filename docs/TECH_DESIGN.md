@@ -427,6 +427,8 @@ Host 是 ACP Client，`clientCapabilities` 关闭 `fs` / `terminal`，让 Agent 
 
 历史上用 `scripts/keys/extension.pem` 签过 CRX3，打包 ID 为 `clnpnldmjaklambmaglpckjlgkicmcpb`。当初生成 `key` 时私钥没有留档，不能用同一把钥匙再签，否则会改未打包 ID、侧栏 `chrome.storage` 会丢。因此打包 ID 与未打包 ID 不同，Host 清单 `allowed_origins` 仍同时写这两个 origin（兼容曾经 sideload 过打包扩展的机器）。**不再把 CRX 当作安装路径，Release 也不再上传 `opensider.crx`。** 校验打包 ID 只需要**公钥**：仓库里存 `scripts/keys/extension.pub.pem`，`pack-extension.mjs` 用它算出 ID 与常量比对（实测与私钥算出的完全一致）。当初那把私钥 `extension.pem` **不入库**（已在 `.gitignore` 里，本机自行留档），因为算 ID 只用到公钥、它也不代表商店发布者身份、也不会再写出 `.crx`。注意：该私钥在**历史提交**里存在过（改公开仓库时未重写历史），所以它已不算秘密；要彻底清掉得重写历史并处理 `v1.0.0` tag 与已有 Release。
 
+**2026-09 已轮换签名密钥**：旧私钥既然随历史公开，就换了一把新的 RSA-2048（新私钥 `scripts/keys/extension.pem` 只在本机、已在 `.gitignore` 内；新公钥进库），`pack-extension.mjs` 的 `expectedPackedId` 改为新 ID `bhedoigbjidpfhkalhkhjilpndifdkjj`。轮换**不影响已发布版本**：用户实际在用的是未打包 ID（由 `manifest.json` 的 `key` 决定，跟这把钥匙无关），Release 资产里也没有 CRX，换钥只改动打包时的自检常量。`allowed_origins` 里的**旧打包 ID 保留不动**（兼容曾 sideload 过 CRX 的机器）——这也意味着旧私钥理论上仍能签出 Host 会放行的 CRX，只是已没有分发渠道，且要用户手动装 CRX 才可能生效。
+
 Host 注册名：`com.opensider.host`  
 macOS 清单路径：`~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.opensider.host.json`
 

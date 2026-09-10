@@ -13,7 +13,7 @@ const distDir = join(root, "packages", "extension", "dist");
 const publicKeyPath = join(root, "scripts", "keys", "extension.pub.pem");
 const outDir = join(root, "dist-release");
 const zipPath = join(outDir, "extension.zip");
-const expectedPackedId = "clnpnldmjaklambmaglpckjlgkicmcpb";
+const expectedPackedId = "bhedoigbjidpfhkalhkhjilpndifdkjj";
 const skipNames = new Set([".DS_Store", "Thumbs.db"]);
 
 function fail(message) {

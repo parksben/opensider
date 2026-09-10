@@ -1,8 +1,14 @@
 package protocol
 
 const (
-	HostName    = "com.opensider.host"
-	ExtensionID       = "gcblddgaifebccglndkaccmibhechimj"
+	HostName = "com.opensider.host"
+
+	// ExtensionID 是未打包 ID（用户实际在用的那个），由扩展 manifest 的 key 决定；
+	// 改了会让用户的侧栏数据丢失，别动。
+	ExtensionID = "gcblddgaifebccglndkaccmibhechimj"
+
+	// PackedExtensionID 是历史打包 ID，只为兼容曾经 sideload 过 CRX 的机器而留在
+	// allowed_origins 里。2026-09 已轮换签名密钥，新打包 ID 见 scripts/keys。
 	PackedExtensionID = "clnpnldmjaklambmaglpckjlgkicmcpb"
 )
 

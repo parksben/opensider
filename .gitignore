@@ -11,5 +11,6 @@ dist-release
 /opensider.exe
 
 # 签名私钥不入库；只提交公钥 scripts/keys/extension.pub.pem
-scripts/keys/extension.pem
+scripts/keys/*.pem
+!scripts/keys/extension.pub.pem
 .env
