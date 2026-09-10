@@ -110,7 +110,7 @@ README 顶部概念图，一段横幅（约 3.1:1）说清产品形态。成片�
 
 1. **左：浏览器窗口**。带窗口外观（红黄绿 / 灰点、标签页、地址栏）和一张抽象网页线框；窗口**内部右侧**画出侧栏聊天面板，表明对话入口在浏览器里（不是独立窗口）。面板顶栏放**产品真实图标**（与扩展图标同一份几何，缩小绘制），不要用色块代替。
 2. **中：产品本体**。扩展品牌图标 + 产品名 **OpenSider**，作为浏览器与本机 Agent 之间的连接枢纽。
-3. **右：本机 Agent**。Claude Code、GitHub Copilot、OpenCode、Cursor 四家自上而下各占一行，带标记与名字。顺序沿用 README 的 CLI 顺序，Cursor 不放最前。
+3. **右：本机 Agent**。Claude Code、GitHub Copilot、OpenCode、Cursor 四家自上而下各占一行，带标记与名字。名字后面跟一个次要色的 **CLI** 后缀（`Claude Code CLI` / `GitHub Copilot CLI` / `OpenCode CLI` / `Cursor CLI`），点明它们是装在本机的命令行程序，不是网页服务。顺序沿用 README 的 CLI 顺序，Cursor 不放最前。
 
 要求：
 

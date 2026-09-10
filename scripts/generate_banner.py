@@ -47,7 +47,9 @@ ICON_SIZE = 152.0
 WEDGE_STEP = 2  # 扇形步长（度），generate_icon 用 1°
 
 # 右侧 Agent 卡片
-CHIP_X, CHIP_W, CHIP_H, CHIP_GAP, CHIP_TOP = 1120.0, 420.0, 72.0, 32.0, 76.0
+CHIP_X, CHIP_W, CHIP_H, CHIP_GAP, CHIP_TOP = 1192.0, 348.0, 72.0, 32.0, 76.0
+# 卡片宽 = 左段 78（22 内边距 + 40 标记列 + 16 名字距列）+ 最长名字实测宽度
+# （`GitHub Copilot CLI` 约 225）+ 右侧留白；右边缘离画布 60，与左边缘 56 呼应
 MARK_SLOT = 40.0  # 标记列宽（四个名字靠固定列宽左对齐，不跟标记实际宽度跑）
 MARK_PAD = 22.0  # 标记列距卡片左边
 NAME_GAP = 16.0  # 名字距标记列
@@ -57,7 +59,6 @@ LINK_A = "M576,252 C636,252 636,206 696,206"
 LINK_B = "M576,276 C636,276 636,230 696,230"
 
 AGENTS = ["Claude Code", "GitHub Copilot", "OpenCode", "Cursor"]
-
 
 def chip_cy(i: int) -> float:
     """第 i 张 Agent 卡片的垂直中心。"""
@@ -379,7 +380,8 @@ def agent_chips() -> str:
             f'    <rect x="{CHIP_X}" y="{y:.1f}" width="{CHIP_W}" height="{CHIP_H}"'
             f' rx="16" class="cardf stk"/>\n'
             f"{MARKERS[i](mx, cy)}\n"
-            f'    <text x="{nx:.1f}" y="{cy + 10:.1f}" class="chipname">{name}</text>'
+            f'    <text x="{nx:.1f}" y="{cy + 10:.1f}" class="chipname">'
+            f'{name}<tspan class="chipcli" dx="7">CLI</tspan></text>'
         )
     return "  <!-- 右段：本机 Agent CLI -->\n  <g>\n" + "\n".join(rows) + "\n  </g>"
 
@@ -419,6 +421,7 @@ STYLE = """
     .wordmark{font-size:58px;font-weight:600;letter-spacing:-0.8px;fill:var(--ink)}
     .sub{font-size:19px;letter-spacing:1.4px;fill:var(--muted)}
     .chipname{font-size:27px;font-weight:500;fill:var(--ink)}
+    .chipcli{font-size:21px;font-weight:500;fill:var(--muted)}
     .bgf{fill:url(#bg-grad)}
     .stop-a{stop-color:var(--bg-a)}
     .stop-b{stop-color:var(--bg-b)}
