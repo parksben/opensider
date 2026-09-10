@@ -425,9 +425,9 @@ Host 是 ACP Client，`clientCapabilities` 关闭 `fs` / `terminal`，让 Agent 
 
 未打包扩展的 ID 必须稳定，Native Messaging 的 `allowed_origins` 才能写死。`manifest.json` 带固定 `key`，未打包 ID 为 `gcblddgaifebccglndkaccmibhechimj`。
 
-历史上用 `scripts/keys/extension.pem` 签过 CRX3，打包 ID 为 `clnpnldmjaklambmaglpckjlgkicmcpb`。当初生成 `key` 时私钥没有留档，不能用同一把钥匙再签，否则会改未打包 ID、侧栏 `chrome.storage` 会丢。因此打包 ID 与未打包 ID 不同，Host 清单 `allowed_origins` 仍同时写这两个 origin（兼容曾经 sideload 过打包扩展的机器）。**不再把 CRX 当作安装路径，Release 也不再上传 `opensider.crx`。** 校验打包 ID 只需要**公钥**：仓库里存 `scripts/keys/extension.pub.pem`，`pack-extension.mjs` 用它算出 ID 与常量比对（实测与私钥算出的完全一致）。当初那把私钥 `extension.pem` **不入库**（已在 `.gitignore` 里，本机自行留档），因为算 ID 只用到公钥、它也不代表商店发布者身份、也不会再写出 `.crx`。注意：该私钥在**历史提交**里存在过（改公开仓库时未重写历史），所以它已不算秘密；要彻底清掉得重写历史并处理 `v1.0.0` tag 与已有 Release。
+历史上用 `scripts/keys/extension.pem` 签过 CRX3，打包 ID 为 `clnpnldmjaklambmaglpckjlgkicmcpb`。当初生成 `key` 时私钥没有留档，不能用同一把钥匙再签，否则会改未打包 ID、侧栏 `chrome.storage` 会丢。因此打包 ID 与未打包 ID 不同，Host 清单 `allowed_origins` 仍同时写这两个 origin（兼容曾经 sideload 过打包扩展的机器）。**不再把 CRX 当作安装路径，Release 也不再上传 `opensider.crx`，仓库里也不再放任何密钥**（`scripts/keys/` 整目录已 gitignore，本机留档）：既然不出 CRX，签名密钥就没有用途——算 ID 只要公钥，而公钥本来就不是秘密。打包脚本改去校验**真正要紧的那个 ID**：读构建产物 `dist/manifest.json` 的 `key` 算出未打包 ID，与常量比对；它才是决定用户身份、改了就丢侧栏数据的值，比过去那个空转的「打包 ID 自检」有意义。
 
-**2026-09 已轮换签名密钥**：旧私钥既然随历史公开，就换了一把新的 RSA-2048（新私钥 `scripts/keys/extension.pem` 只在本机、已在 `.gitignore` 内；新公钥进库），`pack-extension.mjs` 的 `expectedPackedId` 改为新 ID `bhedoigbjidpfhkalhkhjilpndifdkjj`。轮换**不影响已发布版本**：用户实际在用的是未打包 ID（由 `manifest.json` 的 `key` 决定，跟这把钥匙无关），Release 资产里也没有 CRX，换钥只改动打包时的自检常量。`allowed_origins` 里的**旧打包 ID 保留不动**（兼容曾 sideload 过 CRX 的机器）——这也意味着旧私钥理论上仍能签出 Host 会放行的 CRX，只是已没有分发渠道，且要用户手动装 CRX 才可能生效。
+历史遗留：那把私钥在**历史提交**里存在过（改公开仓库时未重写历史），仍可 `git log --all -- scripts/keys/extension.pem` 取回。影响评估：它只解锁「签出 ID 为 `clnpnldmjaklambmaglpckjlgkicmcpb` 的 CRX」，而 (1) 稳定版 Chrome 基本不允许商店外装 CRX，(2) 项目不分发 CRX、也没有 `update_url` 或已安装基数可搭车，(3) **同样的能力本来就不需要私钥**——`manifest.json` 的 `key` 是公开的，任何人照抄即可拿到未打包 ID 去连 Host。要出事得用户主动装一个冒名扩展，这把钥匙不构成额外风险，因此没有为它重写历史。
 
 Host 注册名：`com.opensider.host`  
 macOS 清单路径：`~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.opensider.host.json`
@@ -492,8 +492,7 @@ packages/shared     扩展 ↔ Host 消息类型（TS）
 packages/extension  Chrome MV3（background / content / sidepanel）
 scripts/install     用户壳 install.sh / install.ps1
 scripts/brand/      四家 Agent 的官方矢量素材原文件（只给 banner 生成脚本读，见「README Banner」）
-scripts/pack-extension.mjs  把 dist 打成 extension.zip（并用 pem 校验历史打包 ID）
-scripts/keys        扩展签名**公钥**（校验历史打包 ID；私钥不入库，见「扩展身份」）
+scripts/pack-extension.mjs  把 dist 打成 extension.zip（用构建产物 manifest 的 key 校验未打包 ID）
 .github/workflows   tag 发 Release
 ```
 

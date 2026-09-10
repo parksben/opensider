@@ -42,7 +42,7 @@ README 演示视频见 `docs/opensider.mp4`：Agent 提炼网页信息、生成�
 pnpm pack-extension
 ```
 
-把 `packages/extension/dist` 打成 `dist-release/extension.zip`（校验历史打包 ID，不写出 CRX）。校验**只用仓库里的公钥** `scripts/keys/extension.pub.pem`，不需要私钥——私钥被 `.gitignore` 挡在库外，所以任何人（含 CI）拉下代码就能打包，**不需要配任何签名 secret**。`dist-release/` 不入库。完整 `pnpm build` 会先编扩展再打包，再跑 `install --local`。
+把 `packages/extension/dist` 打成 `dist-release/extension.zip`（不写出 CRX）。打包**不需要任何密钥文件**：脚本用构建产物 `manifest.json` 里的 `key` 算出未打包 ID，和常量比对，拦住「误改 key 让用户丢侧栏数据」这种情况。`dist-release/` 不入库。完整 `pnpm build` 会先编扩展再打包，再跑 `install --local`。
 
 ## tag 发 Release
 

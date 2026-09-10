@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { createHash, createPublicKey } from "node:crypto";
+import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
@@ -8,12 +8,12 @@ import { crc32, deflateRawSync } from "node:zlib";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const distDir = join(root, "packages", "extension", "dist");
-// 只拿公钥算打包 ID——算 ID 不需要私钥，所以私钥不入库（.gitignore 挡住），
-// CI 也不需要任何签名 secret。可用 EXTENSION_PUBKEY_PEM 覆盖（内容即 PEM）。
-const publicKeyPath = join(root, "scripts", "keys", "extension.pub.pem");
 const outDir = join(root, "dist-release");
 const zipPath = join(outDir, "extension.zip");
-const expectedPackedId = "bhedoigbjidpfhkalhkhjilpndifdkjj";
+// 不打包 CRX，所以打包不需要任何密钥文件。真正要紧的是**未打包 ID**（用户实际在
+// 用的那个）：它由 dist/manifest.json 的 key 决定，改了用户侧栏数据就丢——下面
+// 这个自检就是为了拦住这种误改。
+const expectedExtensionId = "gcblddgaifebccglndkaccmibhechimj";
 const skipNames = new Set([".DS_Store", "Thumbs.db"]);
 
 function fail(message) {
@@ -137,28 +137,27 @@ function buildZip(files) {
   return Buffer.concat([...locals, centralBuf, eocd]);
 }
 
-function packedIdFromPublicKey(pem) {
-  const publicKey = createPublicKey(pem);
-  const spki = publicKey.export({ type: "spki", format: "der" });
-  return extensionIdFromSpki(spki);
-}
-
 async function main() {
+  let manifestRaw;
   try {
-    statSync(join(distDir, "manifest.json"));
+    manifestRaw = readFileSync(join(distDir, "manifest.json"), "utf8");
   } catch {
     fail("packages/extension/dist/manifest.json missing; run the extension build first");
   }
-  let publicKeyPem = process.env.EXTENSION_PUBKEY_PEM;
-  if (!publicKeyPem) {
-    try {
-      publicKeyPem = readFileSync(publicKeyPath, "utf8");
-    } catch {
-      fail(
-        `missing extension public key: ${publicKeyPath} ` +
-          "(set EXTENSION_PUBKEY_PEM to override)",
-      );
-    }
+
+  const manifest = JSON.parse(manifestRaw);
+  if (!manifest.key) {
+    fail(
+      "dist/manifest.json has no `key`: the unpacked extension id would follow the " +
+        "load path instead, and users would lose their sidebar data",
+    );
+  }
+  const id = extensionIdFromSpki(Buffer.from(manifest.key, "base64"));
+  if (id !== expectedExtensionId) {
+    fail(
+      `unpacked extension id ${id} != ${expectedExtensionId}; ` +
+        "changing the manifest key makes users lose their sidebar data",
+    );
   }
 
   const files = await listFiles(distDir);
@@ -166,14 +165,10 @@ async function main() {
     fail("packages/extension/dist is empty");
   }
   const zip = buildZip(files);
-  const id = packedIdFromPublicKey(publicKeyPem);
-  if (id !== expectedPackedId) {
-    fail(`packed extension id ${id} != ${expectedPackedId}; update protocol constants if the key changed`);
-  }
 
   mkdirSync(outDir, { recursive: true });
   writeFileSync(zipPath, zip);
-  console.log(`wrote ${relative(root, zipPath)} (${zip.length} bytes, packed id ${id})`);
+  console.log(`wrote ${relative(root, zipPath)} (${zip.length} bytes, extension id ${id})`);
 }
 
 await main();

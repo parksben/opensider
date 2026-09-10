@@ -7,8 +7,8 @@ const (
 	// 改了会让用户的侧栏数据丢失，别动。
 	ExtensionID = "gcblddgaifebccglndkaccmibhechimj"
 
-	// PackedExtensionID 是历史打包 ID，只为兼容曾经 sideload 过 CRX 的机器而留在
-	// allowed_origins 里。2026-09 已轮换签名密钥，新打包 ID 见 scripts/keys。
+	// PackedExtensionID 是历史打包 ID（当初 CRX 签名用的），只为兼容曾经 sideload 过
+	// CRX 的机器而留在 allowed_origins 里；不再出 CRX，仓库也不再存放任何密钥。
 	PackedExtensionID = "clnpnldmjaklambmaglpckjlgkicmcpb"
 )
 

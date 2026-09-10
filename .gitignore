@@ -10,7 +10,6 @@ dist-release
 /opensider
 /opensider.exe
 
-# 签名私钥不入库；只提交公钥 scripts/keys/extension.pub.pem
-scripts/keys/*.pem
-!scripts/keys/extension.pub.pem
+# 签名密钥不入库（不再出 CRX，仓库不需要任何密钥；打包自检用构建产物 manifest 的 key）
+scripts/keys/
 .env

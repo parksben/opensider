@@ -1,11 +1,12 @@
 export const HOST_NAME = "com.opensider.host";
-// 未打包 ID（用户实际在用的那个）：由下面 EXTENSION_KEY 决定，改了会让用户丢侧栏数据
+// 未打包 ID（用户实际在用的那个）：由下面 EXTENSION_KEY 决定，改了会让用户丢侧栏数据；
+// pack-extension.mjs 会用构建产物 manifest 的 key 校验它
 export const EXTENSION_ID = "gcblddgaifebccglndkaccmibhechimj";
-// 历史打包 ID：只为兼容曾 sideload 过 CRX 的机器而留在 allowed_origins 里。
-// 2026-09 已轮换签名密钥（旧私钥曾随公开仓库的历史泄露），新打包 ID 见
-// scripts/keys/extension.pub.pem 与 scripts/pack-extension.mjs
+// 历史打包 ID：当初 CRX 签名用的 ID。只为兼容曾 sideload 过 CRX 的机器而留在
+// allowed_origins 里；已无实际用途（不再出 CRX，仓库也不放密钥）
 export const PACKED_EXTENSION_ID = "clnpnldmjaklambmaglpckjlgkicmcpb";
-// 未打包 ID 的公钥（写进 manifest 的 key），与 scripts/keys 里的签名密钥是两把不同的钥匙
+// 未打包 ID 的公钥（写进 manifest 的 key）。它是**公开**的：谁都能照抄拿到同一个 ID，
+// 所以它只用于固定身份，不是秘密，也挡不住恶意扩展
 export const EXTENSION_KEY =
   "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAnTBeaC6um/MhTF3PUApwaTJ58DCRUu7bzf8OziNAQTxwrN5MtQNjEdzyJrpTOLdmkIZ57ssbWqGbBpXUSpvNmIFLsp5rENOv8hVvYX8j2vALs5eJbhiKggPuUyYZ+pO7ibQjreLeGzW380iDZjB9pDSjvYERFBoNf+COJTMNd4vQZ3BhBPrYhnct0qEIqTk/050xrqRn/knPnLCOP20FSVMhrvs9u5dSwGJ2mE6g34tfeAof6AL4LCrKgnd8qEtwmeWfRfFWYr6W5UJQficulEHlcUCZUfjN/aro2M2mJXdwaALGPhaYy+q1sqHM3yEEsjI84DStXoGJPpBoqx6u7wIDAQAB";
 
