@@ -6,11 +6,11 @@
   </p>
 </div>
 
-<br />
-
 <div align="center">
   <a href="./README.md">中文</a> | English
 </div>
+
+<br />
 
 OpenSider is a browser extension that drives local Agents (Claude Code CLI, Copilot CLI, OpenCode CLI, Cursor CLI, and other local Agent tools) from within your browser for web information gathering, web automation, and more.
 
