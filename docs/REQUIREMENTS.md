@@ -11,6 +11,7 @@
 ## 文档分层
 
 - **`README.md`**：面向使用者的产品页。居中标题下只放一句中文 slogan（你期待已久的浏览器自动化工具），不要英文副标题。接着一段产品介绍：OpenSider 是浏览器扩展，支持在浏览器中驱动本地 Agent（Claude Code CLI、Copilot CLI、OpenCode CLI、Cursor CLI 等，不要把 Cursor 写在最前）进行网页信息采集、网页自动化操作等工作。再列恰好 3 条加粗要点（在浏览器中与 Agent 协作 / 自动载入网页上下文 / 数据持久化），不要第 4 条，不要单独开「适用场景」。然后是演示视频（Agent 提炼网页信息、生成资讯榜单并在浏览器打开；不要写分辨率 / 加速 / IME 等录制规格），再是从 GitHub Release 下载 `extension.zip` 未打包加载的四步安装（安装段前先以引文说明适用于 Chrome / Edge / Brave 等 Chromium 内核浏览器、需本机已有 Agent CLI）。桥接安装命令由侧栏给出，不要把一行壳 / SHA256 / Host 二进制下载写成 README 主流程。不写 pnpm / Go、仓库树、开发入口或「见 DEVELOPMENT.md」，也不把 `packages/extension/dist` 当成用户加载路径。
+- **`README-en.md`**（仓库根）：README 的英文版，与中文版同构（英文 slogan + 同样 3 条要点、视频演示、四步安装）。两版正文首句前各以引文（blockquote）互链：中文版指 `./README-en.md`，英文版指 `./README.md`。
 - **`AGENTS.md`**（仓库根）：开发协作约定（先文档后代码、小步 commit 等）。**不是** Host 写入的 `~/.opensider/workspace/AGENTS.md`（Agent 工作区页面协议）。
 - **`docs/DEVELOPMENT.md`**：面向开发。本地构建、`pnpm install-host`、工作区布局、仓库结构、打 `extension.zip`、推 `v*` tag 发 Release。
 - **本文件**：记产品做什么、为什么。

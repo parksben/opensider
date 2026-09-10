@@ -9,6 +9,8 @@
 
 <br />
 
+> [English README](./README-en.md)
+
 OpenSider 是一个浏览器扩展程序，支持在浏览器中驱动本地 Agent（Claude Code CLI、Copilot CLI、OpenCode CLI、Cursor CLI 等本地 Agent 工具）进行网页信息采集、网页自动化操作等工作。
 
 - **在浏览器中与 Agent 协作**  
