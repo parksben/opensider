@@ -53,6 +53,7 @@ Release 资产名必须和用户安装壳一致，见 TECH_DESIGN「发布与安
 ## 仓库结构
 
 ```
+LICENSE               MIT 许可
 AGENTS.md             仓库根开发协作约定（不是 ~/.opensider/workspace/AGENTS.md）
 cmd/opensider         唯一 Go 入口（无参=Host，install，pick）
 internal/             Host / install / pick / ACP
