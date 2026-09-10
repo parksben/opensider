@@ -455,10 +455,19 @@ macOS 清单路径：`~/Library/Application Support/Google/Chrome/NativeMessagin
 
 - 成片 `docs/banner.svg`，由 `scripts/generate_banner.py` 生成（勿手改）。画布 1600×520，README 里靠容器宽度缩放
 - 只有一份自包含矢量：不引外链图片、不嵌位图、不依赖字体文件。README 只给 `<img>`，外部引用在 `img` 上下文里根本不加载；位图在高 DPI 下糊。文字用 `IBM Plex Sans` → 系统无衬线兜底，不转路径（转路径要打包字体，收益只在字体缺省时的度量差异，且中文字重不可控）
-- 中段图标不复制几何：`generate_banner.py` 直接 `import generate_icon`，复用同一套 `color_at` conic 算法、立方体 clipPath 与扇形半径，只把扇形步长从 1° 放到 2°（banner 里图标约 164px，1° 与 2° 肉眼无差，文件小一半）
+- 中段图标不复制几何：`generate_banner.py` 直接 `import generate_icon`，复用同一套 `color_at` conic 算法、立方体 clipPath 与扇形半径，只把扇形步长从 1° 放到 2°（banner 里图标约 164px，1° 与 2° 肉眼无差，文件小一半）。侧栏面板顶栏那颗小图标走同一个 `icon_group()`，只把步长再放到 6°（20px 下多边形数量比像素还多没意义）
+- 四家 Agent 的标记用**各品牌官方矢量**，上游文件整份存 `scripts/brand/`，`generate_banner.py` 生成时按 `fill` 认出要哪几条 `<path>` 再套自己的变换与填充色——不手工抄 path（抄 2400 字符必错），也不改上游形状。取法与来源：
+  | 标记 | 上游文件 | 取哪条 path | 填色 |
+  |---|---|---|---|
+  | Claude Code | `claude-code.svg`（Claude Code 官方文档站 `docs.claude.com` 的 logo/light） | `fill="#D97757"` 那条（星标；同文件其余 path 是 "Claude Code" 字标，不用） | 保留官方橙 `#D97757` |
+  | GitHub Copilot | `github-copilot.svg`（GitHub 官方 Octicons `copilot-24`，MIT） | 全部（头部轮廓 + 两只眼） | 主题前景色 |
+  | OpenCode | `opencode.svg`（opencode 仓库 `packages/ui/src/assets/favicon/favicon-v3.svg`） | 两条（外框 + 内方块），丢掉深色底板 `<rect>` | 外框前景色、内方块次要色 |
+  | Cursor | `cursor.svg`（cursor.com 官方 favicon） | `fill="#edecec"` 那条立方体，丢掉圆角底板与描边层 | 主题前景色 |
+
+- 各标记不按 viewBox 直接缩放，而是按**实测 bbox** 归一：目标高度统一 42（48 方框里各留 3）。bbox 由生成脚本里的 `path_bbox()` 算（自己解析 M/L/H/V/C/Z，含相对指令——Octicon 全是小写相对曲线，只做 min/max 会错），并用 OpenCode / Cursor 上游自带坐标交叉验证过。这份几何数据留在脚本里，不在运行时猜
+- 商标：这四份素材的版权与商标归各品牌，仓库内保留只为说明可连接的 Agent，不表示背书；README 正文也不要写合作口径。素材整份入库（而非只存抽出的 path）是为了来源可核对——想验证可以直接 diff 上游 URL
 - 双主题在 SVG 内部用 CSS 变量 + `@media (prefers-color-scheme: dark)` 切换。GitHub 不会把页面主题告诉 `<img>`，也没有 `#gh-dark-mode-only` 这种片段可用，只能跟系统；两套调色板都按可读对比度给，不依赖背景色
 - 连接关系用视觉表达：左右各一条基线与一条 `.flow` 覆盖线，靠 `stroke-dasharray` + `stroke-linecap: round` 得到流动光点，动画只改 `stroke-dashoffset`；`prefers-reduced-motion: reduce` 下关掉动画，静态圆点仍在，**语义不依赖动画**
-- 四家 Agent 的标记是手写简化几何（Claude 放射花、Copilot 护目面罩、OpenCode 终端提示符、Cursor 等轴立方体），不用官方素材、不引外链 logo，商标归属留给文字名；具体文案与分区要求见 `REQUIREMENTS.md` 的「README Banner 概念图」
 
 ## 仓库结构
 
@@ -477,6 +486,7 @@ internal/           Host / install / pick / ACP
 packages/shared     扩展 ↔ Host 消息类型（TS）
 packages/extension  Chrome MV3（background / content / sidepanel）
 scripts/install     用户壳 install.sh / install.ps1
+scripts/brand/      四家 Agent 的官方矢量素材原文件（只给 banner 生成脚本读，见「README Banner」）
 scripts/pack-extension.mjs  把 dist 打成 extension.zip（并用 pem 校验历史打包 ID）
 scripts/keys        扩展签名钥（只用来固定历史打包 ID，不再出 CRX）
 .github/workflows   tag 发 Release
