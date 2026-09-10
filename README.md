@@ -1,7 +1,6 @@
 <div align="center">
   <br />
-  <img width="96" height="96" alt="OpenSider" src="./docs/logo.svg" />
-  <h1>OpenSider</h1>
+  <img alt="OpenSider" src="./docs/banner.svg" />
   <p>
     你期待已久的浏览器自动化工具
   </p>

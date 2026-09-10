@@ -468,6 +468,7 @@ macOS 清单路径：`~/Library/Application Support/Google/Chrome/NativeMessagin
 - 标记的变换必须把 **bbox 中心**对到卡片中线：`translate(cx,cy) scale(s) translate(-(bx+w/2),-(by+h/2))`。早先写成对齐 bbox 左上角，标记整体下沉半个身高、跟名字错位，右边距也被吃掉。尺寸：标记目标高 34、标记列宽 40、列距卡片左边 22、名字距列 16——四个名字靠固定列宽左对齐，不跟各自标记的实际宽度跑
 - 卡片宽 348，右边缘离画布 60（与左边缘 56 呼应）：按最长名字实测宽度定，不留大片虚空。早先固定 420、名字又不带 `CLI`，最长一行右侧空出 150+。名字后的 `CLI` 用 `<tspan dx>` + 次要色，**不另设 font-size**（继承品牌名的字号，改 `.chipname` 不会脱节），层级差只靠颜色——改文案或字号后要在浏览器里量一次 `getBBox()` 复核，别让文字压到卡片右边框
 - 商标：这四份素材的版权与商标归各品牌，仓库内保留只为说明可连接的 Agent，不表示背书；README 正文也不要写合作口径。素材整份入库（而非只存抽出的 path）是为了来源可核对——想验证可以直接 diff 上游 URL
+- README 用法：`<div align="center">` 里放 `<img alt="OpenSider" src="./docs/banner.svg">`，**不写 width/height**（靠正文栏宽度缩放，SVG 自带 1600×520 保证比例），slogan 作为图下方居中的 `<p>`；原来那颗 96px 的 `docs/logo.svg` 与 `<h1>` 一并撤掉。中文版与英文版共用这一张图——图里只有产品名、`BROWSER` / `LOCAL AGENTS` 分区标签和四家英文名，没有中文字，所以不需要出两张
 - 双主题在 SVG 内部用 CSS 变量 + `@media (prefers-color-scheme: dark)` 切换。GitHub 不会把页面主题告诉 `<img>`，也没有 `#gh-dark-mode-only` 这种片段可用，只能跟系统；两套调色板都按可读对比度给，不依赖背景色
 - 连接关系用视觉表达：左右各一条基线与一条 `.flow` 覆盖线，靠 `stroke-dasharray` + `stroke-linecap: round` 得到流动光点，动画只改 `stroke-dashoffset`；`prefers-reduced-motion: reduce` 下关掉动画，静态圆点仍在，**语义不依赖动画**
 
@@ -480,7 +481,7 @@ README-en.md        README 的英文版；与中文版正文首句前以引文�
 docs/REQUIREMENTS.md  需求：做什么、为什么
 docs/TECH_DESIGN.md   本文件：怎么做、为什么选这个方案
 docs/DEVELOPMENT.md   开发构建、Host 注册、工作区、打 extension.zip、tag 发 Release
-docs/logo.svg         README logo
+docs/logo.svg         品牌图标单图（512，源自 generate_icon；README 顶部已改用 banner，此文件保留备用）
 docs/banner.svg       README banner 概念图（由 scripts/generate_banner.py 生成）
 docs/opensider.mp4    README 演示视频：Agent 提炼网页信息、生成资讯榜单并在浏览器打开
 cmd/opensider       唯一 Go 入口（host / install / pick）
