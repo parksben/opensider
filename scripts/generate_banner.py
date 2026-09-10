@@ -48,9 +48,9 @@ WEDGE_STEP = 2  # 扇形步长（度），generate_icon 用 1°
 
 # 右侧 Agent 卡片
 CHIP_X, CHIP_W, CHIP_H, CHIP_GAP, CHIP_TOP = 1120.0, 420.0, 72.0, 32.0, 76.0
-MARK_BOX = 48.0  # 标记方框边长
-MARK_PAD = 22.0  # 标记距卡片左边距
-NAME_GAP = 22.0  # 标记与名字之间的间距
+MARK_SLOT = 40.0  # 标记列宽（四个名字靠固定列宽左对齐，不跟标记实际宽度跑）
+MARK_PAD = 22.0  # 标记列距卡片左边
+NAME_GAP = 16.0  # 名字距标记列
 
 # 左侧双向链路的两条线（浏览器右边缘 → 枢纽左侧环上）
 LINK_A = "M576,252 C636,252 636,206 696,206"
@@ -128,7 +128,7 @@ def fan_path(i: int) -> str:
 # 四家标记都用各品牌官方矢量，不手抄 path、不改形状，只换填充色。
 # 上游文件整份存 scripts/brand/（来源与商标说明见 docs/TECH_DESIGN.md）。
 
-MARK_SIZE = 42.0  # 标记在 48 方框里的目标高度，各留 3 的余量
+MARK_SIZE = 34.0  # 标记目标高度；卡片高 72，上下各留约 19 的呼吸
 _PATH_TAG = re.compile(r"<path\b[^>]*>")
 _D_ATTR = re.compile(r'\sd="([^"]*)"')
 _FILL_ATTR = re.compile(r'\sfill="([^"]*)"')
@@ -161,12 +161,15 @@ def _mark_group(cx: float, cy: float, box: tuple, body: str) -> str:
 
     box 是标记本体的实测 bbox（x, y, w, h），不是上游 viewBox——上游
     viewBox 里常带无关留白或整块底板，按它缩放会偏小、偏位。
+
+    注意是 bbox 的**中心**对到 (cx, cy)：早先写成对齐左上角，标记会整体
+    下沉半个身高，跟右边的名字错位，右边距也被吃掉。
     """
     bx, by, bw, bh = box
     scale = MARK_SIZE / bh
     return (
         f'  <g transform="translate({cx} {cy}) scale({scale:.6f})'
-        f' translate({-bx:.3f} {-by:.3f})">\n    {body}\n  </g>'
+        f' translate({-(bx + bw / 2):.3f} {-(by + bh / 2):.3f})">\n    {body}\n  </g>'
     )
 
 
@@ -370,8 +373,8 @@ def agent_chips() -> str:
     for i, name in enumerate(AGENTS):
         cy = chip_cy(i)
         y = cy - CHIP_H / 2
-        mx = CHIP_X + MARK_PAD + MARK_BOX / 2
-        nx = CHIP_X + MARK_PAD + MARK_BOX + NAME_GAP
+        mx = CHIP_X + MARK_PAD + MARK_SLOT / 2
+        nx = CHIP_X + MARK_PAD + MARK_SLOT + NAME_GAP
         rows.append(
             f'    <rect x="{CHIP_X}" y="{y:.1f}" width="{CHIP_W}" height="{CHIP_H}"'
             f' rx="16" class="cardf stk"/>\n'

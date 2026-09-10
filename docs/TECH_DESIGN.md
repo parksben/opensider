@@ -464,7 +464,8 @@ macOS 清单路径：`~/Library/Application Support/Google/Chrome/NativeMessagin
   | OpenCode | `opencode.svg`（opencode 仓库 `packages/ui/src/assets/favicon/favicon-v3.svg`） | 两条（外框 + 内方块），丢掉深色底板 `<rect>` | 外框前景色、内方块次要色 |
   | Cursor | `cursor.svg`（cursor.com 官方 favicon） | `fill="#edecec"` 那条立方体，丢掉圆角底板与描边层 | 主题前景色 |
 
-- 各标记不按 viewBox 直接缩放，而是按**实测 bbox** 归一：目标高度统一 42（48 方框里各留 3）。bbox 由生成脚本里的 `path_bbox()` 算（自己解析 M/L/H/V/C/Z，含相对指令——Octicon 全是小写相对曲线，只做 min/max 会错），并用 OpenCode / Cursor 上游自带坐标交叉验证过。这份几何数据留在脚本里，不在运行时猜
+- 各标记不按 viewBox 直接缩放，而是按**实测 bbox** 归一。bbox 是离线用 M/L/H/V/C/Z 解析器量的（Octicon 全是小写相对曲线，只做 min/max 会错位），数字作为常量留在脚本里，并用 OpenCode / Cursor 上游自带坐标交叉验证过——不在运行时猜
+- 标记的变换必须把 **bbox 中心**对到卡片中线：`translate(cx,cy) scale(s) translate(-(bx+w/2),-(by+h/2))`。早先写成对齐 bbox 左上角，标记整体下沉半个身高、跟名字错位，右边距也被吃掉。尺寸：标记目标高 34、标记列宽 40、列距卡片左边 22、名字距列 16——四个名字靠固定列宽左对齐，不跟各自标记的实际宽度跑
 - 商标：这四份素材的版权与商标归各品牌，仓库内保留只为说明可连接的 Agent，不表示背书；README 正文也不要写合作口径。素材整份入库（而非只存抽出的 path）是为了来源可核对——想验证可以直接 diff 上游 URL
 - 双主题在 SVG 内部用 CSS 变量 + `@media (prefers-color-scheme: dark)` 切换。GitHub 不会把页面主题告诉 `<img>`，也没有 `#gh-dark-mode-only` 这种片段可用，只能跟系统；两套调色板都按可读对比度给，不依赖背景色
 - 连接关系用视觉表达：左右各一条基线与一条 `.flow` 覆盖线，靠 `stroke-dasharray` + `stroke-linecap: round` 得到流动光点，动画只改 `stroke-dashoffset`；`prefers-reduced-motion: reduce` 下关掉动画，静态圆点仍在，**语义不依赖动画**
