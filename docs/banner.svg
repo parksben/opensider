@@ -1,0 +1,395 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 由 scripts/generate_banner.py 生成，请勿手改 -->
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="520" viewBox="0 0 1600 520"
+     role="img" aria-labelledby="banner-title banner-desc">
+  <title id="banner-title">OpenSider — 在浏览器里连接本机 Agent CLI</title>
+  <desc id="banner-desc">左：浏览器窗口（窗口内右侧是侧栏聊天面板）。中：OpenSider 图标与产品名，作为连接枢纽。右：Claude Code、GitHub Copilot、OpenCode、Cursor 四家本机 Agent。连线表示浏览器与 Agent 之间的双向数据流。</desc>
+  <defs>
+    <style>
+    :root{
+      --bg-a:#FFFFFF; --bg-b:#F4F7FA; --frame:#E6EBF1;
+      --card:#FFFFFF; --line:#E3E9F0; --soft:#F2F6FA; --panel:#FAFCFE;
+      --wire:#E9EEF4; --wire2:#D6DFE9;
+      --ink:#111827; --muted:#7C8A9A;
+      --cable:#DCE4ED; --ring:#C6D2E0; --node:#B4C2D2;
+      --accent:#4285F4; --accent-soft:#E8F0FE;
+    }
+    @media (prefers-color-scheme: dark){
+      :root{
+        --bg-a:#0D1117; --bg-b:#131A22; --frame:#232C37;
+        --card:#161C24; --line:#27313C; --soft:#1A222B; --panel:#121922;
+        --wire:#232D38; --wire2:#303C49;
+        --ink:#E8EEF5; --muted:#8492A2;
+        --cable:#2C3742; --ring:#33404E; --node:#4A5A6C;
+        --accent:#8AB4F8; --accent-soft:#17273C;
+      }
+    }
+    text{font-family:"IBM Plex Sans","Inter",-apple-system,"Segoe UI","Helvetica Neue",Arial,sans-serif}
+    .zlabel{font-size:19px;font-weight:500;letter-spacing:2.8px;fill:var(--muted)}
+    .wordmark{font-size:58px;font-weight:600;letter-spacing:-0.8px;fill:var(--ink)}
+    .sub{font-size:19px;letter-spacing:1.4px;fill:var(--muted)}
+    .chipname{font-size:27px;font-weight:500;fill:var(--ink)}
+    .bgf{fill:url(#bg-grad)}
+    .stop-a{stop-color:var(--bg-a)}
+    .stop-b{stop-color:var(--bg-b)}
+    /* 只描边，不能写 fill:none——会和 .bgf 同权重抢 fill */
+    .frame{stroke:var(--frame);stroke-width:1.2}
+    .cardf{fill:var(--card)}
+    .softf{fill:var(--soft)}
+    .panelf{fill:var(--panel)}
+    .wiref{fill:var(--wire)}
+    .wire2f{fill:var(--wire2)}
+    .accentf{fill:var(--accent)}
+    .accentsoftf{fill:var(--accent-soft)}
+    .accentline{fill:var(--accent);opacity:.5}
+    /* #brand-grad 用 objectBoundingBox，小元素才不会掉到渐变的端色上 */
+    .brandf{fill:url(#brand-grad)}
+    .eyef{fill:var(--card)}
+    .stk{stroke:var(--line);stroke-width:1.2}
+    .hairline{fill:none;stroke:var(--line);stroke-width:1.2}
+    .lock{fill:none;stroke:var(--muted);stroke-width:1.5}
+    .paperline{fill:none;stroke:var(--wire2);stroke-width:5;stroke-linecap:round;stroke-linejoin:round}
+    .pickbox{stroke:var(--accent);stroke-width:2;stroke-dasharray:7 6}
+    .ripple{fill:none;stroke:var(--accent);stroke-width:1.6;opacity:.35}
+    .cursorring{fill:none;stroke:var(--accent);stroke-width:2.6}
+    .mkf{fill:var(--ink)}
+    .mk{fill:none;stroke:var(--ink);stroke-width:3.2;stroke-linecap:round;stroke-linejoin:round}
+    .mk3{fill:none;stroke:var(--ink);stroke-width:3;stroke-linecap:round;stroke-linejoin:round}
+    .cable{fill:none;stroke:var(--cable);stroke-width:2.4}
+    .ring{fill:none;stroke:var(--ring);stroke-width:1.4;stroke-dasharray:3 7}
+    .node{fill:var(--node)}
+    .hubglow{fill:url(#hub-glow)}
+    .flow{fill:none;stroke:url(#flow-grad);stroke-width:4.4;stroke-linecap:round;
+          stroke-dasharray:.5 26.5;animation:dash 3.4s linear infinite}
+    .flow.rev{animation-direction:reverse}
+    .flow.fan{animation-duration:4s}
+    @keyframes dash{to{stroke-dashoffset:-27}}
+    @media (prefers-reduced-motion: reduce){ .flow{animation:none} }
+  </style>
+    <linearGradient id="bg-grad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" class="stop-a"/>
+      <stop offset="1" class="stop-b"/>
+    </linearGradient>
+    <!-- 链路用 Chrome 四色：左段偏暖（红黄），右段偏冷（绿蓝） -->
+    <linearGradient id="flow-grad" gradientUnits="userSpaceOnUse" x1="560" y1="0" x2="1130" y2="0">
+      <stop offset="0" stop-color="#EA4335"/>
+      <stop offset=".34" stop-color="#FBBC05"/>
+      <stop offset=".67" stop-color="#34A853"/>
+      <stop offset="1" stop-color="#4285F4"/>
+    </linearGradient>
+    <radialGradient id="hub-glow">
+      <stop offset="0" stop-color="#4285F4" stop-opacity=".16"/>
+      <stop offset=".6" stop-color="#34A853" stop-opacity=".06"/>
+      <stop offset="1" stop-color="#34A853" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="brand-grad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#EA4335"/>
+      <stop offset=".4" stop-color="#FBBC05"/>
+      <stop offset=".72" stop-color="#34A853"/>
+      <stop offset="1" stop-color="#4285F4"/>
+    </linearGradient>
+    <clipPath id="opensider-cube">
+      <path d="M213.37,8.11L20.00,119.76A40.00 40.00 0 0 0 0.00,154.40L0.00,377.69A40.00 40.00 0 0 0 20.00,412.33L213.37,523.99A40.00 40.00 0 0 0 253.37,523.99L446.74,412.33A40.00 40.00 0 0 0 466.74,377.69L466.74,154.40A40.00 40.00 0 0 0 446.74,119.76L253.37,8.11A40.00 40.00 0 0 0 213.37,8.11ZM142.93,88.42L424.80,251.44A12.12 12.12 0 0 1 424.89,272.38L143.01,438.43A12.12 12.12 0 0 1 124.74,427.98L124.74,98.92A12.12 12.12 0 0 1 142.93,88.42Z"/>
+    </clipPath>
+  </defs>
+
+  <rect x="0" y="0" width="1600" height="520" rx="28.0" class="bgf frame"/>
+
+  <text x="316.0" y="56" text-anchor="middle" class="zlabel">BROWSER</text>
+  <text x="1330.0" y="56" text-anchor="middle" class="zlabel">LOCAL AGENTS</text>
+
+  <!-- 左段：浏览器窗口 -->
+  <g>
+    <rect x="56.0" y="76.0" width="520.0" height="376.0" rx="18" class="cardf stk"/>
+    <rect x="56.0" y="76.0" width="520.0" height="48.0" rx="18" class="softf"/>
+    <rect x="56.0" y="98.0" width="520.0" height="26.0" class="softf"/>
+    <path d="M56.0,124.0 H576.0" class="hairline"/>
+    <circle cx="88" cy="100" r="5.5" class="wire2f"/>
+    <circle cx="110" cy="100" r="5.5" class="wire2f"/>
+    <circle cx="132" cy="100" r="5.5" class="wire2f"/>
+    <rect x="156" y="87" width="392" height="26" rx="13" class="cardf stk"/>
+    <rect x="173" y="97" width="9" height="8" rx="2.5" class="lock"/>
+    <path d="M175.2,97 v-2 a2.4,2.4 0 0 1 4.8,0 v2" class="lock"/>
+    <rect x="192" y="98" width="150" height="5" rx="2.5" class="wire2f"/>
+
+    <!-- 网页线框 -->
+    <rect x="72.0" y="152" width="18" height="18" rx="5" class="wire2f"/>
+    <rect x="100" y="158" width="34" height="6" rx="3" class="wiref"/><rect x="146" y="158" width="28" height="6" rx="3" class="wiref"/><rect x="186" y="158" width="40" height="6" rx="3" class="wiref"/>
+    <rect x="356.0" y="150" width="56" height="22" rx="11" class="wire2f"/>
+    <rect x="72.0" y="186" width="340" height="80" rx="12" class="wiref"/>
+    <circle cx="100" cy="208" r="7" class="wire2f"/>
+    <path d="M86,250 L120,214 L148,244 L166,224 L200,250" class="paperline"/>
+    <rect x="72.0" y="282" width="320" height="7" rx="3.5" class="wiref"/><rect x="72.0" y="298" width="236" height="7" rx="3.5" class="wiref"/>
+
+    <!-- 正在被 Agent 操作的控件 -->
+    <rect x="72.0" y="318" width="340" height="56" rx="12" class="accentsoftf pickbox"/>
+    <rect x="88" y="334" width="88" height="24" rx="12" class="accentf"/>
+    <rect x="204" y="342" width="110" height="7" rx="3.5" class="wire2f"/>
+    <circle cx="190" cy="336" r="15" class="ripple"/>
+    <circle cx="190" cy="336" r="7.5" class="cursorring"/>
+    <circle cx="190" cy="336" r="2.6" class="accentf"/>
+    <rect x="72.0" y="390" width="160" height="46" rx="10" class="wiref"/><rect x="84.0" y="404" width="110" height="6" rx="3" class="wire2f"/><rect x="84.0" y="418" width="72" height="6" rx="3" class="wire2f"/><rect x="242" y="390" width="170" height="46" rx="10" class="wiref"/><rect x="254" y="404" width="120" height="6" rx="3" class="wire2f"/><rect x="254" y="418" width="80" height="6" rx="3" class="wire2f"/>
+
+    <!-- 窗口内置侧栏聊天面板 -->
+    <rect x="428.0" y="140.0" width="132.0" height="296.0" rx="12" class="panelf stk"/>
+    <rect x="442" y="154" width="16" height="16" rx="5" class="brandf"/>
+    <rect x="466" y="159" width="50" height="7" rx="3.5" class="wire2f"/>
+    <rect x="442" y="186" width="104" height="44" rx="10" class="wiref"/><rect x="454" y="196" width="80" height="5" rx="2.5" class="wire2f"/><rect x="454" y="206" width="64" height="5" rx="2.5" class="wire2f"/><rect x="454" y="216" width="44" height="5" rx="2.5" class="wire2f"/><rect x="466" y="240" width="80" height="32" rx="10" class="accentsoftf"/><rect x="478" y="250" width="56" height="5" rx="2.5" class="accentline"/><rect x="478" y="259" width="36" height="5" rx="2.5" class="accentline"/><rect x="442" y="282" width="104" height="58" rx="10" class="wiref"/><rect x="454" y="292" width="80" height="5" rx="2.5" class="wire2f"/><rect x="454" y="302" width="60" height="5" rx="2.5" class="wire2f"/><rect x="454" y="314" width="10" height="10" rx="3" class="wire2f"/><rect x="470" y="316" width="52" height="5" rx="2.5" class="wire2f"/>
+    <rect x="442" y="382" width="104" height="42" rx="10" class="cardf stk"/>
+    <rect x="454" y="396" width="52" height="6" rx="3" class="wiref"/>
+    <circle cx="532" cy="403" r="9" class="accentf"/>
+  </g>
+
+  <!-- 连线基线 -->
+  <g>
+    <path class="cable" d="M576,252 C636,252 636,206 696,206"/>
+    <path class="cable" d="M576,276 C636,276 636,230 696,230"/>
+    <path class="cable" d="M898.7,185.3 C970.7,185.3 1018.0,112.0 1114.0,112.0"/>
+    <path class="cable" d="M904.0,217.4 C976.0,217.4 1018.0,216.0 1114.0,216.0"/>
+    <path class="cable" d="M899.1,249.6 C971.1,249.6 1018.0,320.0 1114.0,320.0"/>
+    <path class="cable" d="M887.4,274.3 C959.4,274.3 1018.0,424.0 1114.0,424.0"/>
+  </g>
+
+  <!-- 中段：产品本体（连接枢纽） -->
+  <g>
+    <circle cx="800.0" cy="218.0" r="122" class="hubglow"/>
+    <circle cx="800.0" cy="218.0" r="104.0" class="ring"/>
+  <g transform="translate(800.0 218.0) scale(0.296875) translate(-256 -256)">
+    <g transform="translate(45.48 16) scale(0.9021)">
+      <g clip-path="url(#opensider-cube)">
+        <polygon points="233.37,266.05 833.4,266.1 833.0,287.0" fill="#F3841B"/>
+        <polygon points="233.37,266.05 833.0,287.0 831.9,307.9" fill="#F48D18"/>
+        <polygon points="233.37,266.05 831.9,307.9 830.1,328.8" fill="#F69614"/>
+        <polygon points="233.37,266.05 830.1,328.8 827.5,349.6" fill="#F79E11"/>
+        <polygon points="233.37,266.05 827.5,349.6 824.3,370.2" fill="#F8A60E"/>
+        <polygon points="233.37,266.05 824.3,370.2 820.3,390.8" fill="#F9AC0B"/>
+        <polygon points="233.37,266.05 820.3,390.8 815.5,411.2" fill="#FAB209"/>
+        <polygon points="233.37,266.05 815.5,411.2 810.1,431.4" fill="#FAB707"/>
+        <polygon points="233.37,266.05 810.1,431.4 804.0,451.5" fill="#FBBA06"/>
+        <polygon points="233.37,266.05 804.0,451.5 797.2,471.3" fill="#FBBC05"/>
+        <polygon points="233.37,266.05 797.2,471.3 789.7,490.8" fill="#FBBC05"/>
+        <polygon points="233.37,266.05 789.7,490.8 781.5,510.1" fill="#FBBC05"/>
+        <polygon points="233.37,266.05 781.5,510.1 772.6,529.1" fill="#FBBC05"/>
+        <polygon points="233.37,266.05 772.6,529.1 763.1,547.7" fill="#FBBC05"/>
+        <polygon points="233.37,266.05 763.1,547.7 753.0,566.0" fill="#FBBC05"/>
+        <polygon points="233.37,266.05 753.0,566.0 742.2,584.0" fill="#FBBC05"/>
+        <polygon points="233.37,266.05 742.2,584.0 730.8,601.6" fill="#FBBC05"/>
+        <polygon points="233.37,266.05 730.8,601.6 718.8,618.7" fill="#FBBC05"/>
+        <polygon points="233.37,266.05 718.8,618.7 706.2,635.4" fill="#FBBC05"/>
+        <polygon points="233.37,266.05 706.2,635.4 693.0,651.7" fill="#FBBC05"/>
+        <polygon points="233.37,266.05 693.0,651.7 679.3,667.5" fill="#FBBC05"/>
+        <polygon points="233.37,266.05 679.3,667.5 665.0,682.8" fill="#FBBC05"/>
+        <polygon points="233.37,266.05 665.0,682.8 650.2,697.7" fill="#FBBC05"/>
+        <polygon points="233.37,266.05 650.2,697.7 634.8,711.9" fill="#FBBC05"/>
+        <polygon points="233.37,266.05 634.8,711.9 619.0,725.7" fill="#FBBC05"/>
+        <polygon points="233.37,266.05 619.0,725.7 602.8,738.9" fill="#FBBC05"/>
+        <polygon points="233.37,266.05 602.8,738.9 586.0,751.5" fill="#FBBC05"/>
+        <polygon points="233.37,266.05 586.0,751.5 568.9,763.5" fill="#FBBC05"/>
+        <polygon points="233.37,266.05 568.9,763.5 551.3,774.9" fill="#FBBC05"/>
+        <polygon points="233.37,266.05 551.3,774.9 533.4,785.7" fill="#FBBC05"/>
+        <polygon points="233.37,266.05 533.4,785.7 515.1,795.8" fill="#FBBC05"/>
+        <polygon points="233.37,266.05 515.1,795.8 496.4,805.3" fill="#FBBC05"/>
+        <polygon points="233.37,266.05 496.4,805.3 477.4,814.2" fill="#FBBC05"/>
+        <polygon points="233.37,266.05 477.4,814.2 458.1,822.4" fill="#FBBC05"/>
+        <polygon points="233.37,266.05 458.1,822.4 438.6,829.9" fill="#FBBC05"/>
+        <polygon points="233.37,266.05 438.6,829.9 418.8,836.7" fill="#FBBC05"/>
+        <polygon points="233.37,266.05 418.8,836.7 398.8,842.8" fill="#FBBC05"/>
+        <polygon points="233.37,266.05 398.8,842.8 378.5,848.2" fill="#FBBC05"/>
+        <polygon points="233.37,266.05 378.5,848.2 358.1,852.9" fill="#FBBC05"/>
+        <polygon points="233.37,266.05 358.1,852.9 337.6,856.9" fill="#FBBC05"/>
+        <polygon points="233.37,266.05 337.6,856.9 316.9,860.2" fill="#FBBC05"/>
+        <polygon points="233.37,266.05 316.9,860.2 296.1,862.8" fill="#FBBC05"/>
+        <polygon points="233.37,266.05 296.1,862.8 275.2,864.6" fill="#FBBC05"/>
+        <polygon points="233.37,266.05 275.2,864.6 254.3,865.7" fill="#FBBC05"/>
+        <polygon points="233.37,266.05 254.3,865.7 233.4,866.0" fill="#FBBC05"/>
+        <polygon points="233.37,266.05 233.4,866.0 212.4,865.7" fill="#FBBC05"/>
+        <polygon points="233.37,266.05 212.4,865.7 191.5,864.6" fill="#FBBC05"/>
+        <polygon points="233.37,266.05 191.5,864.6 170.7,862.8" fill="#FBBC05"/>
+        <polygon points="233.37,266.05 170.7,862.8 149.9,860.2" fill="#FBBC05"/>
+        <polygon points="233.37,266.05 149.9,860.2 129.2,856.9" fill="#FBBC05"/>
+        <polygon points="233.37,266.05 129.2,856.9 108.6,852.9" fill="#FBBC05"/>
+        <polygon points="233.37,266.05 108.6,852.9 88.2,848.2" fill="#F8BC06"/>
+        <polygon points="233.37,266.05 88.2,848.2 68.0,842.8" fill="#F2BB08"/>
+        <polygon points="233.37,266.05 68.0,842.8 48.0,836.7" fill="#EBBA0B"/>
+        <polygon points="233.37,266.05 48.0,836.7 28.2,829.9" fill="#E1B90F"/>
+        <polygon points="233.37,266.05 28.2,829.9 8.6,822.4" fill="#D6B813"/>
+        <polygon points="233.37,266.05 8.6,822.4 -10.7,814.2" fill="#CAB718"/>
+        <polygon points="233.37,266.05 -10.7,814.2 -29.7,805.3" fill="#BCB61E"/>
+        <polygon points="233.37,266.05 -29.7,805.3 -48.3,795.8" fill="#AEB423"/>
+        <polygon points="233.37,266.05 -48.3,795.8 -66.6,785.7" fill="#9FB329"/>
+        <polygon points="233.37,266.05 -66.6,785.7 -84.6,774.9" fill="#90B12F"/>
+        <polygon points="233.37,266.05 -84.6,774.9 -102.1,763.5" fill="#81B035"/>
+        <polygon points="233.37,266.05 -102.1,763.5 -119.3,751.5" fill="#73AE3A"/>
+        <polygon points="233.37,266.05 -119.3,751.5 -136.0,738.9" fill="#65AD40"/>
+        <polygon points="233.37,266.05 -136.0,738.9 -152.3,725.7" fill="#59AC45"/>
+        <polygon points="233.37,266.05 -152.3,725.7 -168.1,711.9" fill="#4EAB49"/>
+        <polygon points="233.37,266.05 -168.1,711.9 -183.4,697.7" fill="#44AA4D"/>
+        <polygon points="233.37,266.05 -183.4,697.7 -198.2,682.8" fill="#3DA950"/>
+        <polygon points="233.37,266.05 -198.2,682.8 -212.5,667.5" fill="#37A852"/>
+        <polygon points="233.37,266.05 -212.5,667.5 -226.3,651.7" fill="#34A853"/>
+        <polygon points="233.37,266.05 -226.3,651.7 -239.4,635.4" fill="#34A853"/>
+        <polygon points="233.37,266.05 -239.4,635.4 -252.0,618.7" fill="#34A853"/>
+        <polygon points="233.37,266.05 -252.0,618.7 -264.1,601.6" fill="#34A853"/>
+        <polygon points="233.37,266.05 -264.1,601.6 -275.5,584.0" fill="#34A853"/>
+        <polygon points="233.37,266.05 -275.5,584.0 -286.2,566.0" fill="#34A853"/>
+        <polygon points="233.37,266.05 -286.2,566.0 -296.4,547.7" fill="#34A853"/>
+        <polygon points="233.37,266.05 -296.4,547.7 -305.9,529.1" fill="#34A853"/>
+        <polygon points="233.37,266.05 -305.9,529.1 -314.8,510.1" fill="#34A853"/>
+        <polygon points="233.37,266.05 -314.8,510.1 -322.9,490.8" fill="#34A853"/>
+        <polygon points="233.37,266.05 -322.9,490.8 -330.4,471.3" fill="#34A853"/>
+        <polygon points="233.37,266.05 -330.4,471.3 -337.3,451.5" fill="#34A853"/>
+        <polygon points="233.37,266.05 -337.3,451.5 -343.4,431.4" fill="#34A853"/>
+        <polygon points="233.37,266.05 -343.4,431.4 -348.8,411.2" fill="#34A853"/>
+        <polygon points="233.37,266.05 -348.8,411.2 -353.5,390.8" fill="#34A853"/>
+        <polygon points="233.37,266.05 -353.5,390.8 -357.5,370.2" fill="#34A853"/>
+        <polygon points="233.37,266.05 -357.5,370.2 -360.8,349.6" fill="#34A853"/>
+        <polygon points="233.37,266.05 -360.8,349.6 -363.3,328.8" fill="#34A853"/>
+        <polygon points="233.37,266.05 -363.3,328.8 -365.2,307.9" fill="#34A853"/>
+        <polygon points="233.37,266.05 -365.2,307.9 -366.3,287.0" fill="#34A853"/>
+        <polygon points="233.37,266.05 -366.3,287.0 -366.6,266.1" fill="#34A853"/>
+        <polygon points="233.37,266.05 -366.6,266.1 -366.3,245.1" fill="#34A853"/>
+        <polygon points="233.37,266.05 -366.3,245.1 -365.2,224.2" fill="#34A853"/>
+        <polygon points="233.37,266.05 -365.2,224.2 -363.3,203.3" fill="#34A853"/>
+        <polygon points="233.37,266.05 -363.3,203.3 -360.8,182.5" fill="#34A853"/>
+        <polygon points="233.37,266.05 -360.8,182.5 -357.5,161.9" fill="#34A853"/>
+        <polygon points="233.37,266.05 -357.5,161.9 -353.5,141.3" fill="#34A853"/>
+        <polygon points="233.37,266.05 -353.5,141.3 -348.8,120.9" fill="#34A853"/>
+        <polygon points="233.37,266.05 -348.8,120.9 -343.4,100.7" fill="#34A853"/>
+        <polygon points="233.37,266.05 -343.4,100.7 -337.3,80.6" fill="#34A853"/>
+        <polygon points="233.37,266.05 -337.3,80.6 -330.4,60.8" fill="#34A853"/>
+        <polygon points="233.37,266.05 -330.4,60.8 -322.9,41.3" fill="#34A853"/>
+        <polygon points="233.37,266.05 -322.9,41.3 -314.8,22.0" fill="#34A853"/>
+        <polygon points="233.37,266.05 -314.8,22.0 -305.9,3.0" fill="#34A853"/>
+        <polygon points="233.37,266.05 -305.9,3.0 -296.4,-15.6" fill="#34A853"/>
+        <polygon points="233.37,266.05 -296.4,-15.6 -286.2,-34.0" fill="#34A853"/>
+        <polygon points="233.37,266.05 -286.2,-34.0 -275.5,-51.9" fill="#34A853"/>
+        <polygon points="233.37,266.05 -275.5,-51.9 -264.1,-69.5" fill="#34A853"/>
+        <polygon points="233.37,266.05 -264.1,-69.5 -252.0,-86.6" fill="#34A853"/>
+        <polygon points="233.37,266.05 -252.0,-86.6 -239.4,-103.3" fill="#34A853"/>
+        <polygon points="233.37,266.05 -239.4,-103.3 -226.3,-119.6" fill="#34A853"/>
+        <polygon points="233.37,266.05 -226.3,-119.6 -212.5,-135.4" fill="#34A853"/>
+        <polygon points="233.37,266.05 -212.5,-135.4 -198.2,-150.7" fill="#37A653"/>
+        <polygon points="233.37,266.05 -198.2,-150.7 -183.4,-165.6" fill="#3CA452"/>
+        <polygon points="233.37,266.05 -183.4,-165.6 -168.1,-179.8" fill="#43A051"/>
+        <polygon points="233.37,266.05 -168.1,-179.8 -152.3,-193.6" fill="#4B9B4F"/>
+        <polygon points="233.37,266.05 -152.3,-193.6 -136.0,-206.8" fill="#56954D"/>
+        <polygon points="233.37,266.05 -136.0,-206.8 -119.3,-219.4" fill="#618F4C"/>
+        <polygon points="233.37,266.05 -119.3,-219.4 -102.1,-231.4" fill="#6E884A"/>
+        <polygon points="233.37,266.05 -102.1,-231.4 -84.6,-242.8" fill="#7B8147"/>
+        <polygon points="233.37,266.05 -84.6,-242.8 -66.6,-253.6" fill="#887945"/>
+        <polygon points="233.37,266.05 -66.6,-253.6 -48.3,-263.7" fill="#967243"/>
+        <polygon points="233.37,266.05 -48.3,-263.7 -29.7,-273.2" fill="#A36A41"/>
+        <polygon points="233.37,266.05 -29.7,-273.2 -10.7,-282.1" fill="#B0633E"/>
+        <polygon points="233.37,266.05 -10.7,-282.1 8.6,-290.3" fill="#BD5C3C"/>
+        <polygon points="233.37,266.05 8.6,-290.3 28.2,-297.8" fill="#C8563B"/>
+        <polygon points="233.37,266.05 28.2,-297.8 48.0,-304.6" fill="#D35039"/>
+        <polygon points="233.37,266.05 48.0,-304.6 68.0,-310.7" fill="#DB4B37"/>
+        <polygon points="233.37,266.05 68.0,-310.7 88.2,-316.1" fill="#E24736"/>
+        <polygon points="233.37,266.05 88.2,-316.1 108.6,-320.8" fill="#E74535"/>
+        <polygon points="233.37,266.05 108.6,-320.8 129.2,-324.8" fill="#EA4335"/>
+        <polygon points="233.37,266.05 129.2,-324.8 149.9,-328.1" fill="#EA4335"/>
+        <polygon points="233.37,266.05 149.9,-328.1 170.7,-330.7" fill="#EA4335"/>
+        <polygon points="233.37,266.05 170.7,-330.7 191.5,-332.5" fill="#EA4335"/>
+        <polygon points="233.37,266.05 191.5,-332.5 212.4,-333.6" fill="#EA4335"/>
+        <polygon points="233.37,266.05 212.4,-333.6 233.4,-333.9" fill="#EA4335"/>
+        <polygon points="233.37,266.05 233.4,-333.9 254.3,-333.6" fill="#EA4335"/>
+        <polygon points="233.37,266.05 254.3,-333.6 275.2,-332.5" fill="#EA4335"/>
+        <polygon points="233.37,266.05 275.2,-332.5 296.1,-330.7" fill="#EA4335"/>
+        <polygon points="233.37,266.05 296.1,-330.7 316.9,-328.1" fill="#EA4335"/>
+        <polygon points="233.37,266.05 316.9,-328.1 337.6,-324.8" fill="#EA4335"/>
+        <polygon points="233.37,266.05 337.6,-324.8 358.1,-320.8" fill="#EA4335"/>
+        <polygon points="233.37,266.05 358.1,-320.8 378.5,-316.1" fill="#EA4335"/>
+        <polygon points="233.37,266.05 378.5,-316.1 398.8,-310.7" fill="#EA4335"/>
+        <polygon points="233.37,266.05 398.8,-310.7 418.8,-304.6" fill="#EA4335"/>
+        <polygon points="233.37,266.05 418.8,-304.6 438.6,-297.8" fill="#EA4335"/>
+        <polygon points="233.37,266.05 438.6,-297.8 458.1,-290.3" fill="#EA4335"/>
+        <polygon points="233.37,266.05 458.1,-290.3 477.4,-282.1" fill="#EA4335"/>
+        <polygon points="233.37,266.05 477.4,-282.1 496.4,-273.2" fill="#EA4335"/>
+        <polygon points="233.37,266.05 496.4,-273.2 515.1,-263.7" fill="#EA4335"/>
+        <polygon points="233.37,266.05 515.1,-263.7 533.4,-253.6" fill="#EA4335"/>
+        <polygon points="233.37,266.05 533.4,-253.6 551.3,-242.8" fill="#EA4335"/>
+        <polygon points="233.37,266.05 551.3,-242.8 568.9,-231.4" fill="#EA4335"/>
+        <polygon points="233.37,266.05 568.9,-231.4 586.0,-219.4" fill="#EA4335"/>
+        <polygon points="233.37,266.05 586.0,-219.4 602.8,-206.8" fill="#EA4335"/>
+        <polygon points="233.37,266.05 602.8,-206.8 619.0,-193.6" fill="#EA4335"/>
+        <polygon points="233.37,266.05 619.0,-193.6 634.8,-179.8" fill="#EA4335"/>
+        <polygon points="233.37,266.05 634.8,-179.8 650.2,-165.6" fill="#EA4335"/>
+        <polygon points="233.37,266.05 650.2,-165.6 665.0,-150.7" fill="#EA4335"/>
+        <polygon points="233.37,266.05 665.0,-150.7 679.3,-135.4" fill="#EA4335"/>
+        <polygon points="233.37,266.05 679.3,-135.4 693.0,-119.6" fill="#EA4335"/>
+        <polygon points="233.37,266.05 693.0,-119.6 706.2,-103.3" fill="#EA4335"/>
+        <polygon points="233.37,266.05 706.2,-103.3 718.8,-86.6" fill="#EA4335"/>
+        <polygon points="233.37,266.05 718.8,-86.6 730.8,-69.5" fill="#EA4335"/>
+        <polygon points="233.37,266.05 730.8,-69.5 742.2,-51.9" fill="#EA4335"/>
+        <polygon points="233.37,266.05 742.2,-51.9 753.0,-34.0" fill="#EA4335"/>
+        <polygon points="233.37,266.05 753.0,-34.0 763.1,-15.6" fill="#EA4335"/>
+        <polygon points="233.37,266.05 763.1,-15.6 772.6,3.0" fill="#EA4335"/>
+        <polygon points="233.37,266.05 772.6,3.0 781.5,22.0" fill="#EA4335"/>
+        <polygon points="233.37,266.05 781.5,22.0 789.7,41.3" fill="#EA4335"/>
+        <polygon points="233.37,266.05 789.7,41.3 797.2,60.8" fill="#EA4335"/>
+        <polygon points="233.37,266.05 797.2,60.8 804.0,80.6" fill="#EA4335"/>
+        <polygon points="233.37,266.05 804.0,80.6 810.1,100.7" fill="#EA4534"/>
+        <polygon points="233.37,266.05 810.1,100.7 815.5,120.9" fill="#EB4833"/>
+        <polygon points="233.37,266.05 815.5,120.9 820.3,141.3" fill="#EB4D31"/>
+        <polygon points="233.37,266.05 820.3,141.3 824.3,161.9" fill="#EC532F"/>
+        <polygon points="233.37,266.05 824.3,161.9 827.5,182.5" fill="#ED592C"/>
+        <polygon points="233.37,266.05 827.5,182.5 830.1,203.3" fill="#EE6129"/>
+        <polygon points="233.37,266.05 830.1,203.3 831.9,224.2" fill="#EF6926"/>
+        <polygon points="233.37,266.05 831.9,224.2 833.0,245.1" fill="#F17222"/>
+        <polygon points="233.37,266.05 833.0,245.1 833.4,266.0" fill="#F27B1F"/>
+      </g>
+    </g>
+  </g>
+    <text x="800.0" y="364" text-anchor="middle" class="wordmark">OpenSider</text>
+    <text x="800.0" y="398" text-anchor="middle" class="sub">Browser × Local Agent</text>
+  </g>
+
+  <!-- 右段：本机 Agent CLI -->
+  <g>
+    <rect x="1120.0" y="76.0" width="420.0" height="72.0" rx="16" class="cardf stk"/>
+  <g transform="translate(1166.0 112.0)" fill="#D97757"><path d="M0,-22 C1.8,-22 2.6,-11 2.6,-6 C2.6,-2 1.6,0 0,0 C-1.6,0 -2.6,-2 -2.6,-6 C-2.6,-11 -1.8,-22 0,-22 Z" transform="rotate(0)"/><path d="M0,-22 C1.8,-22 2.6,-11 2.6,-6 C2.6,-2 1.6,0 0,0 C-1.6,0 -2.6,-2 -2.6,-6 C-2.6,-11 -1.8,-22 0,-22 Z" transform="rotate(30)"/><path d="M0,-22 C1.8,-22 2.6,-11 2.6,-6 C2.6,-2 1.6,0 0,0 C-1.6,0 -2.6,-2 -2.6,-6 C-2.6,-11 -1.8,-22 0,-22 Z" transform="rotate(60)"/><path d="M0,-22 C1.8,-22 2.6,-11 2.6,-6 C2.6,-2 1.6,0 0,0 C-1.6,0 -2.6,-2 -2.6,-6 C-2.6,-11 -1.8,-22 0,-22 Z" transform="rotate(90)"/><path d="M0,-22 C1.8,-22 2.6,-11 2.6,-6 C2.6,-2 1.6,0 0,0 C-1.6,0 -2.6,-2 -2.6,-6 C-2.6,-11 -1.8,-22 0,-22 Z" transform="rotate(120)"/><path d="M0,-22 C1.8,-22 2.6,-11 2.6,-6 C2.6,-2 1.6,0 0,0 C-1.6,0 -2.6,-2 -2.6,-6 C-2.6,-11 -1.8,-22 0,-22 Z" transform="rotate(150)"/><path d="M0,-22 C1.8,-22 2.6,-11 2.6,-6 C2.6,-2 1.6,0 0,0 C-1.6,0 -2.6,-2 -2.6,-6 C-2.6,-11 -1.8,-22 0,-22 Z" transform="rotate(180)"/><path d="M0,-22 C1.8,-22 2.6,-11 2.6,-6 C2.6,-2 1.6,0 0,0 C-1.6,0 -2.6,-2 -2.6,-6 C-2.6,-11 -1.8,-22 0,-22 Z" transform="rotate(210)"/><path d="M0,-22 C1.8,-22 2.6,-11 2.6,-6 C2.6,-2 1.6,0 0,0 C-1.6,0 -2.6,-2 -2.6,-6 C-2.6,-11 -1.8,-22 0,-22 Z" transform="rotate(240)"/><path d="M0,-22 C1.8,-22 2.6,-11 2.6,-6 C2.6,-2 1.6,0 0,0 C-1.6,0 -2.6,-2 -2.6,-6 C-2.6,-11 -1.8,-22 0,-22 Z" transform="rotate(270)"/><path d="M0,-22 C1.8,-22 2.6,-11 2.6,-6 C2.6,-2 1.6,0 0,0 C-1.6,0 -2.6,-2 -2.6,-6 C-2.6,-11 -1.8,-22 0,-22 Z" transform="rotate(300)"/><path d="M0,-22 C1.8,-22 2.6,-11 2.6,-6 C2.6,-2 1.6,0 0,0 C-1.6,0 -2.6,-2 -2.6,-6 C-2.6,-11 -1.8,-22 0,-22 Z" transform="rotate(330)"/></g>
+    <text x="1212.0" y="122.0" class="chipname">Claude Code</text>
+    <rect x="1120.0" y="180.0" width="420.0" height="72.0" rx="16" class="cardf stk"/>
+  <g transform="translate(1166.0 216.0)" class="mkf">
+    <path d="M0,-19 C-11.6,-19 -21,-9.6 -21,2 V19 H-8 V15 C-8,12.4 -3.6,10.4 0,10.4 C3.6,10.4 8,12.4 8,15 V19 H21 V2 C21,-9.6 11.6,-19 0,-19 Z"/>
+    <rect x="-8.5" y="-8" width="6" height="11" rx="3" class="eyef"/>
+    <rect x="2.5" y="-8" width="6" height="11" rx="3" class="eyef"/>
+  </g>
+    <text x="1212.0" y="226.0" class="chipname">GitHub Copilot</text>
+    <rect x="1120.0" y="284.0" width="420.0" height="72.0" rx="16" class="cardf stk"/>
+  <g transform="translate(1166.0 320.0)" class="mk">
+    <rect x="-19" y="-19" width="38" height="38" rx="11"/>
+    <path d="M-8,-6 L-1,1 L-8,8"/>
+    <path d="M2,8 H9"/>
+  </g>
+    <text x="1212.0" y="330.0" class="chipname">OpenCode</text>
+    <rect x="1120.0" y="388.0" width="420.0" height="72.0" rx="16" class="cardf stk"/>
+  <g transform="translate(1166.0 424.0)" class="mk3">
+    <path d="M0,-21.0 L18.2,-10.5 L18.2,10.5 L0,21.0 L-18.2,10.5 L-18.2,-10.5 Z"/>
+    <path d="M0,0 L0.0,-21.0"/><path d="M0,0 L18.2,10.5"/><path d="M0,0 L-18.2,10.5"/>
+  </g>
+    <text x="1212.0" y="434.0" class="chipname">Cursor</text>
+  </g>
+
+  <!-- 连接点 -->
+  <g>
+    <circle cx="576.0" cy="252.0" r="3.4" class="node"/>
+    <circle cx="576.0" cy="276.0" r="3.4" class="node"/>
+    <circle cx="696.0" cy="206.0" r="3.4" class="node"/>
+    <circle cx="696.0" cy="230.0" r="3.4" class="node"/>
+    <circle cx="1120.0" cy="112.0" r="3.4" class="node"/>
+    <circle cx="1120.0" cy="216.0" r="3.4" class="node"/>
+    <circle cx="1120.0" cy="320.0" r="3.4" class="node"/>
+    <circle cx="1120.0" cy="424.0" r="3.4" class="node"/>
+  </g>
+
+  <!-- 流动光点 -->
+  <g>
+    <path class="flow" d="M576,252 C636,252 636,206 696,206"/>
+    <path class="flow rev" d="M576,276 C636,276 636,230 696,230"/>
+    <path class="flow fan" style="animation-delay:-0.00s" d="M898.7,185.3 C970.7,185.3 1018.0,112.0 1114.0,112.0"/>
+    <path class="flow fan" style="animation-delay:-0.90s" d="M904.0,217.4 C976.0,217.4 1018.0,216.0 1114.0,216.0"/>
+    <path class="flow fan" style="animation-delay:-1.80s" d="M899.1,249.6 C971.1,249.6 1018.0,320.0 1114.0,320.0"/>
+    <path class="flow fan" style="animation-delay:-2.70s" d="M887.4,274.3 C959.4,274.3 1018.0,424.0 1114.0,424.0"/>
+  </g>
+</svg>
