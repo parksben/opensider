@@ -39,7 +39,3 @@ https://github.com/user-attachments/assets/f0a9c654-b66e-43ef-a233-6942a30e83c6
 3. 点工具栏上的 OpenSider 图标，打开侧栏。
 4. 按侧栏里的提示，把扩展连到本机 Agent。若还没装本机桥接，侧栏会给出安装命令，按提示在终端或 PowerShell 里执行即可。
 5. 连上之后，在 OpenSider 里直接和本机 Agent 聊天。
-
-若本机已装 Claude Code，桥接安装还会自动加上 ACP 适配器。跑完侧栏里的命令后会自动连上，不必刷新扩展。顶栏「Connection」可以真正重连桥接。
-
-首次打开时语言跟浏览器（中文界面用简体中文，否则英文），主题默认跟随设备；之后在右侧抽屉的「Settings」里用下拉切换。
