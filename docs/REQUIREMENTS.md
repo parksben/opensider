@@ -1,16 +1,16 @@
 # OpenSider — 需求文档
 
-> 产品名 **OpenSider**。Chrome 侧栏插件：用侧栏自己的聊天面板与本机 Cursor Agent 对话，支持多会话、从节点分叉和中英界面，并让 Agent 读取和操作当前浏览器页面。
+> 产品名 **OpenSider**。Chrome 侧栏插件：用侧栏自己的聊天面板与本机 Agent CLI（Claude Code、Copilot、OpenCode、Cursor 等 ACP CLI，不要把 Cursor 写在最前）对话，支持多会话、从节点分叉和中英界面，并让 Agent 读取和操作当前浏览器页面。
 
 ## 产品目标
 
-用户在 Chromium 内核浏览器（Chrome / Edge / Brave 等）里打开侧栏，就能和本机 Cursor CLI Agent 聊天。Agent 继续使用本机全部工具（读文件、改文件、跑命令等）。侧栏实时展示工具调用过程，效果对齐在终端 / IDE 里和 Agent 聊天。
+用户在 Chromium 内核浏览器（Chrome / Edge / Brave 等）里打开侧栏，就能和本机 Agent CLI 聊天（Claude Code、Copilot、OpenCode、Cursor 等 ACP CLI）。Agent 继续使用本机全部工具（读文件、改文件、跑命令等）。侧栏实时展示工具调用过程，效果对齐在终端 / IDE 里和 Agent 聊天。
 
 所有网页共用**同一个工作区**，因此可以做跨页面的连续工作。聊天本身是**多会话**：用户可以新建、切换，也可以从某一轮对话之后的位置 fork 出新会话。切换标签时，Agent 能知道用户现在在哪个页面，并能抓取页面信息、直接操作页面完成自动化。
 
 ## 文档分层
 
-- **`README.md`**：面向使用者的产品页。只写产品是什么、适用谁、如何从 GitHub Release 下载 `extension.zip` 未打包加载并打开侧栏，以及一段侧栏演示视频（Agent 提炼网页信息、生成资讯榜单并在浏览器打开；不要写分辨率 / 加速 / IME 等录制规格）。桥接安装命令由侧栏给出，不要把一行壳 / SHA256 / Host 二进制下载写成 README 主流程。不写 pnpm / Go、仓库树、开发入口或「见 DEVELOPMENT.md」，也不把 `packages/extension/dist` 当成用户加载路径。
+- **`README.md`**：面向使用者的产品页。标题下一句说是什么；接着把支持的 CLI（Claude Code、Copilot、OpenCode、Cursor 等，不要把 Cursor 写在最前）和 3–4 条使用场景揉在一段里，放在「演示」前面，不要单独开「适用场景」。然后是演示视频（Agent 提炼网页信息、生成资讯榜单并在浏览器打开；不要写分辨率 / 加速 / IME 等录制规格），再是从 GitHub Release 下载 `extension.zip` 未打包加载的五步安装。桥接安装命令由侧栏给出，不要把一行壳 / SHA256 / Host 二进制下载写成 README 主流程。不写 pnpm / Go、仓库树、开发入口或「见 DEVELOPMENT.md」，也不把 `packages/extension/dist` 当成用户加载路径。
 - **`docs/DEVELOPMENT.md`**：面向开发。本地构建、`pnpm install-host`、工作区布局、仓库结构、打 `extension.zip`、推 `v*` tag 发 Release。
 - **本文件**：记产品做什么、为什么。
 - **`docs/TECH_DESIGN.md`**：记怎么做、为什么选这个方案。README 的 logo 与演示视频放 `docs/` 第一层（`docs/logo.svg`、`docs/opensider.mp4`），避免依赖 `packages/` 路径。不要再拆 `docs/images/` / `docs/demo/`。

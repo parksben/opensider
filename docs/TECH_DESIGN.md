@@ -454,7 +454,7 @@ macOS 清单路径：`~/Library/Application Support/Google/Chrome/NativeMessagin
 ## 仓库结构
 
 ```
-README.md           面向使用者的产品页：产品是什么、演示、安装/使用（不写开发搭建）
+README.md           面向使用者的产品页：一句话是什么 + CLI/场景揉在一段、演示、五步安装（不写开发搭建，不单独开适用场景）
 docs/REQUIREMENTS.md  需求：做什么、为什么
 docs/TECH_DESIGN.md   本文件：怎么做、为什么选这个方案
 docs/DEVELOPMENT.md   开发构建、Host 注册、工作区、打 extension.zip、tag 发 Release
