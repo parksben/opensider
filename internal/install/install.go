@@ -71,6 +71,10 @@ func Run(local bool) error {
 		fmt.Printf("Claude Code ACP setup did not finish: %s\nHost install succeeded.\n", err)
 		log.Log("claude acp setup failed: " + err.Error())
 	}
+	if err := EnsureCodexACP(); err != nil {
+		fmt.Printf("Codex ACP setup did not finish: %s\nHost install succeeded.\n", err)
+		log.Log("codex acp setup failed: " + err.Error())
+	}
 	log.Log("install complete host=" + abs)
 	return nil
 }

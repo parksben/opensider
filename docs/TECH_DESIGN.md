@@ -143,6 +143,8 @@ Host 是一份 Go 二进制（`cmd/opensider` + `internal/`）。`browser/tools.
     opensider                # 唯一 Go 二进制（Windows 为 opensider.exe）
     claude-acp/              # prefix-local @agentclientprotocol/claude-agent-acp（无 admin）
       node_modules/.bin/     # claude-agent-acp；已在 AgentSearchDirs
+    codex-acp/               # 同理存 @agentclientprotocol/codex-acp
+      node_modules/.bin/     # codex-acp；同样在 AgentSearchDirs
   extension/                 # 用户侧已解压的扩展
   workspace/                 # ACP session cwd
     AGENTS.md                # 页面协议说明，会话开始就会被读到
@@ -511,16 +513,16 @@ pnpm workspace 只编扩展。Host 用 Go。扩展用 Vite + `@crxjs/vite-plugin
 `scripts/install/install.sh`（darwin / linux）与 `scripts/install/install.ps1`（Windows）是薄包装，不内嵌 Host 逻辑：
 
 1. 识别 OS / arch。POSIX：`uname -s` → `darwin` / `linux`；`uname -m` 把 `aarch64` 映射成 `arm64`、`x86_64` 映射成 `amd64`。Windows：先看 `PROCESSOR_ARCHITEW6432`（32 位 PowerShell 跑在 64 位系统上时 `PROCESSOR_ARCHITECTURE` 会是 `x86`），再看 `PROCESSOR_ARCHITECTURE`；`ARM64` 下 `opensider-windows-arm64.exe`，`AMD64` 下 `opensider-windows-amd64.exe`，纯 32 位 Windows 直接失败。
-2. 从 `https://github.com/parksben/opensider/releases/latest/download/` 拉 `SHA256SUMS` 和对应二进制（名必须与 Release 资产一致）。代码与 Release 都在 `parksben/opensider`（仓库现为私有）。Windows 给小白的一行直接是 PowerShell 语句，不要外包 `powershell -Command`：Win11 终端默认就是 PowerShell，PATH 里经常没有名为 `powershell` 的命令，再套一层会报「无法将 powershell 项识别为 cmdlet」。不依赖 `curl.exe`。下载前用 `-bor 3072` 打开 TLS 1.2（数值写法，旧 .NET 可能没有 `Tls12` 枚举），再用 `System.Net.WebClient.DownloadString` 拉脚本——PowerShell 5.1 默认还是 TLS 1.0，`irm` 打 GitHub 会报「未能创建 SSL/TLS 安全通道」。侧栏 Windows 文案写明去 PowerShell 粘贴，不要用命令提示符。`install.ps1` 一进来同样 `-bor 3072`，写 HKCU `SchUseStrongCrypto` 让之后的 PS 5.1 默认走 TLS 1.2；脚本内下载只用 `WebClient`（走系统代理），下完 `Unblock-File` 去掉 MOTW，避免 SmartScreen 拦住刚下的 exe。
+2. 从 `https://github.com/parksben/opensider/releases/latest/download/` 拉 `SHA256SUMS` 和对应二进制（名必须与 Release 资产一致）。代码与 Release 都在 `parksben/opensider`（公开仓库）。Windows 给小白的一行直接是 PowerShell 语句，不要外包 `powershell -Command`：Win11 终端默认就是 PowerShell，PATH 里经常没有名为 `powershell` 的命令，再套一层会报「无法将 powershell 项识别为 cmdlet」。不依赖 `curl.exe`。下载前用 `-bor 3072` 打开 TLS 1.2（数值写法，旧 .NET 可能没有 `Tls12` 枚举），再用 `System.Net.WebClient.DownloadString` 拉脚本——PowerShell 5.1 默认还是 TLS 1.0，`irm` 打 GitHub 会报「未能创建 SSL/TLS 安全通道」。侧栏 Windows 文案写明去 PowerShell 粘贴，不要用命令提示符。`install.ps1` 一进来同样 `-bor 3072`，写 HKCU `SchUseStrongCrypto` 让之后的 PS 5.1 默认走 TLS 1.2；脚本内下载只用 `WebClient`（走系统代理），下完 `Unblock-File` 去掉 MOTW，避免 SmartScreen 拦住刚下的 exe。
 3. 用本机 `sha256sum` / `shasum -a 256` 或 `Get-FileHash` 核对该文件；对不上或 SUMS 里没有这一行就退出。
 4. `chmod +x` 后 `exec ./opensider-<os>-<arch> install`（Windows 为 `.\opensider-windows-*.exe install`）。`--local` 只给仓库里的 `go run`，用户壳不传。
 5. 其它 OS / arch 立刻失败，文案写清支持范围。
 
-壳不负责解压扩展、写 Native Messaging 清单或装 Claude ACP 适配器；那是 `opensider install` 的事（`EnsureClaudeACP` 在 Host 注册之后，失败只打印、不让整次安装失败）。
+壳不负责解压扩展、写 Native Messaging 清单或装 ACP 适配器；那是 `opensider install` 的事（`EnsureClaudeACP` / `EnsureCodexACP` 在 Host 注册之后，失败只打印、不让整次安装失败）。两家走同一套机制：`install` 里一个 `acpAdapterSpec`（本机 CLI 名 + 适配器包名 + 适配器可执行名 + `~/.opensider/runtime/<id>-acp` 安装目录）交给通用的 `ensureACPAdapter`；探测侧只要把该 prefix 的 `node_modules/.bin` 算进 `AgentSearchDirs`（`paths.ClaudeACPBinDir` / `paths.CodexACPBinDir`），装完就能被列名。再加同类 CLI 只需添一份 spec。
 
 ### 开发脚本
 
-根 `package.json`：`install-host` → `go run ./cmd/opensider install --local`；`pack-extension` → `node scripts/pack-extension.mjs`（把 `packages/extension/dist` 打成 `dist-release/extension.zip`，用公钥校验历史打包 ID，**不写出** `opensider.crx`）；`build` 先编扩展，再打包，再跑 `install --local`。`dev` 仍只起 Vite。不再走 Node 安装器。打包脚本只用 Node 内置 `crypto` / `zlib`。`dist-release/` 不入库。
+根 `package.json`：`install-host` → `go run ./cmd/opensider install --local`；`pack-extension` → `node scripts/pack-extension.mjs`（把 `packages/extension/dist` 打成 `dist-release/extension.zip`，用构建产物 manifest 的 key 校验未打包 ID，**不写出** `opensider.crx`）；`build` 先编扩展，再打包，再跑 `install --local`。`dev` 仍只起 Vite。不再走 Node 安装器。打包脚本只用 Node 内置 `crypto` / `zlib`。`dist-release/` 不入库。
 
 ### tag 发 Release
 

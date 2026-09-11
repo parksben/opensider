@@ -5,41 +5,76 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/parksben/opensider/internal/paths"
 )
 
-func TestDecideClaudeACP(t *testing.T) {
-	if decideClaudeACP("", "") != claudeACPSkip {
-		t.Fatal("no Claude Code should skip")
+func TestDecideACPAction(t *testing.T) {
+	if decideACPAction("", "") != acpSkip {
+		t.Fatal("no CLI should skip")
 	}
-	if decideClaudeACP("", "/bin/claude-agent-acp") != claudeACPSkip {
-		t.Fatal("no Claude Code skips even if an adapter is on PATH")
+	if decideACPAction("", "/bin/claude-agent-acp") != acpSkip {
+		t.Fatal("no CLI skips even if an adapter is on PATH")
 	}
-	if decideClaudeACP("/bin/claude", "/bin/claude-agent-acp") != claudeACPPresent {
+	if decideACPAction("/bin/claude", "/bin/claude-agent-acp") != acpPresent {
 		t.Fatal("existing adapter should be treated as present")
 	}
-	if decideClaudeACP("/bin/claude", "") != claudeACPNeedInstall {
-		t.Fatal("Claude without adapter should install")
+	if decideACPAction("/bin/claude", "") != acpNeedInstall {
+		t.Fatal("CLI without adapter should install")
+	}
+	// Codex 走同一套判断，不应再有自己的分支
+	if decideACPAction("/opt/homebrew/bin/codex", "") != acpNeedInstall {
+		t.Fatal("Codex without adapter should install")
+	}
+	if decideACPAction("", "/x/codex-acp") != acpSkip {
+		t.Fatal("no Codex CLI should skip")
 	}
 }
 
-func TestPackageInstallArgs(t *testing.T) {
-	npm := npmInstallArgs("/tmp/claude-acp")
+func TestAdapterArgs(t *testing.T) {
+	npm := adapterArgs("npm", claudeACPPackage, "/tmp/claude-acp")
 	if strings.Join(npm, " ") != "install --omit=dev --no-fund --no-audit --prefix /tmp/claude-acp @agentclientprotocol/claude-agent-acp" {
 		t.Fatalf("npm args: %#v", npm)
 	}
-	pnpm := pnpmAddArgs("/tmp/claude-acp")
-	if strings.Join(pnpm, " ") != "add --dir /tmp/claude-acp @agentclientprotocol/claude-agent-acp" {
+	pnpm := adapterArgs("pnpm", codexACPPackage, "/tmp/codex-acp")
+	if strings.Join(pnpm, " ") != "add --dir /tmp/codex-acp @agentclientprotocol/codex-acp" {
 		t.Fatalf("pnpm args: %#v", pnpm)
 	}
-	bun := bunAddArgs("/tmp/claude-acp")
-	if strings.Join(bun, " ") != "add --cwd /tmp/claude-acp @agentclientprotocol/claude-agent-acp" {
+	bun := adapterArgs("bun", codexACPPackage, "/tmp/codex-acp")
+	if strings.Join(bun, " ") != "add --cwd /tmp/codex-acp @agentclientprotocol/codex-acp" {
 		t.Fatalf("bun args: %#v", bun)
 	}
-	if packageInstallArgs("yarn", "/tmp") != nil {
+	if adapterArgs("yarn", codexACPPackage, "/tmp") != nil {
 		t.Fatal("unknown manager must not invent args")
 	}
-	if got := packageInstallArgs("npm", "/tmp/x"); strings.Join(got, " ") != strings.Join(npmInstallArgs("/tmp/x"), " ") {
-		t.Fatalf("packageInstallArgs npm: %#v", got)
+}
+
+func TestAdapterSpecsPointAtRuntimePrefixes(t *testing.T) {
+	claude := claudeSpec()
+	if claude.dir != paths.ClaudeACPDir() || claude.binDir != paths.ClaudeACPBinDir() {
+		t.Fatalf("claude spec %#v", claude)
+	}
+	codex := codexSpec()
+	if codex.dir != paths.CodexACPDir() || codex.binDir != paths.CodexACPBinDir() {
+		t.Fatalf("codex spec %#v", codex)
+	}
+	if codex.pkg != "@agentclientprotocol/codex-acp" || strings.Join(codex.bins, ",") != "codex-acp" {
+		t.Fatalf("codex package/bins %#v", codex)
+	}
+	if len(codex.cliNames) != 1 || codex.cliNames[0] != "codex" {
+		t.Fatalf("codex cli names %#v", codex.cliNames)
+	}
+	// binDir 必须是 prefix 下的 node_modules/.bin，探测才能靠 AgentSearchDirs 找到
+	if filepath.Base(codex.binDir) != ".bin" || filepath.Base(filepath.Dir(codex.binDir)) != "node_modules" {
+		t.Fatalf("codex bin dir %q", codex.binDir)
+	}
+}
+
+func TestEnsureACPSkipsWithoutCLI(t *testing.T) {
+	// 不碰真实机器状态：故意给一个必然找不到的 CLI 名，断言直接跳过且不报错。
+	spec := acpAdapterSpec{id: "none", label: "None", cliNames: []string{"opensider-no-such-cli"}, pkg: "x"}
+	if err := ensureACPAdapter(spec); err != nil {
+		t.Fatalf("skip must not fail: %v", err)
 	}
 }
 
@@ -90,14 +125,5 @@ func TestNativeClaudeCandidatesIncludeLocalBin(t *testing.T) {
 		if len(nativeClaudeCandidates()) < 2 {
 			t.Fatal("Windows should also try claude.exe")
 		}
-	}
-}
-
-func TestEnsureClaudeACPSkipsWhenNoClaude(t *testing.T) {
-	if findClaude() != "" {
-		t.Skip("this machine has Claude Code; skip-when-no-claude cannot be asserted here")
-	}
-	if err := EnsureClaudeACP(); err != nil {
-		t.Fatalf("skip must not fail: %v", err)
 	}
 }

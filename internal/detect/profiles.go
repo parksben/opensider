@@ -140,6 +140,7 @@ func Profiles() []AgentProfile {
 			Name: "Codex",
 			Mark: "codex",
 			Launches: []Launch{
+				{Command: filepath.Join(paths.CodexACPBinDir(), "codex-acp"), Args: nil},
 				{Command: "codex-acp", Args: nil},
 				{Command: filepath.Join(home, ".local", "bin", "codex-acp"), Args: nil},
 			},
@@ -147,7 +148,7 @@ func Profiles() []AgentProfile {
 			ModeMap:      map[protocol.AgentPolicy][]string{protocol.PolicyAsk: {"agent"}, protocol.PolicyWorkspace: {"agent"}, protocol.PolicyAuto: {"agent-full-access"}, protocol.PolicyUnattended: {"agent-full-access"}},
 			ContextFiles: []string{"AGENTS.md"},
 			Caps:         stdCaps(protocol.AgentCaps{Plans: true}),
-			LoginHint:    "Install Codex CLI / `codex-acp` and sign in with ChatGPT or CODEX_API_KEY.",
+			LoginHint:    "Re-run OpenSider install to add the ACP adapter, then sign in with `codex`.",
 		},
 		{
 			ID:   "gemini",

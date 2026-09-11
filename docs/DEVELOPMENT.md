@@ -17,7 +17,7 @@ pnpm build
 pnpm install-host
 ```
 
-`install --local` 会 `go build` 出 `~/.opensider/runtime/opensider`（不要用 `go run` 当 Native Host），重写各浏览器的 `com.opensider.host.json`，并确保工作区有 `AGENTS.md` / `browser/tools.json` / `outputs/`。若本机已装 Claude Code，还会把 ACP 适配器装到 `~/.opensider/runtime/claude-acp`（没有 Node 只提示，不挡 Host 注册）。若本机 `~/.opensider` 还留着 Node Host 时代的 `PickFiles.app` / `runtime/packages` / 旧 `session.json`，先备份该目录再跑一次安装。
+`install --local` 会 `go build` 出 `~/.opensider/runtime/opensider`（不要用 `go run` 当 Native Host），重写各浏览器的 `com.opensider.host.json`，并确保工作区有 `AGENTS.md` / `browser/tools.json` / `outputs/`。若本机已装 Claude Code 或 Codex，还会把对应的 ACP 适配器装到 `~/.opensider/runtime/<agent>-acp`（没有 Node 只提示，不挡 Host 注册）。若本机 `~/.opensider` 还留着 Node Host 时代的 `PickFiles.app` / `runtime/packages` / 旧 `session.json`，先备份该目录再跑一次安装。
 
 1. 浏览器打开扩展页，加载 `packages/extension/dist`
 2. 点工具栏图标打开侧栏

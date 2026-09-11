@@ -50,6 +50,12 @@ func ClaudeACPDir() string { return filepath.Join(RuntimeDir(), "claude-acp") }
 // ClaudeACPBinDir is that prefix's node_modules/.bin (claude-agent-acp shims).
 func ClaudeACPBinDir() string { return filepath.Join(ClaudeACPDir(), "node_modules", ".bin") }
 
+// CodexACPDir is the prefix-local install root for @agentclientprotocol/codex-acp.
+func CodexACPDir() string { return filepath.Join(RuntimeDir(), "codex-acp") }
+
+// CodexACPBinDir is that prefix's node_modules/.bin (codex-acp shims).
+func CodexACPBinDir() string { return filepath.Join(CodexACPDir(), "node_modules", ".bin") }
+
 func RuntimeBinaryName() string {
 	if runtime.GOOS == "windows" {
 		return "opensider.exe"
@@ -171,9 +177,10 @@ func AgentSearchDirs() []string {
 	fromEnv := filepath.SplitList(os.Getenv("PATH"))
 	seen := map[string]bool{}
 	var out []string
-	// Always include the OpenSider-owned Claude ACP prefix so detect finds the
-	// adapter even if the directory was just created (considerDir would skip it).
-	for _, dir := range append([]string{ClaudeACPBinDir()}, append(versionManagerBins(), fromEnv...)...) {
+	// Always include the OpenSider-owned ACP prefixes so detect finds the
+	// adapters even if the directory was just created (considerDir would skip it).
+	ours := []string{ClaudeACPBinDir(), CodexACPBinDir()}
+	for _, dir := range append(ours, append(versionManagerBins(), fromEnv...)...) {
 		if dir == "" || seen[dir] {
 			continue
 		}
