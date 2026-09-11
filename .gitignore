@@ -13,3 +13,4 @@ dist-release
 # 签名密钥不入库（不再出 CRX，仓库不需要任何密钥；打包自检用构建产物 manifest 的 key）
 scripts/keys/
 .env
+scripts/__pycache__/
