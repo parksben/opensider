@@ -466,10 +466,11 @@ macOS 清单路径：`~/Library/Application Support/Google/Chrome/NativeMessagin
   |---|---|---|---|
   | Claude Code | `claude-code.svg`（Claude Code 官方文档站 `docs.claude.com` 的 logo/light） | `fill="#D97757"` 那条（星标；同文件其余 path 是 "Claude Code" 字标，不用） | 保留官方橙 `#D97757` |
   | Codex | `codex.svg`（LobeHub icons 的 `codex-color.svg`，MIT 汇集；商标归 OpenAI） | 渐变填充那条 path（云形 + 终端提示符），丢掉白色圆角底板；渐变本身从上游 `<linearGradient>` 搬进 defs（只换 id 为 `codex-mark`） | 保留官方蓝紫渐变 |
-  | GitHub Copilot | `github-copilot.svg`（GitHub 官方品牌包 `GitHub_Logos.zip` 里的 `Copilot_Icon_White.svg`） | 全部 3 条 path（护目镜本体 + 两只眼孔，`evenodd` 带镂空）；外层 `<g clip-path>` 不用 | 官方彩色版只出现在 App 图标里（蓝渐变底 + 白护目镜）。banner 照它画：圆角瓦片填官方渐变 `#51AAE8 → #3165DA`（取自官方 512px App 图标实测），护目镜白色、眼孔透瓦片蓝 |
+  | GitHub Copilot | `github-copilot.svg`（GitHub 官方 Octicons `copilot-24`，MIT） | 全部（头部轮廓 + 两只眼） | 主题前景色 |
   | OpenCode | `opencode.svg`（opencode 仓库 `packages/ui/src/assets/favicon/favicon-v3.svg`） | 两条（外框 + 内方块），丢掉深色底板 `<rect>` | 外框前景色、内方块次要色 |
-  | Cursor | `cursor.svg`（cursor.com 官方 favicon） | `fill="#edecec"` 那条立方体，丢掉圆角底板与描边层 | 主题前景色（官方没有彩色版，LobeHub 也只收单色） |
+  | Cursor | `cursor.svg`（cursor.com 官方 favicon） | `fill="#edecec"` 那条立方体，丢掉圆角底板与描边层 | 主题前景色 |
 
+- GitHub Copilot 保持**官方单色标**。GitHub 的 logo 包（`brand.github.com` 的 `GitHub_Logos.zip`）只给黑白两版，官方品牌站也写明 Copilot 主题色是「黑或白为主 + 少量绿 / 紫点缀」；唯一的官方彩色版只存在于它的 App 图标里（蓝色渐变瓦片 + 白护目镜，取自官方仓库 `github/CopilotForXcode` 的 AppIcon）。那种「瓦片 + 小护目镜」缩小到 banner 的 26px 后护目镜只剩几像素，辨识度反而不如单色标（试过一版，见 `2745a7e`，随后回退）——所以这里仍用单色标 + 主题前景色
 - 各标记不按 viewBox 直接缩放，而是按**实测 bbox** 归一。bbox 是离线用 M/L/H/V/C/Z 解析器量的（Octicon 全是小写相对曲线，只做 min/max 会错位），数字作为常量留在脚本里，并用 OpenCode / Cursor 上游自带坐标交叉验证过——不在运行时猜
 - 标记的变换必须把 **bbox 中心**对到卡片中线：`translate(cx,cy) scale(s) translate(-(bx+w/2),-(by+h/2))`。早先写成对齐 bbox 左上角，标记整体下沉半个身高、跟名字错位，右边距也被吃掉。尺寸：标记目标高 34、标记列宽 40、列距卡片左边 22、名字距列 16——四个名字靠固定列宽左对齐，不跟各自标记的实际宽度跑
 - 右段是**一个**圆角容器（`PANEL_X 1192` / `PANEL_W 348` / `PANEL_H 376` / `rx 20`，与左侧浏览器窗口等高、上下边缘对齐），内部 5 行 Agent（行高 54，行间一条细线，**不画每行的圆角矩形**），末行再留 44 高给「三颗点 + `and more local agents`」提示——一行一卡片的写法既占地方，也说不清「支持的不止这些」。容器宽 348、右边缘离画布 60（与左边缘 56 呼应）：按最长名字实测宽度定，不留大片虚空。名字字号 24、`CLI` 后缀用 `<tspan dx>` + 次要色，**不另设 font-size**（继承品牌名的字号，改 `.chipname` 不会脱节）——改文案或字号后要在浏览器里量一次 `getBBox()` 复核，别让文字压到容器右边
@@ -496,7 +497,7 @@ internal/           Host / install / pick / ACP
 packages/shared     扩展 ↔ Host 消息类型（TS）
 packages/extension  Chrome MV3（background / content / sidepanel）
 scripts/install     用户壳 install.sh / install.ps1
-scripts/brand/      四家 Agent 的官方矢量素材原文件（只给 banner 生成脚本读，见「README Banner」）
+scripts/brand/      五家 Agent 的官方矢量素材原文件（只给 banner 生成脚本读，见「README Banner」）
 scripts/pack-extension.mjs  把 dist 打成 extension.zip（用构建产物 manifest 的 key 校验未打包 ID）
 .github/workflows   tag 发 Release
 ```

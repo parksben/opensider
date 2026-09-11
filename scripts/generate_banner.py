@@ -147,49 +147,23 @@ def fan_path(i: int) -> str:
 
 # ---------------------------------------------------------------- 卡片标记
 #
-# 五家标记都用各品牌官方矢量，不手抄 path、不改形状；颜色按官方规范给：
-# 单色标记跟主题前景色，Claude 橙 / Codex 蓝紫渐变 / Copilot 蓝色瓦片都照官方原样。
+# 四家标记都用各品牌官方矢量，不手抄 path、不改形状，只换填充色。
 # 上游文件整份存 scripts/brand/（来源与商标说明见 docs/TECH_DESIGN.md）。
 
 MARK_SIZE = 26.0  # 标记目标高度；行高 54，上下各留约 14 的呼吸
 CODEX_GRAD_ID = "codex-mark"  # banner 里给 Codex 渐变用的 id（不沿用上游那个）
-COPILOT_GRAD_ID = "copilot-mark"  # Copilot 蓝色瓦片渐变的 id
-COPILOT_TILE = 26.0  # Copilot 照官方 App 图标画：圆角瓦片 + 白色护目镜
-COPILOT_TILE_R = 6.5  # 瓦片圆角
-COPILOT_TILE_PAD = 0.17  # 护目镜两侧相对瓦片的留白比例
-COPILOT_TILE_TOP = "#51AAE8"  # 瓦片渐变上端（取自官方 512px 图标 PNG 实测）
-COPILOT_TILE_BOTTOM = "#3165DA"  # 瓦片渐变下端（同上）
 _PATH_TAG = re.compile(r"<path\b[^>]*>")
 _D_ATTR = re.compile(r'\sd="([^"]*)"')
 _FILL_ATTR = re.compile(r'\sfill="([^"]*)"')
 
 
-def _brand_svg(filename: str, id_prefix: str = "") -> str:
-    """读 scripts/brand/<filename>；给了 id_prefix 就把文件里的 id 与 url(#…) 引用
-    统一加前缀。
+def upstream_paths(filename: str) -> list:
+    """读 scripts/brand/<filename>，每条 <path> 给一个 {d, fill, fill-rule, clip-rule}。
 
-    上游文件里的 id（渐变、clipPath 之类）直接搬进 banner 容易跟自家 defs 撞名，
-    加个前缀就互不相干。
+    上游 fill 只用来认出「是哪条 path」，不直接沿用：颜色由 banner 自己给，
+    同一条 path 才能在深浅两套主题里复用。
     """
     svg = (BRAND_DIR / filename).read_text(encoding="utf-8")
-    if not id_prefix:
-        return svg
-    prefix = id_prefix.rstrip("-")
-    svg = re.sub(r'id="([^"]+)"', lambda m: 'id="{}-{}"'.format(prefix, m.group(1)), svg)
-    svg = re.sub(
-        r"url\(#([^)]+)\)", lambda m: "url(#{}-{})".format(prefix, m.group(1)), svg
-    )
-    return svg
-
-
-def upstream_paths(filename: str, id_prefix: str = "") -> list:
-    """读 scripts/brand/<filename>，每条 <path> 给一个 {d, fill, fill-rule, clip-rule, transform}。
-
-    上游 fill 只用来认出「是哪条 path」：单色标记的颜色由 banner 自己给（同一条 path
-    才能在深浅两套主题里复用）；渐变填充（url(#…)）则原样透传——那是品牌色的一部分，
-    只在读文件时给 id 加了前缀。
-    """
-    svg = _brand_svg(filename, id_prefix)
     tags = _PATH_TAG.findall(svg)
     if not tags:
         raise ValueError("{}: 没找到 <path>".format(filename))
@@ -197,7 +171,7 @@ def upstream_paths(filename: str, id_prefix: str = "") -> list:
     for tag in tags:
         fm = _FILL_ATTR.search(tag)
         item = {"d": _D_ATTR.search(tag).group(1), "fill": fm.group(1) if fm else None}
-        for name in ("fill-rule", "clip-rule", "transform"):
+        for name in ("fill-rule", "clip-rule"):
             m = re.search(r'\s{0}="([^"]*)"'.format(name), tag)
             if m:
                 item[name] = m.group(1)
@@ -229,13 +203,8 @@ def _path_tag(item: dict, cls=None, fill=None) -> str:
             attrs.append('{}="{}"'.format(name, item[name]))
     if fill:
         attrs.append('fill="{}"'.format(fill))
-    elif (item.get("fill") or "").startswith("url("):
-        # 渐变填充属于品牌色的一部分，直接透传（id 在读文件时已加过前缀）
-        attrs.append('fill="{}"'.format(item["fill"]))
     if cls:
         attrs.append('class="{}"'.format(cls))
-    if item.get("transform"):
-        attrs.append('transform="{}"'.format(item["transform"]))
     return "<path {} />".format(" ".join(attrs))
 
 
@@ -271,51 +240,11 @@ def mark_claude(cx: float, cy: float) -> str:
 
 
 def mark_copilot(cx: float, cy: float) -> str:
-    """GitHub Copilot 官方彩色标：蓝色渐变圆角瓦片 + 白色护目镜。
-
-    GitHub 的单色 logo 包（brand.github.com）只给黑白两版，彩色版只出现在官方
-    Copilot App 图标里（蓝渐变底 + 白护目镜）。所以这里把两者拼起来：瓦片渐变的
-    蓝色取自官方 512px App 图标 PNG 实测，护目镜形状取自官方包里的
-    Copilot_Icon_White.svg（3 条 path，evenodd 带镂空）。
-    """
-    paths = upstream_paths("github-copilot.svg")
-    if len(paths) != 3:
-        raise ValueError("github-copilot.svg: 期望 3 条 path，实际 {}".format(len(paths)))
-    # 护目镜在 96×96 viewBox 内的实测 bbox（含两条眼孔），别用 viewBox 当尺寸
-    bx, by, bw, bh = -0.02, 7.9, 96.0, 80.16
-    scale = COPILOT_TILE * (1 - 2 * COPILOT_TILE_PAD) / bw
-    half = COPILOT_TILE / 2
-
-    # 第 1 条是护目镜本体（白）；第 2、3 条是两只眼孔，官方 App 图标里透出瓦片蓝
-    body = []
-    for i, p in enumerate(paths):
-        fill = "#FFFFFF" if i == 0 else "url(#{})".format(COPILOT_GRAD_ID)
-        body.append(_path_tag(p, fill=fill))
-    glyph = "\n      ".join(body)
-
-    return (
-        f'  <g transform="translate({cx:.3f} {cy:.3f})">\n'
-        f'    <rect x="{-half:.3f}" y="{-half:.3f}" width="{COPILOT_TILE}" '
-        f'height="{COPILOT_TILE}" rx="{COPILOT_TILE_R}" '
-        f'fill="url(#{COPILOT_GRAD_ID})" />\n'
-        f'    <g transform="scale({scale:.6f})'
-        f' translate({-(bx + bw / 2):.3f} {-(by + bh / 2):.3f})">\n'
-        f"      {glyph}\n"
-        f"    </g>\n"
-        f"  </g>"
+    """GitHub Octicons 的 copilot-24：头部轮廓 + 两只眼。"""
+    body = "\n    ".join(
+        _path_tag(p, cls="mkf") for p in upstream_paths("github-copilot.svg")
     )
-
-
-def copilot_gradient() -> str:
-    """官方 Copilot App 图标瓦片的那道蓝色渐变（上浅下深，实测自上而下取色）。"""
-    return (
-        '<linearGradient id="{}" x1="0" y1="0" x2="0" y2="1">\n'
-        '      <stop offset="0" stop-color="{}" />\n'
-        '      <stop offset="1" stop-color="{}" />\n'
-        "    </linearGradient>".format(
-            COPILOT_GRAD_ID, COPILOT_TILE_TOP, COPILOT_TILE_BOTTOM
-        )
-    )
+    return _mark_group(cx, cy, (0.0, 0.0, 24.0, 24.0), body)
 
 
 def mark_opencode(cx: float, cy: float) -> str:
@@ -633,8 +562,6 @@ DEFS = f"""  <defs>
     </clipPath>
     <!-- Codex 产品标的官方渐变（从上游素材搬来，只改了 id） -->
     {codex_gradient()}
-    <!-- GitHub Copilot 蓝色瓦片的官方渐变（取自官方 App 图标） -->
-    {copilot_gradient()}
   </defs>"""
 
 
