@@ -466,9 +466,9 @@ macOS 清单路径：`~/Library/Application Support/Google/Chrome/NativeMessagin
   |---|---|---|---|
   | Claude Code | `claude-code.svg`（Claude Code 官方文档站 `docs.claude.com` 的 logo/light） | `fill="#D97757"` 那条（星标；同文件其余 path 是 "Claude Code" 字标，不用） | 保留官方橙 `#D97757` |
   | Codex | `codex.svg`（LobeHub icons 的 `codex-color.svg`，MIT 汇集；商标归 OpenAI） | 渐变填充那条 path（云形 + 终端提示符），丢掉白色圆角底板；渐变本身从上游 `<linearGradient>` 搬进 defs（只换 id 为 `codex-mark`） | 保留官方蓝紫渐变 |
-  | GitHub Copilot | `github-copilot.svg`（GitHub 官方 Octicons `copilot-24`，MIT） | 全部（头部轮廓 + 两只眼） | 主题前景色 |
+  | GitHub Copilot | `github-copilot.svg`（GitHub 官方品牌包 `GitHub_Logos.zip` 里的 `Copilot_Icon_White.svg`） | 全部 3 条 path（护目镜本体 + 两只眼孔，`evenodd` 带镂空）；外层 `<g clip-path>` 不用 | 官方彩色版只出现在 App 图标里（蓝渐变底 + 白护目镜）。banner 照它画：圆角瓦片填官方渐变 `#51AAE8 → #3165DA`（取自官方 512px App 图标实测），护目镜白色、眼孔透瓦片蓝 |
   | OpenCode | `opencode.svg`（opencode 仓库 `packages/ui/src/assets/favicon/favicon-v3.svg`） | 两条（外框 + 内方块），丢掉深色底板 `<rect>` | 外框前景色、内方块次要色 |
-  | Cursor | `cursor.svg`（cursor.com 官方 favicon） | `fill="#edecec"` 那条立方体，丢掉圆角底板与描边层 | 主题前景色 |
+  | Cursor | `cursor.svg`（cursor.com 官方 favicon） | `fill="#edecec"` 那条立方体，丢掉圆角底板与描边层 | 主题前景色（官方没有彩色版，LobeHub 也只收单色） |
 
 - 各标记不按 viewBox 直接缩放，而是按**实测 bbox** 归一。bbox 是离线用 M/L/H/V/C/Z 解析器量的（Octicon 全是小写相对曲线，只做 min/max 会错位），数字作为常量留在脚本里，并用 OpenCode / Cursor 上游自带坐标交叉验证过——不在运行时猜
 - 标记的变换必须把 **bbox 中心**对到卡片中线：`translate(cx,cy) scale(s) translate(-(bx+w/2),-(by+h/2))`。早先写成对齐 bbox 左上角，标记整体下沉半个身高、跟名字错位，右边距也被吃掉。尺寸：标记目标高 34、标记列宽 40、列距卡片左边 22、名字距列 16——四个名字靠固定列宽左对齐，不跟各自标记的实际宽度跑
