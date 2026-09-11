@@ -4,10 +4,11 @@
 版式（左 → 中 → 右）：
   左  浏览器窗口：窗口外观 + 抽象网页线框，窗口内部右侧画侧栏聊天面板
   中  品牌图标 + 产品名 OpenSider，作为浏览器与本机 Agent 之间的连接枢纽
-  右  Claude Code / GitHub Copilot / OpenCode / Cursor 四家本机 Agent CLI
+  右  一个圆角容器容纳 Claude Code / Codex / GitHub Copilot / OpenCode /
+      Cursor 五家本机 Agent CLI，末行三颗点提示「还有更多」
 
 连接关系用图形表达：浏览器 ↔ 枢纽是两条方向相反的数据流（流动光点），
-枢纽 → 四家 Agent 是四条扇形分叉的线。
+枢纽 → 五家 Agent 是五条扇形分叉的线（末行那句提示不连线）。
 
 图标几何不复制：直接 import 同目录的 generate_icon，复用同一套 conic 渐变
 算法、立方体 clipPath 与扇形半径；banner 里图标约 164px，扇形步长从 1° 放宽到
@@ -46,23 +47,36 @@ RING_R = 104.0
 ICON_SIZE = 152.0
 WEDGE_STEP = 2  # 扇形步长（度），generate_icon 用 1°
 
-# 右侧 Agent 卡片
-CHIP_X, CHIP_W, CHIP_H, CHIP_GAP, CHIP_TOP = 1192.0, 348.0, 72.0, 32.0, 76.0
-# 卡片宽 = 左段 78（22 内边距 + 40 标记列 + 16 名字距列）+ 最长名字实测宽度
-# （`GitHub Copilot CLI` 约 225）+ 右侧留白；右边缘离画布 60，与左边缘 56 呼应
-MARK_SLOT = 40.0  # 标记列宽（四个名字靠固定列宽左对齐，不跟标记实际宽度跑）
-MARK_PAD = 22.0  # 标记列距卡片左边
-NAME_GAP = 16.0  # 名字距标记列
+# 右侧 Agent 容器：一个圆角面板容纳 5 行 Agent + 1 行「还有更多」。
+# 与左侧浏览器窗口等高（76..452）、上下边缘对齐；右边缘离画布 60，与左边缘 56 呼应。
+# 命名避开窗口那段的 PANEL_W（那里是窗口内侧栏面板宽度，132）。
+AGENTS_X, AGENTS_W = 1192.0, 348.0
+AGENTS_Y, AGENTS_H, AGENTS_R = 76.0, 376.0, 20.0
+AGENTS_PAD = 24.0  # 容器内上下留白
+ROW_H = 54.0  # 每行 Agent 的高度（容器内共 5 行）
+MORE_GAP = 14.0  # 末行提示与上面列表的间距
+MORE_H = 44.0  # 末行提示高度
+# 容器宽 348 = 左段（24 内边距 + 34 标记列 + 14 名字距列）+ 最长名字实测宽度
+# （`GitHub Copilot CLI` 在 24px 下约 200）+ 右侧留白
+MARK_SLOT = 34.0  # 标记列宽（五个名字靠固定列宽左对齐，不跟标记实际宽度跑）
+MARK_PAD = 24.0  # 标记列距容器左边
+NAME_GAP = 14.0  # 名字距标记列
 
 # 左侧双向链路的两条线（浏览器右边缘 → 枢纽左侧环上）
 LINK_A = "M576,252 C636,252 636,206 696,206"
 LINK_B = "M576,276 C636,276 636,230 696,230"
 
-AGENTS = ["Claude Code", "GitHub Copilot", "OpenCode", "Cursor"]
+AGENTS = ["Claude Code", "Codex", "GitHub Copilot", "OpenCode", "Cursor"]
 
-def chip_cy(i: int) -> float:
-    """第 i 张 Agent 卡片的垂直中心。"""
-    return CHIP_TOP + CHIP_H / 2 + i * (CHIP_H + CHIP_GAP)
+
+def row_cy(i: int) -> float:
+    """容器内第 i 行 Agent 的垂直中心。"""
+    return AGENTS_Y + AGENTS_PAD + ROW_H / 2 + i * ROW_H
+
+
+def more_cy() -> float:
+    """末行「还有更多」提示的垂直中心。"""
+    return AGENTS_Y + AGENTS_PAD + ROW_H * len(AGENTS) + MORE_GAP + MORE_H / 2
 
 
 # ---------------------------------------------------------------- 中段图标
@@ -113,11 +127,11 @@ def ring_point(deg: float) -> tuple:
 
 
 def fan_path(i: int) -> str:
-    """枢纽右侧环上一点 → 第 i 张卡片左边沿的贝塞尔。"""
-    cy = chip_cy(i)
-    deg = math.degrees(math.atan2(cy - HUB_CY, CHIP_X - HUB_CX))
+    """枢纽右侧环上一点 → 容器内第 i 行左边沿的贝塞尔。"""
+    cy = row_cy(i)
+    deg = math.degrees(math.atan2(cy - HUB_CY, AGENTS_X - HUB_CX))
     sx, sy = ring_point(deg)
-    end = CHIP_X - 6  # 留一点空隙，光点不压到卡片描边
+    end = AGENTS_X - 8  # 留一点空隙，光点不压到容器描边
     return (
         f"M{sx:.1f},{sy:.1f} "
         f"C{sx + 72:.1f},{sy:.1f} {end - 96:.1f},{cy:.1f} {end:.1f},{cy:.1f}"
@@ -129,7 +143,7 @@ def fan_path(i: int) -> str:
 # 四家标记都用各品牌官方矢量，不手抄 path、不改形状，只换填充色。
 # 上游文件整份存 scripts/brand/（来源与商标说明见 docs/TECH_DESIGN.md）。
 
-MARK_SIZE = 34.0  # 标记目标高度；卡片高 72，上下各留约 19 的呼吸
+MARK_SIZE = 26.0  # 标记目标高度；行高 54，上下各留约 14 的呼吸
 _PATH_TAG = re.compile(r"<path\b[^>]*>")
 _D_ATTR = re.compile(r'\sd="([^"]*)"')
 _FILL_ATTR = re.compile(r'\sfill="([^"]*)"')
@@ -230,7 +244,16 @@ def mark_cursor(cx: float, cy: float) -> str:
     )
 
 
-MARKERS = (mark_claude, mark_copilot, mark_opencode, mark_cursor)
+def mark_codex(cx: float, cy: float) -> str:
+    """Codex（OpenAI 结）：上游 registry 给的单条 path，几何占满 24×24。"""
+    knot = _pick("codex.svg", "currentColor")
+    return _mark_group(
+        cx, cy, (0.163, 0.001, 23.674, 24.0), _path_tag(knot, cls="mkf")
+    )
+
+
+# 顺序必须与 AGENTS 一一对应（Codex 在第二位）。
+MARKERS = (mark_claude, mark_codex, mark_copilot, mark_opencode, mark_cursor)
 
 
 # ---------------------------------------------------------------- 各区域
@@ -343,7 +366,7 @@ def link_cables() -> str:
 def link_nodes() -> str:
     """连接点。画在卡片之上，才不会被卡片底色吃掉半颗。"""
     nodes = [(576, 252), (576, 276), (696, 206), (696, 230)]
-    nodes += [(CHIP_X, chip_cy(i)) for i in range(len(AGENTS))]
+    nodes += [(AGENTS_X, row_cy(i)) for i in range(len(AGENTS))]
     dots = "\n    ".join(
         f'<circle cx="{x:.1f}" cy="{y:.1f}" r="3.4" class="node"/>' for x, y in nodes
     )
@@ -368,29 +391,54 @@ def link_flows() -> str:
     )
 
 
-def agent_chips() -> str:
-    """右段：四张 Agent 卡片（标记 + 名字）。"""
+def agent_panel() -> str:
+    """右段：一个圆角容器容纳多家本机 Agent，末行提示「还有更多」。
+
+    容器本身承担「这是一组本机 Agent」的意象，行间只留一条细线；
+    一行一个圆角矩形既占地方，也说不清「支持的不止这些」。
+    """
+    mx = AGENTS_X + MARK_PAD + MARK_SLOT / 2
+    nx = AGENTS_X + MARK_PAD + MARK_SLOT + NAME_GAP
     rows = []
     for i, name in enumerate(AGENTS):
-        cy = chip_cy(i)
-        y = cy - CHIP_H / 2
-        mx = CHIP_X + MARK_PAD + MARK_SLOT / 2
-        nx = CHIP_X + MARK_PAD + MARK_SLOT + NAME_GAP
+        cy = row_cy(i)
         rows.append(
-            f'    <rect x="{CHIP_X}" y="{y:.1f}" width="{CHIP_W}" height="{CHIP_H}"'
-            f' rx="16" class="cardf stk"/>\n'
             f"{MARKERS[i](mx, cy)}\n"
-            f'    <text x="{nx:.1f}" y="{cy + 10:.1f}" class="chipname">'
-            f'{name}<tspan class="chipcli" dx="7">CLI</tspan></text>'
+            f'    <text x="{nx:.1f}" y="{cy + 9:.1f}" class="chipname">'
+            f'{name}<tspan class="chipcli" dx="6">CLI</tspan></text>'
         )
-    return "  <!-- 右段：本机 Agent CLI -->\n  <g>\n" + "\n".join(rows) + "\n  </g>"
+        if i < len(AGENTS) - 1:
+            y = cy + ROW_H / 2
+            rows.append(
+                f'    <path d="M{AGENTS_X + MARK_PAD},{y:.1f}'
+                f' H{AGENTS_X + AGENTS_W - 20:.1f}" class="hairline"/>'
+            )
+
+    cy = more_cy()
+    dots = " ".join(
+        f'<circle cx="{mx - 7 + k * 7:.1f}" cy="{cy:.1f}" r="1.9" class="moredot"/>'
+        for k in range(3)
+    )
+    rows.append(
+        f"    {dots}\n"
+        f'    <text x="{nx:.1f}" y="{cy + 6:.1f}" class="morename">'
+        f"and more local agents</text>"
+    )
+
+    return (
+        "  <!-- 右段：本机 Agent（一个容器 + 末行还有更多） -->\n  <g>\n"
+        f'    <rect x="{AGENTS_X}" y="{AGENTS_Y}" width="{AGENTS_W}" height="{AGENTS_H}"'
+        f' rx="{AGENTS_R}" class="cardf stk"/>\n'
+        + "\n".join(rows)
+        + "\n  </g>"
+    )
 
 
 def zone_labels() -> str:
     return (
         f'  <text x="{(WIN_X + WIN_X + WIN_W) / 2:.1f}" y="56" text-anchor="middle"'
         f' class="zlabel">BROWSER</text>\n'
-        f'  <text x="{CHIP_X + CHIP_W / 2:.1f}" y="56" text-anchor="middle"'
+        f'  <text x="{AGENTS_X + AGENTS_W / 2:.1f}" y="56" text-anchor="middle"'
         f' class="zlabel">LOCAL AGENTS</text>'
     )
 
@@ -420,9 +468,12 @@ STYLE = """
     .zlabel{font-size:19px;font-weight:500;letter-spacing:2.8px;fill:var(--muted)}
     .wordmark{font-size:58px;font-weight:600;letter-spacing:-0.8px;fill:var(--ink)}
     .sub{font-size:19px;letter-spacing:1.4px;fill:var(--muted)}
-    .chipname{font-size:27px;font-weight:500;fill:var(--ink)}
+    .chipname{font-size:24px;font-weight:500;fill:var(--ink)}
     /* 不设 font-size：继承 .chipname，跟品牌名同字号，改上面不会脱节 */
     .chipcli{fill:var(--muted)}
+    /* 末行「还有更多」：三颗点 + 次要色小字 */
+    .morename{font-size:18px;fill:var(--muted)}
+    .moredot{fill:var(--muted);opacity:.75}
     .bgf{fill:url(#bg-grad)}
     .stop-a{stop-color:var(--bg-a)}
     .stop-b{stop-color:var(--bg-b)}
@@ -487,7 +538,7 @@ def build_svg() -> str:
 <svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}"
      role="img" aria-labelledby="banner-title banner-desc">
   <title id="banner-title">OpenSider — 在浏览器里连接本机 Agent CLI</title>
-  <desc id="banner-desc">左：浏览器窗口（窗口内右侧是侧栏聊天面板）。中：OpenSider 图标与产品名，作为连接枢纽。右：Claude Code、GitHub Copilot、OpenCode、Cursor 四家本机 Agent。连线表示浏览器与 Agent 之间的双向数据流。</desc>
+  <desc id="banner-desc">左：浏览器窗口（窗口内右侧是侧栏聊天面板）。中：OpenSider 图标与产品名，作为连接枢纽。右：一个容器列出 Claude Code、Codex、GitHub Copilot、OpenCode、Cursor 五家本机 Agent，末行提示还有更多。连线表示浏览器与 Agent 之间的双向数据流。</desc>
 {DEFS}
 
   <rect x="0" y="0" width="{W}" height="{H}" rx="{BG_R}" class="bgf frame"/>
@@ -500,7 +551,7 @@ def build_svg() -> str:
 
 {hub()}
 
-{agent_chips()}
+{agent_panel()}
 
 {link_nodes()}
 

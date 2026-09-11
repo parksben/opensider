@@ -460,19 +460,21 @@ macOS 清单路径：`~/Library/Application Support/Google/Chrome/NativeMessagin
 - 成片 `docs/banner.svg`，由 `scripts/generate_banner.py` 生成（勿手改）。画布 1600×520，README 里靠容器宽度缩放
 - 只有一份自包含矢量：不引外链图片、不嵌位图、不依赖字体文件。README 只给 `<img>`，外部引用在 `img` 上下文里根本不加载；位图在高 DPI 下糊。文字用 `IBM Plex Sans` → 系统无衬线兜底，不转路径（转路径要打包字体，收益只在字体缺省时的度量差异，且中文字重不可控）
 - 中段图标不复制几何：`generate_banner.py` 直接 `import generate_icon`，复用同一套 `color_at` conic 算法、立方体 clipPath 与扇形半径，只把扇形步长从 1° 放到 2°（banner 里图标约 164px，1° 与 2° 肉眼无差，文件小一半）。侧栏面板顶栏那颗小图标走同一个 `icon_group()`，只把步长再放到 6°（20px 下多边形数量比像素还多没意义）
-- 四家 Agent 的标记用**各品牌官方矢量**，上游文件整份存 `scripts/brand/`，`generate_banner.py` 生成时按 `fill` 认出要哪几条 `<path>` 再套自己的变换与填充色——不手工抄 path（抄 2400 字符必错），也不改上游形状。取法与来源：
+- 五家 Agent 的标记用**各品牌官方矢量**，上游文件整份存 `scripts/brand/`，`generate_banner.py` 生成时按 `fill` 认出要哪几条 `<path>` 再套自己的变换与填充色——不手工抄 path（抄 2400 字符必错），也不改上游形状。取法与来源：
   | 标记 | 上游文件 | 取哪条 path | 填色 |
   |---|---|---|---|
   | Claude Code | `claude-code.svg`（Claude Code 官方文档站 `docs.claude.com` 的 logo/light） | `fill="#D97757"` 那条（星标；同文件其余 path 是 "Claude Code" 字标，不用） | 保留官方橙 `#D97757` |
+  | Codex | `codex.svg`（上游 ACP Registry 给的 `…/registry/v1/latest/codex-acp.svg`，24×24，实为 OpenAI 结） | 唯一那条 `fill="currentColor"`（占满 viewBox） | 主题前景色 |
   | GitHub Copilot | `github-copilot.svg`（GitHub 官方 Octicons `copilot-24`，MIT） | 全部（头部轮廓 + 两只眼） | 主题前景色 |
   | OpenCode | `opencode.svg`（opencode 仓库 `packages/ui/src/assets/favicon/favicon-v3.svg`） | 两条（外框 + 内方块），丢掉深色底板 `<rect>` | 外框前景色、内方块次要色 |
   | Cursor | `cursor.svg`（cursor.com 官方 favicon） | `fill="#edecec"` 那条立方体，丢掉圆角底板与描边层 | 主题前景色 |
 
 - 各标记不按 viewBox 直接缩放，而是按**实测 bbox** 归一。bbox 是离线用 M/L/H/V/C/Z 解析器量的（Octicon 全是小写相对曲线，只做 min/max 会错位），数字作为常量留在脚本里，并用 OpenCode / Cursor 上游自带坐标交叉验证过——不在运行时猜
 - 标记的变换必须把 **bbox 中心**对到卡片中线：`translate(cx,cy) scale(s) translate(-(bx+w/2),-(by+h/2))`。早先写成对齐 bbox 左上角，标记整体下沉半个身高、跟名字错位，右边距也被吃掉。尺寸：标记目标高 34、标记列宽 40、列距卡片左边 22、名字距列 16——四个名字靠固定列宽左对齐，不跟各自标记的实际宽度跑
-- 卡片宽 348，右边缘离画布 60（与左边缘 56 呼应）：按最长名字实测宽度定，不留大片虚空。早先固定 420、名字又不带 `CLI`，最长一行右侧空出 150+。名字后的 `CLI` 用 `<tspan dx>` + 次要色，**不另设 font-size**（继承品牌名的字号，改 `.chipname` 不会脱节），层级差只靠颜色——改文案或字号后要在浏览器里量一次 `getBBox()` 复核，别让文字压到卡片右边框
+- 右段是**一个**圆角容器（`PANEL_X 1192` / `PANEL_W 348` / `PANEL_H 376` / `rx 20`，与左侧浏览器窗口等高、上下边缘对齐），内部 5 行 Agent（行高 54，行间一条细线，**不画每行的圆角矩形**），末行再留 44 高给「三颗点 + `and more local agents`」提示——一行一卡片的写法既占地方，也说不清「支持的不止这些」。容器宽 348、右边缘离画布 60（与左边缘 56 呼应）：按最长名字实测宽度定，不留大片虚空。名字字号 24、`CLI` 后缀用 `<tspan dx>` + 次要色，**不另设 font-size**（继承品牌名的字号，改 `.chipname` 不会脱节）——改文案或字号后要在浏览器里量一次 `getBBox()` 复核，别让文字压到容器右边
+- 标记尺寸：目标高 **26**（比早先的 34 小，一行 54 放得下）、标记列宽 34、列距容器左边 24、名字距列 14；五个名字靠固定列宽左对齐，不跟各自标记的实际宽度跑
 - 商标：这四份素材的版权与商标归各品牌，仓库内保留只为说明可连接的 Agent，不表示背书；README 正文也不要写合作口径。素材整份入库（而非只存抽出的 path）是为了来源可核对——想验证可以直接 diff 上游 URL
-- README 用法：`<div align="center">` 里放 `<img alt="OpenSider" src="./docs/banner.svg">`，**不写 width/height**（靠正文栏宽度缩放，SVG 自带 1600×520 保证比例），slogan 作为图下方居中的 `<p>`；原来那颗 96px 的 `docs/logo.svg` 与 `<h1>` 一并撤掉。中文版与英文版共用这一张图——图里只有产品名、`BROWSER` / `LOCAL AGENTS` 分区标签和四家英文名，没有中文字，所以不需要出两张
+- README 用法：`<div align="center">` 里放 `<img alt="OpenSider" src="./docs/banner.svg">`，**不写 width/height**（靠正文栏宽度缩放，SVG 自带 1600×520 保证比例），slogan 作为图下方居中的 `<p>`；原来那颗 96px 的 `docs/logo.svg` 与 `<h1>` 一并撤掉。中文版与英文版共用这一张图——图里只有产品名、`BROWSER` / `LOCAL AGENTS` 分区标签、五家英文名与末行那句英文提示，没有中文字，所以不需要出两张
 - 双主题在 SVG 内部用 CSS 变量 + `@media (prefers-color-scheme: dark)` 切换。GitHub 不会把页面主题告诉 `<img>`，也没有 `#gh-dark-mode-only` 这种片段可用，只能跟系统；两套调色板都按可读对比度给，不依赖背景色
 - 连接关系用视觉表达：左右各一条基线与一条 `.flow` 覆盖线，靠 `stroke-dasharray` + `stroke-linecap: round` 得到流动光点，动画只改 `stroke-dashoffset`；`prefers-reduced-motion: reduce` 下关掉动画，静态圆点仍在，**语义不依赖动画**
 
