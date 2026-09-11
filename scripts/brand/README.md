@@ -7,7 +7,7 @@
 | 文件 | 品牌 | 来源 | 用到的部分 |
 |---|---|---|---|
 | `claude-code.svg` | Claude Code（Anthropic） | Claude Code 官方文档站 `docs.claude.com` 的站点 logo（light 变体） | `fill="#D97757"` 的星标；同文件其余 path 是「Claude Code」字标 |
-| `codex.svg` | Codex（OpenAI） | 上游 ACP Registry 给的 icon：`https://cdn.agentclientprotocol.com/registry/v1/latest/codex-acp.svg`（24×24 单条 path） | 唯一那条 path（OpenAI 结） |
+| `codex.svg` | Codex（OpenAI） | LobeHub icons 的 `codex-color.svg`（MIT 汇集的图标库，商标归 OpenAI）；从 npm 镜像取：`https://cdn.jsdelivr.net/npm/@lobehub/icons-static-svg@1.95.0/icons/codex-color.svg` | 渐变填充（`url(#…)`）那条 path（云形 + 终端提示符）+ 它的 `<linearGradient>`；白色圆角底板（app 图标底色）不用 |
 | `github-copilot.svg` | GitHub Copilot | GitHub 官方 Octicons 的 `copilot-24`（MIT） | 头部轮廓 + 两只眼，全部 |
 | `opencode.svg` | OpenCode | opencode 仓库 `packages/ui/src/assets/favicon/favicon-v3.svg` | 外框 + 内方块；深色底板 `<rect>` 不用 |
 | `cursor.svg` | Cursor | cursor.com 的 `marketing-static/favicon.svg` | 立方体那条；圆角底板与半透明描边层不用 |

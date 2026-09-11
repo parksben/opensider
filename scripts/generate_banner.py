@@ -7,6 +7,9 @@
   右  一个圆角容器容纳 Claude Code / Codex / GitHub Copilot / OpenCode /
       Cursor 五家本机 Agent CLI，末行三颗点提示「还有更多」
 
+图上不画分区标签（早先的 BROWSER / LOCAL AGENTS 已去掉）：少一行文字就能把画布
+高度从 520 收到 488，上下留白正好与左右一致。
+
 连接关系用图形表达：浏览器 ↔ 枢纽是两条方向相反的数据流（流动光点），
 枢纽 → 五家 Agent 是五条扇形分叉的线（末行那句提示不连线）。
 
@@ -32,8 +35,12 @@ BRAND_DIR = Path(__file__).resolve().parent / "brand"
 
 # ---------------------------------------------------------------- 画布与布局
 
-W, H = 1600, 520
+W, H = 1600, 488
 BG_R = 28.0  # 背景圆角
+
+# 内容整体上移：去掉分区标签后，窗口 / 容器（76..452）上下各留 56 才对称。
+# 用一层 translate 包住除背景以外的全部内容，免得逐个改坐标。
+CONTENT_DY = -20.0
 
 # 浏览器窗口
 WIN_X, WIN_Y, WIN_W, WIN_H = 56.0, 76.0, 520.0, 376.0
@@ -144,6 +151,7 @@ def fan_path(i: int) -> str:
 # 上游文件整份存 scripts/brand/（来源与商标说明见 docs/TECH_DESIGN.md）。
 
 MARK_SIZE = 26.0  # 标记目标高度；行高 54，上下各留约 14 的呼吸
+CODEX_GRAD_ID = "codex-mark"  # banner 里给 Codex 渐变用的 id（不沿用上游那个）
 _PATH_TAG = re.compile(r"<path\b[^>]*>")
 _D_ATTR = re.compile(r'\sd="([^"]*)"')
 _FILL_ATTR = re.compile(r'\sfill="([^"]*)"')
@@ -210,6 +218,19 @@ def _pick(filename: str, fill: str) -> dict:
     return hits[0]
 
 
+def _pick_url_fill(filename: str) -> dict:
+    """取用渐变填充（fill="url(#…)"）的那条 path。
+
+    不写死上游的渐变 id：上游改个 id 就认不出来了，认 url( 前缀就稳。
+    """
+    hits = [p for p in upstream_paths(filename) if (p["fill"] or "").startswith("url(")]
+    if len(hits) != 1:
+        raise ValueError(
+            "{}: 期望 1 条渐变填充的 <path>，实际 {} 条".format(filename, len(hits))
+        )
+    return hits[0]
+
+
 def mark_claude(cx: float, cy: float) -> str:
     """Claude 星标：官方橙那条 path，同文件其余 path 是 "Claude Code" 字标。"""
     star = _pick("claude-code.svg", "#D97757")
@@ -245,10 +266,18 @@ def mark_cursor(cx: float, cy: float) -> str:
 
 
 def mark_codex(cx: float, cy: float) -> str:
-    """Codex（OpenAI 结）：上游 registry 给的单条 path，几何占满 24×24。"""
-    knot = _pick("codex.svg", "currentColor")
+    """Codex 产品标（云形 + 终端提示符），用官方彩色渐变。
+
+    注意不是 OpenAI 那个结：Codex 有自己的产品标。
+    上游 codex-color.svg 里还带一个白色圆角底板（app 图标底色），banner 里不用——
+    其余四家都是裸标记；渐变本身从上游搬进 defs，见 codex_gradient()。
+    """
+    glyph = _pick_url_fill("codex.svg")
     return _mark_group(
-        cx, cy, (0.163, 0.001, 23.674, 24.0), _path_tag(knot, cls="mkf")
+        cx,
+        cy,
+        (3.0, 3.0, 18.0, 18.0),
+        _path_tag(glyph, fill='url(#{})'.format(CODEX_GRAD_ID)),
     )
 
 
@@ -434,13 +463,16 @@ def agent_panel() -> str:
     )
 
 
-def zone_labels() -> str:
-    return (
-        f'  <text x="{(WIN_X + WIN_X + WIN_W) / 2:.1f}" y="56" text-anchor="middle"'
-        f' class="zlabel">BROWSER</text>\n'
-        f'  <text x="{AGENTS_X + AGENTS_W / 2:.1f}" y="56" text-anchor="middle"'
-        f' class="zlabel">LOCAL AGENTS</text>'
-    )
+def codex_gradient() -> str:
+    """把上游 codex.svg 的 <linearGradient> 原样搬进 banner defs，只换 id。
+
+    手抄 stop 颜色容易抄错，直接截上游那段更稳。
+    """
+    svg = (BRAND_DIR / "codex.svg").read_text(encoding="utf-8")
+    m = re.search(r"<linearGradient\b.*?</linearGradient>", svg, re.S)
+    if not m:
+        raise ValueError("codex.svg: 没找到 <linearGradient>")
+    return re.sub(r'id="[^"]*"', 'id="{}"'.format(CODEX_GRAD_ID), m.group(0))
 
 
 # ---------------------------------------------------------------- 样式与装配
@@ -465,7 +497,6 @@ STYLE = """
       }
     }
     text{font-family:"IBM Plex Sans","Inter",-apple-system,"Segoe UI","Helvetica Neue",Arial,sans-serif}
-    .zlabel{font-size:19px;font-weight:500;letter-spacing:2.8px;fill:var(--muted)}
     .wordmark{font-size:58px;font-weight:600;letter-spacing:-0.8px;fill:var(--ink)}
     .sub{font-size:19px;letter-spacing:1.4px;fill:var(--muted)}
     .chipname{font-size:24px;font-weight:500;fill:var(--ink)}
@@ -529,6 +560,8 @@ DEFS = f"""  <defs>
     <clipPath id="opensider-cube">
       <path d="{cube_clip_path()}"/>
     </clipPath>
+    <!-- Codex 产品标的官方渐变（从上游素材搬来，只改了 id） -->
+    {codex_gradient()}
   </defs>"""
 
 
@@ -543,7 +576,8 @@ def build_svg() -> str:
 
   <rect x="0" y="0" width="{W}" height="{H}" rx="{BG_R}" class="bgf frame"/>
 
-{zone_labels()}
+  <!-- 内容整体上移 CONTENT_DY：除背景之外都在这一层里 -->
+  <g transform="translate(0 {CONTENT_DY})">
 
 {browser_window()}
 
@@ -556,6 +590,7 @@ def build_svg() -> str:
 {link_nodes()}
 
 {link_flows()}
+  </g>
 </svg>
 """
 
