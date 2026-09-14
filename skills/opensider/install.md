@@ -130,20 +130,31 @@ will compare it in `update.md`.
 
 ## Stage 4 — ask where the extension should live, then unpack it
 
-The unpacked extension is a plain folder the browser loads from, so it has to sit somewhere
-the user can see in a file picker. **Ask them where to put it** — do not decide silently:
+The browser loads the extension from this folder on every start, so it needs a home the user
+is happy to keep. **Ask, and wait for the answer before running anything** — silently taking
+a default is the one thing this stage must not do.
 
-* default answer: `<Downloads>/OpenSider` (`~/Downloads/OpenSider`)
-* any other absolute path is fine (`~/OpenSider`, a tools folder, another disk) — use it as given
-* never inside `~/.opensider`: dot folders are invisible in the picker, which turns the one
-  manual step into a puzzle
+Put the choice in front of them, with the trade-off that actually matters:
+
+| Suggest | Say this |
+|---|---|
+| `~/OpenSider` | in the home folder, out of reach of "clear my downloads" habits and cleanup tools |
+| `<Downloads>/OpenSider` | convenient, but wiping Downloads deletes it — the extension then shows as broken until it is loaded again |
+| their own absolute path | fine as long as it stays put; use it exactly as given |
+
+Rules for this step:
+
+* never inside `~/.opensider` — dot folders are invisible in the "Load unpacked" picker
+* nothing is created, downloaded or recorded until the user has picked
+* "whatever you think" → take `~/OpenSider` and tell them that is what you took
+* a nod at your *suggestion* is not a decision — they have to hear which path it is first
 
 Record the choice **first**: every later step (this one, `update.md`, `doctor.md`, and the
 `opensider install` output) reads it back from there.
 
 ```sh
 bin=~/.opensider/runtime/opensider
-target=$("$bin" extension-dir "$HOME/Downloads/OpenSider")   # stores it, prints the path
+target=$("$bin" extension-dir "$HOME/OpenSider")   # stores it, prints the path
 # on any later run just read it back:  target=$("$bin" extension-dir)
 ```
 
@@ -151,7 +162,7 @@ Windows (PowerShell):
 
 ```powershell
 $bin = "$env:USERPROFILE\.opensider\runtime\opensider.exe"
-$target = & $bin extension-dir "$env:USERPROFILE\Downloads\OpenSider"
+$target = & $bin extension-dir "$env:USERPROFILE\OpenSider"
 ```
 
 Then download the package next to it and unpack into it:

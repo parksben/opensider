@@ -12,22 +12,26 @@ Trae, Qoder …). Two pieces have to exist on this machine:
 | Piece | Where | Who does it |
 |---|---|---|
 | **Bridge** — `opensider` binary + Native Messaging manifests | `~/.opensider/runtime/` and every browser's `NativeMessagingHosts/` | you, following this skill |
-| **Extension** — unpacked folder | wherever the user wants it (default `<Downloads>/OpenSider`), recorded with `opensider extension-dir` | you download it, **the user clicks "Load unpacked"** |
+| **Extension** — unpacked folder | wherever the user picks (`~/OpenSider` suggested), recorded with `opensider extension-dir` | you download it, **the user clicks "Load unpacked"** |
 
 Chrome gives no API that loads an unpacked extension, so that one click is the
 user's job. Everything else is yours.
 
 ## Golden rules
 
-1. **Ask which browser the user actually uses** before touching anything — and in the same
-   breath ask **where the extension folder should live** (default `<Downloads>/OpenSider`).
-   Never guess and never quietly enable everything you find; record their answer with
-   `opensider extension-dir <path>` so the update and doctor flows find it again.
-2. **One step, one check.** Every stage ends with a verification command. Do not move on
+1. **Ask which browser the user actually uses** before touching anything. Never guess and
+   never quietly enable everything you find.
+2. **Ask where the extension folder goes — and wait for the answer.** Nothing is created,
+   downloaded or recorded before they reply. `<Downloads>/OpenSider` looks like a sensible
+   default, but "clear my downloads" habits and cleanup tools delete it, and a deleted
+   folder breaks the extension until it is loaded again — suggest a durable path the user
+   keeps (`~/OpenSider`), say that trade-off in one line, and record their choice with
+   `opensider extension-dir <path>`. Their words are the answer; your own suggestion is not.
+3. **One step, one check.** Every stage ends with a verification command. Do not move on
    until it passes, and never report a stage as done without running its check.
-3. **Never fake the extension step.** If the user has not clicked "Load unpacked" yet,
+4. **Never fake the extension step.** If the user has not clicked "Load unpacked" yet,
    the install is not finished.
-4. **Never delete user data on your own.** `~/.opensider` holds session history, page
+5. **Never delete user data on your own.** `~/.opensider` holds session history, page
    snapshots and files the Agent produced. Removing it always needs an explicit yes.
 6. **No Agent CLI found? Keep installing anyway.** The bridge and the extension are still
    worth having — they sit ready until a CLI shows up. Say clearly what is missing and how
@@ -87,6 +91,7 @@ continue**. The stages are:
 1. **Detect** the platform, the Agent CLIs and what is already on the machine
    → [`references/platforms.md`](./references/platforms.md), [`references/agents.md`](./references/agents.md)
 2. **Ask** the user which browser to set up, and where the extension folder should go
+   — two questions, so **stop here and wait for the answers** before the next stage
 3. **Bridge**: download, verify, place, register
 4. **Extension**: download to that folder, unpack there, open the extensions page, guide the user
 5. **Verify** against `~/.opensider/host.log`
