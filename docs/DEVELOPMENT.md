@@ -8,16 +8,13 @@
 
 ```bash
 pnpm install
-pnpm build
+pnpm build          # 编扩展 + 打 dist-release/extension.zip
+pnpm install-host   # go build 出 ~/.opensider/runtime/opensider，拷 dist，再跑 install
 ```
 
-`pnpm build` 会打扩展、写出 `dist-release/extension.zip`，并执行 `go run ./cmd/opensider install --local`。只重新注册 Host：
+`pnpm install-host`（`scripts/dev-host.mjs`）是**开发专用**：它编出真实二进制（不要用 `go run` 当 Native Host，Chrome 保不住这个进程）、把 `packages/extension/dist` 拷到 `~/.opensider/extension`，再让该二进制 `install` —— 重写各浏览器的 `com.opensider.host.json`、确保工作区有 `AGENTS.md` / `browser/tools.json` / `outputs/`；若本机已装 Claude Code 或 Codex，还会把对应的 ACP 适配器装到 `~/.opensider/runtime/<agent>-acp`（没有 Node 只提示，不挡注册）。若本机 `~/.opensider` 还留着 Node Host 时代的 `PickFiles.app` / `runtime/packages` / 旧 `session.json`，先备份该目录再跑一次。
 
-```bash
-pnpm install-host
-```
-
-`install --local` 会 `go build` 出 `~/.opensider/runtime/opensider`（不要用 `go run` 当 Native Host），重写各浏览器的 `com.opensider.host.json`，并确保工作区有 `AGENTS.md` / `browser/tools.json` / `outputs/`。若本机已装 Claude Code 或 Codex，还会把对应的 ACP 适配器装到 `~/.opensider/runtime/<agent>-acp`（没有 Node 只提示，不挡 Host 注册）。若本机 `~/.opensider` 还留着 Node Host 时代的 `PickFiles.app` / `runtime/packages` / 旧 `session.json`，先备份该目录再跑一次安装。
+用户侧没有这条路径，也没有 `install.sh` / `install.ps1`：他们复制 README 里的一段提示词，由自己在用的 AI Agent 按 [`skills/opensider/`](../skills/opensider/SKILL.md) 执行，安装 / 更新 / 卸载 / 体检都走同一份 skill。改这些 markdown 等于改用户侧的安装行为，改完要在真机上按 skill 走一遍。
 
 1. 浏览器打开扩展页，加载 `packages/extension/dist`
 2. 点工具栏图标打开侧栏
@@ -42,26 +39,28 @@ README 演示视频见 `docs/opensider.mp4`：Agent 提炼网页信息、生成�
 pnpm pack-extension
 ```
 
-把 `packages/extension/dist` 打成 `dist-release/extension.zip`（不写出 CRX）。打包**不需要任何密钥文件**：脚本用构建产物 `manifest.json` 里的 `key` 算出未打包 ID，和常量比对，拦住「误改 key 让用户丢侧栏数据」这种情况。`dist-release/` 不入库。完整 `pnpm build` 会先编扩展再打包，再跑 `install --local`。
+把 `packages/extension/dist` 打成 `dist-release/extension.zip`（不写出 CRX）。打包**不需要任何密钥文件**：脚本用构建产物 `manifest.json` 里的 `key` 算出未打包 ID，和常量比对，拦住「误改 key 让用户丢侧栏数据」这种情况。`dist-release/` 不入库。`pnpm build` = 编扩展 + 打包，不再碰本机 Host。
 
 ## tag 发 Release
 
-推送 `v*` tag 会跑 `.github/workflows/release.yml`：macOS 开 cgo 编 darwin 二进制，Ubuntu 交叉编译 linux / windows，再打 `extension.zip`、安装壳和 `SHA256SUMS`，用最近 3 个 commit 发 GitHub Release。不上传 `opensider.crx`。
+推送 `v*` tag 会跑 `.github/workflows/release.yml`：macOS 开 cgo 编 darwin 二进制，Ubuntu 交叉编译 linux / windows，再打 `extension.zip` 和 `SHA256SUMS`，用最近 3 个 commit 发 GitHub Release（不上传 `opensider.crx`；**不再发 `install.sh` / `install.ps1`**）。二进制用 `-ldflags "-X …/internal/version.Version=${tag}"` 注入版本号，`opensider version` 与侧栏的版本行都读它；走 `go build ./cmd/opensider` 手编时版本是 `dev`，侧栏不会据此报「有新版本」。
 
-Release 资产名必须和用户安装壳一致，见 TECH_DESIGN「发布与安装壳」。
+Release 资产名必须和 skill 一致，见 TECH_DESIGN「发布与 skill 安装」。
 
 ## 仓库结构
 
 ```
 LICENSE               MIT 许可
 AGENTS.md             仓库根开发协作约定（不是 ~/.opensider/workspace/AGENTS.md）
-cmd/opensider         唯一 Go 入口（无参=Host，install，pick）
+cmd/opensider         唯一 Go 入口（无参=Host，install，uninstall，version，pick）
 internal/             Host / install / pick / ACP
 docs/                 需求、技术设计、本文件；README banner / 成片也在这一层
 packages/shared       扩展 ↔ Host 消息类型
 packages/extension    Chrome MV3 侧栏 / 内容脚本 / Service Worker
-scripts/install       用户壳脚本（由侧栏提示执行，不写进 README 主流程）
+skills/opensider      安装 / 更新 / 卸载 / 体检测 skill（README 的提示词指向它）
+scripts/dev-host.mjs  开发用：编二进制 + 拷扩展 + 注册桥接（= pnpm install-host）
 scripts/pack-extension.mjs  扩展 zip 打包
+scripts/install       已删除（用户侧不再有壳脚本）
 .github/workflows     推 v* tag 发 Release
 ```
 

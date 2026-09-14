@@ -33,9 +33,12 @@ https://github.com/user-attachments/assets/f0a9c654-b66e-43ef-a233-6942a30e83c6
 
 > 本扩展程序适用于 Chrome / Edge / Brave 等 Chromium 内核的浏览器。安装前请确保本机已有正在运行的 Agent CLI 程序。
 
-安装过程仅需四步：
+安装只需一步：把下面这段提示词复制给你正在使用的本地 AI Agent（Claude Code、Cursor、GitHub Copilot CLI、Codex 等），它会先跟你确认平时用哪个浏览器，再帮你装好本机桥接与浏览器扩展，需要你手动操作的地方会一步步引导。
 
-1. 在 [下载页面](https://github.com/parksben/opensider/releases/latest) 下载 `extension.zip` 文件，解压到本机任意目录。
-2. 打开浏览器扩展页（Chrome：`chrome://extensions`，Edge：`edge://extensions`），右上角打开**开发者模式**，左侧点击「加载已解压的扩展程序」，在弹出的文件窗口中选中刚才解压出的文件夹。
-3. 点浏览器右上角工具栏上的 OpenSider 图标，浏览器侧边栏会弹出 OpenSider 的用户界面。
-4. 首次使用时需按界面中提示，在终端或命令行（Terminal/PowerShell）中执行界面中显示的命令，将本地的 Agent CLI 连上浏览器。连接成功后即可在用户界面中与本地 Agent 开聊。
+```
+帮我安装 OpenSider 浏览器扩展。
+请先读取 https://raw.githubusercontent.com/parksben/opensider/main/skills/opensider/SKILL.md，然后严格按其中的流程执行。
+开始前先跟我确认我平时用哪个浏览器；每一步都分步引导我操作，并自己验证结果。
+```
+
+之后想更新、重装或卸载，也可以直接跟它说一声：同一份 skill 里带有这些流程（卸载时会先问你要不要连本地数据一起清掉）。

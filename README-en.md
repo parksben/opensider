@@ -33,9 +33,12 @@ https://github.com/user-attachments/assets/f0a9c654-b66e-43ef-a233-6942a30e83c6
 
 > This extension is for Chromium-based browsers such as Chrome / Edge / Brave. Before installing, make sure you already have a running Agent CLI program on your machine.
 
-Installation takes only four steps:
+Installation takes one step: paste the prompt below into the local AI Agent you already use (Claude Code, Cursor, GitHub Copilot CLI, Codex, …). It will confirm which browser you use, then set up the local bridge and the browser extension for you, walking you through anything that needs your hands.
 
-1. Download `extension.zip` from the [download page](https://github.com/parksben/opensider/releases/latest) and unzip it to any directory on your machine.
-2. Open the browser's extensions page (Chrome: `chrome://extensions`, Edge: `edge://extensions`), turn on **Developer mode** in the top-right corner, click "Load unpacked" on the left, and select the folder you just unzipped in the file dialog.
-3. Click the OpenSider icon in the browser's top-right toolbar, and the OpenSider UI opens in the browser side panel.
-4. On first use, follow the prompts in the UI and run the command shown there in a terminal or command line (Terminal/PowerShell) to connect your local Agent CLI to the browser. Once connected, you can start chatting with your local Agent in the UI.
+```
+Install OpenSider for me.
+Read https://raw.githubusercontent.com/parksben/opensider/main/skills/opensider/SKILL.md and follow it exactly.
+Ask me which browser I use before you start, walk me through every step that needs me, and verify each stage yourself.
+```
+
+The same skill also updates, reinstalls or removes OpenSider later — just ask. On uninstall it asks whether to delete your local data as well.
