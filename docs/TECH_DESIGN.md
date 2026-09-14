@@ -545,7 +545,7 @@ ACP 适配器仍只在 Go 里实现：`install` 里一个 `acpAdapterSpec`（本
 
 - Host 在 `hello` 里带自身版本（构建时 `-ldflags` 注入 tag）；扩展版本取 `chrome.runtime.getManifest().version`。
 - 设置 tab 展示「扩展版本 / 桥接版本 / 最新版本」+「检查更新」+「一键卸载」，两个按钮文案居中。最新版本由 Host 查 `https://api.github.com/repos/parksben/opensider/releases/latest`（未认证 60 次/时/IP，够用），结果缓存到 `~/.opensider/release-check.json`，**TTL 1h**（再长了会出现「刚发完新版，侧栏一天内还说最新是旧的」）；失败静默降级——不提示、不打扰、不阻塞任何功能。「检查更新」发 `release.check`，Host 强制重查并推 `release`，回来前按钮显示「检查中…」。
-- 模态窗只有一套壳：`PromptDialog`（`fixed inset-0` + 遮罩模糊，Esc / 点遮罩 / × 关闭；标题 + 可选附加块 + 说明 + 等宽提示词 + 强调色复制按钮），`UpdateDialog`（附加块是三个版本行）与 `UninstallDialog`（无附加块，说明里写明会先问要不要连本地数据一起清）都只是往里填词。两个入口都不在本机做动作：提示词与安装同源（措辞分别为「更新 OpenSider」/「卸载 OpenSider」），由用户的 Agent 按 `update.md` / `uninstall.md` 执行。顶栏那个 `CircleArrowUp` 更新图标只在真有新版本时渲染（不占位、不置灰）。
+- 模态窗只有一套壳：`PromptDialog`（`createPortal` 到 body，`fixed inset-0` + 遮罩模糊，Esc / 点遮罩 / × 关闭；标题栏带一条 `border-b` 分隔线，与抽屉 tab 栏同源），`UpdateDialog`（顶部三个版本行，行样式与设置 tab 的版本行逐字一致）与 `UninstallDialog`（无附加行）都只是往里填词。观感全部复用存量件：提示词块沿用 `BridgeSetup` 的「面板里再放一块等宽文本」，复制按钮沿用设置 tab 那套描边按钮（`rounded-md border border-[var(--line)]` + `RippleButton` 的涟漪），复制中/完成后换成 `Check` +「已复制」，与消息气泡、`BridgeSetup` 的反馈一致。按钮文案就叫「复制提示词」（中英一致，两个弹窗共用）。**别给 `RippleButton` 加 `bg-[var(--brass)]` 之类的填充背景**：它内置的 `hover:bg-[var(--hover)]` 是带伪类的选择器，优先级高于无变体的背景类，hover 时会把填充色抽掉，只剩 `--on-brass` 的字色（浅色主题下就是白底白字）——要实心按钮得像 `ConfirmPopover` 那样自己把 hover 背景写回。两个入口都不在本机做动作：提示词与安装同源（措辞分别为「更新 OpenSider」/「卸载 OpenSider」），由用户的 Agent 按 `update.md` / `uninstall.md` 执行。顶栏那个 `CircleArrowUp` 更新图标只在真有新版本时渲染（不占位、不置灰）。
 - 三段提示词（安装 / 更新 / 卸载）都定义在 `packages/extension/src/sidepanel/platform.ts`（`hostInstallPrompt` / `hostUpdatePrompt` / `hostUninstallPrompt`），侧栏按钮与 README 中英正文用同一份文本；改措辞时两处一起改，不要在 markdown 里另写一份。
 
 ### 开发脚本
