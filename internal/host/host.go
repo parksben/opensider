@@ -18,8 +18,10 @@ import (
 	"github.com/parksben/opensider/internal/pick"
 	"github.com/parksben/opensider/internal/preview"
 	"github.com/parksben/opensider/internal/protocol"
+	"github.com/parksben/opensider/internal/release"
 	"github.com/parksben/opensider/internal/reveal"
 	"github.com/parksben/opensider/internal/uistate"
+	"github.com/parksben/opensider/internal/version"
 	"github.com/parksben/opensider/internal/watch"
 	"github.com/parksben/opensider/internal/workspace"
 )
@@ -78,6 +80,7 @@ func Run() {
 func (h *Host) main() {
 	h.setHostState("starting", "")
 	go h.scanAndIdle()
+	go h.checkRelease(false)
 	if err := watch.WatchCommands(func(command protocol.BrowserCommand) {
 		h.handleWorkspaceCommand(command)
 	}); err != nil {
@@ -235,12 +238,46 @@ func (h *Host) sendHello() {
 		"type":      "hello",
 		"workspace": paths.WorkspaceDir(),
 		"agentPath": agentPath,
+		"version":   version.Version,
 	}
 	if providerID != "" {
 		msg["providerId"] = providerID
 	}
 	h.send(msg)
 	h.sendUIState()
+}
+
+// checkRelease 在后台查 GitHub 上最新 Release 的 tag（缓存 24h）并推给侧栏；侧栏
+// 拿它和本地版本比，决定要不要提示用户去更新（更新动作由用户自己的 AI Agent 按
+// 仓库里的 skill 执行，见 docs/TECH_DESIGN.md）。
+//
+// 失败只记日志：版本检查不该打扰用户，也不该挡住任何功能；有旧缓存就退回缓存。
+func (h *Host) checkRelease(force bool) {
+	if !force {
+		if info, ok := release.Cached(); ok {
+			h.sendRelease(info)
+			return
+		}
+	}
+	info, err := release.Latest(6 * time.Second)
+	if err != nil {
+		log.Log("release check failed: " + err.Error())
+		if cached, ok := release.Cached(); ok {
+			h.sendRelease(cached)
+		}
+		return
+	}
+	log.Log("release latest=" + info.Tag)
+	h.sendRelease(info)
+}
+
+func (h *Host) sendRelease(info release.Info) {
+	h.send(map[string]any{
+		"type":      "release",
+		"version":   version.Version,
+		"latest":    info.Tag,
+		"checkedAt": info.CheckedAt,
+	})
 }
 
 func (h *Host) sendUIState() {
@@ -768,6 +805,9 @@ func (h *Host) dispatch(typ string, msg map[string]any) error {
 		return nil
 	case "agents.detect":
 		return h.scanAgents()
+	case "release.check":
+		go h.checkRelease(true)
+		return nil
 	case "agent.connect":
 		return h.connectAgent(str(msg["providerId"]), protocol.AgentPolicy(str(msg["policy"])))
 	case "agent.cancelConnect":

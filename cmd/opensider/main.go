@@ -9,6 +9,7 @@ import (
 	"github.com/parksben/opensider/internal/host"
 	"github.com/parksben/opensider/internal/install"
 	"github.com/parksben/opensider/internal/pick"
+	"github.com/parksben/opensider/internal/version"
 )
 
 func main() {
@@ -19,16 +20,23 @@ func main() {
 	}
 	switch args[0] {
 	case "install":
-		local := false
-		for _, arg := range args[1:] {
-			if arg == "--local" {
-				local = true
-			}
-		}
-		if err := install.Run(local); err != nil {
+		if err := install.Run(); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
+	case "uninstall":
+		purge := false
+		for _, arg := range args[1:] {
+			if arg == "--purge" {
+				purge = true
+			}
+		}
+		if err := install.Uninstall(purge); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+	case "version", "--version":
+		fmt.Println(version.Version)
 	case "pick":
 		if err := pick.RunCLI(args[1:]); err != nil {
 			fmt.Fprintln(os.Stderr, err)

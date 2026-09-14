@@ -41,6 +41,10 @@ func ClaudeMDPath() string    { return filepath.Join(WorkspaceDir(), "CLAUDE.md"
 func SessionPath() string     { return filepath.Join(SidebarHome(), "session.json") }
 func UIStatePath() string     { return filepath.Join(SidebarHome(), "ui-state.json") }
 func HostLogPath() string     { return filepath.Join(SidebarHome(), "host.log") }
+
+// ReleaseCheckPath 缓存「最新 Release 的 tag」，见 internal/release。
+func ReleaseCheckPath() string { return filepath.Join(SidebarHome(), "release-check.json") }
+
 func RuntimeDir() string      { return filepath.Join(SidebarHome(), "runtime") }
 func ExtensionDir() string    { return filepath.Join(SidebarHome(), "extension") }
 

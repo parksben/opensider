@@ -59,6 +59,34 @@ func Register(hostPath string) ([]string, error) {
 	return written, nil
 }
 
+// Unregister 删除所有浏览器 / Profile 下的 Native Messaging 清单（含历史
+// com.cursor.sidebar.host）并清掉 Windows 注册表项。返回真正删掉的清单路径。
+func Unregister() []string {
+	var removed []string
+	seen := map[string]bool{}
+	for _, dir := range collectManifestDirs() {
+		if seen[dir] {
+			continue
+		}
+		seen[dir] = true
+		for _, name := range []string{protocol.HostName, previousHost} {
+			dest := filepath.Join(dir, name+".json")
+			if _, err := os.Stat(dest); err != nil {
+				continue
+			}
+			if err := os.Remove(dest); err == nil {
+				removed = append(removed, dest)
+			}
+		}
+	}
+	runtimeManifest := filepath.Join(paths.RuntimeDir(), protocol.HostName+".json")
+	if _, err := os.Stat(runtimeManifest); err == nil {
+		_ = os.Remove(runtimeManifest)
+	}
+	_ = deleteRegistry()
+	return removed
+}
+
 func collectManifestDirs() []string {
 	var dirs []string
 	seen := map[string]bool{}
