@@ -1,6 +1,6 @@
-export type DesktopOs = "macos" | "windows" | "linux";
-
 import type { Locale } from "./i18n";
+
+export type DesktopOs = "macos" | "windows" | "linux";
 
 type NavigatorUAData = {
   platform?: string;
@@ -48,5 +48,18 @@ export function hostUpdatePrompt(locale: Locale = "en"): string {
   return [
     "Update OpenSider (the browser extension and the local bridge) for me.",
     `Read ${INSTALL_SKILL_URL} and follow its update flow: compare what is installed here with the latest release, refresh whichever half is behind, then walk me through reloading the extension and verify it.`,
+  ].join("\n");
+}
+
+export function hostUninstallPrompt(locale: Locale = "en"): string {
+  if (locale === "zh") {
+    return [
+      "帮我卸载 OpenSider（浏览器扩展 + 本机桥接）。",
+      `请先读取 ${INSTALL_SKILL_URL}，按其卸载流程执行：先问我要不要连本地数据（会话历史、工作区、产物）一起清掉，再移除本机桥接，并引导我在浏览器里移除扩展。`,
+    ].join("\n");
+  }
+  return [
+    "Uninstall OpenSider (the browser extension and the local bridge) for me.",
+    `Read ${INSTALL_SKILL_URL} and follow its removal flow: ask me whether to delete my local data (session history, workspace, outputs) as well, then remove the bridge and walk me through removing the extension from the browser.`,
   ].join("\n");
 }

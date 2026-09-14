@@ -27,7 +27,7 @@ import { COMPACT_MAIN_PX } from "./layout";
 import { PermissionBar } from "./components/PermissionBar";
 import { SessionDrawer } from "./components/SessionDrawer";
 import { applyLocale, detectBrowserLocale, readCachedLocale, t, type Locale } from "./i18n";
-import { hostUpdatePrompt } from "./platform";
+import { hostUninstallPrompt, hostUpdatePrompt } from "./platform";
 import { isNewer } from "./version";
 import {
   applyResolvedTheme,
@@ -1416,7 +1416,9 @@ export function App() {
             isNewer(release?.latest, chrome.runtime.getManifest().version) ||
             isNewer(release?.latest, release?.version)
           }
-          onCopyUpdatePrompt={() => writeClipboard(hostUpdatePrompt(locale))}
+          onCopyPrompt={(kind) =>
+            writeClipboard(kind === "update" ? hostUpdatePrompt(locale) : hostUninstallPrompt(locale))
+          }
           onTheme={(next) => {
             applyThemePreference(next);
             setTheme(next);
