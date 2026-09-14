@@ -63,9 +63,9 @@ https://github.com/user-attachments/assets/f0a9c654-b66e-43ef-a233-6942a30e83c6
 
 ## 工作区与本地数据
 
-OpenSider 不把聊天内容传到云端：会话、页面快照和产物全部留在本机 `~/.opensider`，卸载或重装扩展后仍能接着用（侧栏状态的权威副本就是其中的 `ui-state.json`）。
+OpenSider 不会将应用配置和聊天内容上传到任何云端服务器，所有会话和 Agent 产物全部均保存在本机 `~/.opensider` 目录下，卸载或重装扩展后仍能接着用。
 
-| 路径 | 里面是什么 |
+| 文件\/目录 | 具体内容 |
 |---|---|
 | `~/.opensider/workspace/` | Agent 的工作目录：所有标签页、所有会话共用同一个，可以跨页面连续做事 |
 | `~/.opensider/workspace/browser/` | 当前页快照、交互控件列表、页面命令与结果、截图。中间文件，可随时清理 |
@@ -73,8 +73,6 @@ OpenSider 不把聊天内容传到云端：会话、页面快照和产物全部�
 | `~/.opensider/ui-state.json` | 会话列表、聊天记录与偏好设置 |
 | `~/.opensider/runtime/` | 本机桥接二进制，以及 Claude Code / Codex 用的 ACP 适配器 |
 | `~/.opensider/host.log` | 桥接日志，连不上时先看它 |
-| `~/Downloads/OpenSider/` | 浏览器实际加载的扩展目录，**不要移动或删除**，否则扩展会失效 |
+| `~/Downloads/OpenSider/` | 浏览器实际加载的扩展目录（安装时可改成别的路径），**不要移动或删除**，否则扩展会失效 |
 
 Windows 上对应 `%USERPROFILE%\.opensider` 与 `%USERPROFILE%\Downloads\OpenSider`。
-
-想彻底清空：用上面「卸载」的提示词并选择清空数据；只想清中间文件：删 `workspace/browser/`，聊天记录与产物不受影响。

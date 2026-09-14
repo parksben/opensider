@@ -63,9 +63,9 @@ Read https://raw.githubusercontent.com/parksben/opensider/main/skills/opensider/
 
 ## Workspace & Local Data
 
-OpenSider never uploads your chats: sessions, page snapshots and outputs all stay on this machine under `~/.opensider`, and they survive uninstalling or reinstalling the extension (the side panel state lives in `ui-state.json` there).
+OpenSider never uploads your configuration or chats to any server: all sessions and Agent artifacts stay on this machine under `~/.opensider`, and they survive uninstalling or reinstalling the extension.
 
-| Path | What it holds |
+| File / folder | What it holds |
 |---|---|
 | `~/.opensider/workspace/` | The Agent's working directory, shared by every tab and every session, so it can work across pages |
 | `~/.opensider/workspace/browser/` | Current page snapshot, interactive controls, page commands and results, screenshots. Scratch files, safe to delete |
@@ -73,8 +73,6 @@ OpenSider never uploads your chats: sessions, page snapshots and outputs all sta
 | `~/.opensider/ui-state.json` | Session list, chat history and preferences |
 | `~/.opensider/runtime/` | The local bridge binary, plus the Claude Code / Codex ACP adapters |
 | `~/.opensider/host.log` | Bridge log — the first place to look when it will not connect |
-| `~/Downloads/OpenSider/` | The extension folder the browser actually loads — **do not move or delete it**, or the extension breaks |
+| `~/Downloads/OpenSider/` | The extension folder the browser actually loads (you can pick a different path during install) — **do not move or delete it**, or the extension breaks |
 
 On Windows these live under `%USERPROFILE%\.opensider` and `%USERPROFILE%\Downloads\OpenSider`.
-
-To wipe everything, use the uninstall prompt above and choose to delete the data; to clear only scratch files, remove `workspace/browser/` — chats and outputs are unaffected.
