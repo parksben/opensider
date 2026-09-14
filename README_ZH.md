@@ -7,7 +7,7 @@
 </div>
 
 <div align="center">
-  中文 | <a href="./README-en.md">English</a>
+  中文 | <a href="./README.md">English</a>
 </div>
 
 <br />
@@ -33,12 +33,10 @@ https://github.com/user-attachments/assets/f0a9c654-b66e-43ef-a233-6942a30e83c6
 
 > 本扩展程序适用于 Chrome / Edge / Brave 等 Chromium 内核的浏览器。安装前请确保本机已有正在运行的 Agent CLI 程序。
 
-安装只需一步：把下面这段提示词复制给你正在使用的本地 AI Agent（Claude Code、Cursor、GitHub Copilot CLI、Codex 等），它会先跟你确认平时用哪个浏览器，再帮你装好本机桥接与浏览器扩展，需要你手动操作的地方会一步步引导。
+安装只需一步：把下面这段提示词复制给你正在使用的本地 AI Agent（Claude Code、Codex、OpenCode、Cursor 等），它会完成与本地环境准备并引导你完成浏览器扩展程序的安装。
 
 ```
 帮我安装 OpenSider 浏览器扩展。
 请先读取 https://raw.githubusercontent.com/parksben/opensider/main/skills/opensider/SKILL.md，然后严格按其中的流程执行。
 开始前先跟我确认我平时用哪个浏览器；每一步都分步引导我操作，并自己验证结果。
 ```
-
-之后想更新、重装或卸载，也可以直接跟它说一声：同一份 skill 里带有这些流程（卸载时会先问你要不要连本地数据一起清掉）。

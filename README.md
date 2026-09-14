@@ -7,7 +7,7 @@
 </div>
 
 <div align="center">
-  <a href="./README.md">中文</a> | English
+  <a href="./README_ZH.md">中文</a> | English
 </div>
 
 <br />
@@ -33,12 +33,10 @@ https://github.com/user-attachments/assets/f0a9c654-b66e-43ef-a233-6942a30e83c6
 
 > This extension is for Chromium-based browsers such as Chrome / Edge / Brave. Before installing, make sure you already have a running Agent CLI program on your machine.
 
-Installation takes one step: paste the prompt below into the local AI Agent you already use (Claude Code, Cursor, GitHub Copilot CLI, Codex, …). It will confirm which browser you use, then set up the local bridge and the browser extension for you, walking you through anything that needs your hands.
+Installation takes one step: paste the prompt below into the local AI Agent you already use (Claude Code, Codex, OpenCode, Cursor, …). It will prepare your local environment and walk you through installing the browser extension.
 
 ```
 Install OpenSider for me.
 Read https://raw.githubusercontent.com/parksben/opensider/main/skills/opensider/SKILL.md and follow it exactly.
 Ask me which browser I use before you start, walk me through every step that needs me, and verify each stage yourself.
 ```
-
-The same skill also updates, reinstalls or removes OpenSider later — just ask. On uninstall it asks whether to delete your local data as well.
