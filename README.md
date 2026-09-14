@@ -40,3 +40,25 @@ Install OpenSider for me.
 Read https://raw.githubusercontent.com/parksben/opensider/main/skills/opensider/SKILL.md and follow it exactly.
 Ask me which browser I use before you start, walk me through every step that needs me, and verify each stage yourself.
 ```
+
+## Update
+
+The drawer on the right shows the current **extension / bridge / latest** versions under Settings. When either half is behind, a "Copy the update prompt" button appears there and copies exactly this — you can also copy it by hand:
+
+```
+Update OpenSider (the browser extension and the local bridge) for me.
+Read https://raw.githubusercontent.com/parksben/opensider/main/skills/opensider/SKILL.md and follow its update flow: compare what is installed here with the latest release, refresh whichever half is behind, then walk me through reloading the extension and verify it.
+```
+
+The Agent compares versions → replaces the bridge and the extension folder → asks you to click "Reload" once on the extensions page → confirms over the bridge log. Updating never touches your session history, workspace or outputs.
+
+## Uninstall
+
+Same idea: the Agent asks whether to delete your local data first, then does the rest.
+
+```
+Uninstall OpenSider (the browser extension and the local bridge) for me.
+Read https://raw.githubusercontent.com/parksben/opensider/main/skills/opensider/SKILL.md and follow its removal flow: ask me whether to delete my local data (session history, workspace, outputs) as well, then remove the bridge and walk me through removing the extension from the browser.
+```
+
+Keep the data and `~/.opensider` stays on disk (session history, workspace, outputs), ready for the next install.
