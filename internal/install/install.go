@@ -54,7 +54,11 @@ func Run() error {
 	fmt.Printf("Host: %s\n", abs)
 	fmt.Printf("Allowed origins: chrome-extension://%s/ chrome-extension://%s/\n", protocol.ExtensionID, protocol.PackedExtensionID)
 	fmt.Printf("Workspace: %s\n", paths.WorkspaceDir())
-	fmt.Printf("Extension folder (load unpacked from here): %s\n", paths.ExtensionDir())
+	if _, err := os.Stat(filepath.Join(paths.ExtensionDir(), "manifest.json")); err == nil {
+		fmt.Printf("Extension folder (load it unpacked): %s\n", paths.ExtensionDir())
+	} else {
+		fmt.Printf("Extension folder expected at: %s (unpack extension.zip there)\n", paths.ExtensionDir())
+	}
 	fmt.Printf("Manifests: %s\n", strings.Join(dirs, ", "))
 	if err := EnsureClaudeACP(); err != nil {
 		fmt.Printf("Claude Code ACP setup did not finish: %s\nHost install succeeded.\n", err)
