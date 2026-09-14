@@ -31,6 +31,12 @@ done
 this PATH" is not proof that it is missing — say what you found and let the panel's agent
 list be the truth.
 
+**If nothing is found at all**, that is not a failed install: finish the bridge and the
+extension (they simply wait for a CLI), and tell the user which one to install — the exact
+wording, the per-CLI commands and the Node caveat are in stage 1 of
+[`../install.md`](../install.md). Do not stop before the extension is loaded, and do not
+call the setup complete either.
+
 ## ACP adapters (Claude Code and Codex)
 
 The official interactive `claude` and `codex` binaries do not speak ACP. Each has an

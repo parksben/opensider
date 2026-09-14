@@ -45,6 +45,14 @@ does not remove a copy they loaded in Edge as well. If they are not sure, `docto
 Stage 1 tells you which browsers have the bridge registered, and the extensions page
 tells them which have the card.
 
+Then tidy up the files under Downloads (nothing here is read by anything once the card is
+gone):
+
+* the unpacked folder `<Downloads>/OpenSider`
+* the package `<Downloads>/OpenSider-extension-<tag>.zip`
+
+Ask before deleting them — some users want to keep the zip for a later reinstall.
+
 Check: either the user confirms the card is gone, or they say they want to keep using it
 (an uninstalled bridge with a loaded extension leaves the panel showing a helpful "send
 this prompt to your AI Agent" screen — that is expected, not a failure).

@@ -20,17 +20,34 @@ On Windows use PowerShell instead (`$env:PROCESSOR_ARCHITEW6432`, `$env:PROCESSO
 | Windows | ARM64 | `opensider-windows-arm64.exe` |
 | Windows | AMD64 | `opensider-windows-amd64.exe` |
 
-Then look for the two things OpenSider needs locally:
+Then look for what OpenSider needs locally:
 
-1. **A supported Agent CLI** — run through the list in
-   [`references/agents.md`](./references/agents.md) with `command -v`. Report what you
-   found. If nothing is found, tell the user which CLI to install and log into first
-   (they need at least one; OpenSider drives it, it is not bundled).
+1. **A supported Agent CLI** — walk the list in [`references/agents.md`](./references/agents.md)
+   with `command -v`. Report what you found.
+
+   * **Found one or more** → continue. `opensider install` adds the Claude Code / Codex ACP
+     adapter automatically when the CLI is there but the adapter is not.
+   * **Found none** → say so plainly, then **keep going**. The bridge and the extension are
+     still worth installing: they sit ready and show up the moment a CLI exists. Tell the
+     user, in this order:
+     1. OpenSider does not ship an agent — it drives one that is already installed here,
+        so nothing can connect until one exists. This is not an install failure.
+     2. Which one to install, with the concrete command (`claude`, `codex`, `copilot`,
+        `opencode`, `agent` …). The shortest path is usually the agent they are talking to
+        right now: if you are Claude Code, `claude` is already on this machine and only the
+        ACP adapter is missing — `opensider install` will add it. If they chat through an
+        IDE's built-in assistant, that CLI may not exist on this machine at all.
+     3. Claude Code and Codex need Node 18+ for their adapter: if `node -v` fails, point
+        them at a CLI that speaks ACP by itself (Copilot / OpenCode / Cursor / Gemini …).
+     4. Once they install one, the side panel lists it on the next connect — nothing has
+        to be reinstalled. Offer to re-run [`doctor.md`](./doctor.md) afterwards.
+   Then continue with Stage 2. Do not abort the install because of a missing CLI.
+
 2. **Node 18+** (`node -v`, `npm -v`) — only needed for the Claude Code / Codex ACP
    adapters. Missing Node is not fatal; `opensider install` will say so.
 
-Check: you can name the OS, the arch, the asset, and at least one CLI (or you have told
-the user which one to install).
+Check: you can name the OS, the arch, the asset, and either at least one CLI or the exact
+CLI you told the user to install.
 
 ## Stage 2 — ask which browser
 
@@ -104,20 +121,41 @@ will compare it in `update.md`.
 
 ## Stage 4 — put the extension on disk
 
+The extension is unpacked into the user's **Downloads folder**: that is a normal, visible
+folder, so the "Load unpacked" picker can actually reach it (`~/.opensider` is a dot folder
+and stays hidden). Resolve it per OS:
+
+| OS | Downloads |
+|---|---|
+| macOS | `~/Downloads` |
+| Linux | `xdg-user-dir DOWNLOAD` when available, otherwise `~/Downloads` |
+| Windows | `%USERPROFILE%\Downloads` |
+| no Downloads folder | fall back to `~/OpenSider` and tell the user the full path |
+
 ```sh
-curl -fsSL -o "$tmp/extension.zip" "$base/extension.zip"
-rm -rf ~/.opensider/extension
-mkdir -p ~/.opensider/extension
-unzip -q -o "$tmp/extension.zip" -d ~/.opensider/extension   # or: python3 -m zipfile -e
+downloads="$HOME/Downloads"        # see the table above for the other cases
+target="$downloads/OpenSider"
+curl -fsSL -o "$downloads/OpenSider-extension-$tag.zip" "$base/extension.zip"
+rm -rf "$target"
+mkdir -p "$target"
+unzip -q -o "$downloads/OpenSider-extension-$tag.zip" -d "$target"   # or: python3 -m zipfile -e
 ```
 
-Windows (PowerShell): `Expand-Archive -LiteralPath "$tmp\extension.zip" -DestinationPath "$env:USERPROFILE\.opensider\extension" -Force`
+Windows (PowerShell):
 
-`manifest.json` must end up **directly** inside `~/.opensider/extension/`.
+```powershell
+$downloads = "$env:USERPROFILE\Downloads"
+$target = Join-Path $downloads "OpenSider"
+Invoke-WebRequest -Uri "$base/extension.zip" -OutFile "$downloads\OpenSider-extension-$tag.zip"
+Remove-Item -Recurse -Force $target -ErrorAction SilentlyContinue
+Expand-Archive -LiteralPath "$downloads\OpenSider-extension-$tag.zip" -DestinationPath $target -Force
+```
 
-Check: `test -f ~/.opensider/extension/manifest.json` (PowerShell:
-`Test-Path "$env:USERPROFILE\.opensider\extension\manifest.json"`) and the file contains
-`"manifest_version": 3`.
+Keeping the zip beside the folder is deliberate — it is the installer the user can reuse
+without you. `manifest.json` must end up **directly** inside the target folder.
+
+Check: `test -f "$target/manifest.json"` (PowerShell: `Test-Path "$target\manifest.json"`)
+and the file contains `"manifest_version": 3`.
 
 ## Stage 5 — let the user load it (this part is theirs)
 
@@ -133,11 +171,12 @@ Then walk them through it, one click at a time:
 
 1. Turn on **Developer mode** (top right).
 2. Click **Load unpacked**.
-3. Select the folder `~/.opensider/extension`.
-   * `~/.opensider` is a hidden folder, so the picker will not show it.
-     macOS: press `⌘⇧G`, paste `~/.opensider/extension`, press Enter.
-     Windows/Linux: paste the full path into the file-name box.
+3. Select the folder `<Downloads>/OpenSider` — it is visible, so no hidden-file tricks
+   are needed. On Windows that is `C:\Users\<you>\Downloads\OpenSider`.
 4. (Optional) Click the puzzle piece and pin OpenSider to the toolbar.
+
+Also tell them this folder has to stay where it is: Chrome loads the extension from it on
+every start, so moving or deleting it breaks the extension until they load it again.
 
 Wait for the user to confirm. If the card shows an error instead, do not retry blindly —
 go to [`references/troubleshooting.md`](./references/troubleshooting.md).
@@ -167,10 +206,11 @@ Report (short):
 ```
 OpenSider is ready.
 - Bridge: v0.2.0, registered for Chrome
-- Extension: loaded from ~/.opensider/extension
+- Extension: loaded from ~/Downloads/OpenSider
 - Agents found: … (adapters installed for …)
 Next: open the side panel, pick an agent, log in if it asks.
 ```
 
-Mention one thing only if it applies: an adapter was installed for a CLI, Node is missing
-so that CLI will not show up yet, or the Intel build did not exist for this machine.
+Mention one thing only if it applies: an adapter was installed for a CLI, **no CLI was
+found** (name the one you told them to install and that nothing else is missing), Node is
+missing so that CLI will not show up yet, or the Intel build did not exist for this machine.

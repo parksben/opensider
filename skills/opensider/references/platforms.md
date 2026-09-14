@@ -6,7 +6,8 @@
 |---|---|---|---|
 | Home root | `~/.opensider` | `~/.opensider` | `%USERPROFILE%\.opensider` |
 | Bridge binary | `~/.opensider/runtime/opensider` | same | `…\runtime\opensider.exe` |
-| Unpacked extension | `~/.opensider/extension` | same | `…\extension` |
+| Unpacked extension | `~/Downloads/OpenSider` | same (XDG aware) | `%USERPROFILE%\Downloads\OpenSider` |
+| Downloaded package | `~/Downloads/OpenSider-extension-<tag>.zip` | same | same |
 | Host log | `~/.opensider/host.log` | same | `…\host.log` |
 | Manifest name | `com.opensider.host.json` | same | same (registry value points at it) |
 | Legacy name to clean up | `com.cursor.sidebar.host.json` | same | same |
@@ -62,19 +63,30 @@ so in your report — otherwise the panel will keep saying the bridge is missing
 App names to use with `open -a`: `Google Chrome`, `Google Chrome Beta`, `Chromium`,
 `Microsoft Edge`, `Brave Browser`.
 
-## The hidden-folder trap
+## Where the extension folder lives (and why it is visible)
 
-`~/.opensider/extension` is inside a dot folder, so the "Load unpacked" dialog will not
-show it. Tell the user how to reach it:
+The unpacked extension goes to **`<Downloads>/OpenSider`**, not under `~/.opensider`: dot
+folders are invisible in the "Load unpacked" dialog, which turns a one-click step into a
+`⌘⇧G` puzzle. Resolve Downloads like this:
 
-* macOS: `⌘⇧G` → paste `~/.opensider/extension` → Enter (or `⌘⇧.` to reveal hidden files)
-* Windows / Linux: paste the absolute path into the file-name field
+| OS | Downloads |
+|---|---|
+| macOS | `~/Downloads` |
+| Linux | `xdg-user-dir DOWNLOAD` when available, otherwise `~/Downloads` |
+| Windows | `%USERPROFILE%\Downloads` (or the folder reported by the shell for `shell:Downloads`) |
+| no Downloads folder | fall back to `~/OpenSider` and tell the user the exact path |
 
-Without this, users conclude the extension is broken when they simply cannot see the
-folder.
+Two things to pass on to the user:
+
+* The folder must **stay where it is** — Chrome loads the extension from it on every
+  start. Moving or deleting it breaks the extension until they load it again from the new
+  place.
+* The `OpenSider-extension-<tag>.zip` sitting next to it is the package they can re-use
+  (or re-install from) without asking an agent.
 
 ## Don't put the bridge in a protected folder
 
 macOS TCC blocks background helpers from Desktop / Documents / Downloads. The bridge
-always lives in `~/.opensider/runtime` — never download it straight into Downloads and
-register it from there.
+always lives in `~/.opensider/runtime` — never download the binary straight into Downloads
+and register it from there. (The *extension* folder is fine in Downloads: Chrome reads it,
+not the bridge.)

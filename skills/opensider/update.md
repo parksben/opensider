@@ -10,7 +10,8 @@ brings the user here — or they ask for it directly.
 tag=$(curl -fsSLI -o /dev/null -w '%{url_effective}' \
   https://github.com/parksben/opensider/releases/latest | sed 's#.*/tag/##')
 ~/.opensider/runtime/opensider version                      # bridge version
-grep -o '"version": *"[^"]*"' ~/.opensider/extension/manifest.json | head -1   # extension version
+REPO_EXT="$HOME/Downloads/OpenSider"                        # see install.md stage 4 for Windows / XDG
+grep -o '"version": *"[^"]*"' "$REPO_EXT/manifest.json" | head -1   # extension version
 ```
 
 Both numbers are compared against `$tag` (ignore a leading `v`; compare dotted numbers).
@@ -39,8 +40,9 @@ Check: `~/.opensider/runtime/opensider version` prints the new tag.
 
 ## Stage 3 — refresh the extension
 
-Same as Stage 4 of [`install.md`](./install.md): download `extension.zip` from the tag,
-replace `~/.opensider/extension` with its contents.
+Same as Stage 4 of [`install.md`](./install.md): download `extension.zip` from the tag and
+replace the contents of the extension folder (`<Downloads>/OpenSider` — the exact path the
+browser is loading, which you know from `install.md` stage 4).
 
 Then tell the user the click that actually reloads it:
 
@@ -50,11 +52,11 @@ Then tell the user the click that actually reloads it:
 Chrome does not pick up a rewritten unpacked folder on its own, so without this click
 the panel keeps running the old code. If the card turns red or shows "invalid", the
 folder was replaced while Chrome held files open — clicking Reload (or removing and
-re-adding the folder) fixes it; check `~/.opensider/extension/manifest.json` is still
+re-adding the folder) fixes it; check the `manifest.json` in that folder is still
 valid first.
 
 Check: the user confirms the extension card shows the new version (the number is printed
-on the card), and `~/.opensider/extension/manifest.json` matches `$tag`.
+on the card), and the `manifest.json` in the extension folder matches `$tag`.
 
 ## Stage 4 — verify
 

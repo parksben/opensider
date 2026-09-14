@@ -12,7 +12,7 @@ Trae, Qoder …). Two pieces have to exist on this machine:
 | Piece | Where | Who does it |
 |---|---|---|
 | **Bridge** — `opensider` binary + Native Messaging manifests | `~/.opensider/runtime/` and every browser's `NativeMessagingHosts/` | you, following this skill |
-| **Extension** — unpacked folder | `~/.opensider/extension/` | you download it, **the user clicks "Load unpacked"** |
+| **Extension** — unpacked folder | `<Downloads>/OpenSider` (visible on purpose, so the file picker can reach it) | you download it, **the user clicks "Load unpacked"** |
 
 Chrome gives no API that loads an unpacked extension, so that one click is the
 user's job. Everything else is yours.
@@ -27,9 +27,13 @@ user's job. Everything else is yours.
    the install is not finished.
 4. **Never delete user data on your own.** `~/.opensider` holds session history, page
    snapshots and files the Agent produced. Removing it always needs an explicit yes.
-5. **Reply in the user's language** (the prompt may be Chinese). One or two lines per
+6. **No Agent CLI found? Keep installing anyway.** The bridge and the extension are still
+   worth having — they sit ready until a CLI shows up. Say clearly what is missing and how
+   to add it (see stage 1 of `install.md`), then continue; do not abort the install and do
+   not pretend the setup is complete.
+7. **Reply in the user's language** (the prompt may be Chinese). One or two lines per
    step; show raw command output only when something failed.
-6. **If you cannot verify something, say so.** "I could not confirm it" beats a guess.
+8. **If you cannot verify something, say so.** "I could not confirm it" beats a guess.
 
 ## Step 0 — pick the operation
 
@@ -70,11 +74,11 @@ Never mix files from different tags, and never install an asset you could not ve
 Every stage of every operation has the same shape: **act → run the check → only then
 continue**. The stages are:
 
-1. **Detect** the platform and what is already on the machine
+1. **Detect** the platform, the Agent CLIs and what is already on the machine
    → [`references/platforms.md`](./references/platforms.md), [`references/agents.md`](./references/agents.md)
 2. **Ask** the user which browser to set up
 3. **Bridge**: download, verify, place, register
-4. **Extension**: download, unpack, open the extensions page, guide the user
+4. **Extension**: download to the Downloads folder, unpack, open the extensions page, guide the user
 5. **Verify** against `~/.opensider/host.log`
    → [`references/verification.md`](./references/verification.md)
 
@@ -88,7 +92,7 @@ Finish with a short summary, not a log:
 ```
 OpenSider is ready.
 - Bridge: v0.2.0 at ~/.opensider/runtime/opensider (registered for Chrome)
-- Extension: loaded from ~/.opensider/extension
+- Extension: loaded from ~/Downloads/OpenSider
 - Agents found: claude (adapter installed), copilot
 Next: click the OpenSider icon, pick an agent, and log in if it asks.
 ```
