@@ -28,7 +28,7 @@ import { SessionDrawer } from "./components/SessionDrawer";
 import { UpdateDialog } from "./components/UpdateDialog";
 import { UninstallDialog } from "./components/UninstallDialog";
 import { applyLocale, detectBrowserLocale, readCachedLocale, t, type Locale } from "./i18n";
-import { isNewer } from "./version";
+import { displayVersion, isNewer } from "./version";
 import {
   applyResolvedTheme,
   resolveTheme,
@@ -1225,11 +1225,12 @@ export function App() {
   }
 
   // 版本信息只算一次：顶栏更新图标、更新模态窗、抽屉设置 tab 都用它。
+  // 三行同口径：不带 tag 的 v 前缀（version.ts 的 displayVersion）。
   const extensionVersion = chrome.runtime.getManifest().version;
   const versionInfo = {
-    extension: extensionVersion,
-    bridge: release?.version,
-    latest: release?.latest.replace(/^v/i, ""),
+    extension: displayVersion(extensionVersion) ?? extensionVersion,
+    bridge: displayVersion(release?.version),
+    latest: displayVersion(release?.latest),
   };
   const updateAvailable =
     isNewer(release?.latest, extensionVersion) || isNewer(release?.latest, release?.version);

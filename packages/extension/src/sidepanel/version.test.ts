@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { compareVersions, isNewer } from "./version.ts";
+import { compareVersions, displayVersion, isNewer } from "./version.ts";
 
 describe("compareVersions", () => {
   it("compares dotted numbers and ignores the v prefix", () => {
@@ -23,5 +23,16 @@ describe("isNewer", () => {
     assert.equal(isNewer("v0.2.0", "0.1.0"), true);
     assert.equal(isNewer("v0.2.0", "0.2.0"), false);
     assert.equal(isNewer("v0.2.0", "0.3.0"), false);
+  });
+});
+
+describe("displayVersion", () => {
+  it("drops the tag prefix so every version row looks the same", () => {
+    assert.equal(displayVersion("v0.2.2"), "0.2.2");
+    assert.equal(displayVersion("0.2.2"), "0.2.2");
+    assert.equal(displayVersion(" V0.2.2 "), "0.2.2");
+    assert.equal(displayVersion(""), undefined);
+    assert.equal(displayVersion(undefined), undefined);
+    assert.equal(displayVersion("dev"), "dev");
   });
 });

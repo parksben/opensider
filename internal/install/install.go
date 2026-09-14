@@ -50,7 +50,7 @@ func Run() error {
 		return err
 	}
 	fmt.Printf("Registered %s\n", protocol.HostName)
-	fmt.Printf("Version: %s\n", version.Version)
+	fmt.Printf("Version: %s\n", version.Display())
 	fmt.Printf("Host: %s\n", abs)
 	fmt.Printf("Allowed origins: chrome-extension://%s/ chrome-extension://%s/\n", protocol.ExtensionID, protocol.PackedExtensionID)
 	fmt.Printf("Workspace: %s\n", paths.WorkspaceDir())

@@ -37,7 +37,8 @@ func main() {
 			os.Exit(1)
 		}
 	case "version", "--version":
-		fmt.Println(version.Version)
+		// 不带 tag 的 v 前缀，与侧栏、install 输出同一口径（见 internal/version）。
+		fmt.Println(version.Display())
 	case "extension-dir":
 		// 打印（或设置）浏览器实际加载的扩展目录，安装 / 更新 / 体检流程都靠它保持一致。
 		if len(args) > 1 {

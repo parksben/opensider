@@ -28,3 +28,15 @@ export function compareVersions(a: string | undefined, b: string | undefined): n
 export function isNewer(latest: string | undefined, current: string | undefined): boolean {
   return compareVersions(latest, current) > 0;
 }
+
+/**
+ * 界面上展示的版本号：去掉 tag 的 `v` 前缀（`v0.2.2` → `0.2.2`）。
+ *
+ * `v` 只属于 git tag / release 标识；扩展自己的 manifest version 只能是 `0.2.2`，
+ * 所以对着 chrome://extensions 看时才不会一会儿有 v 一会儿没 v。空值返回 undefined，
+ * 让调用处回退到「未知」。
+ */
+export function displayVersion(value: string | undefined): string | undefined {
+  const text = (value ?? "").trim().replace(/^v/i, "");
+  return text || undefined;
+}

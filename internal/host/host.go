@@ -238,7 +238,7 @@ func (h *Host) sendHello() {
 		"type":      "hello",
 		"workspace": paths.WorkspaceDir(),
 		"agentPath": agentPath,
-		"version":   version.Version,
+		"version":   version.Display(),
 	}
 	if providerID != "" {
 		msg["providerId"] = providerID
@@ -274,7 +274,7 @@ func (h *Host) checkRelease(force bool) {
 func (h *Host) sendRelease(info release.Info) {
 	h.send(map[string]any{
 		"type":      "release",
-		"version":   version.Version,
+		"version":   version.Display(),
 		"latest":    info.Tag,
 		"checkedAt": info.CheckedAt,
 	})
