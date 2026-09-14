@@ -31,11 +31,12 @@ Windows: `Get-Content -Tail 12 "$env:USERPROFILE\.opensider\host.log"`.
 ls ~/.opensider/runtime/opensider
 ```
 
-**Extension on disk** — the folder Chrome will load (path per `install.md` stage 4,
-normally `<Downloads>/OpenSider`):
+**Extension on disk** — the folder Chrome loads (`opensider extension-dir` prints it, and it is
+the folder the user picked during install):
 
 ```sh
-test -f "$HOME/Downloads/OpenSider/manifest.json" && echo OK
+repo_ext=$(~/.opensider/runtime/opensider extension-dir)
+test -f "$repo_ext/manifest.json" && echo OK
 ```
 
 **Extension actually loaded (the user's click)** — ask the user, then look for the fresh
@@ -68,7 +69,7 @@ side. An empty list with `agents=none` means no supported CLI was detected — s
 ## What "done" looks like
 
 1. `opensider version` prints the tag you installed
-2. the extension folder (normally `<Downloads>/OpenSider`) holds a valid MV3 `manifest.json`
+2. the extension folder (`opensider extension-dir`) holds a valid MV3 `manifest.json`
 3. the user's browser shows the OpenSider card with no error
 4. a fresh `go host starting` line appeared after they opened the panel
 5. the panel lists at least one agent

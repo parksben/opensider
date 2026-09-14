@@ -6,8 +6,8 @@
 |---|---|---|---|
 | Home root | `~/.opensider` | `~/.opensider` | `%USERPROFILE%\.opensider` |
 | Bridge binary | `~/.opensider/runtime/opensider` | same | `…\runtime\opensider.exe` |
-| Unpacked extension | `~/Downloads/OpenSider` | same (XDG aware) | `%USERPROFILE%\Downloads\OpenSider` |
-| Downloaded package | `~/Downloads/OpenSider-extension-<tag>.zip` | same | same |
+| Unpacked extension | user's choice, default `~/Downloads/OpenSider` | same | user's choice, default `%USERPROFILE%\Downloads\OpenSider` |
+| Downloaded package | `<parent of the extension folder>/OpenSider-extension-<tag>.zip` | same | same |
 | Host log | `~/.opensider/host.log` | same | `…\host.log` |
 | Manifest name | `com.opensider.host.json` | same | same (registry value points at it) |
 | Legacy name to clean up | `com.cursor.sidebar.host.json` | same | same |
@@ -63,25 +63,37 @@ so in your report — otherwise the panel will keep saying the bridge is missing
 App names to use with `open -a`: `Google Chrome`, `Google Chrome Beta`, `Chromium`,
 `Microsoft Edge`, `Brave Browser`.
 
-## Where the extension folder lives (and why it is visible)
+## Where the extension folder lives
 
-The unpacked extension goes to **`<Downloads>/OpenSider`**, not under `~/.opensider`: dot
-folders are invisible in the "Load unpacked" dialog, which turns a one-click step into a
-`⌘⇧G` puzzle. Resolve Downloads like this:
+The unpacked extension is a normal folder the browser loads from, so it has to sit somewhere
+the user can see in a file picker. **The user picks it** during install — offer
+`<Downloads>/OpenSider` as the default, take any other absolute path they name. The one hard
+rule: **not inside `~/.opensider`**, because dot folders are invisible in the "Load unpacked"
+dialog and that turns the single manual step into a puzzle.
 
-| OS | Downloads |
+Defaults when the user just says "sure, whatever you suggest":
+
+| OS | Default |
 |---|---|
-| macOS | `~/Downloads` |
-| Linux | `xdg-user-dir DOWNLOAD` when available, otherwise `~/Downloads` |
-| Windows | `%USERPROFILE%\Downloads` (or the folder reported by the shell for `shell:Downloads`) |
-| no Downloads folder | fall back to `~/OpenSider` and tell the user the exact path |
+| macOS | `~/Downloads/OpenSider` |
+| Linux | `$XDG_DOWNLOAD_DIR/OpenSider` when set (`xdg-user-dir DOWNLOAD`), otherwise `~/Downloads/OpenSider` |
+| Windows | `%USERPROFILE%\Downloads\OpenSider` |
+| no Downloads folder | `~/OpenSider`, and tell the user the exact path |
+
+The choice is recorded in `~/.opensider/extension-path`, and every flow reads it back through
+the binary — never hand-write that file:
+
+```sh
+~/.opensider/runtime/opensider extension-dir                       # print it
+~/.opensider/runtime/opensider extension-dir "/some/other/folder"  # set it
+```
 
 Two things to pass on to the user:
 
 * The folder must **stay where it is** — Chrome loads the extension from it on every
   start. Moving or deleting it breaks the extension until they load it again from the new
   place.
-* The `OpenSider-extension-<tag>.zip` sitting next to it is the package they can re-use
+* The `OpenSider-extension-<tag>.zip` beside it is the package they can re-use
   (or re-install from) without asking an agent.
 
 ## Don't put the bridge in a protected folder

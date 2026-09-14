@@ -12,15 +12,17 @@ Trae, Qoder …). Two pieces have to exist on this machine:
 | Piece | Where | Who does it |
 |---|---|---|
 | **Bridge** — `opensider` binary + Native Messaging manifests | `~/.opensider/runtime/` and every browser's `NativeMessagingHosts/` | you, following this skill |
-| **Extension** — unpacked folder | `<Downloads>/OpenSider` (visible on purpose, so the file picker can reach it) | you download it, **the user clicks "Load unpacked"** |
+| **Extension** — unpacked folder | wherever the user wants it (default `<Downloads>/OpenSider`), recorded with `opensider extension-dir` | you download it, **the user clicks "Load unpacked"** |
 
 Chrome gives no API that loads an unpacked extension, so that one click is the
 user's job. Everything else is yours.
 
 ## Golden rules
 
-1. **Ask which browser the user actually uses** before touching anything. Never guess
-   and never quietly enable everything you find.
+1. **Ask which browser the user actually uses** before touching anything — and in the same
+   breath ask **where the extension folder should live** (default `<Downloads>/OpenSider`).
+   Never guess and never quietly enable everything you find; record their answer with
+   `opensider extension-dir <path>` so the update and doctor flows find it again.
 2. **One step, one check.** Every stage ends with a verification command. Do not move on
    until it passes, and never report a stage as done without running its check.
 3. **Never fake the extension step.** If the user has not clicked "Load unpacked" yet,
@@ -76,9 +78,9 @@ continue**. The stages are:
 
 1. **Detect** the platform, the Agent CLIs and what is already on the machine
    → [`references/platforms.md`](./references/platforms.md), [`references/agents.md`](./references/agents.md)
-2. **Ask** the user which browser to set up
+2. **Ask** the user which browser to set up, and where the extension folder should go
 3. **Bridge**: download, verify, place, register
-4. **Extension**: download to the Downloads folder, unpack, open the extensions page, guide the user
+4. **Extension**: download to that folder, unpack there, open the extensions page, guide the user
 5. **Verify** against `~/.opensider/host.log`
    → [`references/verification.md`](./references/verification.md)
 
@@ -92,7 +94,7 @@ Finish with a short summary, not a log:
 ```
 OpenSider is ready.
 - Bridge: v0.2.0 at ~/.opensider/runtime/opensider (registered for Chrome)
-- Extension: loaded from ~/Downloads/OpenSider
+- Extension: loaded from <the folder the user picked>
 - Agents found: claude (adapter installed), copilot
 Next: click the OpenSider icon, pick an agent, and log in if it asks.
 ```

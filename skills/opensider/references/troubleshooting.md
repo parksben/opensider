@@ -50,10 +50,10 @@ The host is alive but has not finished the CLI scan, or something is blocking th
 
 | Chrome says | Cause | Fix |
 |---|---|---|
-| "Manifest file is missing or unreadable" | the user selected the wrong folder (the parent, or a nested folder) | point them at the folder that **directly** contains `manifest.json` (`<Downloads>/OpenSider`, see `install.md` stage 4) |
+| "Manifest file is missing or unreadable" | the user selected the wrong folder (the parent, or a nested folder) | point them at the folder that **directly** contains `manifest.json` (`opensider extension-dir` prints it) |
 | "Cannot load extension with file or directory name …" | the zip was not extracted, or extracted into a subfolder | re-unpack with the flags in `install.md` Stage 4 |
 | card loads but turns red later | files were replaced while Chrome had them open | click **Reload** on the card; if it stays red, remove and load the folder again |
-| the folder is gone from the picker | the user cleaned out Downloads | re-unpack `extension.zip` into the same path and load it again (the bridge is unaffected) |
+| the folder is gone from the picker | the user moved or cleaned the folder it was loaded from | re-unpack `extension.zip` into the recorded path (`opensider extension-dir`) and load it again — the bridge is unaffected |
 
 ## The extension is loaded but only in one profile
 

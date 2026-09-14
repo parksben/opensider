@@ -45,11 +45,12 @@ does not remove a copy they loaded in Edge as well. If they are not sure, `docto
 Stage 1 tells you which browsers have the bridge registered, and the extensions page
 tells them which have the card.
 
-Then tidy up the files under Downloads (nothing here is read by anything once the card is
-gone):
+Then tidy up the files next to the extension folder (nothing here is read by anything once the
+card is gone):
 
-* the unpacked folder `<Downloads>/OpenSider`
-* the package `<Downloads>/OpenSider-extension-<tag>.zip`
+* the unpacked folder itself — `~/.opensider/runtime/opensider extension-dir` prints it (do this
+  **before** removing the bridge)
+* the package `<parent>/OpenSider-extension-<tag>.zip` sitting beside it
 
 Ask before deleting them — some users want to keep the zip for a later reinstall.
 

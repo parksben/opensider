@@ -119,36 +119,49 @@ Check: the output contains `Registered com.opensider.host`, a `Version:` line, a
 `Manifests:` list with at least one real browser path. Keep that version string — you
 will compare it in `update.md`.
 
-## Stage 4 — put the extension on disk
+## Stage 4 — ask where the extension should live, then unpack it
 
-The extension is unpacked into the user's **Downloads folder**: that is a normal, visible
-folder, so the "Load unpacked" picker can actually reach it (`~/.opensider` is a dot folder
-and stays hidden). Resolve it per OS:
+The unpacked extension is a plain folder the browser loads from, so it has to sit somewhere
+the user can see in a file picker. **Ask them where to put it** — do not decide silently:
 
-| OS | Downloads |
-|---|---|
-| macOS | `~/Downloads` |
-| Linux | `xdg-user-dir DOWNLOAD` when available, otherwise `~/Downloads` |
-| Windows | `%USERPROFILE%\Downloads` |
-| no Downloads folder | fall back to `~/OpenSider` and tell the user the full path |
+* default answer: `<Downloads>/OpenSider` (`~/Downloads/OpenSider`)
+* any other absolute path is fine (`~/OpenSider`, a tools folder, another disk) — use it as given
+* never inside `~/.opensider`: dot folders are invisible in the picker, which turns the one
+  manual step into a puzzle
+
+Record the choice **first**: every later step (this one, `update.md`, `doctor.md`, and the
+`opensider install` output) reads it back from there.
 
 ```sh
-downloads="$HOME/Downloads"        # see the table above for the other cases
-target="$downloads/OpenSider"
-curl -fsSL -o "$downloads/OpenSider-extension-$tag.zip" "$base/extension.zip"
-rm -rf "$target"
-mkdir -p "$target"
-unzip -q -o "$downloads/OpenSider-extension-$tag.zip" -d "$target"   # or: python3 -m zipfile -e
+bin=~/.opensider/runtime/opensider
+target=$("$bin" extension-dir "$HOME/Downloads/OpenSider")   # stores it, prints the path
+# on any later run just read it back:  target=$("$bin" extension-dir)
 ```
 
 Windows (PowerShell):
 
 ```powershell
-$downloads = "$env:USERPROFILE\Downloads"
-$target = Join-Path $downloads "OpenSider"
-Invoke-WebRequest -Uri "$base/extension.zip" -OutFile "$downloads\OpenSider-extension-$tag.zip"
+$bin = "$env:USERPROFILE\.opensider\runtime\opensider.exe"
+$target = & $bin extension-dir "$env:USERPROFILE\Downloads\OpenSider"
+```
+
+Then download the package next to it and unpack into it:
+
+```sh
+parent=$(dirname "$target")
+curl -fsSL -o "$parent/OpenSider-extension-$tag.zip" "$base/extension.zip"
+rm -rf "$target"
+mkdir -p "$target"
+unzip -q -o "$parent/OpenSider-extension-$tag.zip" -d "$target"   # or: python3 -m zipfile -e
+```
+
+Windows (PowerShell):
+
+```powershell
+$parent = Split-Path -Parent $target
+Invoke-WebRequest -Uri "$base/extension.zip" -OutFile "$parent\OpenSider-extension-$tag.zip"
 Remove-Item -Recurse -Force $target -ErrorAction SilentlyContinue
-Expand-Archive -LiteralPath "$downloads\OpenSider-extension-$tag.zip" -DestinationPath $target -Force
+Expand-Archive -LiteralPath "$parent\OpenSider-extension-$tag.zip" -DestinationPath $target -Force
 ```
 
 Keeping the zip beside the folder is deliberate — it is the installer the user can reuse
@@ -171,8 +184,9 @@ Then walk them through it, one click at a time:
 
 1. Turn on **Developer mode** (top right).
 2. Click **Load unpacked**.
-3. Select the folder `<Downloads>/OpenSider` — it is visible, so no hidden-file tricks
-   are needed. On Windows that is `C:\Users\<you>\Downloads\OpenSider`.
+3. Select the folder the user picked in Stage 4 (`opensider extension-dir` prints it again).
+   It is a visible folder, so no hidden-file tricks are needed; give them the exact path
+   anyway, so nobody has to guess.
 4. (Optional) Click the puzzle piece and pin OpenSider to the toolbar.
 
 Also tell them this folder has to stay where it is: Chrome loads the extension from it on
@@ -206,7 +220,7 @@ Report (short):
 ```
 OpenSider is ready.
 - Bridge: v0.2.0, registered for Chrome
-- Extension: loaded from ~/Downloads/OpenSider
+- Extension: loaded from <the folder the user picked>
 - Agents found: … (adapters installed for …)
 Next: open the side panel, pick an agent, log in if it asks.
 ```

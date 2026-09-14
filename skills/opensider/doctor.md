@@ -6,12 +6,14 @@ no reinstall before you know which stage is broken.
 ## Stage 1 — take the three measurements
 
 ```sh
-# 1. bridge present and runnable?
-ls -l ~/.opensider/runtime/opensider && ~/.opensider/runtime/opensider version
+bin=~/.opensider/runtime/opensider
 
-# 2. extension on disk, and which version? (path: see install.md stage 4)
-REPO_EXT="$HOME/Downloads/OpenSider"
-grep -o '"version": *"[^"]*"' "$REPO_EXT/manifest.json" | head -1
+# 1. bridge present and runnable?
+ls -l "$bin" && "$bin" version
+
+# 2. extension on disk, and which version? (the folder the browser loads)
+repo_ext=$("$bin" extension-dir)
+grep -o '"version": *"[^"]*"' "$repo_ext/manifest.json" | head -1
 
 # 3. has the bridge ever been launched by a browser?
 tail -n 12 ~/.opensider/host.log        # "go host starting" lines, newest last
@@ -65,8 +67,8 @@ all non-destructive:
 
 * re-run `~/.opensider/runtime/opensider install`
 * re-download and replace the binary (checksum first — `install.md` Stage 3)
-* re-unpack `extension.zip` into the extension folder (the path from `install.md` stage 4)
-  and ask the user to click Reload in `chrome://extensions`
+* re-unpack `extension.zip` into the extension folder (`opensider extension-dir`) and ask the
+  user to click Reload in `chrome://extensions`
 * install a missing ACP adapter (Node 18+ required, `opensider install` does it)
 * clear quarantine / MOTW bits
 

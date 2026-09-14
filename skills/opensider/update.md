@@ -9,9 +9,10 @@ brings the user here — or they ask for it directly.
 ```sh
 tag=$(curl -fsSLI -o /dev/null -w '%{url_effective}' \
   https://github.com/parksben/opensider/releases/latest | sed 's#.*/tag/##')
-~/.opensider/runtime/opensider version                      # bridge version
-REPO_EXT="$HOME/Downloads/OpenSider"                        # see install.md stage 4 for Windows / XDG
-grep -o '"version": *"[^"]*"' "$REPO_EXT/manifest.json" | head -1   # extension version
+bin=~/.opensider/runtime/opensider
+"$bin" version                                       # bridge version
+repo_ext=$("$bin" extension-dir)                     # the folder the browser loads
+grep -o '"version": *"[^"]*"' "$repo_ext/manifest.json" | head -1   # extension version
 ```
 
 Both numbers are compared against `$tag` (ignore a leading `v`; compare dotted numbers).
@@ -41,8 +42,8 @@ Check: `~/.opensider/runtime/opensider version` prints the new tag.
 ## Stage 3 — refresh the extension
 
 Same as Stage 4 of [`install.md`](./install.md): download `extension.zip` from the tag and
-replace the contents of the extension folder (`<Downloads>/OpenSider` — the exact path the
-browser is loading, which you know from `install.md` stage 4).
+replace the contents of the extension folder — the one `opensider extension-dir` prints (it is
+the folder the user picked during install and the browser is loading now).
 
 Then tell the user the click that actually reloads it:
 
