@@ -132,7 +132,6 @@ export function Header({
 
   const drawerButton = (
     <IconButton
-      ripple={false}
       label={sessionsOpen ? label("collapseSessions") : label("expandSessions")}
       onClick={onToggleSessions}
       aria-expanded={sessionsOpen}
@@ -145,10 +144,9 @@ export function Header({
   // 有新版本时才出现，紧贴在抽屉钮左侧；点开是一个可直接复制提示词的模态窗。
   const updateButton = updateAvailable ? (
     <IconButton
-      ripple={false}
       label={label("updateDialogTitle")}
       onClick={onShowUpdate}
-      className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-[var(--line)] text-[var(--brass)]"
+      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-[var(--line)] text-[var(--brass)]"
     >
       <CircleArrowUp size={14} />
       <span className="absolute right-0.5 top-0.5 h-1.5 w-1.5 rounded-full bg-[var(--brass)]" />
