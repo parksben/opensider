@@ -64,7 +64,7 @@ export function SessionDrawer({
   versions,
   checkingRelease,
   onCheckUpdate,
-  onCopyUninstall,
+  onShowUninstall,
 }: {
   locale: Locale;
   theme: ThemePreference;
@@ -86,7 +86,8 @@ export function SessionDrawer({
   /** 正在向 Host 要一次最新版本。 */
   checkingRelease?: boolean;
   onCheckUpdate: () => void;
-  onCopyUninstall: () => Promise<boolean>;
+  /** 开卸载模态窗。 */
+  onShowUninstall: () => void;
 }) {
   const label = (key: MessageKey) => t(locale, key);
   const [tab, setTab] = useState<DrawerTab>("sessions");
@@ -322,7 +323,7 @@ export function SessionDrawer({
             versions={versions}
             checking={checkingRelease}
             onCheckUpdate={onCheckUpdate}
-            onCopyUninstall={onCopyUninstall}
+            onShowUninstall={onShowUninstall}
           />        </div>
       ) : (
         <>
@@ -525,31 +526,19 @@ function VersionPanel({
   versions,
   checking,
   onCheckUpdate,
-  onCopyUninstall,
+  onShowUninstall,
 }: {
   label: (key: MessageKey) => string;
   versions: { extension: string; bridge?: string; latest?: string };
   /** 正在向 Host 要一次最新版本（等那条 release 回来才结束）。 */
   checking?: boolean;
   onCheckUpdate: () => void;
-  /** 卸载提示词也在 platform.ts 里，与 README 逐字一致。 */
-  onCopyUninstall: () => Promise<boolean>;
+  /** 开卸载模态窗（提示词在 platform.ts 里，与 README 逐字一致）。 */
+  onShowUninstall: () => void;
 }) {
-  const [copied, setCopied] = useState(false);
-  const timer = useRef(0);
-  useEffect(() => () => window.clearTimeout(timer.current), []);
   const unknown = label("versionUnknown");
   const buttonClass =
-    "rounded-md border border-[var(--line)] px-2.5 py-1.5 text-left text-[12px] text-[var(--text)] hover:bg-[var(--hover)]";
-
-  const copyUninstall = () => {
-    void onCopyUninstall().then((ok) => {
-      if (!ok) return;
-      setCopied(true);
-      window.clearTimeout(timer.current);
-      timer.current = window.setTimeout(() => setCopied(false), 1500);
-    });
-  };
+    "rounded-md border border-[var(--line)] px-2.5 py-1.5 text-center text-[12px] text-[var(--text)] hover:bg-[var(--hover)]";
 
   return (
     <div className="mt-1 flex flex-col gap-1.5 rounded-lg border border-[var(--line)] px-2.5 py-2.5">
@@ -560,8 +549,8 @@ function VersionPanel({
       <RippleButton onClick={onCheckUpdate} className={`mt-1 ${buttonClass}`}>
         {checking ? label("checkingUpdate") : label("checkUpdate")}
       </RippleButton>
-      <RippleButton onClick={copyUninstall} className={buttonClass}>
-        {copied ? label("copiedReply") : label("copyUninstallPrompt")}
+      <RippleButton onClick={onShowUninstall} className={buttonClass}>
+        {label("uninstallAction")}
       </RippleButton>
     </div>
   );

@@ -17,7 +17,6 @@ import { encodeImageBlob } from "../image-encode";
 import { blobUrlFromBase64Chunks, isAttachedImagePath } from "./image-preview";
 import { applyAcpUpdate, applyBrowserTool, createUserMessage } from "./acp-messages";
 import { connectSidebar } from "./bridge";
-import { writeClipboard } from "./clipboard";
 import type { ChatMessage, PermissionRequest, PlanPrompt, QuestionPrompt, TodoItem } from "./chat-types";
 import { AgentSetup } from "./components/AgentSetup";
 import { BridgeSetup } from "./components/BridgeSetup";
@@ -27,8 +26,8 @@ import { COMPACT_MAIN_PX } from "./layout";
 import { PermissionBar } from "./components/PermissionBar";
 import { SessionDrawer } from "./components/SessionDrawer";
 import { UpdateDialog } from "./components/UpdateDialog";
+import { UninstallDialog } from "./components/UninstallDialog";
 import { applyLocale, detectBrowserLocale, readCachedLocale, t, type Locale } from "./i18n";
-import { hostUninstallPrompt, hostUpdatePrompt } from "./platform";
 import { isNewer } from "./version";
 import {
   applyResolvedTheme,
@@ -93,6 +92,7 @@ export function App() {
   const [error, setError] = useState<string>();
   const [release, setRelease] = useState<{ version: string; latest: string }>();
   const [updateOpen, setUpdateOpen] = useState(false);
+  const [uninstallOpen, setUninstallOpen] = useState(false);
   const [releaseChecking, setReleaseChecking] = useState(false);
   const [page, setPage] = useState<CurrentPage>();
   const [runningIds, setRunningIds] = useState<string[]>([]);
@@ -1429,8 +1429,7 @@ export function App() {
             setReleaseChecking(true);
             sendRef.current({ type: "release.check" });
           }}
-          onCopyUninstall={() => writeClipboard(hostUninstallPrompt(locale))}
-          onTheme={(next) => {
+          onShowUninstall={() => setUninstallOpen(true)}          onTheme={(next) => {
             applyThemePreference(next);
             setTheme(next);
           }}
@@ -1447,6 +1446,9 @@ export function App() {
       ) : null}
       {updateOpen ? (
         <UpdateDialog locale={locale} versions={versionInfo} onClose={() => setUpdateOpen(false)} />
+      ) : null}
+      {uninstallOpen ? (
+        <UninstallDialog locale={locale} onClose={() => setUninstallOpen(false)} />
       ) : null}
     </div>
   );
