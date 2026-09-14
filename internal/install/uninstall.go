@@ -3,6 +3,7 @@ package install
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/parksben/opensider/internal/log"
 	"github.com/parksben/opensider/internal/paths"
@@ -31,11 +32,24 @@ func Uninstall(purge bool) error {
 	if !purge {
 		fmt.Printf("Kept %s (session history, workspace, outputs).\n", home)
 		fmt.Println("Re-run with --purge to delete it as well.")
+		warnRunningHost()
 		return nil
 	}
 	if err := os.RemoveAll(home); err != nil {
 		return err
 	}
 	fmt.Printf("Removed %s\n", home)
+	warnRunningHost()
 	return nil
+}
+
+// warnRunningHost 卸载完提醒一句：桥接进程还在的话，它会把刚删掉的 ~/.opensider
+// （workspace/browser 那套目录）再写回来，看起来像「卸载没生效」。
+func warnRunningHost() {
+	pids := RunningHostPIDs()
+	if len(pids) == 0 {
+		return
+	}
+	fmt.Printf("A bridge process is still running (pid %s) — the browser keeps it alive while the OpenSider side panel is connected, and it will keep rewriting %s.\n", strings.Join(pids, ", "), paths.SidebarHome())
+	fmt.Println("Close the side panel (or remove the extension in the browser), then run this command once more.")
 }

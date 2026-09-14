@@ -21,7 +21,12 @@ say where it is, so they can delete it later if they want.
 
 Check: you have an explicit answer, and you have not deleted anything yet.
 
-## Stage 2 — unregister the bridge
+## Stage 2 — stop the bridge, then unregister it
+
+**First ask the user to close the OpenSider side panel** (or remove the extension card).
+Chrome keeps the bridge process alive while the panel is connected, and a live bridge keeps
+rewriting `~/.opensider/workspace` — so a purge run against an open panel looks like it did
+nothing when the folder quietly comes back.
 
 ```sh
 ~/.opensider/runtime/opensider uninstall            # keeps ~/.opensider
@@ -32,7 +37,12 @@ This deletes every `com.opensider.host.json` manifest (including per-profile fol
 the legacy `com.cursor.sidebar.host.json`), the Windows registry keys, `runtime/`, and —
 only with `--purge` — the whole `~/.opensider` folder.
 
-Check: the output lists the manifest paths it removed plus `Removed ~/.opensider/runtime`.
+Check: the output lists the manifest paths it removed plus `Removed ~/.opensider/runtime`,
+and **no warning about a bridge process still running**. If it does warn (it prints the
+pid), the panel was still connected: have the user close it, then run the command again.
+After a purge, `test -d ~/.opensider && echo "came back"` should print nothing — if it
+does come back, the bridge is still alive; repeat.
+
 Browsers read manifests at connect time, so nothing needs a restart.
 
 ## Stage 3 — remove the extension (the user's click)
