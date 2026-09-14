@@ -14,12 +14,6 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const home = join(homedir(), ".opensider");
 const bin = join(home, "runtime", process.platform === "win32" ? "opensider.exe" : "opensider");
 const dist = join(root, "packages", "extension", "dist");
-// 与 internal/paths.ExtensionDir() 保持一致：扩展解到下载目录下的 OpenSider，
-// 这样手动「加载已解压的扩展程序」时能在文件选择器里直接看到它。
-const downloads = process.env.USERPROFILE
-  ? join(process.env.USERPROFILE, "Downloads")
-  : join(homedir(), "Downloads");
-const extension = join(existsSync(downloads) ? downloads : homedir(), "OpenSider");
 
 // 开发二进制也带上最近一个 tag：侧栏把桥接版本和最新 release 比较，报 dev 会
 // 让本机测试看到假的「有新版本」提示。仓库里没有 tag 就退回 dev。
@@ -44,6 +38,10 @@ execFileSync("go", ["build", ...(ldflags ? ["-ldflags", ldflags] : []), "-o", bi
   stdio: "inherit",
   env: { ...process.env, ...(process.platform === "darwin" ? { CGO_ENABLED: "1" } : {}) },
 });
+
+// 扩展目录由二进制决定（`opensider extension-dir`：用户在安装时选的，没选过就是
+// 下载目录下的 OpenSider）。开发时跟着它走，才能在浏览器里加载同一个目录。
+const extension = execFileSync(bin, ["extension-dir"], { encoding: "utf8" }).trim();
 
 if (existsSync(join(dist, "manifest.json"))) {
   rmSync(extension, { recursive: true, force: true });

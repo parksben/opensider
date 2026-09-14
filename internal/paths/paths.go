@@ -1,6 +1,8 @@
 package paths
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -66,12 +68,45 @@ func DownloadsDir() string {
 	return home
 }
 
-// ExtensionDir 是解压后的扩展目录：用户在「加载已解压的扩展程序」里选的就是它。
+// ExtensionPathFile 记录用户选定的扩展目录（单行绝对路径）。没有这个文件就用默认值。
+func ExtensionPathFile() string { return filepath.Join(SidebarHome(), "extension-path") }
+
+// DefaultExtensionDir 是用户没有特别指定时的位置：下载目录下的 OpenSider。
+func DefaultExtensionDir() string { return filepath.Join(DownloadsDir(), "OpenSider") }
+
+// ExtensionDir 返回解压后的扩展目录：用户在「加载已解压的扩展程序」里选的就是它。
 //
-// 放在下载目录而不是 ~/.opensider 下面，是因为点目录在系统文件选择器里默认不可见，
-// 「手动加载扩展」这一步会变得很难操作。它必须长期留在原处——Chrome 每次启动都从这里
-// 读扩展，移走或删掉扩展就会失效。
-func ExtensionDir() string { return filepath.Join(DownloadsDir(), "OpenSider") }
+// 位置由安装流程问过用户后写进 extension-path（见 SetExtensionDir），没记录过就是默认的
+// 下载目录。之所以不默认放进 ~/.opensider：点目录在系统文件选择器里默认不可见，而
+// 「手动加载扩展」这一步必须用户自己完成。无论放哪里，它都得长期留在原处——Chrome
+// 每次启动都从这里读扩展。
+func ExtensionDir() string {
+	if raw, err := os.ReadFile(ExtensionPathFile()); err == nil {
+		if p := strings.TrimSpace(string(raw)); p != "" {
+			return p
+		}
+	}
+	return DefaultExtensionDir()
+}
+
+// SetExtensionDir 记住用户选定的扩展目录。只接受绝对路径，且不能在 ~/.opensider 里
+// （点目录在文件选择器里不可见，放那儿等于把「加载扩展」变成一道坑）。
+func SetExtensionDir(dir string) error {
+	clean := filepath.Clean(strings.TrimSpace(dir))
+	if clean == "" || clean == "." {
+		return errors.New("extension dir is empty")
+	}
+	if !filepath.IsAbs(clean) {
+		return fmt.Errorf("extension dir must be an absolute path: %s", dir)
+	}
+	if sidebar := SidebarHome(); clean == sidebar || strings.HasPrefix(clean, sidebar+string(os.PathSeparator)) {
+		return fmt.Errorf("extension dir must be outside %s (dot folders are hidden in the file picker): %s", sidebar, clean)
+	}
+	if err := os.MkdirAll(SidebarHome(), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(ExtensionPathFile(), []byte(clean+"\n"), 0o644)
+}
 
 // ClaudeACPDir is the prefix-local install root for @agentclientprotocol/claude-agent-acp.
 func ClaudeACPDir() string { return filepath.Join(RuntimeDir(), "claude-acp") }

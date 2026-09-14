@@ -8,6 +8,7 @@ import (
 
 	"github.com/parksben/opensider/internal/host"
 	"github.com/parksben/opensider/internal/install"
+	"github.com/parksben/opensider/internal/paths"
 	"github.com/parksben/opensider/internal/pick"
 	"github.com/parksben/opensider/internal/version"
 )
@@ -37,6 +38,15 @@ func main() {
 		}
 	case "version", "--version":
 		fmt.Println(version.Version)
+	case "extension-dir":
+		// 打印（或设置）浏览器实际加载的扩展目录，安装 / 更新 / 体检流程都靠它保持一致。
+		if len(args) > 1 {
+			if err := paths.SetExtensionDir(args[1]); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
+		}
+		fmt.Println(paths.ExtensionDir())
 	case "pick":
 		if err := pick.RunCLI(args[1:]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
