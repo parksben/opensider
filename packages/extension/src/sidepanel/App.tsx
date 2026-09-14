@@ -26,6 +26,7 @@ import { Header } from "./components/Header";
 import { COMPACT_MAIN_PX } from "./layout";
 import { PermissionBar } from "./components/PermissionBar";
 import { SessionDrawer } from "./components/SessionDrawer";
+import { UpdateDialog } from "./components/UpdateDialog";
 import { applyLocale, detectBrowserLocale, readCachedLocale, t, type Locale } from "./i18n";
 import { hostUninstallPrompt, hostUpdatePrompt } from "./platform";
 import { isNewer } from "./version";
@@ -91,6 +92,8 @@ export function App() {
   const [status, setStatus] = useState<HostStatusState>("starting");
   const [error, setError] = useState<string>();
   const [release, setRelease] = useState<{ version: string; latest: string }>();
+  const [updateOpen, setUpdateOpen] = useState(false);
+  const [releaseChecking, setReleaseChecking] = useState(false);
   const [page, setPage] = useState<CurrentPage>();
   const [runningIds, setRunningIds] = useState<string[]>([]);
   const [queues, setQueues] = useState<Record<string, QueuedMessage[]>>({});
@@ -494,6 +497,7 @@ export function App() {
         version: typeof msg.version === "string" ? msg.version : "",
         latest: typeof msg.latest === "string" ? msg.latest : "",
       });
+      setReleaseChecking(false);
       return;
     }
     if (msg.type === "models") {
@@ -1220,6 +1224,16 @@ export function App() {
     return <div className="h-full bg-[var(--ink)]" />;
   }
 
+  // 版本信息只算一次：顶栏更新图标、更新模态窗、抽屉设置 tab 都用它。
+  const extensionVersion = chrome.runtime.getManifest().version;
+  const versionInfo = {
+    extension: extensionVersion,
+    bridge: release?.version,
+    latest: release?.latest.replace(/^v/i, ""),
+  };
+  const updateAvailable =
+    isNewer(release?.latest, extensionVersion) || isNewer(release?.latest, release?.version);
+
   return (
     <div className="flex h-full min-h-0">
       <div ref={mainColumnRef} className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -1234,6 +1248,8 @@ export function App() {
           compact={compact}
           sessionTitle={selected.title}
           sessionsOpen={sessionsOpen}
+          updateAvailable={updateAvailable}
+          onShowUpdate={() => setUpdateOpen(true)}
           onSelectAgent={requestConnect}
           onCancelConnect={cancelConnect}
           onToggleSessions={() => setSessionsOpen((open) => !open)}
@@ -1407,18 +1423,13 @@ export function App() {
             applyLocale(next);
             setLocale(next);
           }}
-          versions={{
-            extension: chrome.runtime.getManifest().version,
-            bridge: release?.version,
-            latest: release?.latest.replace(/^v/i, ""),
+          versions={versionInfo}
+          checkingRelease={releaseChecking}
+          onCheckUpdate={() => {
+            setReleaseChecking(true);
+            sendRef.current({ type: "release.check" });
           }}
-          updateAvailable={
-            isNewer(release?.latest, chrome.runtime.getManifest().version) ||
-            isNewer(release?.latest, release?.version)
-          }
-          onCopyPrompt={(kind) =>
-            writeClipboard(kind === "update" ? hostUpdatePrompt(locale) : hostUninstallPrompt(locale))
-          }
+          onCopyUninstall={() => writeClipboard(hostUninstallPrompt(locale))}
           onTheme={(next) => {
             applyThemePreference(next);
             setTheme(next);
@@ -1433,6 +1444,9 @@ export function App() {
             <p className="text-[11px] text-[var(--muted)]">{t(locale, "pickHintDetail")}</p>
           </div>
         </div>
+      ) : null}
+      {updateOpen ? (
+        <UpdateDialog locale={locale} versions={versionInfo} onClose={() => setUpdateOpen(false)} />
       ) : null}
     </div>
   );

@@ -1,5 +1,5 @@
 import type { AgentInfo, AgentProgress, HostStatusState } from "@shared";
-import { ChevronsLeft, ChevronsRight, RotateCw, Unplug } from "lucide-react";
+import { ChevronsLeft, ChevronsRight, CircleArrowUp, RotateCw, Unplug } from "lucide-react";
 import { useLayoutEffect, useRef, useState } from "react";
 import type { Locale } from "../i18n";
 import { t } from "../i18n";
@@ -30,10 +30,12 @@ export function Header({
   compact,
   sessionTitle,
   sessionsOpen,
+  updateAvailable,
   onRetry,
   onCancelConnect,
   onToggleSessions,
   onSelectAgent,
+  onShowUpdate,
 }: {
   locale: Locale;
   status: HostStatusState;
@@ -45,10 +47,13 @@ export function Header({
   compact?: boolean;
   sessionTitle: string;
   sessionsOpen: boolean;
+  /** 扩展或桥接落后于最新 release 时，抽屉钮左侧多一个提示图标。 */
+  updateAvailable?: boolean;
   onRetry?: () => void;
   onCancelConnect?: () => void;
   onToggleSessions: () => void;
   onSelectAgent: (id: string) => void;
+  onShowUpdate: () => void;
 }) {
   const label = (key: Parameters<typeof t>[1]) => t(locale, key);
   const unnamed = isPlaceholderTitle(sessionTitle);
@@ -137,6 +142,19 @@ export function Header({
     </IconButton>
   );
 
+  // 有新版本时才出现，紧贴在抽屉钮左侧；点开是一个可直接复制提示词的模态窗。
+  const updateButton = updateAvailable ? (
+    <IconButton
+      ripple={false}
+      label={label("updateDialogTitle")}
+      onClick={onShowUpdate}
+      className="relative flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-[var(--line)] text-[var(--brass)]"
+    >
+      <CircleArrowUp size={14} />
+      <span className="absolute right-0.5 top-0.5 h-1.5 w-1.5 rounded-full bg-[var(--brass)]" />
+    </IconButton>
+  ) : null;
+
   return (
     <header className="relative z-40 border-b border-[var(--line)] bg-[color-mix(in_oklab,var(--panel)_88%,transparent)] px-3 py-2.5 backdrop-blur">
       {compact ? (
@@ -146,7 +164,10 @@ export function Header({
             {retryButton}
             {titleCluster("left")}
           </div>
-          <div className="flex shrink-0 items-center justify-end">{drawerButton}</div>
+          <div className="flex shrink-0 items-center justify-end gap-1.5">
+            {updateButton}
+            {drawerButton}
+          </div>
         </div>
       ) : (
         <div ref={barRef} className="relative flex items-center justify-between">
@@ -167,6 +188,7 @@ export function Header({
             <div className="flex w-full min-w-0 items-center justify-center">{titleCluster("center")}</div>
           </div>
           <div ref={rightRef} className="flex shrink-0 items-center justify-end gap-1.5">
+            {updateButton}
             {drawerButton}
           </div>
         </div>

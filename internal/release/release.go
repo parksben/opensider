@@ -18,8 +18,9 @@ import (
 
 const (
 	apiLatest = "https://api.github.com/repos/parksben/opensider/releases/latest"
-	// TTL 一天：GitHub 未认证 API 每小时只给 60 次，安静一点。
-	TTL = 24 * time.Hour
+	// TTL 一小时：GitHub 未认证 API 每小时只给 60 次，一小时最多问一次足够安静；
+	// 再长了会出现「刚发完新版，侧栏一天内都还说最新是旧的」。
+	TTL = time.Hour
 )
 
 type Info struct {

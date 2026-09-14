@@ -247,9 +247,9 @@ func (h *Host) sendHello() {
 	h.sendUIState()
 }
 
-// checkRelease 在后台查 GitHub 上最新 Release 的 tag（缓存 24h）并推给侧栏；侧栏
+// checkRelease 在后台查 GitHub 上最新 Release 的 tag（缓存 1h）并推给侧栏；侧栏
 // 拿它和本地版本比，决定要不要提示用户去更新（更新动作由用户自己的 AI Agent 按
-// 仓库里的 skill 执行，见 docs/TECH_DESIGN.md）。
+// 仓库里的 skill 执行，见 docs/TECH_DESIGN.md）。`release.check` 会强制重查一次。
 //
 // 失败只记日志：版本检查不该打扰用户，也不该挡住任何功能；有旧缓存就退回缓存。
 func (h *Host) checkRelease(force bool) {

@@ -62,8 +62,9 @@ export function SessionDrawer({
   onLocale,
   onTheme,
   versions,
-  updateAvailable,
-  onCopyPrompt,
+  checkingRelease,
+  onCheckUpdate,
+  onCopyUninstall,
 }: {
   locale: Locale;
   theme: ThemePreference;
@@ -82,8 +83,10 @@ export function SessionDrawer({
   onTheme: (theme: ThemePreference) => void;
   /** 扩展自身版本、桥接版本与最新 release 的 tag（桥接/最新未知时缺省）。 */
   versions: { extension: string; bridge?: string; latest?: string };
-  updateAvailable?: boolean;
-  onCopyPrompt: (kind: "update" | "uninstall") => Promise<boolean>;
+  /** 正在向 Host 要一次最新版本。 */
+  checkingRelease?: boolean;
+  onCheckUpdate: () => void;
+  onCopyUninstall: () => Promise<boolean>;
 }) {
   const label = (key: MessageKey) => t(locale, key);
   const [tab, setTab] = useState<DrawerTab>("sessions");
@@ -317,10 +320,10 @@ export function SessionDrawer({
           <VersionPanel
             label={label}
             versions={versions}
-            updateAvailable={updateAvailable}
-            onCopyPrompt={onCopyPrompt}
-          />
-        </div>
+            checking={checkingRelease}
+            onCheckUpdate={onCheckUpdate}
+            onCopyUninstall={onCopyUninstall}
+          />        </div>
       ) : (
         <>
       <div className="flex shrink-0 items-center px-2.5 pt-2">
@@ -520,28 +523,31 @@ export function SessionDrawer({
 function VersionPanel({
   label,
   versions,
-  updateAvailable,
-  onCopyPrompt,
+  checking,
+  onCheckUpdate,
+  onCopyUninstall,
 }: {
   label: (key: MessageKey) => string;
   versions: { extension: string; bridge?: string; latest?: string };
-  updateAvailable?: boolean;
-  /** 复制更新 / 卸载提示词（两段都在 platform.ts 里，和 README 逐字一致）。 */
-  onCopyPrompt: (kind: "update" | "uninstall") => Promise<boolean>;
+  /** 正在向 Host 要一次最新版本（等那条 release 回来才结束）。 */
+  checking?: boolean;
+  onCheckUpdate: () => void;
+  /** 卸载提示词也在 platform.ts 里，与 README 逐字一致。 */
+  onCopyUninstall: () => Promise<boolean>;
 }) {
-  const [copied, setCopied] = useState<"update" | "uninstall">();
+  const [copied, setCopied] = useState(false);
   const timer = useRef(0);
   useEffect(() => () => window.clearTimeout(timer.current), []);
   const unknown = label("versionUnknown");
   const buttonClass =
     "rounded-md border border-[var(--line)] px-2.5 py-1.5 text-left text-[12px] text-[var(--text)] hover:bg-[var(--hover)]";
 
-  const copy = (kind: "update" | "uninstall") => {
-    void onCopyPrompt(kind).then((ok) => {
+  const copyUninstall = () => {
+    void onCopyUninstall().then((ok) => {
       if (!ok) return;
-      setCopied(kind);
+      setCopied(true);
       window.clearTimeout(timer.current);
-      timer.current = window.setTimeout(() => setCopied(undefined), 1500);
+      timer.current = window.setTimeout(() => setCopied(false), 1500);
     });
   };
 
@@ -551,16 +557,11 @@ function VersionPanel({
       <VersionRow name={label("versionExtension")} value={versions.extension || unknown} />
       <VersionRow name={label("versionBridge")} value={versions.bridge || unknown} />
       <VersionRow name={label("versionLatest")} value={versions.latest || unknown} />
-      {updateAvailable ? (
-        <div className="mt-1 flex flex-col gap-1.5">
-          <span className="text-[11.5px] text-[var(--muted)]">{label("updateAvailable")}</span>
-          <RippleButton onClick={() => copy("update")} className={buttonClass}>
-            {copied === "update" ? label("copiedReply") : label("copyUpdatePrompt")}
-          </RippleButton>
-        </div>
-      ) : null}
-      <RippleButton onClick={() => copy("uninstall")} className={`mt-1 ${buttonClass}`}>
-        {copied === "uninstall" ? label("copiedReply") : label("copyUninstallPrompt")}
+      <RippleButton onClick={onCheckUpdate} className={`mt-1 ${buttonClass}`}>
+        {checking ? label("checkingUpdate") : label("checkUpdate")}
+      </RippleButton>
+      <RippleButton onClick={copyUninstall} className={buttonClass}>
+        {copied ? label("copiedReply") : label("copyUninstallPrompt")}
       </RippleButton>
     </div>
   );
