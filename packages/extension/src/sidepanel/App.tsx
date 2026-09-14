@@ -17,6 +17,7 @@ import { encodeImageBlob } from "../image-encode";
 import { blobUrlFromBase64Chunks, isAttachedImagePath } from "./image-preview";
 import { applyAcpUpdate, applyBrowserTool, createUserMessage } from "./acp-messages";
 import { connectSidebar } from "./bridge";
+import { writeClipboard } from "./clipboard";
 import type { ChatMessage, PermissionRequest, PlanPrompt, QuestionPrompt, TodoItem } from "./chat-types";
 import { AgentSetup } from "./components/AgentSetup";
 import { BridgeSetup } from "./components/BridgeSetup";
@@ -26,6 +27,8 @@ import { COMPACT_MAIN_PX } from "./layout";
 import { PermissionBar } from "./components/PermissionBar";
 import { SessionDrawer } from "./components/SessionDrawer";
 import { applyLocale, detectBrowserLocale, readCachedLocale, t, type Locale } from "./i18n";
+import { hostUpdatePrompt } from "./platform";
+import { isNewer } from "./version";
 import {
   applyResolvedTheme,
   resolveTheme,
@@ -87,6 +90,7 @@ export function App() {
   const mainColumnRef = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState<HostStatusState>("starting");
   const [error, setError] = useState<string>();
+  const [release, setRelease] = useState<{ version: string; latest: string }>();
   const [page, setPage] = useState<CurrentPage>();
   const [runningIds, setRunningIds] = useState<string[]>([]);
   const [queues, setQueues] = useState<Record<string, QueuedMessage[]>>({});
@@ -484,6 +488,12 @@ export function App() {
     }
     if (msg.type === "page") {
       setPage(msg.page);
+      return;
+    }    if (msg.type === "release") {
+      setRelease({
+        version: typeof msg.version === "string" ? msg.version : "",
+        latest: typeof msg.latest === "string" ? msg.latest : "",
+      });
       return;
     }
     if (msg.type === "models") {
@@ -1397,6 +1407,16 @@ export function App() {
             applyLocale(next);
             setLocale(next);
           }}
+          versions={{
+            extension: chrome.runtime.getManifest().version,
+            bridge: release?.version,
+            latest: release?.latest.replace(/^v/i, ""),
+          }}
+          updateAvailable={
+            isNewer(release?.latest, chrome.runtime.getManifest().version) ||
+            isNewer(release?.latest, release?.version)
+          }
+          onCopyUpdatePrompt={() => writeClipboard(hostUpdatePrompt(locale))}
           onTheme={(next) => {
             applyThemePreference(next);
             setTheme(next);

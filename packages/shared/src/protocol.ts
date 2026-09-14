@@ -289,6 +289,7 @@ export type ExtToHost =
   | { type: "fs.preview"; requestId: string; path: string }
   | { type: "page.pick"; requestId: string; hint?: string }
   | { type: "page.pick.cancel"; requestId?: string }
+  | { type: "release.check" }
   | { type: "model.set"; modelId: string; sessionId?: string }
   | { type: "page.update"; page: CurrentPage }
   | { type: "tabs.update"; snapshot: TabsSnapshot }
@@ -345,6 +346,7 @@ export type HostToExt =
       error?: string;
     }
   | { type: "artifacts"; items: AttachmentItem[]; sessionId?: string }
+  | { type: "release"; version: string; latest: string; checkedAt?: string }
   | {
       type: "page.picked";
       requestId: string;

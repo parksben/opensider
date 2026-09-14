@@ -35,12 +35,13 @@ let lastModels: HostToExt | undefined;
 let lastAgents: HostToExt | undefined;
 let lastProgress: HostToExt | undefined;
 let lastUiState: HostToExt | undefined;
+let lastRelease: HostToExt | undefined;
 let ignoreNextDisconnect = false;
 let missingRetryTimer = 0;
 let startingWatchdog = 0;
 const STARTING_TIMEOUT_MS = 10_000;
 
-const INSTALL_HINT = "Run the install script shown in the side panel.";
+const INSTALL_HINT = "Send the prompt shown in the side panel to your local AI Agent.";
 
 function isHostMissingError(message: string): boolean {
   const text = message.toLowerCase();
@@ -137,6 +138,7 @@ function remember(msg: HostToExt): void {
     lastModels = msg;
   }
   if (msg.type === "agent.progress") lastProgress = msg;
+  if (msg.type === "release") lastRelease = msg;
   if (msg.type === "ui.state") lastUiState = msg;
 }
 
@@ -150,6 +152,7 @@ function replay(port: chrome.runtime.Port): void {
     if (lastSession) port.postMessage(lastSession);
     if (lastPage) port.postMessage(lastPage);
     if (lastModels) port.postMessage(lastModels);
+    if (lastRelease) port.postMessage(lastRelease);
     if (lastUiState) port.postMessage(lastUiState);
   } catch {
     sidebars.delete(port);

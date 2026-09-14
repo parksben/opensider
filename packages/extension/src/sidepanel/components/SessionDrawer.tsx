@@ -61,6 +61,9 @@ export function SessionDrawer({
   onClose,
   onLocale,
   onTheme,
+  versions,
+  updateAvailable,
+  onCopyUpdatePrompt,
 }: {
   locale: Locale;
   theme: ThemePreference;
@@ -77,6 +80,10 @@ export function SessionDrawer({
   onClose: () => void;
   onLocale: (locale: Locale) => void;
   onTheme: (theme: ThemePreference) => void;
+  /** 扩展自身版本、桥接版本与最新 release 的 tag（桥接/最新未知时缺省）。 */
+  versions: { extension: string; bridge?: string; latest?: string };
+  updateAvailable?: boolean;
+  onCopyUpdatePrompt: () => Promise<boolean>;
 }) {
   const label = (key: MessageKey) => t(locale, key);
   const [tab, setTab] = useState<DrawerTab>("sessions");
@@ -307,6 +314,12 @@ export function SessionDrawer({
             ]}
             onChange={onLocale}
           />
+          <VersionPanel
+            label={label}
+            versions={versions}
+            updateAvailable={updateAvailable}
+            onCopyUpdatePrompt={onCopyUpdatePrompt}
+          />
         </div>
       ) : (
         <>
@@ -501,6 +514,61 @@ export function SessionDrawer({
         }}
       />
     </aside>
+  );
+}
+
+function VersionPanel({
+  label,
+  versions,
+  updateAvailable,
+  onCopyUpdatePrompt,
+}: {
+  label: (key: MessageKey) => string;
+  versions: { extension: string; bridge?: string; latest?: string };
+  updateAvailable?: boolean;
+  onCopyUpdatePrompt: () => Promise<boolean>;
+}) {
+  const [copied, setCopied] = useState(false);
+  const timer = useRef(0);
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+  const unknown = label("versionUnknown");
+
+  const copy = () => {
+    void onCopyUpdatePrompt().then((ok) => {
+      if (!ok) return;
+      setCopied(true);
+      window.clearTimeout(timer.current);
+      timer.current = window.setTimeout(() => setCopied(false), 1500);
+    });
+  };
+
+  return (
+    <div className="mt-1 flex flex-col gap-1.5 rounded-lg border border-[var(--line)] px-2.5 py-2.5">
+      <span className="text-[12px] text-[var(--muted)]">{label("settingVersions")}</span>
+      <VersionRow name={label("versionExtension")} value={versions.extension || unknown} />
+      <VersionRow name={label("versionBridge")} value={versions.bridge || unknown} />
+      <VersionRow name={label("versionLatest")} value={versions.latest || unknown} />
+      {updateAvailable ? (
+        <div className="mt-1 flex flex-col gap-1.5">
+          <span className="text-[11.5px] text-[var(--muted)]">{label("updateAvailable")}</span>
+          <RippleButton
+            onClick={copy}
+            className="rounded-md border border-[var(--line)] px-2.5 py-1.5 text-left text-[12px] text-[var(--text)] hover:bg-[var(--hover)]"
+          >
+            {copied ? label("copiedReply") : label("copyUpdatePrompt")}
+          </RippleButton>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function VersionRow({ name, value }: { name: string; value: string }) {
+  return (
+    <span className="flex items-center gap-2 text-[12px]">
+      <span className="shrink-0 text-[var(--muted)]">{name}</span>
+      <span className="min-w-0 flex-1 truncate text-right text-[var(--text)]">{value}</span>
+    </span>
   );
 }
 
