@@ -381,7 +381,7 @@ Host `session/set_mode` 仍按 Profile `modeMap` 推。**Cursor ACP 没有第四
 
 ## 多 Agent CLI
 
-Host 是通用 ACP Client + 数据驱动 `AgentProfile`（启动命令、鉴权、modeMap、contextFiles、gates）。不经 acpx。探测：内置名单（Cursor / OpenCode / Copilot / CodeBuddy / Claude 适配器 / Codex 适配器 / Gemini / Qwen / Kimi / iFlow / Trae / Qoder 等）+ Chrome 传入的 PATH + 本机常见 bin（`~/.local/bin`、`~/.opencode/bin`、`~/.npm-global/bin`、`~/.bun/bin`、nvm / fnm / volta / asdf）+ ACP Registry。Chrome Native Messaging 的 PATH 不含 nvm，只搜系统目录会漏掉 `copilot` 这类 `#!/usr/bin/env node` 安装。`AgentSearchDirs` 固定包含 `~/.opensider/runtime/claude-acp/node_modules/.bin`（`paths.ClaudeACPBinDir`），即使目录刚创建也能搜到。Claude Code 只认 `claude-agent-acp` / `claude-code-acp`（含该 prefix），不把交互式 `claude` 当成 ACP（`--acp` 不存在，硬加会把 TUI 当已安装）。`opensider install` 在 Host 注册之后跑 `EnsureClaudeACP()`：探测 `claude`（`ResolveOnPath` + 显式 `~/.local/bin/claude` / Windows `%USERPROFILE%\.local\bin\claude.exe`，PATH 漏掉 `.local\bin` 也能找到）；已有适配器则校验路径并打印；Claude 在而适配器不在则用 npm（优先）/ pnpm / bun 把 `@agentclientprotocol/claude-agent-acp` 装进 `~/.opensider/runtime/claude-acp`（约 5 分钟超时，stdout/stderr 直接给用户）。装进自有 prefix 而不是 `npm i -g`：不需要 sudo/admin、bin 路径稳定、且已在探测搜索路径上。Windows 的 `npm.cmd` / `pnpm.cmd` 必须走 `cmd /c`（`ComSpec`），不能直接 `CreateProcess`。没有 Claude 就跳过；没有 Node 18+ 只提示。失败不挡 Host 注册，也不要求 `ProbeACP` / `claude` 登录成功。安装壳保持薄包装，逻辑只在 Go。探测在 Host 进 `idle` 之前于后台完成，而且**只看二进制在不在**（`ResolveOnPath`），启动阶段不再对每家跑 `initialize`——握手会把 `agent acp` / `copilot` 的 stdout 弄脏 Native Messaging 管道，hello/status 就被堵住。同一绝对路径不重复列。真正点连接再走完整握手。ProbeACP 仍给按需解析用：子进程必须自建 stdin/stdout、不能继承 Host 管道，超时后杀进程组且 `Wait` 有上限。Registry HTTP 在本地名单已经 `idle` 之后再补，失败就跳过。拉起子进程时把该 CLI 所在目录和上述 bin 预进 PATH，避免 `env node` 找不到。Copilot 的 `modeMap` 用 ACP session-modes URL（`#agent` / `#plan` / `#autopilot`），不要发 `default`/`ask`。`~/.gemini` 属 root 时 Gemini `session/new` 会 EACCES，Host 把错误改写成 chown 说明。OpenCode 常见安装是 Bun 打成的单文件（`~/.opencode/bin/opencode`），`acp.Client.Start` 只 `exec` 探测到的绝对路径加 `acp`，不复制、不解压、不改 `com.apple.quarantine`。该二进制 adhoc/linker 签名；启动时 Bun 把内嵌的 `watcher.node`（`@parcel/watcher` 一类）解到 macOS `$TMPDIR`，文件名形如 `.<hash>-00000001.node`，同样只有 adhoc 签名，Gatekeeper 会弹「未打开 / Apple 无法验证」。这是 OpenCode 自己的未公证 addon，任何父进程拉起 `opencode` 都可能触发。产品代码禁止给用户整份 OpenCode 安装去隔离属性。用户应点「完成」、在系统设置 → 隐私与安全性允许，或从官方渠道重装；不要把 `.node` 丢进废纸篓。侧栏会话自己持有消息；`Session.acpByProvider` 记各家 ACP id。换 Agent 不删本地历史；该家没有绑定则 `session/new` 并带本地前文。模型列表按当前 provider 的 `configOptions` / `session.models` / list 命令刷新（OpenCode 为 `opencode models`），Copilot 空名单走内置公开表。引导是标题栏下方内容区垂直居中的纯文本按钮，点即连接。顶栏 Agent 下拉 portal 到 `document.body`，避免被消息盖住。会话标题相对 header 居中，左右各留 32px。引导完成前 Host 不拉起 Agent 进程。换 Agent（或首次点连接）时 Host **先**握手新进程、成功后再 `Stop` 旧 runtime，这样取消只需停新进程、旧会话还在。侧栏在 `requestConnect` 之前记下上一份 `providerId` 与是否 `ready`；点取消发 `agent.cancelConnect`，立刻还原 `selectedProviderId` / 会话绑定，清掉进度，且不再把随后的 `idle` 自动连到被取消的那一家。已 `ready` 不画取消钮。Service Worker 若约 10s 仍停在 `starting`（Host 没回 `idle` / `ready` / `error`），改报 error 并写 `~/.opensider/host.log`，不要转圈到永远。
+Host 是通用 ACP Client + 数据驱动 `AgentProfile`（启动命令、鉴权、modeMap、contextFiles、gates）。不经 acpx。探测：内置名单（Cursor / OpenCode / Copilot / CodeBuddy / Claude 适配器 / Codex 适配器 / Gemini / Qwen / Kimi / iFlow / Trae / Qoder 等）+ Chrome 传入的 PATH + 本机常见 bin（`~/.local/bin`、`~/.opencode/bin`、`~/.npm-global/bin`、`~/.bun/bin`、nvm / fnm / volta / asdf）+ ACP Registry。Chrome Native Messaging 的 PATH 不含 nvm，只搜系统目录会漏掉 `copilot` 这类 `#!/usr/bin/env node` 安装。`AgentSearchDirs` 固定包含 `~/.opensider/runtime/claude-acp/node_modules/.bin`（`paths.ClaudeACPBinDir`），即使目录刚创建也能搜到。Claude Code 只认 `claude-agent-acp` / `claude-code-acp`（含该 prefix），不把交互式 `claude` 当成 ACP（`--acp` 不存在，硬加会把 TUI 当已安装）。`opensider install` 在 Host 注册之后跑 `EnsureClaudeACP()`：探测 `claude`（`ResolveOnPath` + 显式 `~/.local/bin/claude` / Windows `%USERPROFILE%\.local\bin\claude.exe`，PATH 漏掉 `.local\bin` 也能找到）；已有适配器则校验路径并打印；Claude 在而适配器不在则用 npm（优先）/ pnpm / bun 把 `@agentclientprotocol/claude-agent-acp` 装进 `~/.opensider/runtime/claude-acp`（约 5 分钟超时，stdout/stderr 直接给用户）。装进自有 prefix 而不是 `npm i -g`：不需要 sudo/admin、bin 路径稳定、且已在探测搜索路径上。Windows 的 `npm.cmd` / `pnpm.cmd` 必须走 `cmd /c`（`ComSpec`），不能直接 `CreateProcess`。没有 Claude 就跳过；没有 Node 18+ 只提示。失败不挡 Host 注册，也不要求 `ProbeACP` / `claude` 登录成功。安装逻辑只在 Go（skill 只做编排与引导），跨平台差异不写进提示词。探测在 Host 进 `idle` 之前于后台完成，而且**只看二进制在不在**（`ResolveOnPath`），启动阶段不再对每家跑 `initialize`——握手会把 `agent acp` / `copilot` 的 stdout 弄脏 Native Messaging 管道，hello/status 就被堵住。同一绝对路径不重复列。真正点连接再走完整握手。ProbeACP 仍给按需解析用：子进程必须自建 stdin/stdout、不能继承 Host 管道，超时后杀进程组且 `Wait` 有上限。Registry HTTP 在本地名单已经 `idle` 之后再补，失败就跳过。拉起子进程时把该 CLI 所在目录和上述 bin 预进 PATH，避免 `env node` 找不到。Copilot 的 `modeMap` 用 ACP session-modes URL（`#agent` / `#plan` / `#autopilot`），不要发 `default`/`ask`。`~/.gemini` 属 root 时 Gemini `session/new` 会 EACCES，Host 把错误改写成 chown 说明。OpenCode 常见安装是 Bun 打成的单文件（`~/.opencode/bin/opencode`），`acp.Client.Start` 只 `exec` 探测到的绝对路径加 `acp`，不复制、不解压、不改 `com.apple.quarantine`。该二进制 adhoc/linker 签名；启动时 Bun 把内嵌的 `watcher.node`（`@parcel/watcher` 一类）解到 macOS `$TMPDIR`，文件名形如 `.<hash>-00000001.node`，同样只有 adhoc 签名，Gatekeeper 会弹「未打开 / Apple 无法验证」。这是 OpenCode 自己的未公证 addon，任何父进程拉起 `opencode` 都可能触发。产品代码禁止给用户整份 OpenCode 安装去隔离属性。用户应点「完成」、在系统设置 → 隐私与安全性允许，或从官方渠道重装；不要把 `.node` 丢进废纸篓。侧栏会话自己持有消息；`Session.acpByProvider` 记各家 ACP id。换 Agent 不删本地历史；该家没有绑定则 `session/new` 并带本地前文。模型列表按当前 provider 的 `configOptions` / `session.models` / list 命令刷新（OpenCode 为 `opencode models`），Copilot 空名单走内置公开表。引导是标题栏下方内容区垂直居中的纯文本按钮，点即连接。顶栏 Agent 下拉 portal 到 `document.body`，避免被消息盖住。会话标题相对 header 居中，左右各留 32px。引导完成前 Host 不拉起 Agent 进程。换 Agent（或首次点连接）时 Host **先**握手新进程、成功后再 `Stop` 旧 runtime，这样取消只需停新进程、旧会话还在。侧栏在 `requestConnect` 之前记下上一份 `providerId` 与是否 `ready`；点取消发 `agent.cancelConnect`，立刻还原 `selectedProviderId` / 会话绑定，清掉进度，且不再把随后的 `idle` 自动连到被取消的那一家。已 `ready` 不画取消钮。Service Worker 若约 10s 仍停在 `starting`（Host 没回 `idle` / `ready` / `error`），改报 error 并写 `~/.opensider/host.log`，不要转圈到永远。
 
 ## 标签切换
 
@@ -434,7 +434,7 @@ Host 是 ACP Client，`clientCapabilities` 关闭 `fs` / `terminal`，让 Agent 
 Host 注册名：`com.opensider.host`  
 macOS 清单路径：`~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.opensider.host.json`
 
-使用者主路径：从 `releases/latest` 下 `extension.zip`，解压后 Load unpacked，打开侧栏；缺桥接时侧栏给出 `install.sh` / `install.ps1`，壳再下一份 `opensider` 并 `opensider install`。清单 `path` 指向 `~/.opensider/runtime/opensider`。README 只写产品、演示和这条使用者安装/使用路径，不含开发搭建。开发：`pnpm install-host` = `go run ./cmd/opensider install --local`，必须 `go build` 出真实二进制拷到 runtime（**禁止**把 `go run` 写成 Native Host path，Chrome 保不住这个进程）。`install` 同时 `workspace.Ensure()`，马上就有 `AGENTS.md` / `browser/tools.json` / `outputs/`。macOS TCC 仍要求二进制不在 Desktop / Documents / Downloads。Host 日志只写 `~/.opensider/host.log`，不写 stderr。从 Node 时代留下的 `~/.opensider`（`PickFiles.app`、`runtime/packages`、旧 `session.json`）可能和 Go Host 打架；开发机应备份后重新 `install --local`。推送 `v*` tag 触发 Actions：darwin 在 macOS 开 cgo 编，linux/windows 交叉编译；Release 说明只列最近 3 个 commit。桥接未注册时 SW 轮询 `connectNative`。不迁旧目录。
+使用者主路径：把**安装提示词**发给自己在用的本机 AI Agent，由它按 `skills/opensider/` 的 skill 执行（流程见本文件「发布与 skill 安装」）。清单 `path` 指向 `~/.opensider/runtime/opensider`。README 只写产品、演示和这一步，不含开发搭建。开发：`pnpm install-host`（dev-only）= `go build -o ~/.opensider/runtime/opensider ./cmd/opensider` + 拷 `packages/extension/dist` 到 `~/.opensider/extension` + 跑该二进制 `install`；**禁止**把 `go run` 写成 Native Host path，Chrome 保不住这个进程。`install` 同时 `workspace.Ensure()`，马上就有 `AGENTS.md` / `browser/tools.json` / `outputs/`。macOS TCC 仍要求二进制不在 Desktop / Documents / Downloads。Host 日志只写 `~/.opensider/host.log`，不写 stderr。从 Node 时代留下的 `~/.opensider`（`PickFiles.app`、`runtime/packages`、旧 `session.json`）可能和 Go Host 打架；skill 的 doctor 要能识别这类残留并先备份再重建，开发机重新 `pnpm install-host`。推送 `v*` tag 触发 Actions：darwin 在 macOS 开 cgo 编，linux/windows 交叉编译；Release 说明只列最近 3 个 commit。桥接未注册时 SW 轮询 `connectNative`。不迁旧目录。
 
 ## UI
 
@@ -484,7 +484,7 @@ macOS 清单路径：`~/Library/Application Support/Google/Chrome/NativeMessagin
 
 ```
 AGENTS.md           仓库根开发协作约定。不是 ~/.opensider/workspace/AGENTS.md（Host 写入的页面协议）
-README.md           面向使用者的产品页：中文 slogan + 扩展介绍（CLI 顺序 Claude Code / Copilot / OpenCode / Cursor）+ 3 条要点、演示、四步安装（不写开发搭建，不单独开适用场景）
+README.md           面向使用者的产品页：中文 slogan + 扩展介绍（CLI 顺序 Claude Code / Copilot / OpenCode / Cursor）+ 3 条要点、演示、一步安装提示词（不写开发搭建，不单独开适用场景）
 README-en.md        README 的英文版；顶部与中文版各放一行居中 `中文 | English` 切换，只非当前语言那侧带链接
 docs/REQUIREMENTS.md  需求：做什么、为什么
 docs/TECH_DESIGN.md   本文件：怎么做、为什么选这个方案
@@ -496,7 +496,7 @@ cmd/opensider       唯一 Go 入口（host / install / pick）
 internal/           Host / install / pick / ACP
 packages/shared     扩展 ↔ Host 消息类型（TS）
 packages/extension  Chrome MV3（background / content / sidepanel）
-scripts/install     用户壳 install.sh / install.ps1
+skills/opensider     skill：安装 / 更新 / 卸载 / 体检（提示词指向它，agent 用 curl 逐个拉）
 scripts/brand/      五家 Agent 的官方矢量素材原文件（只给 banner 生成脚本读，见「README Banner」）
 scripts/pack-extension.mjs  把 dist 打成 extension.zip（用构建产物 manifest 的 key 校验未打包 ID）
 .github/workflows   tag 发 Release
@@ -508,25 +508,43 @@ pnpm workspace 只编扩展。Host 用 Go。扩展用 Vite + `@crxjs/vite-plugin
 
 产品侧栏 = Chrome **Side Panel**（manifest `side_panel` + `sidePanel` 权限 + `openPanelOnActionClick`），不是 `default_popup`。README「演示」只写视频在演示什么：OpenSider 会话里让 Agent 提炼网页信息、生成资讯榜单并在浏览器打开。不要把分辨率、加速、IME 等录制规格写进 README。
 
-## 发布与安装壳
+## 发布与 skill 安装
 
-用户侧不克隆仓库。README 主路径是下载 `extension.zip` 并 Load unpacked；本机桥接一行壳由侧栏在缺 Host 时给出，永远打 `releases/latest`，按本机只下一份 Host 二进制，校验后再把安装交给该二进制。
+用户侧不克隆仓库，也没有任何本地构建入口：安装 / 更新 / 卸载由「**一段提示词 + 仓库里的 skill**」完成——用户把提示词发给自己在用的本机 AI Agent（Claude Code / Copilot CLI / Cursor / Codex 等），Agent 按 skill 分步执行、每步验证、失败给可执行的修复动作。仓库仍发预编译二进制（用户侧不装 Go），但 Release 不再包含 `install.sh` / `install.ps1`。
 
-### 用户壳
+### 提示词与 skill
 
-`scripts/install/install.sh`（darwin / linux）与 `scripts/install/install.ps1`（Windows）是薄包装，不内嵌 Host 逻辑：
+提示词只有一句话 + 一个 URL，README「安装使用」与侧栏「桥接未注册」给的是同一段（中英各一，走 i18n）：
 
-1. 识别 OS / arch。POSIX：`uname -s` → `darwin` / `linux`；`uname -m` 把 `aarch64` 映射成 `arm64`、`x86_64` 映射成 `amd64`。Windows：先看 `PROCESSOR_ARCHITEW6432`（32 位 PowerShell 跑在 64 位系统上时 `PROCESSOR_ARCHITECTURE` 会是 `x86`），再看 `PROCESSOR_ARCHITECTURE`；`ARM64` 下 `opensider-windows-arm64.exe`，`AMD64` 下 `opensider-windows-amd64.exe`，纯 32 位 Windows 直接失败。
-2. 从 `https://github.com/parksben/opensider/releases/latest/download/` 拉 `SHA256SUMS` 和对应二进制（名必须与 Release 资产一致）。代码与 Release 都在 `parksben/opensider`（公开仓库）。Windows 给小白的一行直接是 PowerShell 语句，不要外包 `powershell -Command`：Win11 终端默认就是 PowerShell，PATH 里经常没有名为 `powershell` 的命令，再套一层会报「无法将 powershell 项识别为 cmdlet」。不依赖 `curl.exe`。下载前用 `-bor 3072` 打开 TLS 1.2（数值写法，旧 .NET 可能没有 `Tls12` 枚举），再用 `System.Net.WebClient.DownloadString` 拉脚本——PowerShell 5.1 默认还是 TLS 1.0，`irm` 打 GitHub 会报「未能创建 SSL/TLS 安全通道」。侧栏 Windows 文案写明去 PowerShell 粘贴，不要用命令提示符。`install.ps1` 一进来同样 `-bor 3072`，写 HKCU `SchUseStrongCrypto` 让之后的 PS 5.1 默认走 TLS 1.2；脚本内下载只用 `WebClient`（走系统代理），下完 `Unblock-File` 去掉 MOTW，避免 SmartScreen 拦住刚下的 exe。
-3. 用本机 `sha256sum` / `shasum -a 256` 或 `Get-FileHash` 核对该文件；对不上或 SUMS 里没有这一行就退出。
-4. `chmod +x` 后 `exec ./opensider-<os>-<arch> install`（Windows 为 `.\opensider-windows-*.exe install`）。`--local` 只给仓库里的 `go run`，用户壳不传。
-5. 其它 OS / arch 立刻失败，文案写清支持范围。
+> 帮我安装 OpenSider 浏览器扩展：请先读取并严格按 https://raw.githubusercontent.com/parksben/opensider/main/skills/opensider/SKILL.md 执行。开始前先跟我确认我平时用哪个浏览器，过程中每一步都分步引导我操作，装完后验证侧栏能连上本机 Agent。
 
-壳不负责解压扩展、写 Native Messaging 清单或装 ACP 适配器；那是 `opensider install` 的事（`EnsureClaudeACP` / `EnsureCodexACP` 在 Host 注册之后，失败只打印、不让整次安装失败）。两家走同一套机制：`install` 里一个 `acpAdapterSpec`（本机 CLI 名 + 适配器包名 + 适配器可执行名 + `~/.opensider/runtime/<id>-acp` 安装目录）交给通用的 `ensureACPAdapter`；探测侧只要把该 prefix 的 `node_modules/.bin` 算进 `AgentSearchDirs`（`paths.ClaudeACPBinDir` / `paths.CodexACPBinDir`），装完就能被列名。再加同类 CLI 只需添一份 spec。
+`skills/opensider/` 是多文件 skill：`SKILL.md`（入口：能力清单、决策树、阶段顺序、验证门）+ `install.md` / `update.md` / `uninstall.md` / `doctor.md` + `references/`（`platforms.md` 平台与浏览器路径矩阵、`agents.md` CLI 名单与 ACP 适配器、`verification.md` 验证判据、`troubleshooting.md` 故障排查）。agent 用 curl 逐个拉，不要求用户装 Git 或克隆仓库。`SKILL.md` 先解析 `releases/latest` 指向的 tag，再用**该 tag** 的 raw 地址拉其余文件与 release 资产，保证 skill 与二进制同版本；解析不到 tag 就退回 `main` 并明确告诉用户版本可能不匹配。
+
+安装阶段（每一步都要有验证判据，失败就停在那里引导修）：
+
+1. **探测**：OS / arch（`uname -s`、`uname -m`；Windows 先看 `PROCESSOR_ARCHITEW6432`（32 位 PowerShell 跑在 64 位系统上时 `PROCESSOR_ARCHITECTURE` 会是 `x86`）再看 `PROCESSOR_ARCHITECTURE`，`ARM64` 取 `opensider-windows-arm64.exe`）、已装 Chromium 浏览器（按 `platforms.md` 的路径矩阵判断）、已装 Agent CLI（`command -v` + 常见 bin 目录）、Node 18+（只有 Claude / Codex 的适配器需要）。
+2. **先问浏览器**：把检测到的浏览器列给用户挑一个（一个都没检测到就引导先装）。Native Messaging 清单仍写进**所有**检测到的浏览器与各 Profile，但加载扩展只引导用户选定的那一个。
+3. **装桥接**：从 `releases/latest/download/` 下载 `opensider-<os>-<arch>[.exe]` 与 `SHA256SUMS`，用本机 `sha256sum` / `shasum -a 256` / `Get-FileHash` 核验（对不上或 SUMS 里没有这一行就停），放到 `~/.opensider/runtime/` 并 `chmod 755`；macOS 再清 quarantine（`xattr -d com.apple.quarantine`）、Windows 走 `Unblock-File` 去 MOTW，避免 Gatekeeper / SmartScreen 拦住。随后跑 `~/.opensider/runtime/opensider install`：Go 侧负责 `Register()`（所有浏览器的 `NativeMessagingHosts/` 及各 Profile 目录，Windows 另写 HKCU 注册表）、`workspace.Ensure()`（`AGENTS.md` / `browser/tools.json` / `outputs/`）与 ACP 适配器。
+4. **装扩展**：下载 `extension.zip` 解压到 `~/.opensider/extension`（唯一目录，重复安装即覆盖），确认 `manifest.json` 在位，用命令打开用户选定浏览器的 `chrome://extensions`（macOS `open -a "<浏览器>" "chrome://extensions"`；Linux / Windows 用对应浏览器可执行文件带该 URL），再**分步引导**用户：打开开发者模式 → 点「加载已解压的扩展程序」→ 选中该目录 →（可选）固定到工具栏。这一步必须由用户亲手点，skill 不得假装自动完成。
+5. **验证**：让用户点工具栏图标打开侧栏，检查 `~/.opensider/host.log` 出现新的 Host 启动行；侧栏能列出本机 Agent 即成功。分不清「本机没装 CLI」「桥接没注册」「扩展没加载」时不许下结论，按 `troubleshooting.md` 分流。
+
+`update` 走同一套：对比已装版本（扩展 `manifest.json` 的 `version`、`opensider version`）与最新 release，覆盖二进制与 `~/.opensider/extension`，引导用户在扩展页点「重新加载」，再验证。`uninstall` 移除所有清单（含历史 `com.cursor.sidebar.host.json`）与 Windows 注册表项、删 `~/.opensider/runtime`，并在**明确询问用户**后决定是否清空 `~/.opensider`（工作区、会话、产物、日志、界面状态，后果要写清楚）；扩展本体由用户按引导在扩展页移除。`doctor` 只读检查 + 修常见问题：二进制缺失 / 不可执行、quarantine / MOTW、清单没覆盖某些浏览器、Node 与 ACP 适配器缺失、workspace 不完整、host.log 长期没有启动行（Node Host 时代残留的 `PickFiles.app` / `runtime/packages` 也在识别范围内，处理方式是先备份再重建）。
+
+skill 不提供「纯手动安装」的脚本或分步手册：产品只面向本机已经有 Agent CLI 的用户，另维护一份与 skill 平行的手动文档必然和 skill 漂移。
+
+ACP 适配器仍只在 Go 里实现：`install` 里一个 `acpAdapterSpec`（本机 CLI 名 + 适配器包名 + 适配器可执行名 + `~/.opensider/runtime/<id>-acp` 安装目录）交给通用的 `ensureACPAdapter`；探测侧只要把该 prefix 的 `node_modules/.bin` 算进 `AgentSearchDirs`（`paths.ClaudeACPBinDir` / `paths.CodexACPBinDir`），装完就能被列名。没有 Node 18+ 只提示，失败不挡 Host 注册。再加同类 CLI 只需添一份 spec。
+
+### 版本检查与更新提示
+
+半自动：扩展侧只负责「知道有新版本 + 给出一段更新提示词」，不做后台静默自我更新（Chrome 对 unpacked 扩展的热替换不稳，静默改写本机文件也不可解释）。
+
+- Host 在 `hello` 里带自身版本（构建时 `-ldflags` 注入 tag）；扩展版本取 `chrome.runtime.getManifest().version`。
+- 设置 tab 展示「扩展版本 / 桥接版本 / 最新版本」。最新版本由 Host 查 `https://api.github.com/repos/parksben/opensider/releases/latest`（未认证 60 次/时/IP，够用），结果缓存到 `~/.opensider/release-check.json`（24h TTL）；失败静默降级——不提示、不打扰、不阻塞任何功能。
+- 扩展或桥接版本落后时，侧栏给一条提示 + 「复制更新提示词」按钮，提示词与安装同源、措辞为「更新 OpenSider」，更新动作仍由 Agent 按 `update.md` 执行。
 
 ### 开发脚本
 
-根 `package.json`：`install-host` → `go run ./cmd/opensider install --local`；`pack-extension` → `node scripts/pack-extension.mjs`（把 `packages/extension/dist` 打成 `dist-release/extension.zip`，用构建产物 manifest 的 key 校验未打包 ID，**不写出** `opensider.crx`）；`build` 先编扩展，再打包，再跑 `install --local`。`dev` 仍只起 Vite。不再走 Node 安装器。打包脚本只用 Node 内置 `crypto` / `zlib`。`dist-release/` 不入库。
+根 `package.json`：`install-host`（**只给开发**）→ `go build -o ~/.opensider/runtime/opensider ./cmd/opensider`，再把 `packages/extension/dist` 拷到 `~/.opensider/extension`，最后跑该二进制 `install`；`pack-extension` → `node scripts/pack-extension.mjs`（把 `packages/extension/dist` 打成 `dist-release/extension.zip`，用构建产物 manifest 的 key 校验未打包 ID，**不写出** `opensider.crx`）；`build` = 编扩展 + 打包，不再碰本机 Host。**用户侧没有任何本地构建入口**：`install --local` 与 `scripts/install/*` 已删除，安装 / 更新 / 卸载统一由「提示词 + skill」驱动。`dev` 仍只起 Vite。打包脚本只用 Node 内置 `crypto` / `zlib`。`dist-release/` 不入库。
 
 ### tag 发 Release
 
@@ -536,17 +554,16 @@ pnpm workspace 只编扩展。Host 用 Go。扩展用 Vite + `@crxjs/vite-plugin
 |---|---|---|
 | `build-darwin` | `macos-latest` | Go 1.22+，`CGO_ENABLED=1`，产出 `opensider-darwin-arm64`；在同一台机器上再试 `GOARCH=amd64`（`CC=clang`），编得出来才上传 |
 | `build-cross` | `ubuntu-latest` | `CGO_ENABLED=0`，`GOOS=linux/windows` × `GOARCH=amd64/arm64`（Windows 带 `.exe`） |
-| `release` | `ubuntu-latest`（等前两个） | `pnpm install` + `pnpm --filter @opensider/extension build` **一次**，再跑 `pnpm pack-extension` 产出 `extension.zip`（不发 CRX）；拷贝两份安装壳；下载二进制工件；写 `SHA256SUMS`；`scripts/release-notes.sh` 打最近 3 个 commit；`gh release create` |
+| `release` | `ubuntu-latest`（等前两个） | `pnpm install` + `pnpm --filter @opensider/extension build` **一次**，再跑 `pnpm pack-extension` 产出 `extension.zip`（不发 CRX）；下载二进制工件；写 `SHA256SUMS`；`scripts/release-notes.sh` 打最近 3 个 commit；`gh release create` |
 
 扩展只在 `release` job 编一次，darwin / cross 不再装 Node。darwin 开 cgo 是为了本机 `pick`（AppKit）；linux / windows 交叉编译关 cgo，避免依赖目标系统的 C 工具链。macos-latest 现在是 Apple Silicon，darwin/amd64 属于尽力：SDK 够就编，不够就跳过，不挡发版。
 
-Release 资产名必须和壳一致：
+Release 资产名（skill 与文档都按这些名字取）：
 
 - `opensider-darwin-arm64` / `opensider-darwin-amd64`（后者可选）
 - `opensider-linux-amd64` / `opensider-linux-arm64`
 - `opensider-windows-amd64.exe` / `opensider-windows-arm64.exe`（后者可选，流水线仍编）
 - `extension.zip`
-- `install.sh` / `install.ps1`
 - `SHA256SUMS`
 
 `scripts/release-notes.sh` 对当前 tag/HEAD 打印 `git log --pretty=format:'- %h %s' -n 3`。Release body 只有最近 3 个 commit，不加产品介绍、不回溯整个 tag 区间。`.github/workflows/release.yml` 的 notes 步骤只跑这个脚本。
@@ -559,8 +576,9 @@ Release 资产名必须和壳一致：
 | macOS 切 Agent 弹 Gatekeeper（`.xxxx.node`） | Host 只 exec 用户 PATH 上的 CLI，不去 quarantine。**OpenCode** 官方二进制（`curl -fsSL https://opencode.ai/install` / GitHub `opencode-darwin-arm64`）仍是 adhoc/linker-signed，启动时把未公证 `watcher.node` 解到 `$TMPDIR`，官方重装不能公证。**Gemini**（`@google/gemini-cli`）和 **Claude ACP**（`@agentclientprotocol/claude-agent-acp`）是 npm，附带 adhoc `.node`，无法 Apple 公证。**Copilot** 官方 cask `copilot-cli` 是 Notarized Developer ID（GitHub `VEKTX9H2N7`）；npm `@github/copilot` 仍有未公证 addon。Homebrew `gemini-cli` 已弃用，`antigravity-cli`（`agy`）不是探测目标（仍认 `gemini --experimental-acp` / `--acp`）。用户点「完成」并在隐私与安全性允许；不要「移到废纸篓」 |
 | 探测卡住 starting | 探测后台化 + 总时限；ProbeACP 不继承 Host stdio、杀进程组；SW 10s 看门狗 |
 | 换 Agent 卡在鉴权 / 握手 | 进度条右侧取消；Host 先握手新进程再停旧进程，取消回上一份 ready 或 idle |
-| 旧 `~/.opensider` 混着 Node Host 残留 | 备份后 `install --local` 重建 runtime / workspace |
-| macOS 拦 Chrome 执行 Desktop 上的 Host | `opensider install`（开发时 `--local`）把运行副本放到 `~/.opensider/runtime` |
+| 旧 `~/.opensider` 混着 Node Host 残留 | skill 的 doctor 识别后先备份、再重建 runtime / workspace；开发机 `pnpm install-host` |
+| macOS 拦 Chrome 执行 Desktop 上的 Host | 二进制固定放 `~/.opensider/runtime/opensider`（skill 下载后即放这里，并在 macOS 清掉 quarantine） |
+| 下载的二进制被 macOS quarantine / Windows MOTW 拦住 | skill 用 curl / 系统下载器拿文件，随后在 macOS `xattr -d com.apple.quarantine`、Windows `Unblock-File`；doctor 也检查这两项 |
 | macos-latest 编不出 darwin/amd64 | 该资产可缺；Intel Mac 用户要等能编出来的 tag，或用源码 `go run` |
 | Cursor `WritableIterable is closed` | 成功轮次按 `end_turn`，剥掉该关流字；空轮仍报错。改不了 Cursor CLI 本身 |
 | `session/load` 不支持或失败 | 新建 ACP 会话，界面历史保留，下一条消息带前文 |
