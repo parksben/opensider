@@ -84,7 +84,16 @@ actual=$(shasum -a 256 "$tmp/$asset" | awk '{ print $1 }')   # sha256sum on Linu
 [ -n "$expected" ] && [ "$expected" = "$actual" ] || echo MISMATCH
 ```
 
-If the checksum is missing or does not match: delete the file, stop, and tell the user.
+If the checksum is missing or does not match: re-download **both** files once — GitHub's CDN
+can serve a stale copy of either right after a release — and compare again:
+
+```sh
+curl -fsSL -H 'Cache-Control: no-cache' -o "$tmp/SHA256SUMS" "$base/SHA256SUMS"
+curl -fsSL -H 'Cache-Control: no-cache' -o "$tmp/$asset" "$base/$asset"
+```
+
+Only if it still mismatches: delete the file, stop, and tell the user what you saw (which
+files, which hashes) instead of installing something you could not verify.
 
 Place it where the manifests point (`~/.opensider/runtime/`):
 
