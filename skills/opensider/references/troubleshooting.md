@@ -76,6 +76,11 @@ Some environments refuse to open internal URLs from a shell. Ask the user to pas
 
 ## The download 404s
 
+* **Right after a release**: GitHub's CDN can serve a stale `releases/latest` redirect or
+  404 an asset that was uploaded seconds ago. Resolve the tag from the **API**
+  (`api.github.com/repos/parksben/opensider/releases/latest`) instead of the web redirect,
+  and if an asset 404s, retry once with `-H 'Cache-Control: no-cache'` before assuming it is
+  missing.
 * `opensider-darwin-amd64` and `opensider-windows-arm64.exe` are optional assets — if one
   is missing for the user's machine, say so plainly and stop; do not substitute another
   architecture's binary (Rosetta or emulation is the user's call, not yours, and the

@@ -523,7 +523,7 @@ pnpm workspace 只编扩展。Host 用 Go。扩展用 Vite + `@crxjs/vite-plugin
 > 请先读取 https://raw.githubusercontent.com/parksben/opensider/main/skills/opensider/SKILL.md，然后严格按其中的流程执行。
 > 开始前先跟我确认我平时用哪个浏览器；每一步都分步引导我操作，并自己验证结果。
 
-`skills/opensider/` 是多文件 skill：`SKILL.md`（入口：能力清单、决策树、阶段顺序、验证门）+ `install.md` / `update.md` / `uninstall.md` / `doctor.md` + `references/`（`platforms.md` 平台与浏览器路径矩阵、`agents.md` CLI 名单与 ACP 适配器、`verification.md` 验证判据、`troubleshooting.md` 故障排查）。agent 用 curl 逐个拉，不要求用户装 Git 或克隆仓库。`SKILL.md` 先解析 `releases/latest` 指向的 tag，再用**该 tag** 的 raw 地址拉其余文件与 release 资产，保证 skill 与二进制同版本；解析不到 tag 就退回 `main` 并明确告诉用户版本可能不匹配。
+`skills/opensider/` 是多文件 skill：`SKILL.md`（入口：能力清单、决策树、阶段顺序、验证门）+ `install.md` / `update.md` / `uninstall.md` / `doctor.md` + `references/`（`platforms.md` 平台与浏览器路径矩阵、`agents.md` CLI 名单与 ACP 适配器、`verification.md` 验证判据、`troubleshooting.md` 故障排查）。agent 用 curl 逐个拉，不要求用户装 Git 或克隆仓库。`SKILL.md` 先解析最新 tag，再用**该 tag** 的 raw 地址拉其余文件与 release 资产，保证 skill 与二进制同版本。**解析必须走 API**（`https://api.github.com/repos/parksben/opensider/releases/latest` 的 `tag_name`）：web 的 `/releases/latest` 重定向有 CDN 缓存，刚发的版本可能几分钟内还指向旧 tag（v0.2.1 重发时就踩到过，`latest` 仍解析成 v0.2.0）；web 重定向只作兜底。
 
 安装阶段（每一步都要有验证判据，失败就停在那里引导修）：
 

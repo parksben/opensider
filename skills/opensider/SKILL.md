@@ -51,12 +51,21 @@ is a fresh install, a half-finished one, or a broken one.
 
 ## Step 1 — pin one version (do this first, always)
 
-Skill files and release assets must come from the same release. Resolve the latest tag,
-then fetch everything from that tag:
+Skill files and release assets must come from the same release. Resolve the latest tag first —
+ask the **API**, which is authoritative right after a release:
 
 ```sh
-tag=$(curl -fsSLI -o /dev/null -w '%{url_effective}' \
+tag=$(curl -fsSL https://api.github.com/repos/parksben/opensider/releases/latest \
+  | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p')
+# fallback only (the web redirect is cached and can lag behind a fresh release):
+[ -n "$tag" ] || tag=$(curl -fsSLI -o /dev/null -w '%{url_effective}' \
   https://github.com/parksben/opensider/releases/latest | sed 's#.*/tag/##')
+```
+
+Windows (PowerShell):
+
+```powershell
+$tag = (Invoke-RestMethod "https://api.github.com/repos/parksben/opensider/releases/latest").tag_name
 ```
 
 * Fetch the rest of this skill from
@@ -65,9 +74,8 @@ tag=$(curl -fsSLI -o /dev/null -w '%{url_effective}' \
 * Fetch binaries and `extension.zip` from
   `https://github.com/parksben/opensider/releases/download/$tag/…`.
 
-If the tag cannot be resolved (offline, proxy, GitHub blocked): you may still fall back to
-`https://github.com/parksben/opensider/releases/latest/download/…` for the assets, but tell
-the user **the skill version may not match the release** and offer to retry with network.
+If no tag can be resolved at all (offline, proxy, GitHub blocked): stop and tell the user you
+need network access to GitHub — do not install a version you cannot identify.
 
 Never mix files from different tags, and never install an asset you could not verify.
 

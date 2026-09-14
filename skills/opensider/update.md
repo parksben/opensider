@@ -7,8 +7,9 @@ brings the user here — or they ask for it directly.
 ## Stage 1 — see what is installed and what is new
 
 ```sh
-tag=$(curl -fsSLI -o /dev/null -w '%{url_effective}' \
-  https://github.com/parksben/opensider/releases/latest | sed 's#.*/tag/##')
+# Ask the API: the web /releases/latest redirect is cached and can lag behind a fresh release.
+tag=$(curl -fsSL https://api.github.com/repos/parksben/opensider/releases/latest \
+  | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p')
 bin=~/.opensider/runtime/opensider
 "$bin" version                                       # bridge version
 repo_ext=$("$bin" extension-dir)                     # the folder the browser loads
