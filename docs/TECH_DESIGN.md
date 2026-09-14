@@ -516,7 +516,9 @@ pnpm workspace 只编扩展。Host 用 Go。扩展用 Vite + `@crxjs/vite-plugin
 
 提示词只有一句话 + 一个 URL，README「安装使用」与侧栏「桥接未注册」给的是同一段（中英各一，走 i18n）：
 
-> 帮我安装 OpenSider 浏览器扩展：请先读取并严格按 https://raw.githubusercontent.com/parksben/opensider/main/skills/opensider/SKILL.md 执行。开始前先跟我确认我平时用哪个浏览器，过程中每一步都分步引导我操作，装完后验证侧栏能连上本机 Agent。
+> 帮我安装 OpenSider 浏览器扩展。
+> 请先读取 https://raw.githubusercontent.com/parksben/opensider/main/skills/opensider/SKILL.md，然后严格按其中的流程执行。
+> 开始前先跟我确认我平时用哪个浏览器；每一步都分步引导我操作，并自己验证结果。
 
 `skills/opensider/` 是多文件 skill：`SKILL.md`（入口：能力清单、决策树、阶段顺序、验证门）+ `install.md` / `update.md` / `uninstall.md` / `doctor.md` + `references/`（`platforms.md` 平台与浏览器路径矩阵、`agents.md` CLI 名单与 ACP 适配器、`verification.md` 验证判据、`troubleshooting.md` 故障排查）。agent 用 curl 逐个拉，不要求用户装 Git 或克隆仓库。`SKILL.md` 先解析 `releases/latest` 指向的 tag，再用**该 tag** 的 raw 地址拉其余文件与 release 资产，保证 skill 与二进制同版本；解析不到 tag 就退回 `main` 并明确告诉用户版本可能不匹配。
 
