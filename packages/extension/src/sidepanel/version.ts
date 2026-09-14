@@ -40,3 +40,27 @@ export function displayVersion(value: string | undefined): string | undefined {
   const text = (value ?? "").trim().replace(/^v/i, "");
   return text || undefined;
 }
+
+/**
+ * 手动点「检查更新」时的可见状态。
+ *
+ * `checking` 等 Host 回话；`current` / `failed` 是给人的明确反馈（短暂显示后回到 `idle`）；
+ * 查到新版本时不走这里——直接开更新模态窗。
+ */
+export type ReleaseCheckState = "idle" | "checking" | "current" | "failed";
+
+/** 状态对应的按钮文案词条，抽屉设置 tab 用它。 */
+export function releaseCheckLabelKey(
+  state: ReleaseCheckState,
+): "checkUpdate" | "checkingUpdate" | "checkUpdateCurrent" | "checkUpdateFailed" {
+  switch (state) {
+    case "checking":
+      return "checkingUpdate";
+    case "current":
+      return "checkUpdateCurrent";
+    case "failed":
+      return "checkUpdateFailed";
+    default:
+      return "checkUpdate";
+  }
+}

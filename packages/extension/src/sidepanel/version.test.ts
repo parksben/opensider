@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { compareVersions, displayVersion, isNewer } from "./version.ts";
+import { compareVersions, displayVersion, isNewer, releaseCheckLabelKey } from "./version.ts";
 
 describe("compareVersions", () => {
   it("compares dotted numbers and ignores the v prefix", () => {
@@ -34,5 +34,14 @@ describe("displayVersion", () => {
     assert.equal(displayVersion(""), undefined);
     assert.equal(displayVersion(undefined), undefined);
     assert.equal(displayVersion("dev"), "dev");
+  });
+});
+
+describe("releaseCheckLabelKey", () => {
+  it("gives every check state its own button label", () => {
+    assert.equal(releaseCheckLabelKey("idle"), "checkUpdate");
+    assert.equal(releaseCheckLabelKey("checking"), "checkingUpdate");
+    assert.equal(releaseCheckLabelKey("current"), "checkUpdateCurrent");
+    assert.equal(releaseCheckLabelKey("failed"), "checkUpdateFailed");
   });
 });

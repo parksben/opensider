@@ -28,7 +28,7 @@ import { SessionDrawer } from "./components/SessionDrawer";
 import { UpdateDialog } from "./components/UpdateDialog";
 import { UninstallDialog } from "./components/UninstallDialog";
 import { applyLocale, detectBrowserLocale, readCachedLocale, t, type Locale } from "./i18n";
-import { displayVersion, isNewer } from "./version";
+import { displayVersion, isNewer, type ReleaseCheckState } from "./version";
 import {
   applyResolvedTheme,
   resolveTheme,
@@ -67,6 +67,13 @@ import {
   type Session,
 } from "./persist";
 
+/** 扩展自己的版本（manifest version）。模块级取一次：侧栏多处要拿它和最新 release 比。 */
+const EXTENSION_VERSION = chrome.runtime.getManifest().version;
+/** 「暂无新版本」/「检查失败」这类结果提示亮多久。 */
+const CHECK_FEEDBACK_MS = 1500;
+/** 手点检查后等 Host 回话的上限；超了就当没检查成（离线 / 桥接没起来）。 */
+const CHECK_WATCHDOG_MS = 8000;
+
 export function App() {
   const [hydrated, setHydrated] = useState(false);
   const [hostMirrorReady, setHostMirrorReady] = useState(false);
@@ -93,7 +100,10 @@ export function App() {
   const [release, setRelease] = useState<{ version: string; latest: string }>();
   const [updateOpen, setUpdateOpen] = useState(false);
   const [uninstallOpen, setUninstallOpen] = useState(false);
-  const [releaseChecking, setReleaseChecking] = useState(false);
+  const [checkState, setCheckState] = useState<ReleaseCheckState>("idle");
+  const checkPendingRef = useRef(false);
+  const checkWatchdogRef = useRef(0);
+  const checkResetRef = useRef(0);
   const [page, setPage] = useState<CurrentPage>();
   const [runningIds, setRunningIds] = useState<string[]>([]);
   const [queues, setQueues] = useState<Record<string, QueuedMessage[]>>({});
@@ -492,12 +502,26 @@ export function App() {
     if (msg.type === "page") {
       setPage(msg.page);
       return;
-    }    if (msg.type === "release") {
-      setRelease({
+    }
+
+    if (msg.type === "release") {
+      const next = {
         version: typeof msg.version === "string" ? msg.version : "",
         latest: typeof msg.latest === "string" ? msg.latest : "",
-      });
-      setReleaseChecking(false);
+      };
+      setRelease(next);
+      // 用户手点的「检查更新」：这条回话就是结果——有新版本直接开提示词模态窗，
+      // 没有就短暂亮一下「暂无新版本」，不要默默把按钮改回原样。
+      if (checkPendingRef.current) {
+        checkPendingRef.current = false;
+        window.clearTimeout(checkWatchdogRef.current);
+        if (isNewer(next.latest, EXTENSION_VERSION) || isNewer(next.latest, next.version)) {
+          setCheckState("idle");
+          setUpdateOpen(true);
+        } else {
+          flashCheckState("current");
+        }
+      }
       return;
     }
     if (msg.type === "models") {
@@ -792,6 +816,15 @@ export function App() {
       disconnect();
     };
   }, []);
+
+  // 检查更新的两个计时器：卸载时别留着它们在后台改 state。
+  useEffect(
+    () => () => {
+      window.clearTimeout(checkWatchdogRef.current);
+      window.clearTimeout(checkResetRef.current);
+    },
+    [],
+  );
 
   useEffect(() => {
     if (hydrated) tryBindCurrent();
@@ -1220,20 +1253,41 @@ export function App() {
     });
   };
 
+  // 「检查更新」的可见结果：checking → 有新版本直接开模态窗；没有则短暂亮「暂无新版本」，
+  // 等不到 Host 回话（离线 / 桥接没起来）亮「检查失败」。后两者 1.5s 后回原样。
+  // 只用稳定的 setter 与 ref，所以消息处理那边拿旧闭包调用也不会读到过期值。
+  const flashCheckState = (state: "current" | "failed") => {
+    setCheckState(state);
+    window.clearTimeout(checkResetRef.current);
+    checkResetRef.current = window.setTimeout(() => setCheckState("idle"), CHECK_FEEDBACK_MS);
+  };
+
+  const runCheckUpdate = () => {
+    if (checkPendingRef.current) return;
+    checkPendingRef.current = true;
+    setCheckState("checking");
+    sendRef.current({ type: "release.check" });
+    window.clearTimeout(checkWatchdogRef.current);
+    checkWatchdogRef.current = window.setTimeout(() => {
+      if (!checkPendingRef.current) return;
+      checkPendingRef.current = false;
+      flashCheckState("failed");
+    }, CHECK_WATCHDOG_MS);
+  };
+
   if (!hydrated || !selected) {
     return <div className="h-full bg-[var(--ink)]" />;
   }
 
   // 版本信息只算一次：顶栏更新图标、更新模态窗、抽屉设置 tab 都用它。
   // 三行同口径：不带 tag 的 v 前缀（version.ts 的 displayVersion）。
-  const extensionVersion = chrome.runtime.getManifest().version;
   const versionInfo = {
-    extension: displayVersion(extensionVersion) ?? extensionVersion,
+    extension: displayVersion(EXTENSION_VERSION) ?? EXTENSION_VERSION,
     bridge: displayVersion(release?.version),
     latest: displayVersion(release?.latest),
   };
   const updateAvailable =
-    isNewer(release?.latest, extensionVersion) || isNewer(release?.latest, release?.version);
+    isNewer(release?.latest, EXTENSION_VERSION) || isNewer(release?.latest, release?.version);
 
   return (
     <div className="flex h-full min-h-0">
@@ -1425,11 +1479,8 @@ export function App() {
             setLocale(next);
           }}
           versions={versionInfo}
-          checkingRelease={releaseChecking}
-          onCheckUpdate={() => {
-            setReleaseChecking(true);
-            sendRef.current({ type: "release.check" });
-          }}
+          checkState={checkState}
+          onCheckUpdate={runCheckUpdate}
           onShowUninstall={() => setUninstallOpen(true)}          onTheme={(next) => {
             applyThemePreference(next);
             setTheme(next);

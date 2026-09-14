@@ -5,6 +5,7 @@ import { t } from "../i18n";
 import { clampSessionDrawerWidth, isPlaceholderTitle, SESSION_DRAWER_MAX, SESSION_DRAWER_MIN, type Session } from "../persist";
 import { groupSessions, type SessionGroupId } from "../session-groups";
 import type { ThemePreference } from "../theme";
+import { releaseCheckLabelKey, type ReleaseCheckState } from "../version";
 import { ConfirmPopover } from "./ConfirmPopover";
 import { IconButton } from "./IconButton";
 import { RippleButton } from "./RippleButton";
@@ -62,7 +63,7 @@ export function SessionDrawer({
   onLocale,
   onTheme,
   versions,
-  checkingRelease,
+  checkState,
   onCheckUpdate,
   onShowUninstall,
 }: {
@@ -83,8 +84,8 @@ export function SessionDrawer({
   onTheme: (theme: ThemePreference) => void;
   /** 扩展自身版本、桥接版本与最新 release 的 tag（桥接/最新未知时缺省）。 */
   versions: { extension: string; bridge?: string; latest?: string };
-  /** 正在向 Host 要一次最新版本。 */
-  checkingRelease?: boolean;
+  /** 手动检查更新的可见状态。 */
+  checkState: ReleaseCheckState;
   onCheckUpdate: () => void;
   /** 开卸载模态窗。 */
   onShowUninstall: () => void;
@@ -321,7 +322,7 @@ export function SessionDrawer({
           <VersionPanel
             label={label}
             versions={versions}
-            checking={checkingRelease}
+            checkState={checkState}
             onCheckUpdate={onCheckUpdate}
             onShowUninstall={onShowUninstall}
           />        </div>
@@ -524,19 +525,20 @@ export function SessionDrawer({
 function VersionPanel({
   label,
   versions,
-  checking,
+  checkState,
   onCheckUpdate,
   onShowUninstall,
 }: {
   label: (key: MessageKey) => string;
   versions: { extension: string; bridge?: string; latest?: string };
-  /** 正在向 Host 要一次最新版本（等那条 release 回来才结束）。 */
-  checking?: boolean;
+  /** 手动检查更新的状态：检查中 / 暂无新版本 / 检查失败都由它驱动按钮文案。 */
+  checkState: ReleaseCheckState;
   onCheckUpdate: () => void;
   /** 开卸载模态窗（提示词在 platform.ts 里，与 README 逐字一致）。 */
   onShowUninstall: () => void;
 }) {
   const unknown = label("versionUnknown");
+  const feedback = checkState === "current" || checkState === "failed";
   const buttonClass =
     "rounded-md border border-[var(--line)] px-2.5 py-1.5 text-center text-[12px] text-[var(--text)] hover:bg-[var(--hover)]";
 
@@ -547,7 +549,9 @@ function VersionPanel({
       <VersionRow name={label("versionBridge")} value={versions.bridge || unknown} />
       <VersionRow name={label("versionLatest")} value={versions.latest || unknown} />
       <RippleButton onClick={onCheckUpdate} className={`mt-1 ${buttonClass}`}>
-        {checking ? label("checkingUpdate") : label("checkUpdate")}
+        <span className={feedback ? (checkState === "failed" ? "text-[var(--bad)]" : "text-[var(--ok)]") : ""}>
+          {label(releaseCheckLabelKey(checkState))}
+        </span>
       </RippleButton>
       <RippleButton onClick={onShowUninstall} className={buttonClass}>
         {label("uninstallAction")}
