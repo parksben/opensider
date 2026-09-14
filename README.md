@@ -31,9 +31,11 @@ https://github.com/user-attachments/assets/f0a9c654-b66e-43ef-a233-6942a30e83c6
 
 ## Install & Use
 
+### 1. Install
+
 > This extension is for Chromium-based browsers such as Chrome / Edge / Brave. Before installing, make sure you already have a running Agent CLI program on your machine.
 
-Installation takes one step: paste the prompt below into the local AI Agent you already use (Claude Code, Codex, OpenCode, Cursor, …). It will prepare your local environment and walk you through installing the browser extension.
+One-step install: paste the prompt below into the local AI Agent you already use (Claude Code, Codex, OpenCode, Cursor, …). It will prepare your local environment and walk you through installing the browser extension.
 
 ```
 Install OpenSider for me.
@@ -41,24 +43,38 @@ Read https://raw.githubusercontent.com/parksben/opensider/main/skills/opensider/
 Ask me which browser I use before you start, walk me through every step that needs me, and verify each stage yourself.
 ```
 
-## Update
+### 2. Update
 
-The drawer on the right shows the current **extension / bridge / latest** versions under Settings. When either half is behind, a "Copy the update prompt" button appears there and copies exactly this — you can also copy it by hand:
+One-step update: when the side panel tells you a new version is available, copy the prompt below to your local Agent and let it guide you through the update.
 
 ```
 Update OpenSider (the browser extension and the local bridge) for me.
 Read https://raw.githubusercontent.com/parksben/opensider/main/skills/opensider/SKILL.md and follow its update flow: compare what is installed here with the latest release, refresh whichever half is behind, then walk me through reloading the extension and verify it.
 ```
 
-The Agent compares versions → replaces the bridge and the extension folder → asks you to click "Reload" once on the extensions page → confirms over the bridge log. Updating never touches your session history, workspace or outputs.
+### 3. Uninstall
 
-## Uninstall
-
-Same idea: the Agent asks whether to delete your local data first, then does the rest.
+One-step uninstall: one prompt is all it takes, and you choose whether to keep or remove your local data.
 
 ```
 Uninstall OpenSider (the browser extension and the local bridge) for me.
 Read https://raw.githubusercontent.com/parksben/opensider/main/skills/opensider/SKILL.md and follow its removal flow: ask me whether to delete my local data (session history, workspace, outputs) as well, then remove the bridge and walk me through removing the extension from the browser.
 ```
 
-Keep the data and `~/.opensider` stays on disk (session history, workspace, outputs), ready for the next install.
+## Workspace & Local Data
+
+OpenSider never uploads your chats: sessions, page snapshots and outputs all stay on this machine under `~/.opensider`, and they survive uninstalling or reinstalling the extension (the side panel state lives in `ui-state.json` there).
+
+| Path | What it holds |
+|---|---|
+| `~/.opensider/workspace/` | The Agent's working directory, shared by every tab and every session, so it can work across pages |
+| `~/.opensider/workspace/browser/` | Current page snapshot, interactive controls, page commands and results, screenshots. Scratch files, safe to delete |
+| `~/.opensider/workspace/outputs/` | Files the Agent wrote for you (digests, reports, images…); the panel's artifact list opens them in place |
+| `~/.opensider/ui-state.json` | Session list, chat history and preferences |
+| `~/.opensider/runtime/` | The local bridge binary, plus the Claude Code / Codex ACP adapters |
+| `~/.opensider/host.log` | Bridge log — the first place to look when it will not connect |
+| `~/Downloads/OpenSider/` | The extension folder the browser actually loads — **do not move or delete it**, or the extension breaks |
+
+On Windows these live under `%USERPROFILE%\.opensider` and `%USERPROFILE%\Downloads\OpenSider`.
+
+To wipe everything, use the uninstall prompt above and choose to delete the data; to clear only scratch files, remove `workspace/browser/` — chats and outputs are unaffected.

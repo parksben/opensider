@@ -31,9 +31,11 @@ https://github.com/user-attachments/assets/f0a9c654-b66e-43ef-a233-6942a30e83c6
 
 ## 安装使用
 
+### 1. 安装
+
 > 本扩展程序适用于 Chrome / Edge / Brave 等 Chromium 内核的浏览器。安装前请确保本机已有正在运行的 Agent CLI 程序。
 
-安装只需一步：把下面这段提示词复制给你正在使用的本地 AI Agent（Claude Code、Codex、OpenCode、Cursor 等），它会完成与本地环境准备并引导你完成浏览器扩展程序的安装。
+一键安装：把下面这段提示词复制给你正在使用的本地 AI Agent（Claude Code、Codex、OpenCode、Cursor 等），它会完成与本地环境准备并引导你完成浏览器扩展程序的安装。
 
 ```
 帮我安装 OpenSider 浏览器扩展。
@@ -41,24 +43,38 @@ https://github.com/user-attachments/assets/f0a9c654-b66e-43ef-a233-6942a30e83c6
 开始前先跟我确认我平时用哪个浏览器；每一步都分步引导我操作，并自己验证结果。
 ```
 
-## 版本更新
+### 2. 更新
 
-侧栏右侧抽屉的「设置」里会显示当前的 **扩展版本 / 桥接版本 / 最新版本**；落后时那里会多出一个「复制更新提示词」按钮，复制到的就是下面这段（也可以直接复制）：
+一键更新：当扩展程序界面中出现新版本提示时，可复制以下提示词给你的本地 Agent，在其引导下完成新版本的安装。
 
 ```
 帮我更新 OpenSider（浏览器扩展 + 本机桥接）。
 请先读取 https://raw.githubusercontent.com/parksben/opensider/main/skills/opensider/SKILL.md，按其更新流程执行：对比本机已装版本与最新 release，更新落后的那一半，再引导我在浏览器里重新加载扩展并验证。
 ```
 
-Agent 会先对比版本 → 替换本机桥接与扩展目录 → 请你在扩展页点一次「重新加载」→ 用日志确认已连上。更新不会动你的会话历史、工作区和产物。
+### 3. 卸载
 
-## 卸载
-
-同样只需一段提示词。Agent 会先问你要不要连本地数据一起清掉，再动手：
+一键卸载：同样只需一段提示词，卸载时可选择保留或移除本地已有数据。
 
 ```
 帮我卸载 OpenSider（浏览器扩展 + 本机桥接）。
 请先读取 https://raw.githubusercontent.com/parksben/opensider/main/skills/opensider/SKILL.md，按其卸载流程执行：先问我要不要连本地数据（会话历史、工作区、产物）一起清掉，再移除本机桥接，并引导我在浏览器里移除扩展。
 ```
 
-选「保留数据」的话 `~/.opensider` 会留在原处，下次重装还能接着用之前的会话和产物。
+## 工作区与本地数据
+
+OpenSider 不把聊天内容传到云端：会话、页面快照和产物全部留在本机 `~/.opensider`，卸载或重装扩展后仍能接着用（侧栏状态的权威副本就是其中的 `ui-state.json`）。
+
+| 路径 | 里面是什么 |
+|---|---|
+| `~/.opensider/workspace/` | Agent 的工作目录：所有标签页、所有会话共用同一个，可以跨页面连续做事 |
+| `~/.opensider/workspace/browser/` | 当前页快照、交互控件列表、页面命令与结果、截图。中间文件，可随时清理 |
+| `~/.opensider/workspace/outputs/` | Agent 给你写出来的产物（榜单、报告、图片等）；侧栏「产物」里可以一键打开所在位置 |
+| `~/.opensider/ui-state.json` | 会话列表、聊天记录与偏好设置 |
+| `~/.opensider/runtime/` | 本机桥接二进制，以及 Claude Code / Codex 用的 ACP 适配器 |
+| `~/.opensider/host.log` | 桥接日志，连不上时先看它 |
+| `~/Downloads/OpenSider/` | 浏览器实际加载的扩展目录，**不要移动或删除**，否则扩展会失效 |
+
+Windows 上对应 `%USERPROFILE%\.opensider` 与 `%USERPROFILE%\Downloads\OpenSider`。
+
+想彻底清空：用上面「卸载」的提示词并选择清空数据；只想清中间文件：删 `workspace/browser/`，聊天记录与产物不受影响。
