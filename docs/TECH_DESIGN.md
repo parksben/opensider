@@ -161,7 +161,7 @@ Host 是一份 Go 二进制（`cmd/opensider` + `internal/`）。`browser/tools.
   session.json               # 最近一次选中的 ACP sessionId（兼容旧版）
   ui-state.json              # 侧栏权威状态（会话列表/消息/偏好）；扩展卸载后仍在
   extension-path             # 用户选定的扩展目录（单行绝对路径，`opensider extension-dir` 读写）
-  release-check.json         # 最新 Release tag 的 24h 缓存
+  release-check.json         # 最新 Release tag 的 1h 缓存
   host.log
 ```
 
@@ -545,7 +545,7 @@ ACP 适配器仍只在 Go 里实现：`install` 里一个 `acpAdapterSpec`（本
 
 - Host 在 `hello` 里带自身版本（构建时 `-ldflags` 注入 tag）；扩展版本取 `chrome.runtime.getManifest().version`。
 - **版本号口径**：`v` 只属于 git tag / release 标识；跟人见面的地方一律是 `0.2.2` 这种纯点号形式——`opensider version`、`install` 的 `Version:` 行、`hello` 的 `version`、侧栏那三行，都走 `version.Display()`（Go）/ `displayVersion()`（扩展侧，`App.tsx` 算 `versionInfo` 时对 bridge 与 latest 各剥一次）。原因很实：扩展的 manifest version 只能是 `0.2.2`，同一屏幕里混播 `v0.2.1` 与 `0.2.2` 看着像两个东西。例外只有两个：release tag 本身（`v0.2.2`，API 里叫 `tag_name`），以及 `host.log` 里那行 `release latest=`（原样记 GitHub 给的 tag，便于对账）。
-- 设置 tab 展示「扩展版本 / 桥接版本 / 最新版本」+「检查更新」+「一键卸载」，两个按钮文案居中。最新版本由 Host 查 `https://api.github.com/repos/parksben/opensider/releases/latest`（未认证 60 次/时/IP，够用），结果缓存到 `~/.opensider/release-check.json`，**TTL 1h**（再长了会出现「刚发完新版，侧栏一天内还说最新是旧的」）；失败静默降级——不提示、不打扰、不阻塞任何功能。「检查更新」发 `release.check`，Host 强制重查并推 `release`，回来前按钮显示「检查中…」。
+- 设置 tab 展示「扩展版本 / 桥接版本 / 最新版本」+「检查更新」+「一键卸载」，两个按钮文案居中。最新版本由 Host 查 `https://api.github.com/repos/parksben/opensider/releases/latest`（未认证 60 次/时/IP，够用），结果缓存到 `~/.opensider/release-check.json`，**TTL 1h**（再长了会出现「刚发完新版，侧栏一天内还说最新是旧的」）；失败静默降级——不提示、不打扰、不阻塞任何功能。「检查更新」发 `release.check`，Host 强制重查并推 `release`。扩展侧把这轮手点的检查建模成 `ReleaseCheckState`（`idle` / `checking` / `current` / `failed`，见 `version.ts`）：点击后进入 `checking` 并起一个 8s 看门（离线时不会永远卡住）；收到 `release` 时若 `release.check` 是用户手点的（`checkPendingRef`），比一下版本——有新版本直接把 `UpdateDialog` 弹出来（不用用户再去找顶栏图标），没有则 `current`，看门狗超时则 `failed`，两者都亮 1.5s 后回 `idle`。开机时 Host 自己推的那次检查不弹窗、不闪提示（`checkPendingRef` 为假）。
 - 模态窗只有一套壳：`PromptDialog`（`createPortal` 到 body，`fixed inset-0` + 遮罩模糊，Esc / 点遮罩 / × 关闭；标题栏带一条 `border-b` 分隔线，与抽屉 tab 栏同源），`UpdateDialog`（顶部三个版本行，行样式与设置 tab 的版本行逐字一致）与 `UninstallDialog`（无附加行）都只是往里填词。观感全部复用存量件：提示词块沿用 `BridgeSetup` 的「面板里再放一块等宽文本」，复制按钮沿用设置 tab 那套描边按钮（`rounded-md border border-[var(--line)]` + `RippleButton` 的涟漪），复制中/完成后换成 `Check` +「已复制」，与消息气泡、`BridgeSetup` 的反馈一致。按钮文案就叫「复制提示词」（中英一致，两个弹窗共用）。**别给 `RippleButton` 加 `bg-[var(--brass)]` 之类的填充背景**：它内置的 `hover:bg-[var(--hover)]` 是带伪类的选择器，优先级高于无变体的背景类，hover 时会把填充色抽掉，只剩 `--on-brass` 的字色（浅色主题下就是白底白字）——要实心按钮得像 `ConfirmPopover` 那样自己把 hover 背景写回。两个入口都不在本机做动作：提示词与安装同源（措辞分别为「更新 OpenSider」/「卸载 OpenSider」），由用户的 Agent 按 `update.md` / `uninstall.md` 执行。顶栏那个 `CircleArrowUp` 更新图标只在真有新版本时渲染（不占位、不置灰）。顶栏图标按钮统一用 `IconButton`：它的 tooltip、涟漪与 `hover:bg-[var(--hover)]` 是同一个开关，`ripple={false}` 会把点击反馈和 hover 底色一起关掉——除非有意为之，否则不要传。
 - 三段提示词（安装 / 更新 / 卸载）都定义在 `packages/extension/src/sidepanel/platform.ts`（`hostInstallPrompt` / `hostUpdatePrompt` / `hostUninstallPrompt`），侧栏按钮与 README 中英正文用同一份文本；改措辞时两处一起改，不要在 markdown 里另写一份。
 
