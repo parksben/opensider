@@ -16,9 +16,25 @@ const bin = join(home, "runtime", process.platform === "win32" ? "opensider.exe"
 const dist = join(root, "packages", "extension", "dist");
 const extension = join(home, "extension");
 
+// 开发二进制也带上最近一个 tag：侧栏把桥接版本和最新 release 比较，报 dev 会
+// 让本机测试看到假的「有新版本」提示。仓库里没有 tag 就退回 dev。
+function releaseTag() {
+  try {
+    return execFileSync("git", ["describe", "--tags", "--abbrev=0", "--match", "v*"], {
+      cwd: root,
+      encoding: "utf8",
+    }).trim();
+  } catch {
+    return "";
+  }
+}
+
+const tag = releaseTag();
+const ldflags = tag ? `-X github.com/parksben/opensider/internal/version.Version=${tag}` : "";
+
 mkdirSync(dirname(bin), { recursive: true });
-console.log(`Building ${bin}`);
-execFileSync("go", ["build", "-o", bin, "./cmd/opensider"], {
+console.log(`Building ${bin} (version ${tag || "dev"})`);
+execFileSync("go", ["build", ...(ldflags ? ["-ldflags", ldflags] : []), "-o", bin, "./cmd/opensider"], {
   cwd: root,
   stdio: "inherit",
   env: { ...process.env, ...(process.platform === "darwin" ? { CGO_ENABLED: "1" } : {}) },

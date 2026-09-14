@@ -13,10 +13,10 @@ import (
 
 func Register(hostPath string) ([]string, error) {
 	manifest := map[string]any{
-		"name":            protocol.HostName,
-		"description":     "OpenSider native host",
-		"path":            hostPath,
-		"type":            "stdio",
+		"name":        protocol.HostName,
+		"description": "OpenSider native host",
+		"path":        hostPath,
+		"type":        "stdio",
 		"allowed_origins": []string{
 			"chrome-extension://" + protocol.ExtensionID + "/",
 			"chrome-extension://" + protocol.PackedExtensionID + "/",

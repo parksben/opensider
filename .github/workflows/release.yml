@@ -99,6 +99,12 @@ jobs:
           pnpm pack-extension
           test -f dist-release/extension.zip
           test ! -e dist-release/opensider.crx
+          # 扩展版本必须跟 tag 一致，否则侧栏一打开就报「有新版本」。
+          version=$(node -p "require('./packages/extension/dist/manifest.json').version")
+          test "$version" = "${GITHUB_REF_NAME#v}" || {
+            echo "extension version $version does not match tag ${GITHUB_REF_NAME}"
+            exit 1
+          }
 
       - uses: actions/download-artifact@v4
         with:

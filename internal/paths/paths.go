@@ -45,8 +45,8 @@ func HostLogPath() string     { return filepath.Join(SidebarHome(), "host.log") 
 // ReleaseCheckPath 缓存「最新 Release 的 tag」，见 internal/release。
 func ReleaseCheckPath() string { return filepath.Join(SidebarHome(), "release-check.json") }
 
-func RuntimeDir() string      { return filepath.Join(SidebarHome(), "runtime") }
-func ExtensionDir() string    { return filepath.Join(SidebarHome(), "extension") }
+func RuntimeDir() string   { return filepath.Join(SidebarHome(), "runtime") }
+func ExtensionDir() string { return filepath.Join(SidebarHome(), "extension") }
 
 // ClaudeACPDir is the prefix-local install root for @agentclientprotocol/claude-agent-acp.
 func ClaudeACPDir() string { return filepath.Join(RuntimeDir(), "claude-acp") }

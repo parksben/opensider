@@ -45,6 +45,8 @@ pnpm pack-extension
 
 推送 `v*` tag 会跑 `.github/workflows/release.yml`：macOS 开 cgo 编 darwin 二进制，Ubuntu 交叉编译 linux / windows，再打 `extension.zip` 和 `SHA256SUMS`，用最近 3 个 commit 发 GitHub Release（不上传 `opensider.crx`；**不再发 `install.sh` / `install.ps1`**）。二进制用 `-ldflags "-X …/internal/version.Version=${tag}"` 注入版本号，`opensider version` 与侧栏的版本行都读它；走 `go build ./cmd/opensider` 手编时版本是 `dev`，侧栏不会据此报「有新版本」。
 
+发版前记得把 `packages/extension/manifest.config.ts` 的 `version` 改成同一个 tag（去掉 `v`）——侧栏把扩展版本和最新 tag 比较，对不上就会一直提示更新；流水线里有一条 `test` 专门挡这种情况。本地开发想要同样的版本号时，`pnpm install-host` 会自动取最近一个 `v*` tag 注进二进制（没有 tag 就是 `dev`）。
+
 Release 资产名必须和 skill 一致，见 TECH_DESIGN「发布与 skill 安装」。
 
 ## 仓库结构
