@@ -49,44 +49,58 @@ func ReleaseCheckPath() string { return filepath.Join(SidebarHome(), "release-ch
 
 func RuntimeDir() string { return filepath.Join(SidebarHome(), "runtime") }
 
-// DownloadsDir 是用户的下载目录。找不到就退回 home 根目录——我们要的是一个**非点目录**，
-// 而不是真的非要 Downloads 这个文件夹名。
-func DownloadsDir() string {
-	home := Home()
-	candidates := []string{filepath.Join(home, "Downloads")}
-	if profile := os.Getenv("USERPROFILE"); profile != "" {
-		candidates = append([]string{filepath.Join(profile, "Downloads")}, candidates...)
-	}
-	for _, dir := range candidates {
-		if dir == "" {
-			continue
-		}
-		if st, err := os.Stat(dir); err == nil && st.IsDir() {
-			return dir
-		}
-	}
-	return home
-}
-
 // ExtensionPathFile 记录用户选定的扩展目录（单行绝对路径）。没有这个文件就用默认值。
 func ExtensionPathFile() string { return filepath.Join(SidebarHome(), "extension-path") }
 
-// DefaultExtensionDir 是用户没有特别指定时的位置：下载目录下的 OpenSider。
-func DefaultExtensionDir() string { return filepath.Join(DownloadsDir(), "OpenSider") }
+// DefaultExtensionDir 是用户没有指定时的位置：家目录下的 OpenSider。
+//
+// 不默认放下载目录：那是「清理下载」和清理工具的常客，被删掉后扩展会一直失效到用户
+// 重新加载为止。家目录下既看得见、也不会被顺手清掉。安装流程会问用户，实际位置由
+// extension-path 记录。
+func DefaultExtensionDir() string { return filepath.Join(Home(), "OpenSider") }
 
 // ExtensionDir 返回解压后的扩展目录：用户在「加载已解压的扩展程序」里选的就是它。
 //
-// 位置由安装流程问过用户后写进 extension-path（见 SetExtensionDir），没记录过就是默认的
-// 下载目录。之所以不默认放进 ~/.opensider：点目录在系统文件选择器里默认不可见，而
-// 「手动加载扩展」这一步必须用户自己完成。无论放哪里，它都得长期留在原处——Chrome
-// 每次启动都从这里读扩展。
+// 位置由安装流程问过用户后写进 extension-path（见 SetExtensionDir），没记录过才猜：先看
+// 新默认位置（家目录下的 OpenSider），再看 v0.2.1 之前的老默认位置（下载目录下的
+// OpenSider），两者都只看真的装着扩展（有 manifest.json）的那个。之所以不放 ~/.opensider：
+// 点目录在系统文件选择器里默认不可见，而「手动加载扩展」这一步必须用户自己完成。无论放
+// 哪里，它都得长期留在原处——Chrome 每次启动都从这里读扩展。
 func ExtensionDir() string {
 	if raw, err := os.ReadFile(ExtensionPathFile()); err == nil {
 		if p := strings.TrimSpace(string(raw)); p != "" {
 			return p
 		}
 	}
+	for _, dir := range []string{DefaultExtensionDir(), legacyExtensionDir()} {
+		if dir != "" && hasManifest(dir) {
+			return dir
+		}
+	}
 	return DefaultExtensionDir()
+}
+
+// legacyExtensionDir 是 v0.2.1 之前的老默认位置：下载目录下的 OpenSider。当年没记录过路径
+// 就加载在那儿的用户，记录还是空的，得把它们找出来，免得 doctor / update 指着一个空目录。
+// 没装扩展（没有 manifest.json）就不算——那个目录可能只是同名。
+func legacyExtensionDir() string {
+	home := Home()
+	dirs := []string{filepath.Join(home, "Downloads", "OpenSider")}
+	if profile := os.Getenv("USERPROFILE"); profile != "" {
+		dirs = append([]string{filepath.Join(profile, "Downloads", "OpenSider")}, dirs...)
+	}
+	for _, dir := range dirs {
+		if hasManifest(dir) {
+			return dir
+		}
+	}
+	return ""
+}
+
+// hasManifest 判断一个目录里是不是真的解压着一份扩展。
+func hasManifest(dir string) bool {
+	st, err := os.Stat(filepath.Join(dir, "manifest.json"))
+	return err == nil && !st.IsDir()
 }
 
 // SetExtensionDir 记住用户选定的扩展目录。只接受绝对路径，且不能在 ~/.opensider 里
