@@ -544,8 +544,8 @@ ACP 适配器仍只在 Go 里实现：`install` 里一个 `acpAdapterSpec`（本
 半自动：扩展侧只负责「知道有新版本 + 给出一段更新提示词」，不做后台静默自我更新（Chrome 对 unpacked 扩展的热替换不稳，静默改写本机文件也不可解释）。
 
 - Host 在 `hello` 里带自身版本（构建时 `-ldflags` 注入 tag）；扩展版本取 `chrome.runtime.getManifest().version`。
-- 设置 tab 展示「扩展版本 / 桥接版本 / 最新版本」+「检查更新」+「复制卸载提示词」。最新版本由 Host 查 `https://api.github.com/repos/parksben/opensider/releases/latest`（未认证 60 次/时/IP，够用），结果缓存到 `~/.opensider/release-check.json`，**TTL 1h**（再长了会出现「刚发完新版，侧栏一天内还说最新是旧的」）；失败静默降级——不提示、不打扰、不阻塞任何功能。「检查更新」发 `release.check`，Host 强制重查并推 `release`，回来前按钮显示「检查中…」。
-- 扩展或桥接版本落后时，**顶栏抽屉钮左侧**出现 `CircleArrowUp` 图标按钮（强调色 + 小圆点），点开 `UpdateDialog` 模态窗（`fixed inset-0` + 遮罩模糊，Esc / 点遮罩关闭）：三个版本 + 说明 + 更新提示词 + 「复制更新提示词」；提示词与安装同源、措辞为「更新 OpenSider」，更新动作仍由 Agent 按 `update.md` 执行。没有新版本时这个图标不渲染（不占位、不置灰）。
+- 设置 tab 展示「扩展版本 / 桥接版本 / 最新版本」+「检查更新」+「一键卸载」，两个按钮文案居中。最新版本由 Host 查 `https://api.github.com/repos/parksben/opensider/releases/latest`（未认证 60 次/时/IP，够用），结果缓存到 `~/.opensider/release-check.json`，**TTL 1h**（再长了会出现「刚发完新版，侧栏一天内还说最新是旧的」）；失败静默降级——不提示、不打扰、不阻塞任何功能。「检查更新」发 `release.check`，Host 强制重查并推 `release`，回来前按钮显示「检查中…」。
+- 模态窗只有一套壳：`PromptDialog`（`fixed inset-0` + 遮罩模糊，Esc / 点遮罩 / × 关闭；标题 + 可选附加块 + 说明 + 等宽提示词 + 强调色复制按钮），`UpdateDialog`（附加块是三个版本行）与 `UninstallDialog`（无附加块，说明里写明会先问要不要连本地数据一起清）都只是往里填词。两个入口都不在本机做动作：提示词与安装同源（措辞分别为「更新 OpenSider」/「卸载 OpenSider」），由用户的 Agent 按 `update.md` / `uninstall.md` 执行。顶栏那个 `CircleArrowUp` 更新图标只在真有新版本时渲染（不占位、不置灰）。
 - 三段提示词（安装 / 更新 / 卸载）都定义在 `packages/extension/src/sidepanel/platform.ts`（`hostInstallPrompt` / `hostUpdatePrompt` / `hostUninstallPrompt`），侧栏按钮与 README 中英正文用同一份文本；改措辞时两处一起改，不要在 markdown 里另写一份。
 
 ### 开发脚本
