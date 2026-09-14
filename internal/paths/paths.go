@@ -45,8 +45,33 @@ func HostLogPath() string     { return filepath.Join(SidebarHome(), "host.log") 
 // ReleaseCheckPath 缓存「最新 Release 的 tag」，见 internal/release。
 func ReleaseCheckPath() string { return filepath.Join(SidebarHome(), "release-check.json") }
 
-func RuntimeDir() string   { return filepath.Join(SidebarHome(), "runtime") }
-func ExtensionDir() string { return filepath.Join(SidebarHome(), "extension") }
+func RuntimeDir() string { return filepath.Join(SidebarHome(), "runtime") }
+
+// DownloadsDir 是用户的下载目录。找不到就退回 home 根目录——我们要的是一个**非点目录**，
+// 而不是真的非要 Downloads 这个文件夹名。
+func DownloadsDir() string {
+	home := Home()
+	candidates := []string{filepath.Join(home, "Downloads")}
+	if profile := os.Getenv("USERPROFILE"); profile != "" {
+		candidates = append([]string{filepath.Join(profile, "Downloads")}, candidates...)
+	}
+	for _, dir := range candidates {
+		if dir == "" {
+			continue
+		}
+		if st, err := os.Stat(dir); err == nil && st.IsDir() {
+			return dir
+		}
+	}
+	return home
+}
+
+// ExtensionDir 是解压后的扩展目录：用户在「加载已解压的扩展程序」里选的就是它。
+//
+// 放在下载目录而不是 ~/.opensider 下面，是因为点目录在系统文件选择器里默认不可见，
+// 「手动加载扩展」这一步会变得很难操作。它必须长期留在原处——Chrome 每次启动都从这里
+// 读扩展，移走或删掉扩展就会失效。
+func ExtensionDir() string { return filepath.Join(DownloadsDir(), "OpenSider") }
 
 // ClaudeACPDir is the prefix-local install root for @agentclientprotocol/claude-agent-acp.
 func ClaudeACPDir() string { return filepath.Join(RuntimeDir(), "claude-acp") }
