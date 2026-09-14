@@ -12,7 +12,7 @@ they are cheap and they never lie.
 | `go host starting` | every time a browser launches the bridge | Chrome → bridge works. **This is the one that matters.** |
 | `install complete host=…` | after `opensider install` | registration finished |
 | `uninstall purge=…` | after `opensider uninstall` | cleanup ran |
-| `release latest=v…` | background version check | the check succeeded |
+| `release latest=v…` | background version check | the check succeeded (this line logs the GitHub tag, the one place a `v` still appears) |
 | `idle agents=…` | CLI scan finished | which CLIs the bridge can see |
 
 ```sh
@@ -31,10 +31,10 @@ Windows: `Get-Content -Tail 12 "$env:USERPROFILE\.opensider\host.log"`.
 ls ~/.opensider/runtime/opensider
 ```
 
-The version must be the tag you resolved, not an older one. A binary whose checksum did not
-match `SHA256SUMS` is never installed — if you saw a mismatch, re-download both files with
-`-H 'Cache-Control: no-cache'` once (the CDN can serve a stale copy right after a release)
-and only give up if it still mismatches.
+The version must carry the same dotted numbers as the tag you resolved (no `v` prefix), not an
+older one. A binary whose checksum did not match `SHA256SUMS` is never installed — if you saw a
+mismatch, re-download both files with `-H 'Cache-Control: no-cache'` once (the CDN can serve
+a stale copy right after a release) and only give up if it still mismatches.
 
 **Extension on disk** — the folder Chrome loads (`opensider extension-dir` prints it, and it is
 the folder the user picked during install):

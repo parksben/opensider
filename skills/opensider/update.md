@@ -16,7 +16,8 @@ repo_ext=$("$bin" extension-dir)                     # the folder the browser lo
 grep -o '"version": *"[^"]*"' "$repo_ext/manifest.json" | head -1   # extension version
 ```
 
-Both numbers are compared against `$tag` (ignore a leading `v`; compare dotted numbers).
+Both numbers are compared against `$tag` (ignore the tag's leading `v`: every version the
+tools print is dotted, `0.2.2`, never `v0.2.2`).
 Only refresh the half that is older — but if you cannot tell, refreshing both is cheap
 and safe.
 
@@ -38,7 +39,8 @@ The install command is idempotent: it rewrites the manifests and keeps the works
 your ACP adapters. If the user's data ever looks off, `doctor.md` can tell you whether the
 runtime and workspace are intact — do not "fix" it by deleting files.
 
-Check: `~/.opensider/runtime/opensider version` prints the new tag.
+Check: `~/.opensider/runtime/opensider version` prints the new version — the dotted numbers of
+the tag, without its `v` prefix.
 
 ## Stage 3 — refresh the extension
 

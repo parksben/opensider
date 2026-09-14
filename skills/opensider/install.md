@@ -125,8 +125,8 @@ Claude / Codex ACP adapters when needed (and only then):
 ```
 
 Check: the output contains `Registered com.opensider.host`, a `Version:` line, and a
-`Manifests:` list with at least one real browser path. Keep that version string — you
-will compare it in `update.md`.
+`Manifests:` list with at least one real browser path. The version line is dotted (`0.2.2`,
+never `v0.2.2`) — keep it, you will compare it in `update.md`.
 
 ## Stage 4 — ask where the extension should live, then unpack it
 
