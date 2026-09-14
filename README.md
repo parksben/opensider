@@ -63,16 +63,16 @@ Read https://raw.githubusercontent.com/parksben/opensider/main/skills/opensider/
 
 ## Workspace & Local Data
 
-OpenSider never uploads your configuration or chats to any server: all sessions and Agent artifacts stay on this machine under `~/.opensider`, and they survive uninstalling or reinstalling the extension.
+OpenSider never uploads your configuration or chats to any server: all sessions and Agent artifacts live on this machine under `~/.opensider`, and they stay usable after uninstalling or reinstalling the extension.
 
 | File / folder | What it holds |
 |---|---|
-| `~/.opensider/workspace/` | The Agent's working directory, shared by every tab and every session, so it can work across pages |
-| `~/.opensider/workspace/browser/` | Current page snapshot, interactive controls, page commands and results, screenshots. Scratch files, safe to delete |
-| `~/.opensider/workspace/outputs/` | Files the Agent wrote for you (digests, reports, images…); the panel's artifact list opens them in place |
+| `~/.opensider/workspace/` | The Agent's working directory: every tab and every session works in this same folder |
+| `~/.opensider/workspace/browser/` | Scratch files produced during a session, such as the current page snapshot, interactive controls, page commands and results, screenshots |
+| `~/.opensider/workspace/outputs/` | Artifacts the Agent produces during a session (tables, documents, code, …) |
 | `~/.opensider/ui-state.json` | Session list, chat history and preferences |
 | `~/.opensider/runtime/` | The local bridge binary, plus the Claude Code / Codex ACP adapters |
-| `~/.opensider/host.log` | Bridge log — the first place to look when it will not connect |
+| `~/.opensider/host.log` | Bridge log — the Agent can use it to debug problems |
 | `~/Downloads/OpenSider/` | The extension folder the browser actually loads (you can pick a different path during install) — **do not move or delete it**, or the extension breaks |
 
 On Windows these live under `%USERPROFILE%\.opensider` and `%USERPROFILE%\Downloads\OpenSider`.

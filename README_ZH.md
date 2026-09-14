@@ -63,16 +63,16 @@ https://github.com/user-attachments/assets/f0a9c654-b66e-43ef-a233-6942a30e83c6
 
 ## 工作区与本地数据
 
-OpenSider 不会将应用配置和聊天内容上传到任何云端服务器，所有会话和 Agent 产物全部均保存在本机 `~/.opensider` 目录下，卸载或重装扩展后仍能接着用。
+OpenSider 不会将应用配置和聊天内容上传到任何云端服务器，所有会话和 Agent 产物全部均保存在本机 `~/.opensider` 目录下，卸载或重装扩展后仍能继续使用。
 
 | 文件\/目录 | 具体内容 |
 |---|---|
-| `~/.opensider/workspace/` | Agent 的工作目录：所有标签页、所有会话共用同一个，可以跨页面连续做事 |
-| `~/.opensider/workspace/browser/` | 当前页快照、交互控件列表、页面命令与结果、截图。中间文件，可随时清理 |
-| `~/.opensider/workspace/outputs/` | Agent 给你写出来的产物（榜单、报告、图片等）；侧栏「产物」里可以一键打开所在位置 |
+| `~/.opensider/workspace/` | Agent 工作目录：所有标签页和会话均在同一目录下工作 |
+| `~/.opensider/workspace/browser/` | 会话过程产生的各类临时文件，如：当前页快照、交互控件列表、页面命令与结果、截图等 |
+| `~/.opensider/workspace/outputs/` | Agent 在会话中生成的各类产物（表格、文档、代码等） |
 | `~/.opensider/ui-state.json` | 会话列表、聊天记录与偏好设置 |
 | `~/.opensider/runtime/` | 本机桥接二进制，以及 Claude Code / Codex 用的 ACP 适配器 |
-| `~/.opensider/host.log` | 桥接日志，连不上时先看它 |
+| `~/.opensider/host.log` | 桥接日志，可以让 Agent 根据此日志调试各类异常 |
 | `~/Downloads/OpenSider/` | 浏览器实际加载的扩展目录（安装时可改成别的路径），**不要移动或删除**，否则扩展会失效 |
 
 Windows 上对应 `%USERPROFILE%\.opensider` 与 `%USERPROFILE%\Downloads\OpenSider`。
