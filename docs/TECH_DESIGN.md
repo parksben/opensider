@@ -145,7 +145,6 @@ Host 是一份 Go 二进制（`cmd/opensider` + `internal/`）。`browser/tools.
       node_modules/.bin/     # claude-agent-acp；已在 AgentSearchDirs
     codex-acp/               # 同理存 @agentclientprotocol/codex-acp
       node_modules/.bin/     # codex-acp；同样在 AgentSearchDirs
-  extension/                 # 用户侧已解压的扩展
   workspace/                 # ACP session cwd
     AGENTS.md                # 页面协议说明，会话开始就会被读到
     outputs/                 # 用户会打开的任务产物；Ensure() 每次 0755 创建
@@ -163,6 +162,8 @@ Host 是一份 Go 二进制（`cmd/opensider` + `internal/`）。`browser/tools.
   ui-state.json              # 侧栏权威状态（会话列表/消息/偏好）；扩展卸载后仍在
   host.log
 ```
+
+解压后的扩展**不在** `~/.opensider` 下：它在下载目录的 `OpenSider`（`paths.ExtensionDir()`，见「发布与 skill 安装」）。点目录在系统文件选择器里默认不可见，而「加载已解压的扩展程序」是用户手动的一步，放在看得见的地方才做得下去。
 
 侧栏状态（语言、会话目录、消息、选中项、权限模式、模型、抽屉）写两份：`chrome.storage.local` key `opensider/state` 是热缓存；权威副本是 `~/.opensider/ui-state.json`（不进 workspace，免得和 Agent 文件混在一起）。Host `hello` 之后发 `{ type: "ui.state", state }`（没有文件则 `state: null`）。侧栏 `ui.state.set` 把同一份 JSON 交给 Host 落盘，带 `savedAt`。扩展存储为空或 `savedAt` 更旧时用 Host 灌回；**空会话表不得覆盖已有镜像**（避免重装后首帧空态把历史写丢）。Native Messaging 单帧约 1MB，工具输出仍先截到 8KB 再写入。Host 只另记 ACP `sessionId` 到 `session.json`，方便 `session/load`。
 
@@ -434,7 +435,7 @@ Host 是 ACP Client，`clientCapabilities` 关闭 `fs` / `terminal`，让 Agent 
 Host 注册名：`com.opensider.host`  
 macOS 清单路径：`~/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.opensider.host.json`
 
-使用者主路径：把**安装提示词**发给自己在用的本机 AI Agent，由它按 `skills/opensider/` 的 skill 执行（流程见本文件「发布与 skill 安装」）。清单 `path` 指向 `~/.opensider/runtime/opensider`。README 只写产品、演示和这一步，不含开发搭建。开发：`pnpm install-host`（dev-only）= `go build -o ~/.opensider/runtime/opensider ./cmd/opensider` + 拷 `packages/extension/dist` 到 `~/.opensider/extension` + 跑该二进制 `install`；**禁止**把 `go run` 写成 Native Host path，Chrome 保不住这个进程。`install` 同时 `workspace.Ensure()`，马上就有 `AGENTS.md` / `browser/tools.json` / `outputs/`。macOS TCC 仍要求二进制不在 Desktop / Documents / Downloads。Host 日志只写 `~/.opensider/host.log`，不写 stderr。从 Node 时代留下的 `~/.opensider`（`PickFiles.app`、`runtime/packages`、旧 `session.json`）可能和 Go Host 打架；skill 的 doctor 要能识别这类残留并先备份再重建，开发机重新 `pnpm install-host`。推送 `v*` tag 触发 Actions：darwin 在 macOS 开 cgo 编，linux/windows 交叉编译；Release 说明只列最近 3 个 commit。桥接未注册时 SW 轮询 `connectNative`。不迁旧目录。
+使用者主路径：把**安装提示词**发给自己在用的本机 AI Agent，由它按 `skills/opensider/` 的 skill 执行（流程见本文件「发布与 skill 安装」）。清单 `path` 指向 `~/.opensider/runtime/opensider`。README 只写产品、演示和这一步，不含开发搭建。开发：`pnpm install-host`（dev-only）= `go build -o ~/.opensider/runtime/opensider ./cmd/opensider` + 拷 `packages/extension/dist` 到下载目录下的 `OpenSider` + 跑该二进制 `install`；**禁止**把 `go run` 写成 Native Host path，Chrome 保不住这个进程。`install` 同时 `workspace.Ensure()`，马上就有 `AGENTS.md` / `browser/tools.json` / `outputs/`。macOS TCC 仍要求二进制不在 Desktop / Documents / Downloads。Host 日志只写 `~/.opensider/host.log`，不写 stderr。从 Node 时代留下的 `~/.opensider`（`PickFiles.app`、`runtime/packages`、旧 `session.json`）可能和 Go Host 打架；skill 的 doctor 要能识别这类残留并先备份再重建，开发机重新 `pnpm install-host`。推送 `v*` tag 触发 Actions：darwin 在 macOS 开 cgo 编，linux/windows 交叉编译；Release 说明只列最近 3 个 commit。桥接未注册时 SW 轮询 `connectNative`。不迁旧目录。
 
 ## UI
 
@@ -484,8 +485,8 @@ macOS 清单路径：`~/Library/Application Support/Google/Chrome/NativeMessagin
 
 ```
 AGENTS.md           仓库根开发协作约定。不是 ~/.opensider/workspace/AGENTS.md（Host 写入的页面协议）
-README.md           面向使用者的产品页：中文 slogan + 扩展介绍（CLI 顺序 Claude Code / Copilot / OpenCode / Cursor）+ 3 条要点、演示、一步安装提示词（不写开发搭建，不单独开适用场景）
-README-en.md        README 的英文版；顶部与中文版各放一行居中 `中文 | English` 切换，只非当前语言那侧带链接
+README.md           面向使用者的产品页（英文，仓库默认）：英文 slogan + 扩展介绍（CLI 顺序 Claude Code / Copilot / OpenCode / Cursor）+ 3 条要点、演示、一步安装提示词（不写开发搭建，不单独开适用场景）
+README_ZH.md        README 的中文版；顶部与英文版各放一行居中 `中文 | English` 切换，只非当前语言那侧带链接
 docs/REQUIREMENTS.md  需求：做什么、为什么
 docs/TECH_DESIGN.md   本文件：怎么做、为什么选这个方案
 docs/DEVELOPMENT.md   开发构建、Host 注册、工作区、打 extension.zip、tag 发 Release
@@ -527,10 +528,10 @@ pnpm workspace 只编扩展。Host 用 Go。扩展用 Vite + `@crxjs/vite-plugin
 1. **探测**：OS / arch（`uname -s`、`uname -m`；Windows 先看 `PROCESSOR_ARCHITEW6432`（32 位 PowerShell 跑在 64 位系统上时 `PROCESSOR_ARCHITECTURE` 会是 `x86`）再看 `PROCESSOR_ARCHITECTURE`，`ARM64` 取 `opensider-windows-arm64.exe`）、已装 Chromium 浏览器（按 `platforms.md` 的路径矩阵判断）、已装 Agent CLI（`command -v` + 常见 bin 目录）、Node 18+（只有 Claude / Codex 的适配器需要）。
 2. **先问浏览器**：把检测到的浏览器列给用户挑一个（一个都没检测到就引导先装）。Native Messaging 清单仍写进**所有**检测到的浏览器与各 Profile，但加载扩展只引导用户选定的那一个。
 3. **装桥接**：从 `releases/latest/download/` 下载 `opensider-<os>-<arch>[.exe]` 与 `SHA256SUMS`，用本机 `sha256sum` / `shasum -a 256` / `Get-FileHash` 核验（对不上或 SUMS 里没有这一行就停），放到 `~/.opensider/runtime/` 并 `chmod 755`；macOS 再清 quarantine（`xattr -d com.apple.quarantine`）、Windows 走 `Unblock-File` 去 MOTW，避免 Gatekeeper / SmartScreen 拦住。随后跑 `~/.opensider/runtime/opensider install`：Go 侧负责 `Register()`（所有浏览器的 `NativeMessagingHosts/` 及各 Profile 目录，Windows 另写 HKCU 注册表）、`workspace.Ensure()`（`AGENTS.md` / `browser/tools.json` / `outputs/`）与 ACP 适配器。
-4. **装扩展**：下载 `extension.zip` 解压到 `~/.opensider/extension`（唯一目录，重复安装即覆盖），确认 `manifest.json` 在位，用命令打开用户选定浏览器的 `chrome://extensions`（macOS `open -a "<浏览器>" "chrome://extensions"`；Linux / Windows 用对应浏览器可执行文件带该 URL），再**分步引导**用户：打开开发者模式 → 点「加载已解压的扩展程序」→ 选中该目录 →（可选）固定到工具栏。这一步必须由用户亲手点，skill 不得假装自动完成。
+4. **装扩展**：下载 `extension.zip` 解压到**下载目录**下的 `OpenSider`（`paths.ExtensionDir()`：macOS/Linux `~/Downloads/OpenSider`，Windows `%USERPROFILE%\Downloads\OpenSider`，没有下载目录就退回 `~/OpenSider`；zip 也留在同目录，用户可自行重装）。选下载目录而不是 `~/.opensider` 是因为点目录在系统文件选择器里默认不可见，「加载已解压的扩展程序」会变成一道坑。重复安装就是覆盖同一目录，扩展目录必须长期留在原处（Chrome 每次启动都从这里读）。确认 `manifest.json` 在位，用命令打开用户选定浏览器的 `chrome://extensions`（macOS `open -a "<浏览器>" "chrome://extensions"`；Linux / Windows 用对应浏览器可执行文件带该 URL），再**分步引导**用户：打开开发者模式 → 点「加载已解压的扩展程序」→ 选中该目录 →（可选）固定到工具栏。这一步必须由用户亲手点，skill 不得假装自动完成。
 5. **验证**：让用户点工具栏图标打开侧栏，检查 `~/.opensider/host.log` 出现新的 Host 启动行；侧栏能列出本机 Agent 即成功。分不清「本机没装 CLI」「桥接没注册」「扩展没加载」时不许下结论，按 `troubleshooting.md` 分流。
 
-`update` 走同一套：对比已装版本（扩展 `manifest.json` 的 `version`、`opensider version`）与最新 release，覆盖二进制与 `~/.opensider/extension`，引导用户在扩展页点「重新加载」，再验证。`uninstall` 移除所有清单（含历史 `com.cursor.sidebar.host.json`）与 Windows 注册表项、删 `~/.opensider/runtime`，并在**明确询问用户**后决定是否清空 `~/.opensider`（工作区、会话、产物、日志、界面状态，后果要写清楚）；扩展本体由用户按引导在扩展页移除。`doctor` 只读检查 + 修常见问题：二进制缺失 / 不可执行、quarantine / MOTW、清单没覆盖某些浏览器、Node 与 ACP 适配器缺失、workspace 不完整、host.log 长期没有启动行（Node Host 时代残留的 `PickFiles.app` / `runtime/packages` 也在识别范围内，处理方式是先备份再重建）。
+`update` 走同一套：对比已装版本（扩展 `manifest.json` 的 `version`、`opensider version`）与最新 release，覆盖二进制与扩展目录，引导用户在扩展页点「重新加载」，再验证。`uninstall` 移除所有清单（含历史 `com.cursor.sidebar.host.json`）与 Windows 注册表项、删 `~/.opensider/runtime`，并在**明确询问用户**后决定是否清空 `~/.opensider`（工作区、会话、产物、日志、界面状态，后果要写清楚）；扩展本体由用户按引导在扩展页移除。`doctor` 只读检查 + 修常见问题：二进制缺失 / 不可执行、quarantine / MOTW、清单没覆盖某些浏览器、Node 与 ACP 适配器缺失、workspace 不完整、host.log 长期没有启动行（Node Host 时代残留的 `PickFiles.app` / `runtime/packages` 也在识别范围内，处理方式是先备份再重建）。
 
 skill 不提供「纯手动安装」的脚本或分步手册：产品只面向本机已经有 Agent CLI 的用户，另维护一份与 skill 平行的手动文档必然和 skill 漂移。
 
@@ -546,7 +547,7 @@ ACP 适配器仍只在 Go 里实现：`install` 里一个 `acpAdapterSpec`（本
 
 ### 开发脚本
 
-根 `package.json`：`install-host`（**只给开发**）→ `go build -o ~/.opensider/runtime/opensider ./cmd/opensider`，再把 `packages/extension/dist` 拷到 `~/.opensider/extension`，最后跑该二进制 `install`；`pack-extension` → `node scripts/pack-extension.mjs`（把 `packages/extension/dist` 打成 `dist-release/extension.zip`，用构建产物 manifest 的 key 校验未打包 ID，**不写出** `opensider.crx`）；`build` = 编扩展 + 打包，不再碰本机 Host。**用户侧没有任何本地构建入口**：`install --local` 与 `scripts/install/*` 已删除，安装 / 更新 / 卸载统一由「提示词 + skill」驱动。`dev` 仍只起 Vite。打包脚本只用 Node 内置 `crypto` / `zlib`。`dist-release/` 不入库。
+根 `package.json`：`install-host`（**只给开发**）→ `go build -o ~/.opensider/runtime/opensider ./cmd/opensider`，再把 `packages/extension/dist` 拷到 `paths.ExtensionDir()`（下载目录下的 `OpenSider`，与用户侧同一个位置），最后跑该二进制 `install`；`pack-extension` → `node scripts/pack-extension.mjs`（把 `packages/extension/dist` 打成 `dist-release/extension.zip`，用构建产物 manifest 的 key 校验未打包 ID，**不写出** `opensider.crx`）；`build` = 编扩展 + 打包，不再碰本机 Host。**用户侧没有任何本地构建入口**：`install --local` 与 `scripts/install/*` 已删除，安装 / 更新 / 卸载统一由「提示词 + skill」驱动。`dev` 仍只起 Vite。打包脚本只用 Node 内置 `crypto` / `zlib`。`dist-release/` 不入库。
 
 ### tag 发 Release
 
