@@ -165,7 +165,7 @@ Host 是一份 Go 二进制（`cmd/opensider` + `internal/`）。`browser/tools.
   host.log
 ```
 
-解压后的扩展**不在** `~/.opensider` 下：它的位置由用户在安装时选定（默认下载目录的 `OpenSider`，`paths.ExtensionDir()`），并记在 `~/.opensider/extension-path`（`opensider extension-dir` 读写）。点目录在系统文件选择器里默认不可见，而「加载已解压的扩展程序」是用户手动的一步，放在看得见的地方才做得下去。
+解压后的扩展**不在** `~/.opensider` 下：它的位置由用户在安装时选定（skill 先问，建议 `~/OpenSider`，`paths.DefaultExtensionDir()` 只在没读过记录时兜底），并记在 `~/.opensider/extension-path`（`opensider extension-dir` 读写）。不默认放下载目录：那是「清理下载」和清理工具的常客，删了扩展就一直失效到重新加载。点目录在系统文件选择器里默认不可见，而「加载已解压的扩展程序」是用户手动的一步，放在看得见的地方才做得下去。
 
 侧栏状态（语言、会话目录、消息、选中项、权限模式、模型、抽屉）写两份：`chrome.storage.local` key `opensider/state` 是热缓存；权威副本是 `~/.opensider/ui-state.json`（不进 workspace，免得和 Agent 文件混在一起）。Host `hello` 之后发 `{ type: "ui.state", state }`（没有文件则 `state: null`）。侧栏 `ui.state.set` 把同一份 JSON 交给 Host 落盘，带 `savedAt`。扩展存储为空或 `savedAt` 更旧时用 Host 灌回；**空会话表不得覆盖已有镜像**（避免重装后首帧空态把历史写丢）。Native Messaging 单帧约 1MB，工具输出仍先截到 8KB 再写入。Host 只另记 ACP `sessionId` 到 `session.json`，方便 `session/load`。
 
@@ -530,7 +530,7 @@ pnpm workspace 只编扩展。Host 用 Go。扩展用 Vite + `@crxjs/vite-plugin
 1. **探测**：OS / arch（`uname -s`、`uname -m`；Windows 先看 `PROCESSOR_ARCHITEW6432`（32 位 PowerShell 跑在 64 位系统上时 `PROCESSOR_ARCHITECTURE` 会是 `x86`）再看 `PROCESSOR_ARCHITECTURE`，`ARM64` 取 `opensider-windows-arm64.exe`）、已装 Chromium 浏览器（按 `platforms.md` 的路径矩阵判断）、已装 Agent CLI（`command -v` + 常见 bin 目录）、Node 18+（只有 Claude / Codex 的适配器需要）。
 2. **先问浏览器**：把检测到的浏览器列给用户挑一个（一个都没检测到就引导先装）。Native Messaging 清单仍写进**所有**检测到的浏览器与各 Profile，但加载扩展只引导用户选定的那一个。
 3. **装桥接**：从 `releases/latest/download/` 下载 `opensider-<os>-<arch>[.exe]` 与 `SHA256SUMS`，用本机 `sha256sum` / `shasum -a 256` / `Get-FileHash` 核验（对不上或 SUMS 里没有这一行就停），放到 `~/.opensider/runtime/` 并 `chmod 755`；macOS 再清 quarantine（`xattr -d com.apple.quarantine`）、Windows 走 `Unblock-File` 去 MOTW，避免 Gatekeeper / SmartScreen 拦住。随后跑 `~/.opensider/runtime/opensider install`：Go 侧负责 `Register()`（所有浏览器的 `NativeMessagingHosts/` 及各 Profile 目录，Windows 另写 HKCU 注册表）、`workspace.Ensure()`（`AGENTS.md` / `browser/tools.json` / `outputs/`）与 ACP 适配器。
-4. **装扩展**：先问用户扩展目录放哪里（默认 `<下载目录>/OpenSider`，接受其它绝对路径，但拒绝放进 `~/.opensider`），用 `opensider extension-dir <路径>` 记到 `~/.opensider/extension-path` —— 更新 / 体检 / 卸载都从这条记录读，不另外猜。然后下载 `extension.zip` 解压到该目录（zip 放同级，用户可自行重装），确认 `manifest.json` 在位，用命令打开用户选定浏览器的 `chrome://extensions`（macOS `open -a "<浏览器>" "chrome://extensions"`；Linux / Windows 用对应浏览器可执行文件带该 URL），再**分步引导**用户：打开开发者模式 → 点「加载已解压的扩展程序」→ 选中该目录 →（可选）固定到工具栏。这一步必须由用户亲手点，skill 不得假装自动完成。
+4. **装扩展**：先把「扩展目录放哪儿」问清楚并**等用户回答**（建议 `~/OpenSider`；`~/Downloads/OpenSider` 要顺带说明清理下载的后果；其它绝对路径都接受，但拒绝放进 `~/.opensider`），用户未回答前不建目录、不下载、不落盘；随后用 `opensider extension-dir <路径>` 记到 `~/.opensider/extension-path` —— 更新 / 体检 / 卸载都从这条记录读，不另外猜。然后下载 `extension.zip` 解压到该目录（zip 放同级，用户可自行重装），确认 `manifest.json` 在位，用命令打开用户选定浏览器的 `chrome://extensions`（macOS `open -a "<浏览器>" "chrome://extensions"`；Linux / Windows 用对应浏览器可执行文件带该 URL），再**分步引导**用户：打开开发者模式 → 点「加载已解压的扩展程序」→ 选中该目录 →（可选）固定到工具栏。这一步必须由用户亲手点，skill 不得假装自动完成。
 5. **验证**：让用户点工具栏图标打开侧栏，检查 `~/.opensider/host.log` 出现新的 Host 启动行；侧栏能列出本机 Agent 即成功。分不清「本机没装 CLI」「桥接没注册」「扩展没加载」时不许下结论，按 `troubleshooting.md` 分流。
 
 `update` 走同一套：对比已装版本（扩展 `manifest.json` 的 `version`、`opensider version`）与最新 release，覆盖二进制与扩展目录，引导用户在扩展页点「重新加载」，再验证。`uninstall` 移除所有清单（含历史 `com.cursor.sidebar.host.json`）与 Windows 注册表项、删 `~/.opensider/runtime`，并在**明确询问用户**后决定是否清空 `~/.opensider`（工作区、会话、产物、日志、界面状态，后果要写清楚）；扩展本体由用户按引导在扩展页移除。卸载前后都要注意**运行中的桥接进程**：Chrome 只要侧栏还连着就会一直持有它，而它收到页面 / 标签更新会重建 `workspace/browser`，于是 purge 过的 `~/.opensider` 又冒出来。因此 `uninstall` 用 `pgrep -f`（Windows 用 `tasklist`）查一下还有没有活的桥接进程，有就打印 pid 与「先关侧栏再跑一次」（`internal/install/running.go`），skill 也要求用户先关侧栏、并在清理后复查目录是否真的消失。`doctor` 只读检查 + 修常见问题：二进制缺失 / 不可执行、quarantine / MOTW、清单没覆盖某些浏览器、Node 与 ACP 适配器缺失、workspace 不完整、host.log 长期没有启动行（Node Host 时代残留的 `PickFiles.app` / `runtime/packages` 也在识别范围内，处理方式是先备份再重建）。
@@ -550,7 +550,7 @@ ACP 适配器仍只在 Go 里实现：`install` 里一个 `acpAdapterSpec`（本
 
 ### 开发脚本
 
-根 `package.json`：`install-host`（**只给开发**）→ `go build -o ~/.opensider/runtime/opensider ./cmd/opensider`，再把 `packages/extension/dist` 拷到 `paths.ExtensionDir()`（下载目录下的 `OpenSider`，与用户侧同一个位置），最后跑该二进制 `install`；`pack-extension` → `node scripts/pack-extension.mjs`（把 `packages/extension/dist` 打成 `dist-release/extension.zip`，用构建产物 manifest 的 key 校验未打包 ID，**不写出** `opensider.crx`）；`build` = 编扩展 + 打包，不再碰本机 Host。**用户侧没有任何本地构建入口**：`install --local` 与 `scripts/install/*` 已删除，安装 / 更新 / 卸载统一由「提示词 + skill」驱动。`dev` 仍只起 Vite。打包脚本只用 Node 内置 `crypto` / `zlib`。`dist-release/` 不入库。
+根 `package.json`：`install-host`（**只给开发**）→ `go build -o ~/.opensider/runtime/opensider ./cmd/opensider`，再把 `packages/extension/dist` 拷到 `paths.ExtensionDir()`（默认家目录下的 `OpenSider`，与用户侧同一个位置），最后跑该二进制 `install`；`pack-extension` → `node scripts/pack-extension.mjs`（把 `packages/extension/dist` 打成 `dist-release/extension.zip`，用构建产物 manifest 的 key 校验未打包 ID，**不写出** `opensider.crx`）；`build` = 编扩展 + 打包，不再碰本机 Host。**用户侧没有任何本地构建入口**：`install --local` 与 `scripts/install/*` 已删除，安装 / 更新 / 卸载统一由「提示词 + skill」驱动。`dev` 仍只起 Vite。打包脚本只用 Node 内置 `crypto` / `zlib`。`dist-release/` 不入库。
 
 ### tag 发 Release
 

@@ -12,7 +12,7 @@ pnpm build          # 编扩展 + 打 dist-release/extension.zip
 pnpm install-host   # go build 出 ~/.opensider/runtime/opensider，拷 dist，再跑 install
 ```
 
-`pnpm install-host`（`scripts/dev-host.mjs`）是**开发专用**：它编出真实二进制（不要用 `go run` 当 Native Host，Chrome 保不住这个进程）、把 `packages/extension/dist` 拷到下载目录下的 `OpenSider`（和用户侧同一个位置，`paths.ExtensionDir()`），再让该二进制 `install` —— 重写各浏览器的 `com.opensider.host.json`、确保工作区有 `AGENTS.md` / `browser/tools.json` / `outputs/`；若本机已装 Claude Code 或 Codex，还会把对应的 ACP 适配器装到 `~/.opensider/runtime/<agent>-acp`（没有 Node 只提示，不挡注册）。若本机 `~/.opensider` 还留着 Node Host 时代的 `PickFiles.app` / `runtime/packages` / 旧 `session.json`，先备份该目录再跑一次。
+`pnpm install-host`（`scripts/dev-host.mjs`）是**开发专用**：它编出真实二进制（不要用 `go run` 当 Native Host，Chrome 保不住这个进程）、把 `packages/extension/dist` 拷到 `paths.ExtensionDir()`（默认家目录下的 `OpenSider`，和用户侧同一个位置），再让该二进制 `install` —— 重写各浏览器的 `com.opensider.host.json`、确保工作区有 `AGENTS.md` / `browser/tools.json` / `outputs/`；若本机已装 Claude Code 或 Codex，还会把对应的 ACP 适配器装到 `~/.opensider/runtime/<agent>-acp`（没有 Node 只提示，不挡注册）。若本机 `~/.opensider` 还留着 Node Host 时代的 `PickFiles.app` / `runtime/packages` / 旧 `session.json`，先备份该目录再跑一次。
 
 用户侧没有这条路径，也没有 `install.sh` / `install.ps1`：他们复制 README 里的一段提示词，由自己在用的 AI Agent 按 [`skills/opensider/`](../skills/opensider/SKILL.md) 执行，安装 / 更新 / 卸载 / 体检都走同一份 skill。改这些 markdown 等于改用户侧的安装行为，改完要在真机上按 skill 走一遍。
 
