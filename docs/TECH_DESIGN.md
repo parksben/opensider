@@ -240,21 +240,21 @@ chrome.storage.local 与 ~/.opensider/ui-state.json（同形）
 |---|---|
 | `agent.connect` | 按 `providerId` 拉起对应 ACP：先握手新进程，成功后再停旧 runtime；进行中报 `connecting` + `agent.progress` |
 | `agent.cancelConnect` | 取消进行中的 `agent.connect`（`ready` 时空操作）。杀掉正在握手的新进程，不拆已 ready 的旧 runtime；有旧 runtime 则恢复 `currentAgent` 并报 `ready`，否则回 `idle`。用 `connectSeq` 作废进行中的 connect，避免取消后迟到的 `ready` |
-| `session.new` | 在空闲（或新开的）ACP 进程上 `session/new`，回 `session`。不打断正在跑的进程 |
-| `session.use` + `sessionId` | 该会话已在某进程上且正在跑则只回 `session`（replay），不 `session/load`；否则在空闲进程上 `session/load`，失败则 `session/new` |
-| `session.fork` + `sessionId` | 在空闲进程上先试不稳定的 `session/fork`（整段历史）；失败则 `session/new` |
-| `prompt` 可带 `sessionId` | 绑到已持有该会话的进程，或空闲进程 `session/load` 后再 prompt。同一会话已有一轮在跑则拒绝；不同会话并行 |
-| `cancel` 可带 `sessionId` | 只取消该 ACP 会话所在进程的一轮 |
-| `update` / `turn.end` / `permission` / `cursor` 带 `sessionId` | 侧栏按 ACP id 映射到本地会话，不按当前选中项 |
+| `session.new` + `requestId` | 在空闲（或新开的）ACP 进程上 `session/new`，回 `session` 时原样带回 `requestId`。不打断正在跑的进程 |
+| `session.use` + `sessionId` + `requestId` | 该会话已在某进程上且正在跑则只回 `session`（replay，带 `requestId`），不 `session/load`；否则在空闲进程上 `session/load`，失败则 `session/new`（回执带新 id + `requestId`） |
+| `session.fork` + `sessionId` + `requestId` | 在空闲进程上先试不稳定的 `session/fork`（整段历史）；失败则 `session/new`；回执带 `requestId` |
+| `prompt` 可带 `sessionId` + `requestId` | 绑到已持有该会话的进程，或空闲进程 `session/load` 后再 prompt。同一会话已有一轮在跑则拒绝；不同会话并行。若 `session/load` 失败被迫换新会话，用带该 `requestId` 的 `session` 回执通知侧栏更新绑定 |
+| `cancel` 可带 `sessionId` | 只取消该 ACP 会话所在进程的一轮；**找不到该会话就不动手**（早期会「随便挑一个 prompting 的进程」取消，导致 B 的停止杀掉 A 的任务） |
+| `update` / `turn.end` / `permission` / `cursor` 带 `sessionId` | 侧栏按 ACP id 精确映射到本地会话，**不按当前选中项；映射不到就丢弃**（不允许落到「当前选中」，那是串戏的主要通道） |
 | `fs.pick` | Host 弹出本机选文件/文件夹对话框，回 `fs.picked`（绝对路径 + kind） |
 | `fs.save` | Host 把侧栏压好的 JPEG 写到 `browser/pasted/`，回 `fs.saved`（绝对路径 + kind=image） |
 | `fs.reveal` + `path` | Host 打开系统文件管理器并选中该文件；路径不存在则回 `fs.revealed`（`missing: true` + error），其它失败也回 error 但不标 missing；成功不回 |
 | `fs.revealed`（Host → 侧栏） | reveal 失败时带 `path` / `error` / 可选 `missing`；侧栏只在 `missing` 时按 path 把该条产物标失效并持久化 |
 | `fs.preview` + `path` + `requestId` | Host 读本机图片（绝对路径、常规文件、图像类型、上限 32MB），按 512KiB 原文分片 base64 回多条 `fs.previewed` |
 | `fs.previewed`（Host → 侧栏） | 成功：`mime` / `size` / `index` / `total` / `data`；失败：`error`。侧栏拼 `blob:`；失败文案走 i18n，不加句号 |
-| `artifacts`（Host → 侧栏） | `reportArtifacts` 成功后整表覆盖该会话产物列表 |
+| `artifacts`（Host → 侧栏） | `reportArtifacts` 成功后整表覆盖该会话产物列表；带 `sessionId` 时侧栏精确匹配，找不到就丢弃 |
 | `page.pick` | SW 让当前标签内容脚本拾取元素，回 `page.picked`（CSS selector，kind=element）；不转发 Host |
-| `model.set` | 非 `auto` 时 `session/set_config_option`（`category: model`）；失败再试 `session/set_model` |
+| `model.set` | 非 `auto` 时 `session/set_config_option`（`category: model`）；失败再试 `session/set_model`。**只作用于已持有该会话的进程**；找不到就只记 `pendingModelID`（下次打开该会话时应用）并回 `models`——不得抢别的空闲进程做 `session/load`（会静默漂移绑定、换掉别人会话） |
 
 从某一轮之后 fork：
 
@@ -262,7 +262,7 @@ chrome.storage.local 与 ~/.opensider/ui-state.json（同形）
 2. 若 fork 的是**最后一条**且 Agent 支持 `session/fork`，用 ACP fork，Agent 历史与 UI 对齐，不必再灌上下文。
 3. 否则 `session/new`。Agent 是空会话，把截断后的对话写成 `pendingForkContext`，**下一条用户消息**前缀带上（UI 不显示这段包装）。这样 Agent 不会为了灌上下文先回一嘴。
 
-侧栏用 `runningIds`（不持久化）记哪些本地会话有一轮在飞，不再用全局一把锁。`isRunning` 只表示**当前选中**会话在跑（输入框描边、停止钮、该会话的 fork / 重生成 / 改历史）。新建和切换始终允许；流式 `update` / `turn.end` / HITL 按消息上的 ACP `sessionId` 写回对应本地会话。切到别的会话时，若目标自己正在跑则不要再 `session.use`。权限 / 提问 / 计划按会话存放，只在看着该会话时画出来；「允许工具调用」仍会自动回掉所有会话里待批的权限；「允许一切操作」还会立刻回掉待批的提问和计划。切走后不再自动过。页面工具仍共用一个工作区，两条 Agent 同时改页面时可能打架，这是并行的取舍。会话列表里进行中的卡片左侧用六点盲文字符（`⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏`）CSS `content` 循环代替圆点，不要再在标题旁挂 `LoaderCircle`。
+侧栏用 `runningIds`（不持久化）记哪些本地会话有一轮在飞，不再用全局一把锁。`isRunning` 只表示**当前选中**会话在跑（输入框描边、停止钮、该会话的 fork / 重生成 / 改历史）。新建和切换始终允许；流式 `update` / `turn.end` / HITL 按消息上的 ACP `sessionId` 写回对应本地会话。**会话绑定不用「到达顺序」配对**：侧栏每次 `session.new` / `session.use` / `session.fork` / `prompt` 生一个 `requestId` 存进 `Map<requestId, {localId, kind}>`，`session` 回执只认 `requestId` 精确命中（命不中不改绑定、直接忽略）；不带 `requestId` 的回执（SW 重连回放、Host 自发消息）不参与绑定。缓冲随连接错误 / 连接重置整体清空，避免残留项吞掉后续回执。`localIdForAcp` 只做精确映射，从 `sessionAcpIds` 里找不到就返回 undefined；`update` / `turn.end` / `permission` / `cursor` / `artifacts` 拿到 undefined 一律丢弃——宁可少画，不许落到当前选中会话。浏览器工具（`browser.command` / `browser.result`）没有 ACP `sessionId` 可用：Host 在转发 `browser.command` 时尽力标注会话（恰好一个进程在 `prompt` 时标它的会话；多进程同时跑或都在空闲时不标），SW 执行完把同一标注带回 `browser.result` 一起广播；侧栏有标注就精确路由（映射不到丢弃），没标注才退回「选中 / 唯一运行中」启发式。切到别的会话时，若目标自己正在跑则不要再 `session.use`。权限 / 提问 / 计划按会话存放，只在看着该会话时画出来；「允许工具调用」仍会自动回掉所有会话里待批的权限；「允许一切操作」还会立刻回掉待批的提问和计划。切走后不再自动过。页面工具仍共用一个工作区，两条 Agent 同时改页面时可能打架，这是并行的取舍。会话列表里进行中的卡片左侧用六点盲文字符（`⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏`）CSS `content` 循环代替圆点，不要再在标题旁挂 `LoaderCircle`。
 
 重新生成（同一会话抽卡）：
 
@@ -449,6 +449,7 @@ macOS 清单路径：`~/Library/Application Support/Google/Chrome/NativeMessagin
 - 一轮开始记 `turnStartedAt`；`turn.end` / 停止 / 连接报错结束时，若末尾 assistant 的 `createdAt` 不早于开始时间，写入 `durationMs` 并持久化。`AssistantMessage`：找最后一段 `type=text`，它之前是过程。`isRunning` 且该条是最后一条时不收成耗时行：`liveVisibleParts` 把连续的 `reasoning` / `tool-call`（中间没有 `text`）收成只渲最后一条，同一行被新步骤替换。结束后默认收起过程，只留正文；用户展开耗时行时再按原顺序把每一步各占一行。耗时行、思考、工具调用共用 `TextFold`：无底透明全宽 `button`，muted 12px 文案 + 可选 kind 图标 + 紧挨着的箭头（`inline-flex`，不要 `justify-between`）。收起时 `ChevronRight` 仅该行 hover 出现（`group/fold`，避免吃到 `MessageFrame` 的 `group`）；展开后换成 `ChevronDown`。过程区走 `.cs-process-scroll`（只设 `max-height`），思考 / 工具内容走 `max-height: 5lh` 的 `.cs-fold-scroll`。线程是 `flex-col-reverse` 贴底，展开会长高把灰字顶上去：toggle 前记下 `getBoundingClientRect().top`，`useLayoutEffect` 里给 `.cs-thread` 的 `scrollTop` 加上位移，把灰字钉回原处，看起来是向下展开。滚动盒由 `FadeScroll` 包一层 `isolation: isolate`，上下各一条 `mix-blend-mode` 渐变（深色 `multiply`、浅色 `lighten`，色用 `--ink`）；`scrollTop>2` 才显示顶遮罩，距底 `>2` 才显示底遮罩。没有过程（只有正文）不渲染这一行。
 - Agent 回复底部 hover 才出现一行（`MessageFrame` 用 `group/msg`，避免和折叠箭头抢未命名 `group`）：左灰色「由 {name} 生成 / Generated by {name}」，右无边框 `Copy` + `GitFork` + `RefreshCw`（`justify-between`）。复制取 `lastTextIndex` 之后的 `type=text`（有过程折起时就是可见正文），先 `navigator.clipboard.writeText`，失败再临时 `textarea` + `execCommand("copy")`，不含 reasoning / tool-call。成功后 `copied`：该行强制 `opacity-100`（避免移开鼠标就看不见），icon 原地换 `Check` 并用 `--ok`，1.5s 后还原。`isRunning` 且该条是最后一条时不渲染这一行。用户气泡 `mt-6`，其余消息 `mt-3`。用户气泡不放操作钮。模型名在本轮第一条 assistant 落盘时写入 `modelId` / `modelName`
 - 视觉：窄侧栏（约 380px）、深色橄榄黑 / 浅色中性浅灰层次、深色黄铜 / 浅色钢蓝强调；图标只用 `lucide-react`
+- 按钮 hover 分两套：次要按钮（描边 / 透明底）沿用 `--hover` 中性半透明覆盖；主按钮（`bg-[var(--brass)]` 实心）自己声明 `hover:bg-[color-mix(in_oklab,var(--brass)_86%,var(--text))]`，绝不允许 `RippleButton` / `IconButton` 基类的 `hover:bg-[var(--hover)]` 落到主按钮上——基类只给 `relative overflow-hidden`，中性 hover 由调用方自己带；深色下变亮、浅色下变深，看起来像「可用且被指到」，不能被读成禁用态。主按钮点击同样走 `useRipple`（`currentColor` 涟漪在实心底上可见）。
 - 字体：IBM Plex Sans / Mono（中英都不用衬线体）。Google Fonts 只拉 400/500。`html`/`body` 默认 `font-weight: 400`；`b`/`strong`/标题/`th`、Markdown 标题与表头、以及 Tailwind `font-medium`/`semibold`/`bold` 一律 500（`@theme` 把更重的 weight token 压到 500），避免浏览器 `bolder` 或 preflight 跳出 600/700。
 - 工具行左侧按 ACP `kind` 换 lucide 图标：read / edit / execute / search / fetch 等，颜色跟灰字走。`pending` / `in_progress` 时只渲 `LoaderCircle`，结束后才换回 kind 图标，二者不同时出现。标题始终用 `toolLiveHeadline`：短名（`toolLabel`）+ 全角 `：` + `primaryArg`。`tool_call` / 更新时 `withPrimaryArg` 把关键参数写进 `ToolPart.primaryArg` 并落盘；hydrate 时缺了再补算。二次进会话只读已存的 `primaryArg`，不因 args 形态变化丢掉拼接。`TextFold` 一行：外层 `w-full min-w-0`，内层簇 `max-w-full` 随文案变窄；文案 `min-w-0 truncate`（不要 `flex-1`），箭头 `shrink-0` 紧贴文案，只有标题被省略时才顶到行尾。展开后的入参 / 返回走 `ToolJsonView`：字符串以 `{`/`[` 包住才 `JSON.parse`，失败则原文；对象 / 数组直接拆。最外层单 key 只渲 value；其余层每项一段 `key：value`，复合 value 先写 `key：` 再以 `padding-left: 1em` 递进。`formatScalar` / 原文把 `\n{2,}` 压成 `\n`，只空白的段不渲。不再 `JSON.stringify` 进 `pre`。
 

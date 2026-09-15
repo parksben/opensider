@@ -205,7 +205,7 @@ function connectNative(force = false): void {
   nativePort.onMessage.addListener((msg: HostToExt) => {
     clearMissingRetry();
     if (msg.type === "browser.command") {
-      void dispatchCommand(msg.command);
+      void dispatchCommand(msg.command, msg.sessionId);
     }
     broadcast(msg);
   });
@@ -663,7 +663,11 @@ async function runWindowMethod(command: BrowserCommand): Promise<BrowserResult> 
   };
 }
 
-async function dispatchCommand(command: BrowserCommand): Promise<void> {
+async function dispatchCommand(command: BrowserCommand, sessionId?: string): Promise<void> {
+  const publish = (result: BrowserResult) => {
+    sendNative({ type: "browser.result", result });
+    broadcast({ type: "browser.result", result, sessionId });
+  };
   if (isWindowMethod(command.method)) {
     let result: BrowserResult;
     try {
@@ -671,8 +675,7 @@ async function dispatchCommand(command: BrowserCommand): Promise<void> {
     } catch (error) {
       result = fail(command, String(error));
     }
-    sendNative({ type: "browser.result", result });
-    broadcast({ type: "browser.result", result });
+    publish(result);
     if (result.ok) {
       void publishTabs();
       const tabId = (result.data as { tabId?: number } | undefined)?.tabId;
@@ -683,17 +686,13 @@ async function dispatchCommand(command: BrowserCommand): Promise<void> {
 
   const tab = await resolveFocusedActiveChromeTab();
   if (!tab?.id) {
-    const result = fail(command, "No active tab");
-    sendNative({ type: "browser.result", result });
-    broadcast({ type: "browser.result", result });
+    publish(fail(command, "No active tab"));
     return;
   }
 
   const allowed = pageToolsAllowed(tab.url);
   if (!allowed.ok && !isTabMethod(command.method)) {
-    const result = fail(command, allowed.error);
-    sendNative({ type: "browser.result", result });
-    broadcast({ type: "browser.result", result });
+    publish(fail(command, allowed.error));
     return;
   }
 
@@ -710,8 +709,7 @@ async function dispatchCommand(command: BrowserCommand): Promise<void> {
     result = fail(command, pageCommandError(error));
   }
 
-  sendNative({ type: "browser.result", result });
-  broadcast({ type: "browser.result", result });
+  publish(result);
   if (result.ok && (isActionMethod(command.method) || command.method === "getInteractive" || command.method === "waitFor")) {
     void requestPage(tab.id);
     void publishTabs();

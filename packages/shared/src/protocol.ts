@@ -278,11 +278,17 @@ export type ExtToHost =
   | { type: "agent.connect"; providerId: string; policy?: AgentPolicy }
   | { type: "agent.cancelConnect" }
   | { type: "agent.setPolicy"; policy: AgentPolicy }
-  | { type: "prompt"; text: string; sessionId?: string; currentPage?: { title: string; url: string } }
+  | {
+      type: "prompt";
+      text: string;
+      sessionId?: string;
+      requestId?: string;
+      currentPage?: { title: string; url: string };
+    }
   | { type: "cancel"; sessionId?: string }
-  | { type: "session.new" }
-  | { type: "session.use"; sessionId: string }
-  | { type: "session.fork"; sessionId: string }
+  | { type: "session.new"; requestId?: string }
+  | { type: "session.use"; sessionId: string; requestId?: string }
+  | { type: "session.fork"; sessionId: string; requestId?: string }
   | { type: "fs.pick"; requestId: string; mode?: FsPickMode }
   | { type: "fs.save"; requestId: string; name?: string; imageBase64: string; mime: "image/jpeg" }
   | { type: "fs.reveal"; path: string }
@@ -312,14 +318,14 @@ export type HostToExt =
   | { type: "status"; state: HostStatusState; error?: string }
   | { type: "agents"; agents: AgentInfo[]; selectedId?: string }
   | { type: "agent.progress"; progress: AgentProgress }
-  | { type: "session"; sessionId: string; replay?: boolean; created?: boolean; forked?: boolean }
+  | { type: "session"; sessionId: string; replay?: boolean; created?: boolean; forked?: boolean; requestId?: string }
   | { type: "update"; update: Record<string, unknown>; sessionId?: string }
   | { type: "permission"; id: number; params: Record<string, unknown>; sessionId?: string }
   | { type: "cursor"; id?: number; method: string; params: Record<string, unknown>; sessionId?: string }
   | { type: "turn.end"; stopReason: string; sessionId?: string }
   | { type: "page"; page: CurrentPage }
-  | { type: "browser.command"; command: BrowserCommand }
-  | { type: "browser.result"; result: BrowserResult }
+  | { type: "browser.command"; command: BrowserCommand; sessionId?: string }
+  | { type: "browser.result"; result: BrowserResult; sessionId?: string }
   | {
       type: "fs.picked";
       requestId: string;

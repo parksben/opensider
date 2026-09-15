@@ -19,7 +19,11 @@ const pageCommandTimeout = 30 * time.Second
 func (h *Host) handleWorkspaceCommand(command protocol.BrowserCommand) {
 	if command.Method != "reportArtifacts" {
 		h.armPageCommandTimeout(command)
-		h.send(map[string]any{"type": "browser.command", "command": command})
+		msg := map[string]any{"type": "browser.command", "command": command}
+		if sid := h.commandSessionID(); sid != "" {
+			msg["sessionId"] = sid
+		}
+		h.send(msg)
 		return
 	}
 	items, skipped := parseArtifactArgs(command.Args)
@@ -42,7 +46,7 @@ func (h *Host) handleWorkspaceCommand(command protocol.BrowserCommand) {
 		log.Log("reportArtifacts result: " + writeErr.Error())
 	}
 	msg := map[string]any{"type": "artifacts", "items": items}
-	if sid := h.promptingSessionID(); sid != "" {
+	if sid := h.commandSessionID(); sid != "" {
 		msg["sessionId"] = sid
 	}
 	h.send(msg)
@@ -102,20 +106,34 @@ func (h *Host) settlePageCommand(id string) bool {
 	return true
 }
 
-func (h *Host) promptingSessionID() string {
+// commandSessionID 为工作区命令（browser 工具与 reportArtifacts）推断来源会话：
+// 恰好一个进程在跑一轮时就是它；都没有在跑时，如果只有一个进程持有会话，
+// 也认作它（收尾阶段的工具）。两个以上候选（多会话并行）或无法判断时返回空——
+// 侧栏对空标注只会退回「选中 / 唯一运行中」启发式，标错会直接把内容串给别的会话。
+func (h *Host) commandSessionID() string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	running := ""
+	runningCount := 0
+	active := ""
+	activeCount := 0
 	for _, runtime := range h.runtimes {
+		sid := runtime.client.GetSessionID()
+		if sid == "" {
+			continue
+		}
+		active = sid
+		activeCount++
 		if runtime.prompting {
-			if sid := runtime.client.GetSessionID(); sid != "" {
-				return sid
-			}
+			running = sid
+			runningCount++
 		}
 	}
-	for _, runtime := range h.runtimes {
-		if sid := runtime.client.GetSessionID(); sid != "" {
-			return sid
-		}
+	if runningCount == 1 {
+		return running
+	}
+	if runningCount == 0 && activeCount == 1 {
+		return active
 	}
 	return ""
 }

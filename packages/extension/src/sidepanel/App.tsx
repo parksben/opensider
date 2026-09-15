@@ -28,6 +28,7 @@ import { SessionDrawer } from "./components/SessionDrawer";
 import { UpdateDialog } from "./components/UpdateDialog";
 import { UninstallDialog } from "./components/UninstallDialog";
 import { applyLocale, detectBrowserLocale, readCachedLocale, t, type Locale } from "./i18n";
+import { BindRegistry, findSessionIdByAcpId } from "./session-bind";
 import { displayVersion, isNewer, type ReleaseCheckState } from "./version";
 import {
   applyResolvedTheme,
@@ -54,7 +55,6 @@ import {
   preferHostState,
   saveState,
   SESSION_DRAWER_DEFAULT,
-  sessionAcpIds,
   settleFinishedContent,
   isPlaceholderTitle,
   nextSessionTitle,
@@ -118,13 +118,14 @@ export function App() {
   const statusRef = useRef(status);
   const selectedIdRef = useRef(selectedId);
   const sessionsRef = useRef(sessions);
-  const pendingBinds = useRef<Array<{ localId: string; kind: "new" | "use" | "fork" }>>([]);
-  const pendingRegen = useRef<{
-    localId: string;
+  /** 在飞的会话请求（new/use/fork/prompt）：requestId ↔ 本地会话，回执按 id 精确配对。 */
+  const bindRegistry = useRef(new BindRegistry());
+  /** 等绑定完成后要发的首条消息（按会话存，避免两个会话互相覆盖）。 */
+  const pendingRegen = useRef(new Map<string, {
     text: string;
     attachments: AttachmentItem[];
     context?: string;
-  } | null>(null);
+  }>());
   const localeRef = useRef(locale);
   const selectedModelRef = useRef(selectedModelId);
   const selectedModelByProviderRef = useRef(selectedModelByProvider);
@@ -191,15 +192,45 @@ export function App() {
     setSessionsOpen(state.sessionsOpen);
     setDrawerWidth(state.sessionDrawerWidth);
     loadedRef.current = { ...state, sessions: nextSessions, selectedId: nextSelectedId };
+    // 会话列表被整表替换（host 镜像灌回）：悬挂的请求可能指向已不存在的本地会话，清掉。
+    bindRegistry.current.clear();
+    pendingRegen.current.clear();
   };
 
-  const enqueueBind = (item: { localId: string; kind: "new" | "use" | "fork" }) => {
-    pendingBinds.current.push(item);
+  /**
+   * 发一个会话绑定请求（new/use/fork），并登记 requestId ↔ 本地会话的配对。
+   * 回执（`session` 消息）只认 requestId 精确命中——不再按到达顺序配对，
+   * 一次请求没回也不会让后续绑定错位。
+   */
+  const requestSession = (kind: "new" | "use" | "fork", localId: string, acpId?: string) => {
+    const requestId = crypto.randomUUID();
+    bindRegistry.current.add(requestId, localId, kind);
+    if (kind === "use") sendRef.current({ type: "session.use", sessionId: acpId ?? "", requestId });
+    else if (kind === "fork") sendRef.current({ type: "session.fork", sessionId: acpId ?? "", requestId });
+    else sendRef.current({ type: "session.new", requestId });
+  };
+
+  /**
+   * 发 prompt 并登记 requestId：Host 若因 `session/load` 失败被迫换新会话，
+   * 会带这个 id 回一条 `session` 回执，让本地绑定跟上新会话。
+   */
+  const sendPrompt = (localId: string, sessionId: string, text: string) => {
+    const requestId = crypto.randomUUID();
+    bindRegistry.current.add(requestId, localId, "prompt");
+    sendRef.current({
+      type: "prompt",
+      text,
+      sessionId,
+      requestId,
+      currentPage: pageRef.current
+        ? { title: pageRef.current.title, url: pageRef.current.url }
+        : undefined,
+    });
   };
 
   const tryBindCurrent = () => {
     if (statusRef.current !== "ready") return;
-    if (pendingBinds.current.length > 0) return;
+    if (bindRegistry.current.hasPendingBinds()) return;
     const list = sessionsRef.current;
     const id = selectedIdRef.current || list[0]?.id;
     const session = list.find((item) => item.id === id);
@@ -208,8 +239,7 @@ export function App() {
     const providerId = selectedProviderRef.current;
     const acpId = boundAcpId(session, providerId);
     if (acpId) {
-      enqueueBind({ localId: session.id, kind: "use" });
-      sendRef.current({ type: "session.use", sessionId: acpId });
+      requestSession("use", session.id, acpId);
       return;
     }
     if (session.messages.length > 0 && !session.pendingForkContext) {
@@ -218,8 +248,7 @@ export function App() {
         pendingForkContext: item.pendingForkContext ?? buildForkContext(item.messages),
       }));
     }
-    enqueueBind({ localId: session.id, kind: "new" });
-    sendRef.current({ type: "session.new" });
+    requestSession("new", session.id);
   };
 
   const requestConnect = (providerId: string) => {
@@ -278,13 +307,11 @@ export function App() {
     setRunningIds([...next]);
   };
 
-  const localIdForAcp = (acpId?: string) => {
-    if (acpId) {
-      const found = sessionsRef.current.find((item) => sessionAcpIds(item).includes(acpId));
-      if (found) return found.id;
-    }
-    return selectedIdRef.current;
-  };
+  /**
+   * ACP 会话 id → 本地会话 id。找不到就返回 undefined——调用方必须「找不到就
+   * 丢弃」，绝不允许退回当前选中会话（那是旧任务内容串进新会话的通道）。
+   */
+  const localIdForAcp = (acpId?: string) => findSessionIdByAcpId(sessionsRef.current, acpId);
 
   const clearHitl = (id: string) => {
     setPermissions((current) => {
@@ -351,12 +378,19 @@ export function App() {
     });
   };
 
-  const recordBrowserTool = (command: BrowserCommand, result?: BrowserResult) => {
-    let localId = selectedIdRef.current;
-    if (!runningIdsRef.current.has(localId)) {
-      localId = [...runningIdsRef.current][0] ?? localId;
+  const recordBrowserTool = (command: BrowserCommand, result?: BrowserResult, sessionId?: string) => {
+    let localId: string | undefined;
+    if (sessionId) {
+      // Host 标注了来源会话：只认精确路由，映射不到宁可丢掉（不落到选中会话）。
+      localId = localIdForAcp(sessionId);
+      if (!localId) return;
+    } else {
+      // 没有标注（多会话并行时 Host 无法判断）：退回「选中 / 唯一运行中」启发式。
+      localId = runningIdsRef.current.has(selectedIdRef.current)
+        ? selectedIdRef.current
+        : ([...runningIdsRef.current][0] ?? selectedIdRef.current);
+      if (!localId) return;
     }
-    if (!localId) return;
     const modelId = selectedModelRef.current;
     const modelName =
       models.find((item) => item.id === modelId)?.name ||
@@ -443,11 +477,14 @@ export function App() {
       }
       setStatus(msg.state);
       setError(msg.error);
+      if (msg.state !== "ready") {
+        // 连接未就绪：在飞的绑定 / 首条消息请求都不会再有回执，清掉防残留错配。
+        bindRegistry.current.clear();
+        pendingRegen.current.clear();
+      }
       if (msg.state === "error" || msg.state === "missing") {
         pendingConnectRef.current = "";
         connectedProviderRef.current = "";
-        pendingRegen.current = null;
-        pendingBinds.current = [];
         pendingForceSend.current = {};
         finishAllTurns();
       }
@@ -470,32 +507,28 @@ export function App() {
       return;
     }
     if (msg.type === "session") {
-      const pending = pendingBinds.current.shift();
-      const current = sessionsRef.current.find((item) => item.id === selectedIdRef.current);
-      const targetId = pending?.localId ?? (current && !current.acpSessionId ? current.id : undefined);
-      if (targetId) {
-        patchSession(targetId, (session) => ({
-          ...bindAcpSession(session, selectedProviderRef.current, msg.sessionId),
-          pendingForkContext:
-            pending?.kind === "fork" && msg.forked === false
-              ? (session.pendingForkContext ?? buildForkContext(session.messages))
-              : session.pendingForkContext,
-        }));
-      }
-      const regen = pendingRegen.current;
-      if (regen && regen.localId === targetId) {
-        pendingRegen.current = null;
+      // 只认 requestId 精确配对的回执；SW 重连回放 / Host 自发消息不带 id，
+      // 一律不改动本地绑定（错位配对会把旧任务的内容串进新会话）。
+      const ticket = bindRegistry.current.take(msg.requestId);
+      if (!ticket) return;
+      patchSession(ticket.localId, (session) => ({
+        ...bindAcpSession(session, selectedProviderRef.current, msg.sessionId),
+        pendingForkContext:
+          ticket.kind === "fork" && msg.forked === false
+            ? (session.pendingForkContext ?? buildForkContext(session.messages))
+            : session.pendingForkContext,
+      }));
+      const regen = pendingRegen.current.get(ticket.localId);
+      if (regen && ticket.kind === "new") {
+        pendingRegen.current.delete(ticket.localId);
         const body = wrapUserPrompt(regen.text, regen.attachments);
-        beginTurn(regen.localId);
+        beginTurn(ticket.localId);
         setError(undefined);
-        sendRef.current({
-          type: "prompt",
-          text: regen.context ? `${wrapForkContext(regen.context)}\n\n${body}` : body,
-          sessionId: msg.sessionId,
-          currentPage: pageRef.current
-            ? { title: pageRef.current.title, url: pageRef.current.url }
-            : undefined,
-        });
+        sendPrompt(
+          ticket.localId,
+          msg.sessionId,
+          regen.context ? `${wrapForkContext(regen.context)}\n\n${body}` : body,
+        );
       }
       return;
     }
@@ -588,7 +621,14 @@ export function App() {
       return;
     }
     if (msg.type === "artifacts") {
-      const localId = localIdForAcp(msg.sessionId) || selectedIdRef.current;
+      let localId: string | undefined;
+      if (msg.sessionId) {
+        // 有标注：只认精确路由，映射不到宁可丢掉（不落到选中会话）。
+        localId = localIdForAcp(msg.sessionId);
+        if (!localId) return;
+      } else {
+        localId = selectedIdRef.current;
+      }
       if (!localId) return;
       const items = Array.isArray(msg.items) ? msg.items : [];
       patchSession(localId, (session) => ({ ...session, artifacts: items }));
@@ -610,11 +650,11 @@ export function App() {
       return;
     }
     if (msg.type === "browser.command") {
-      recordBrowserTool(msg.command);
+      recordBrowserTool(msg.command, undefined, msg.sessionId);
       return;
     }
     if (msg.type === "browser.result") {
-      recordBrowserTool({ id: msg.result.id, method: msg.result.method }, msg.result);
+      recordBrowserTool({ id: msg.result.id, method: msg.result.method }, msg.result, msg.sessionId);
       return;
     }
     if (msg.type === "update") {
@@ -635,17 +675,18 @@ export function App() {
     }
     if (msg.type === "turn.end") {
       const localId = localIdForAcp(msg.sessionId);
+      if (!localId) return;
+      // 该回合已结束，不会再收到这轮 prompt 的绑定修正回执，清掉悬挂项。
+      bindRegistry.current.dropPrompts(localId);
       finishTurn(localId);
-      if (localId) {
-        const forced = pendingForceSend.current[localId];
-        const next = forced?.[0];
-        if (next) {
-          pendingForceSend.current[localId] = forced.slice(1);
-          if (pendingForceSend.current[localId].length === 0) delete pendingForceSend.current[localId];
-          sendToSessionRef.current(localId, next.text, next.attachments);
-        } else {
-          flushQueueRef.current(localId);
-        }
+      const forced = pendingForceSend.current[localId];
+      const next = forced?.[0];
+      if (next) {
+        pendingForceSend.current[localId] = forced.slice(1);
+        if (pendingForceSend.current[localId].length === 0) delete pendingForceSend.current[localId];
+        sendToSessionRef.current(localId, next.text, next.attachments);
+      } else {
+        flushQueueRef.current(localId);
       }
       if (msg.stopReason === "error" && localId === selectedIdRef.current) {
         setError(t(localeRef.current, "turnError"));
@@ -856,21 +897,11 @@ export function App() {
     beginTurn(localId);
     setError(undefined);
     if (!session?.acpSessionId) {
-      pendingRegen.current = { localId, text, attachments, context };
-      if (pendingBinds.current.every((item) => item.localId !== localId)) {
-        enqueueBind({ localId, kind: "new" });
-        sendRef.current({ type: "session.new" });
-      }
+      pendingRegen.current.set(localId, { text, attachments, context });
+      if (!bindRegistry.current.hasLocal(localId)) requestSession("new", localId);
       return;
     }
-    sendRef.current({
-      type: "prompt",
-      text: context ? `${wrapForkContext(context)}\n\n${body}` : body,
-      sessionId: session.acpSessionId,
-      currentPage: pageRef.current
-        ? { title: pageRef.current.title, url: pageRef.current.url }
-        : undefined,
-    });
+    sendPrompt(localId, session.acpSessionId, context ? `${wrapForkContext(context)}\n\n${body}` : body);
   };
   sendToSessionRef.current = sendToSession;
 
@@ -940,9 +971,16 @@ export function App() {
     }
     if (runningIdsRef.current.has(sessionId)) {
       const session = sessionsRef.current.find((entry) => entry.id === sessionId);
-      sendRef.current({ type: "cancel", sessionId: session?.acpSessionId });
+      if (session?.acpSessionId) {
+        // Host 那边确实在跑：先打断，等它的 turn.end 再发这条（立即发送会打断当前一轮）。
+        sendRef.current({ type: "cancel", sessionId: session.acpSessionId });
+        finishTurn(sessionId);
+        pendingForceSend.current[sessionId] = [...(pendingForceSend.current[sessionId] ?? []), item];
+        return;
+      }
+      // 本地 running 只是在等绑定（Host 没在跑）：没有可打断的，直接发。
       finishTurn(sessionId);
-      pendingForceSend.current[sessionId] = [...(pendingForceSend.current[sessionId] ?? []), item];
+      sendToSession(sessionId, item.text, item.attachments);
       return;
     }
     sendToSession(sessionId, item.text, item.attachments);
@@ -1077,8 +1115,15 @@ export function App() {
 
   const onCancel = () => {
     const session = sessionsRef.current.find((item) => item.id === selectedIdRef.current);
-    sendRef.current({ type: "cancel", sessionId: session?.acpSessionId });
-    if (session) finishTurn(session.id);
+    if (!session) return;
+    if (session.acpSessionId) {
+      sendRef.current({ type: "cancel", sessionId: session.acpSessionId });
+    } else {
+      // 还没发出去（在等绑定）：撤销待发消息与悬挂的 prompt 项，别等停止后又被发出去。
+      pendingRegen.current.delete(session.id);
+      bindRegistry.current.dropPrompts(session.id);
+    }
+    finishTurn(session.id);
   };
 
   const switchSession = (id: string) => {
@@ -1089,8 +1134,7 @@ export function App() {
     if (runningIdsRef.current.has(id)) return;
     const acpId = boundAcpId(session, selectedProviderRef.current);
     if (acpId) {
-      enqueueBind({ localId: id, kind: "use" });
-      sendRef.current({ type: "session.use", sessionId: acpId });
+      requestSession("use", id, acpId);
     } else if (statusRef.current === "ready") {
       if (session.messages.length > 0 && !session.pendingForkContext) {
         patchSession(id, (item) => ({
@@ -1098,8 +1142,7 @@ export function App() {
           pendingForkContext: item.pendingForkContext ?? buildForkContext(item.messages),
         }));
       }
-      enqueueBind({ localId: id, kind: "new" });
-      sendRef.current({ type: "session.new" });
+      requestSession("new", id);
     }
   };
 
@@ -1117,15 +1160,15 @@ export function App() {
   const deleteSession = (id: string) => {
     const doomed = sessionsRef.current.find((session) => session.id === id);
     if (doomed && runningIdsRef.current.has(id)) {
-      sendRef.current({ type: "cancel", sessionId: doomed.acpSessionId });
+      if (doomed.acpSessionId) sendRef.current({ type: "cancel", sessionId: doomed.acpSessionId });
       finishTurn(id);
     }
     clearHitl(id);
     if (queuesRef.current[id]) setSessionQueue(id, []);
     if (editingQueueRef.current?.sessionId === id) editingQueueRef.current = null;
     delete pendingForceSend.current[id];
-    pendingBinds.current = pendingBinds.current.filter((item) => item.localId !== id);
-    if (pendingRegen.current?.localId === id) pendingRegen.current = null;
+    bindRegistry.current.dropLocal(id);
+    pendingRegen.current.delete(id);
     const remaining = sessionsRef.current.filter((session) => session.id !== id);
     if (remaining.length > 0) {
       setSessions(remaining);
@@ -1136,8 +1179,7 @@ export function App() {
     setSessions([created]);
     setSelectedId(created.id);
     if (statusRef.current === "ready") {
-      enqueueBind({ localId: created.id, kind: "new" });
-      sendRef.current({ type: "session.new" });
+      requestSession("new", created.id);
     }
   };
 
@@ -1146,8 +1188,7 @@ export function App() {
     setSessions((current) => [created, ...current]);
     setSelectedId(created.id);
     if (statusRef.current === "ready") {
-      enqueueBind({ localId: created.id, kind: "new" });
-      sendRef.current({ type: "session.new" });
+      requestSession("new", created.id);
     }
   };
 
@@ -1182,23 +1223,20 @@ export function App() {
     setSessionsOpen(true);
     if (statusRef.current !== "ready") return;
     if (atTip && source.acpSessionId) {
-      enqueueBind({ localId: created.id, kind: "fork" });
-      sendRef.current({ type: "session.fork", sessionId: source.acpSessionId });
+      requestSession("fork", created.id, source.acpSessionId);
     } else {
-      enqueueBind({ localId: created.id, kind: "new" });
-      sendRef.current({ type: "session.new" });
+      requestSession("new", created.id);
     }
   };
 
   const startReplayTurn = (source: Session, userIndex: number, user: ChatMessage) => {
     const kept = [...source.messages.slice(0, userIndex), user];
     const prior = source.messages.slice(0, userIndex);
-    pendingRegen.current = {
-      localId: source.id,
+    pendingRegen.current.set(source.id, {
       text: textOf(user.content),
       attachments: user.attachments ?? [],
       context: prior.length > 0 ? buildForkContext(prior) : undefined,
-    };
+    });
     patchSession(source.id, (session) => ({
       ...session,
       acpSessionId: undefined,
@@ -1210,16 +1248,15 @@ export function App() {
     }));
     clearHitl(source.id);
     if (statusRef.current !== "ready") {
-      pendingRegen.current = null;
+      pendingRegen.current.delete(source.id);
       setError(t(localeRef.current, "offlineSend"));
       setStatus("error");
       return;
     }
     appliedModelRef.current = "";
-    enqueueBind({ localId: source.id, kind: "new" });
     beginTurn(source.id);
     setError(undefined);
-    sendRef.current({ type: "session.new" });
+    requestSession("new", source.id);
   };
 
   const regenerateFromMessage = (messageId: string) => {
@@ -1309,7 +1346,8 @@ export function App() {
           onCancelConnect={cancelConnect}
           onToggleSessions={() => setSessionsOpen((open) => !open)}
           onRetry={() => {
-            pendingBinds.current = [];
+            bindRegistry.current.clear();
+            pendingRegen.current.clear();
             pendingConnectRef.current = "";
             connectedProviderRef.current = "";
             setStatus("starting");

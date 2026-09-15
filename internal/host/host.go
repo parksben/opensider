@@ -677,7 +677,7 @@ func (h *Host) acquireRuntime(preferSessionID string) (*acpRuntime, error) {
 	return h.spawnRuntime()
 }
 
-func (h *Host) openAndAnnounce(runtime *acpRuntime, open func() (acp.SessionOpen, error)) (acp.SessionOpen, error) {
+func (h *Host) openAndAnnounce(runtime *acpRuntime, requestID string, open func() (acp.SessionOpen, error)) (acp.SessionOpen, error) {
 	opened, err := withBinding(runtime, open)
 	if err != nil {
 		return acp.SessionOpen{}, err
@@ -693,15 +693,26 @@ func (h *Host) openAndAnnounce(runtime *acpRuntime, open func() (acp.SessionOpen
 		h.applyFallbackModels()
 	}
 	h.applyPendingModel(runtime)
-	h.send(map[string]any{
+	h.send(sessionMessage(opened, requestID))
+	h.sendModels()
+	return opened, nil
+}
+
+// sessionMessage 是 Host → 侧栏的会话回执。requestID 仅在响应侧栏主动请求
+// （session.new / session.use / session.fork / prompt）时带上；侧栏只认
+// requestId 精确配对的回执，无 requestId 的自发消息不会改动本地绑定。
+func sessionMessage(opened acp.SessionOpen, requestID string) map[string]any {
+	msg := map[string]any{
 		"type":      "session",
 		"sessionId": opened.SessionID,
 		"replay":    opened.Replay,
 		"created":   opened.Created,
 		"forked":    opened.Forked,
-	})
-	h.sendModels()
-	return opened, nil
+	}
+	if requestID != "" {
+		msg["requestId"] = requestID
+	}
+	return msg
 }
 
 func (h *Host) applyPendingModel(runtime *acpRuntime) {
@@ -851,12 +862,13 @@ func (h *Host) dispatch(typ string, msg map[string]any) error {
 		if !ready {
 			return errors.New("agent is not ready")
 		}
+		requestID := str(msg["requestId"])
 		return h.enqueueSessionOp(func() error {
 			runtime, err := h.acquireRuntime("")
 			if err != nil {
 				return err
 			}
-			_, err = h.openAndAnnounce(runtime, runtime.client.CreateSession)
+			_, err = h.openAndAnnounce(runtime, requestID, runtime.client.CreateSession)
 			return err
 		})
 	case "session.use":
@@ -867,16 +879,17 @@ func (h *Host) dispatch(typ string, msg map[string]any) error {
 			return errors.New("agent is not ready")
 		}
 		sessionID := str(msg["sessionId"])
+		requestID := str(msg["requestId"])
 		return h.enqueueSessionOp(func() error {
 			if running := h.runtimeBySession(sessionID); running != nil && running.prompting {
-				h.send(map[string]any{"type": "session", "sessionId": sessionID, "replay": true})
+				h.send(map[string]any{"type": "session", "sessionId": sessionID, "replay": true, "requestId": requestID})
 				return nil
 			}
 			runtime, err := h.acquireRuntime(sessionID)
 			if err != nil {
 				return err
 			}
-			_, err = h.openAndAnnounce(runtime, func() (acp.SessionOpen, error) {
+			_, err = h.openAndAnnounce(runtime, requestID, func() (acp.SessionOpen, error) {
 				return runtime.client.UseSession(sessionID)
 			})
 			return err
@@ -889,12 +902,13 @@ func (h *Host) dispatch(typ string, msg map[string]any) error {
 			return errors.New("agent is not ready")
 		}
 		sessionID := str(msg["sessionId"])
+		requestID := str(msg["requestId"])
 		return h.enqueueSessionOp(func() error {
 			runtime, err := h.acquireRuntime("")
 			if err != nil {
 				return err
 			}
-			_, err = h.openAndAnnounce(runtime, func() (acp.SessionOpen, error) {
+			_, err = h.openAndAnnounce(runtime, requestID, func() (acp.SessionOpen, error) {
 				return runtime.client.ForkSession(sessionID)
 			})
 			return err
@@ -950,25 +964,13 @@ func (h *Host) dispatch(typ string, msg map[string]any) error {
 		h.pendingModelID = modelID
 		h.catalog.CurrentID = modelID
 		h.mu.Unlock()
+		// 只作用于已持有该会话的进程；找不到就只记 pending（下次打开该会话时
+		// applyPendingModel 会补上）。不得抢别的空闲进程做 session/load——那会
+		// 静默换掉别人会话的绑定，是串戏的源头之一。
 		runtime := h.runtimeBySession(sessionID)
-		if runtime == nil {
-			h.mu.Lock()
-			for _, item := range h.runtimes {
-				if !item.prompting && item.client.GetSessionID() != "" {
-					runtime = item
-					break
-				}
-			}
-			h.mu.Unlock()
-		}
-		if runtime == nil || runtime.client.GetSessionID() == "" || models.IsUnsetModel(modelID) || runtime.prompting {
+		if runtime == nil || runtime.prompting || models.IsUnsetModel(modelID) {
 			h.sendModels()
 			return nil
-		}
-		if sessionID != "" && runtime.client.GetSessionID() != sessionID {
-			_, _ = withBinding(runtime, func() (acp.SessionOpen, error) {
-				return runtime.client.UseSession(sessionID)
-			})
 		}
 		if err := h.applyModel(runtime, modelID); err != nil {
 			log.Log("apply model skipped: " + err.Error())
@@ -979,20 +981,14 @@ func (h *Host) dispatch(typ string, msg map[string]any) error {
 		return h.handlePrompt(msg)
 	case "cancel":
 		sessionID := str(msg["sessionId"])
+		if sessionID == "" {
+			return nil
+		}
 		runtime := h.runtimeBySession(sessionID)
 		if runtime == nil {
-			h.mu.Lock()
-			for _, item := range h.runtimes {
-				if item.prompting {
-					runtime = item
-					break
-				}
-			}
-			h.mu.Unlock()
+			return nil
 		}
-		if runtime != nil {
-			runtime.client.Cancel()
-		}
+		runtime.client.Cancel()
 		return nil
 	case "permission.reply":
 		id := intFrom(msg["id"])
@@ -1025,6 +1021,7 @@ func (h *Host) handlePrompt(msg map[string]any) error {
 		return errors.New("agent is not ready")
 	}
 	sessionID := str(msg["sessionId"])
+	requestID := str(msg["requestId"])
 	var runtime *acpRuntime
 	err := h.enqueueSessionOp(func() error {
 		if sessionID != "" {
@@ -1050,13 +1047,9 @@ func (h *Host) handlePrompt(msg map[string]any) error {
 				}
 				workspace.WriteSessionID(opened.SessionID)
 				if opened.Created {
-					h.send(map[string]any{
-						"type":      "session",
-						"sessionId": opened.SessionID,
-						"replay":    opened.Replay,
-						"created":   opened.Created,
-						"forked":    opened.Forked,
-					})
+					// session/load 失败时 UseSession 会退回 session/new，这里回一条带
+					// requestId 的会话回执，让侧栏把本地绑定改到新会话上。
+					h.send(sessionMessage(opened, requestID))
 				}
 			}
 			next.prompting = true
@@ -1080,13 +1073,7 @@ func (h *Host) handlePrompt(msg map[string]any) error {
 			h.refreshModels()
 			h.applyFallbackModels()
 		}
-		h.send(map[string]any{
-			"type":      "session",
-			"sessionId": opened.SessionID,
-			"replay":    opened.Replay,
-			"created":   opened.Created,
-			"forked":    opened.Forked,
-		})
+		h.send(sessionMessage(opened, ""))
 		h.sendModels()
 		next.prompting = true
 		runtime = next
