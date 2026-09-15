@@ -479,7 +479,7 @@ macOS 清单路径：`~/Library/Application Support/Google/Chrome/NativeMessagin
 - 右段是**一个**圆角容器（`PANEL_X 1192` / `PANEL_W 348` / `PANEL_H 376` / `rx 20`，与左侧浏览器窗口等高、上下边缘对齐），内部 5 行 Agent（行高 54，行间一条细线，**不画每行的圆角矩形**），末行再留 44 高给「三颗点 + `and more local agents`」提示——一行一卡片的写法既占地方，也说不清「支持的不止这些」。容器宽 348、右边缘离画布 60（与左边缘 56 呼应）：按最长名字实测宽度定，不留大片虚空。名字字号 24、`CLI` 后缀用 `<tspan dx>` + 次要色，**不另设 font-size**（继承品牌名的字号，改 `.chipname` 不会脱节）——改文案或字号后要在浏览器里量一次 `getBBox()` 复核，别让文字压到容器右边
 - 标记尺寸：目标高 **26**（比早先的 34 小，一行 54 放得下）、标记列宽 34、列距容器左边 24、名字距列 14；五个名字靠固定列宽左对齐，不跟各自标记的实际宽度跑
 - 商标：这四份素材的版权与商标归各品牌，仓库内保留只为说明可连接的 Agent，不表示背书；README 正文也不要写合作口径。素材整份入库（而非只存抽出的 path）是为了来源可核对——想验证可以直接 diff 上游 URL
-- README 用法：`<div align="center">` 里放 `<img alt="OpenSider" src="./docs/banner.svg">`，**不写 width/height**（靠正文栏宽度缩放，SVG 自带 1600×488 保证比例），slogan 作为图下方居中的 `<p>`；原来那颗 96px 的 `docs/logo.svg` 与 `<h1>` 一并撤掉。中文版与英文版共用这一张图——图里只有产品名、五家英文名与末行那句英文提示，没有中文字，也没有分区标签，所以不需要出两张
+- README 用法：`<div align="center">` 里放 `<img alt="OpenSider" src="./docs/banner.svg">`，**不写 width/height**（靠正文栏宽度缩放，SVG 自带 1600×488 保证比例），slogan 作为图下方居中的 `<p>`，再下一行是居中的徽标行（release 版本 + license，两个 `<a><img></a>` 并排在同一个 `<p>` 里，天然一行；shields.io 图片必须在仓库自己的 README 里，不要引到侧栏或文档其它位置）；原来那颗 96px 的 `docs/logo.svg` 与 `<h1>` 一并撤掉。中文版与英文版共用这一张图——图里只有产品名、五家英文名与末行那句英文提示，没有中文字，也没有分区标签，所以不需要出两张
 - 双主题在 SVG 内部用 CSS 变量 + `@media (prefers-color-scheme: dark)` 切换。GitHub 不会把页面主题告诉 `<img>`，也没有 `#gh-dark-mode-only` 这种片段可用，只能跟系统；两套调色板都按可读对比度给，不依赖背景色
 - 连接关系用视觉表达：左右各一条基线与一条 `.flow` 覆盖线，靠 `stroke-dasharray` + `stroke-linecap: round` 得到流动光点，动画只改 `stroke-dashoffset`；`prefers-reduced-motion: reduce` 下关掉动画，静态圆点仍在，**语义不依赖动画**
 
