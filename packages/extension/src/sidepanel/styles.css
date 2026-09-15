@@ -357,6 +357,17 @@ mark.cs-at-match {
   animation: cs-ripple 560ms cubic-bezier(0.2, 0, 0.2, 1) forwards;
 }
 
+/*
+ * 带强调色弱底的 hover（取消 / 跳过这类文字钮）。
+ * 不写成 `hover:bg-[var(--brass)]/20` 工具类：RippleButton 基类自带
+ * `hover:bg-[var(--hover)]`，两者同属一层 utilities，生成顺序由 Tailwind
+ * 决定（实际是灰的赢），按钮 hover 会变灰像禁用。这个类不落 @layer，
+ * 优先级高于所有 layered 工具类，能稳定生效。
+ */
+.cs-hover-brass:hover {
+  background-color: color-mix(in oklab, var(--brass) 20%, transparent);
+}
+
 .markdown {
   font-size: 13.5px;
   line-height: 1.6;

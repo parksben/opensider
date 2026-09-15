@@ -72,6 +72,7 @@ export function PermissionBar({
         </HitlBody>
         <div className="mt-2 flex gap-1.5">
           <RippleButton
+            variant="primary"
             onClick={() => onPlan(true)}
             className="rounded-md bg-[var(--brass)] px-2.5 py-1 text-[12px] text-[var(--on-brass)]"
           >
@@ -136,6 +137,7 @@ function QuestionForm({
       </HitlBody>
       <RippleButton
         type="submit"
+        variant="primary"
         className="mt-2 rounded-md bg-[var(--brass)] px-2.5 py-1 text-[12px] text-[var(--on-brass)]"
       >
         {t(locale, "continue")}

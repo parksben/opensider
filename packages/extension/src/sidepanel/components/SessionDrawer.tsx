@@ -358,12 +358,12 @@ export function SessionDrawer({
             const open = !collapsed.has(group.id);
             return (
             <section key={group.id} className="pt-1">
-              <button
+              <RippleButton
                 type="button"
                 aria-expanded={open}
                 aria-label={`${label(GROUP_KEYS[group.id])}. ${open ? label("collapseSessionGroup") : label("expandSessionGroup")}`}
                 onClick={() => toggleGroup(group.id)}
-                className="flex w-full items-center justify-between gap-2 px-2.5 pb-1.5 pt-2.5 text-left hover:bg-[var(--hover)]"
+                className="flex w-full items-center justify-between gap-2 px-2.5 pb-1.5 pt-2.5 text-left"
               >
                 <span className="flex min-w-0 items-center gap-0.5">
                   <span
@@ -380,7 +380,7 @@ export function SessionDrawer({
                   )}
                 </span>
                 <span className="text-[10px] tabular-nums text-[var(--muted)]">{group.sessions.length}</span>
-              </button>
+              </RippleButton>
               {open ? (
               <ul>
                 {group.sessions.map((session) => {
@@ -607,18 +607,18 @@ function PrefixedSelect<T extends string>({
 
   return (
     <div ref={rootRef} className="relative">
-      <button
+      <RippleButton
         type="button"
         aria-label={`${label}: ${current}`}
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
-        className="flex h-8 w-full min-w-0 items-center gap-2 rounded-md border border-[var(--line)] bg-[color-mix(in_oklab,var(--panel-2)_80%,transparent)] px-2.5 text-left hover:bg-[var(--hover)]"
+        className="flex h-8 w-full min-w-0 items-center gap-2 rounded-md border border-[var(--line)] bg-[color-mix(in_oklab,var(--panel-2)_80%,transparent)] px-2.5 text-left"
       >
         <span className="shrink-0 text-[12px] text-[var(--muted)]">{label}</span>
         {CurrentIcon ? <CurrentIcon size={14} className="shrink-0 text-[var(--text)]" /> : null}
         <span className="min-w-0 flex-1 truncate text-[12.5px] text-[var(--text)]">{current}</span>
         <ChevronDown size={14} className="shrink-0 text-[var(--muted)]" />
-      </button>
+      </RippleButton>
       {open ? (
         <div className="absolute left-0 right-0 top-full z-[80] mt-1 overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--panel)] py-1 shadow-xl">
           {options.map((option) => {

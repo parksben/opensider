@@ -120,14 +120,13 @@ export function Header({
 
   const retryButton =
     (status === "error" || status === "missing") && onRetry ? (
-      <button
-        type="button"
+      <RippleButton
         onClick={onRetry}
         className="inline-flex shrink-0 items-center gap-1 rounded-full border border-[var(--line)] px-2 py-1 text-[11px] text-[var(--text)]"
       >
         <RotateCw size={12} />
         {label("retry")}
-      </button>
+      </RippleButton>
     ) : null;
 
   const drawerButton = (
@@ -215,7 +214,7 @@ export function Header({
             {onCancelConnect ? (
               <RippleButton
                 onClick={onCancelConnect}
-                className="shrink-0 rounded px-1.5 py-0.5 text-[11px] text-[var(--brass)] hover:bg-[var(--brass)]/20"
+                className="cs-hover-brass shrink-0 rounded px-1.5 py-0.5 text-[11px] text-[var(--brass)]"
               >
                 {label("cancelConnect")}
               </RippleButton>

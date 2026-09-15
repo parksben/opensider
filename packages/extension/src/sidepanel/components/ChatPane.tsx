@@ -402,7 +402,7 @@ export function ChatPane({
               </p>
               <RippleButton
                 onClick={cancelQueueEdit}
-                className="shrink-0 rounded px-1.5 py-0.5 text-[11px] text-[var(--brass)] hover:bg-[var(--brass)]/20"
+                className="cs-hover-brass shrink-0 rounded px-1.5 py-0.5 text-[11px] text-[var(--brass)]"
               >
                 {label("cancelQueueEdit")}
               </RippleButton>
@@ -414,7 +414,7 @@ export function ChatPane({
               </p>
               <RippleButton
                 onClick={cancelEdit}
-                className="shrink-0 rounded px-1.5 py-0.5 text-[11px] text-[var(--brass)] hover:bg-[var(--brass)]/20"
+                className="cs-hover-brass shrink-0 rounded px-1.5 py-0.5 text-[11px] text-[var(--brass)]"
               >
                 {label("cancelEdit")}
               </RippleButton>
@@ -688,7 +688,7 @@ function AttachmentChips({
             title={item.path}
             className="inline-flex max-w-[200px] items-center gap-1 rounded-full border border-[var(--line)] bg-[var(--panel-2)] py-0.5 pl-1.5 pr-1 text-[11px] text-[var(--muted)]"
           >
-            <button
+            <RippleButton
               type="button"
               disabled={!previewable}
               title={previewable ? previewLabel : item.path}
@@ -697,13 +697,13 @@ function AttachmentChips({
                 event.stopPropagation();
                 if (previewable && onPreview) onPreview(item);
               }}
-              className={`inline-flex min-w-0 flex-1 items-center gap-1 bg-transparent text-left ${
-                previewable ? "cursor-pointer hover:text-[var(--text)]" : "cursor-default"
+              className={`inline-flex min-w-0 flex-1 items-center gap-1 rounded-full text-left disabled:hover:bg-transparent ${
+                previewable ? "cursor-pointer" : "cursor-default"
               }`}
             >
               <Icon size={12} className="shrink-0 opacity-80" />
               <span className="min-w-0 flex-1 truncate">{item.name}</span>
-            </button>
+            </RippleButton>
             {removable && onRemove ? (
               <RippleButton
                 title={removeLabel}

@@ -157,8 +157,9 @@ export function ConfirmPopover({
           {cancelLabel}
         </RippleButton>
         <RippleButton
+          variant="primary"
           onClick={onConfirm}
-          className="rounded-md bg-[var(--brass)] px-2 py-1 text-[12px] text-[var(--on-brass)] hover:bg-[var(--brass)]"
+          className="rounded-md bg-[var(--brass)] px-2 py-1 text-[12px] text-[var(--on-brass)]"
         >
           {confirmLabel}
         </RippleButton>

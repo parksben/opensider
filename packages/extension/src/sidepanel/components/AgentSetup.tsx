@@ -65,7 +65,7 @@ export function AgentSetup({
                   {onCancel ? (
                     <RippleButton
                       onClick={onCancel}
-                      className="shrink-0 rounded px-1.5 py-0.5 text-[11px] text-[var(--brass)] hover:bg-[var(--brass)]/20"
+                      className="cs-hover-brass shrink-0 rounded px-1.5 py-0.5 text-[11px] text-[var(--brass)]"
                     >
                       {t(locale, "cancelConnect")}
                     </RippleButton>
@@ -78,7 +78,7 @@ export function AgentSetup({
                 {onCancel ? (
                   <RippleButton
                     onClick={onCancel}
-                    className="shrink-0 rounded px-1.5 py-0.5 text-[11px] text-[var(--brass)] hover:bg-[var(--brass)]/20"
+                    className="cs-hover-brass shrink-0 rounded px-1.5 py-0.5 text-[11px] text-[var(--brass)]"
                   >
                     {t(locale, "cancelConnect")}
                   </RippleButton>
