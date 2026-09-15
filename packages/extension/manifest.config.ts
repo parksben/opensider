@@ -6,7 +6,7 @@ export default defineManifest({
   name: "OpenSider",
   // 和 release tag 同步：侧栏把「扩展版本」和最新 tag 比较来提示更新，
   // release 流水线里有一步专门挡「忘了改这个数字」。
-  version: "0.2.2",
+  version: "0.2.3",
   description: "Chat with your local Agent from the OpenSider side panel.",
   key: EXTENSION_KEY,
   icons: {
