@@ -19,27 +19,34 @@ user's job. Everything else is yours.
 
 ## Golden rules
 
-1. **Ask which browser the user actually uses** before touching anything. Never guess and
-   never quietly enable everything you find.
-2. **Ask where the extension folder goes — and wait for the answer.** Nothing is created,
-   downloaded or recorded before they reply. `<Downloads>/OpenSider` looks like a sensible
-   default, but "clear my downloads" habits and cleanup tools delete it, and a deleted
-   folder breaks the extension until it is loaded again — suggest a durable path the user
-   keeps (`~/OpenSider`), say that trade-off in one line, and record their choice with
-   `opensider extension-dir <path>`. Their words are the answer; your own suggestion is not.
-3. **One step, one check.** Every stage ends with a verification command. Do not move on
+1. **Confirm the browser with the user — always, even when only one is installed.** Detect
+   the Chromium browsers first, then show what you found and ask which one they want this
+   set up in. "You only have Chrome, so I used Chrome" is not a confirmation: they have to
+   say it. Never guess, never quietly enable everything you find.
+2. **Ask where the extension folder goes — and wait for the answer.** This must happen
+   *before* you create a folder, download `extension.zip` or record a path. `<Downloads>/OpenSider`
+   looks like a sensible default, but "clear my downloads" habits and cleanup tools delete it,
+   and a deleted folder breaks the extension until it is loaded again — so put a durable path
+   (`~/OpenSider`) on the table, say that trade-off in one line, and record **their** choice
+   with `opensider extension-dir <path>`. If they have not named a path, you have not asked
+   yet: ask, and stop there. Your own suggestion is not an answer.
+3. **Show the plan as a todo list before you start.** Every operation is a handful of stages;
+   give the user the list up front (their agent's todo tool if it has one, otherwise a
+   checklist in the chat) and mark each stage done as you go, so the progress is visible
+   instead of buried in command output.
+4. **One step, one check.** Every stage ends with a verification command. Do not move on
    until it passes, and never report a stage as done without running its check.
-4. **Never fake the extension step.** If the user has not clicked "Load unpacked" yet,
+5. **Never fake the extension step.** If the user has not clicked "Load unpacked" yet,
    the install is not finished.
-5. **Never delete user data on your own.** `~/.opensider` holds session history, page
+6. **Never delete user data on your own.** `~/.opensider` holds session history, page
    snapshots and files the Agent produced. Removing it always needs an explicit yes.
-6. **No Agent CLI found? Keep installing anyway.** The bridge and the extension are still
+7. **No Agent CLI found? Keep installing anyway.** The bridge and the extension are still
    worth having — they sit ready until a CLI shows up. Say clearly what is missing and how
    to add it (see stage 1 of `install.md`), then continue; do not abort the install and do
    not pretend the setup is complete.
-7. **Reply in the user's language** (the prompt may be Chinese). One or two lines per
+8. **Reply in the user's language** (the prompt may be Chinese). One or two lines per
    step; show raw command output only when something failed.
-8. **If you cannot verify something, say so.** "I could not confirm it" beats a guess.
+9. **If you cannot verify something, say so.** "I could not confirm it" beats a guess.
 
 ## Step 0 — pick the operation
 
@@ -90,12 +97,18 @@ continue**. The stages are:
 
 1. **Detect** the platform, the Agent CLIs and what is already on the machine
    → [`references/platforms.md`](./references/platforms.md), [`references/agents.md`](./references/agents.md)
-2. **Ask** the user which browser to set up, and where the extension folder should go
-   — two questions, so **stop here and wait for the answers** before the next stage
+2. **Ask the two blocking questions** — which browser to set this up in, and where the
+   extension folder should live. **Stop here until both are answered in the user's own
+   words**, then record the folder with `opensider extension-dir <path>`. Nothing is
+   created, downloaded or unpacked before that.
 3. **Bridge**: download, verify, place, register
-4. **Extension**: download to that folder, unpack there, open the extensions page, guide the user
+4. **Extension**: unpack `extension.zip` into the folder chosen in stage 2, open the
+   extensions page, guide the user through "Load unpacked"
 5. **Verify** against `~/.opensider/host.log`
    → [`references/verification.md`](./references/verification.md)
+
+These same stages are the todo list from golden rule 3: show it, then tick it off as each
+check passes.
 
 When something does not behave as described, work through
 [`references/troubleshooting.md`](./references/troubleshooting.md) instead of guessing.
@@ -106,7 +119,7 @@ Finish with a short summary, not a log:
 
 ```
 OpenSider is ready.
-- Bridge: v0.2.0 at ~/.opensider/runtime/opensider (registered for Chrome)
+- Bridge: 0.2.2 at ~/.opensider/runtime/opensider (registered for Chrome)
 - Extension: loaded from <the folder the user picked>
 - Agents found: claude (adapter installed), copilot
 Next: click the OpenSider icon, pick an agent, and log in if it asks.

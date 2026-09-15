@@ -2,6 +2,21 @@
 
 Work top to bottom. Each stage ends with a check — do not skip it.
 
+## Stage 0 — put the plan in front of the user
+
+Before touching anything, show the whole install as a todo list and keep it updated as you
+go (your todo tool if you have one, otherwise a checklist in the chat):
+
+1. detect the machine (OS, browsers, Agent CLIs)
+2. confirm which browser to set up
+3. confirm where the extension folder goes
+4. install and register the bridge
+5. unpack the extension and load it in the browser (the user clicks)
+6. verify the whole chain
+
+Rules 1–9 of `SKILL.md` apply to every line above; steps 2 and 3 are questions, and nothing
+is downloaded, created or unpacked before both are answered.
+
 ## Stage 1 — detect
 
 ```sh
@@ -53,17 +68,20 @@ CLI you told the user to install.
 
 Detect the Chromium browsers on this machine (paths in
 [`references/platforms.md`](./references/platforms.md)), show the user the ones you
-actually found, and ask which one they normally use.
+actually found, and ask which one they normally use. **Ask, then stop and wait** — this is
+their call even when the answer looks obvious.
 
-* Exactly one found → confirm it ("你平时用的是 Chrome，对吧？").
-* Several found → make the user pick.
+* Exactly one found → still ask, and say what you found ("本机只检测到 Chrome，就装到它上面吗？").
+  Move on only after they say yes.
+* Several found → list them and make the user pick.
 * None found → stop and ask them to install a Chromium browser first.
 
 You will register the Native Messaging manifest for **every** detected browser, but the
 "Load unpacked" walkthrough below is only for the browser they picked.
 
-Check: you can name the browser and the exact application name you will open
-(for example `Google Chrome`, `Microsoft Edge`, `Brave Browser`).
+Check: the user has told you, in their own words, which browser to use, and you can name the
+exact application you will open (for example `Google Chrome`, `Microsoft Edge`,
+`Brave Browser`).
 
 ## Stage 3 — install the bridge
 
@@ -131,26 +149,24 @@ never `v0.2.2`) — keep it, you will compare it in `update.md`.
 ## Stage 4 — ask where the extension should live, then unpack it
 
 The browser loads the extension from this folder on every start, so it needs a home the user
-is happy to keep. **Ask, and wait for the answer before running anything** — silently taking
-a default is the one thing this stage must not do.
+is happy to keep. Do this in order, and do not reorder it:
 
-Put the choice in front of them, with the trade-off that actually matters:
+**4a — ask, and stop.** Put the choice in front of them, with the trade-off that matters:
 
-| Suggest | Say this |
+| Offer | Say this |
 |---|---|
 | `~/OpenSider` | in the home folder, out of reach of "clear my downloads" habits and cleanup tools |
 | `<Downloads>/OpenSider` | convenient, but wiping Downloads deletes it — the extension then shows as broken until it is loaded again |
 | their own absolute path | fine as long as it stays put; use it exactly as given |
 
-Rules for this step:
+Then **wait**. "你帮我选" / "whatever you think" is an answer — take `~/OpenSider` and tell
+them that is what you took. Anything else needs their own words naming a path; a nod at your
+*suggestion* is not a decision. Do not create the folder, download the zip or write the path
+record before that answer — if you catch yourself doing any of those, stop and ask first.
 
-* never inside `~/.opensider` — dot folders are invisible in the "Load unpacked" picker
-* nothing is created, downloaded or recorded until the user has picked
-* "whatever you think" → take `~/OpenSider` and tell them that is what you took
-* a nod at your *suggestion* is not a decision — they have to hear which path it is first
-
-Record the choice **first**: every later step (this one, `update.md`, `doctor.md`, and the
-`opensider install` output) reads it back from there.
+**4b — record it** (`opensider extension-dir <path>`), so this stage, `update.md`,
+`doctor.md` and the `opensider install` output all read the same path back. Never inside
+`~/.opensider`: dot folders are invisible in the "Load unpacked" picker.
 
 ```sh
 bin=~/.opensider/runtime/opensider
@@ -165,7 +181,7 @@ $bin = "$env:USERPROFILE\.opensider\runtime\opensider.exe"
 $target = & $bin extension-dir "$env:USERPROFILE\OpenSider"
 ```
 
-Then download the package next to it and unpack into it:
+**4c — download and unpack into it** (only now):
 
 ```sh
 parent=$(dirname "$target")

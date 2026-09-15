@@ -66,7 +66,9 @@ App names to use with `open -a`: `Google Chrome`, `Google Chrome Beta`, `Chromiu
 ## Where the extension folder lives
 
 The unpacked extension is a plain folder the browser loads from on every start, so it has to
-sit somewhere the user is happy to keep. **The user picks it** — ask, and wait for the answer.
+sit somewhere the user is happy to keep. **The user picks it** — ask, and wait: no folder is
+created, no zip is downloaded and no path is recorded until they name one (see stage 4 of
+`install.md`).
 
 Suggest `~/OpenSider` and say why: `<Downloads>/OpenSider` is a tempting default, but cleanup
 tools and "clear my downloads" habits delete it, and a deleted folder means a broken extension
@@ -78,6 +80,9 @@ are invisible in the "Load unpacked" dialog and that turns the single manual ste
 | `~/OpenSider` | suggested first: visible, durable, nothing wipes it |
 | `~/Downloads/OpenSider` | only if the user really wants it; warn that clearing Downloads breaks the extension |
 | any other absolute path | use it exactly as given |
+
+The browser question works the same way: detect first, then let the user confirm the browser —
+including when you only find one ("only Chrome here, is that the one?").
 
 The choice is recorded in `~/.opensider/extension-path`, and every flow reads it back through
 the binary — never hand-write that file:
