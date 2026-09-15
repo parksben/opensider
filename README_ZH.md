@@ -4,6 +4,10 @@
   <p>
     为你的浏览器插上AI的翅膀
   </p>
+  <p>
+    <a href="https://github.com/parksben/opensider/releases/latest"><img alt="最新版本" src="https://img.shields.io/github/v/release/parksben/opensider?label=release" /></a>
+    <a href="./LICENSE"><img alt="License" src="https://img.shields.io/github/license/parksben/opensider?label=license" /></a>
+  </p>
 </div>
 
 <div align="center">
