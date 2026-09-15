@@ -49,6 +49,16 @@ func ReleaseCheckPath() string { return filepath.Join(SidebarHome(), "release-ch
 
 func RuntimeDir() string { return filepath.Join(SidebarHome(), "runtime") }
 
+// AgentNativeDir is a stable TMPDIR for one Agent CLI so macOS Gatekeeper
+// does not treat every Chrome-spawned extract of the same .node as a new file.
+func AgentNativeDir(agentID string) string {
+	id := strings.TrimSpace(agentID)
+	if id == "" {
+		id = "agent"
+	}
+	return filepath.Join(RuntimeDir(), "natives", id)
+}
+
 // ExtensionPathFile 记录用户选定的扩展目录（单行绝对路径）。没有这个文件就用默认值。
 func ExtensionPathFile() string { return filepath.Join(SidebarHome(), "extension-path") }
 

@@ -12,6 +12,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/parksben/opensider/internal/addonenv"
 	"github.com/parksben/opensider/internal/detect"
 	"github.com/parksben/opensider/internal/log"
 	"github.com/parksben/opensider/internal/paths"
@@ -62,6 +63,9 @@ type Client struct {
 	session        string
 	policy         protocol.AgentPolicy
 	turnHadContent bool
+	configOptions  any
+	sessionModes   any
+	sweepStop      func()
 }
 
 func New(launch Launch, handlers Handlers) *Client {
@@ -100,6 +104,19 @@ func (c *Client) Start() error {
 	env := os.Environ()
 	env = setEnv(env, "HOME", paths.Home())
 	env = setEnv(env, "PATH", paths.AgentPathEnv(c.launch.Command))
+	tmpdir, stop := addonenv.Prepare(c.launch.Profile.ID, c.launch.Command)
+	c.mu.Lock()
+	if c.sweepStop != nil {
+		c.sweepStop()
+	}
+	c.sweepStop = stop
+	c.mu.Unlock()
+	if tmpdir != "" {
+		env = setEnv(env, "TMPDIR", tmpdir)
+		env = setEnv(env, "TMP", tmpdir)
+		env = setEnv(env, "TEMP", tmpdir)
+		env = setEnv(env, "BUN_TMPDIR", tmpdir)
+	}
 	for k, v := range c.launch.Env {
 		env = setEnv(env, k, v)
 	}
@@ -192,6 +209,7 @@ func (c *Client) CreateSession() (SessionOpen, error) {
 	c.mu.Lock()
 	c.session = sessionID
 	c.mu.Unlock()
+	c.rememberSessionModes(obj)
 	c.trySetPolicyMode(sessionID)
 	return SessionOpen{
 		SessionID:     sessionID,
@@ -220,6 +238,7 @@ func (c *Client) UseSession(existingID string) (SessionOpen, error) {
 	c.mu.Lock()
 	c.session = existingID
 	c.mu.Unlock()
+	c.rememberSessionModes(obj)
 	c.trySetPolicyMode(existingID)
 	return SessionOpen{
 		SessionID:     existingID,
@@ -246,6 +265,7 @@ func (c *Client) ForkSession(existingID string) (SessionOpen, error) {
 	c.mu.Lock()
 	c.session = sessionID
 	c.mu.Unlock()
+	c.rememberSessionModes(obj)
 	c.trySetPolicyMode(sessionID)
 	return SessionOpen{
 		SessionID:     sessionID,
@@ -295,7 +315,7 @@ func (c *Client) Prompt(text string) (string, error) {
 			log.Log("session/prompt stream-close after content; treating as end_turn")
 			return "end_turn", nil
 		}
-		return "", err
+		return "", c.wrapAgentError(err)
 	}
 	obj, _ := result.(map[string]any)
 	stop := str(obj["stopReason"])
@@ -324,7 +344,12 @@ func (c *Client) Stop() {
 	c.mu.Lock()
 	stdin := c.stdin
 	cmd := c.cmd
+	stop := c.sweepStop
+	c.sweepStop = nil
 	c.mu.Unlock()
+	if stop != nil {
+		stop()
+	}
 	if stdin != nil {
 		_ = stdin.Close()
 	}
@@ -334,17 +359,19 @@ func (c *Client) Stop() {
 	c.failAll(errors.New("agent stopped"))
 }
 
-func (c *Client) trySetPolicyMode(sessionID string) {
-	c.mu.Lock()
-	ids := c.launch.Profile.ModeMap[c.policy]
-	c.mu.Unlock()
-	for _, modeID := range ids {
-		if _, err := c.request("session/set_mode", map[string]any{"sessionId": sessionID, "modeId": modeID}); err != nil {
-			log.Log("session/set_mode " + modeID + " skipped: " + err.Error())
-			continue
-		}
-		return
+func (c *Client) wrapAgentError(err error) error {
+	if err == nil {
+		return nil
 	}
+	text := err.Error()
+	lower := strings.ToLower(text)
+	if c.launch.Profile.LoginHint == "" {
+		return err
+	}
+	if strings.Contains(lower, "authentication") || (strings.Contains(lower, "api key") && strings.Contains(lower, "invalid")) {
+		return fmt.Errorf("%s %s", text, c.launch.Profile.LoginHint)
+	}
+	return err
 }
 
 func (c *Client) handleMessage(msg map[string]any) {

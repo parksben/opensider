@@ -322,7 +322,7 @@ export type HostToExt =
   | { type: "update"; update: Record<string, unknown>; sessionId?: string }
   | { type: "permission"; id: number; params: Record<string, unknown>; sessionId?: string }
   | { type: "cursor"; id?: number; method: string; params: Record<string, unknown>; sessionId?: string }
-  | { type: "turn.end"; stopReason: string; sessionId?: string }
+  | { type: "turn.end"; stopReason: string; sessionId?: string; error?: string }
   | { type: "page"; page: CurrentPage }
   | { type: "browser.command"; command: BrowserCommand; sessionId?: string }
   | { type: "browser.result"; result: BrowserResult; sessionId?: string }

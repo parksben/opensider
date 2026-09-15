@@ -7,6 +7,20 @@ import (
 	"testing"
 )
 
+func TestAgentNativeDir(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", "")
+	got := AgentNativeDir("opencode")
+	want := filepath.Join(home, ".opensider", "runtime", "natives", "opencode")
+	if got != want {
+		t.Fatalf("AgentNativeDir = %s, want %s", got, want)
+	}
+	if AgentNativeDir("  ") != filepath.Join(home, ".opensider", "runtime", "natives", "agent") {
+		t.Fatalf("empty id fallback")
+	}
+}
+
 func TestClaudeACPPaths(t *testing.T) {
 	dir := filepath.ToSlash(ClaudeACPDir())
 	if !strings.HasSuffix(dir, ".opensider/runtime/claude-acp") {

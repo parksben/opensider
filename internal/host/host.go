@@ -537,6 +537,12 @@ func hostErrorText(err error) string {
 	if regexp.MustCompile(`EACCES:.*\/\.gemini\b`).MatchString(text) {
 		return `Gemini CLI cannot write ~/.gemini (directory is owned by root). Run: sudo chown -R "$(whoami)" ~/.gemini`
 	}
+	lower := strings.ToLower(text)
+	if strings.Contains(lower, "authentication") || (strings.Contains(lower, "api key") && strings.Contains(lower, "invalid")) {
+		if strings.Contains(lower, "opencode") || strings.Contains(text, "****") || strings.Contains(lower, "api key") {
+			return "OpenCode authentication failed. Run `opencode auth login` in a terminal, then retry."
+		}
+	}
 	return text
 }
 
@@ -780,7 +786,7 @@ func (h *Host) handleExt(msg map[string]any) {
 		}
 		log.Log("handle ext error: " + hostErrorText(err))
 		if typ == "prompt" {
-			h.send(map[string]any{"type": "turn.end", "stopReason": "error", "sessionId": str(msg["sessionId"])})
+			h.send(map[string]any{"type": "turn.end", "stopReason": "error", "sessionId": str(msg["sessionId"]), "error": hostErrorText(err)})
 			return
 		}
 		h.setHostState("error", hostErrorText(err))

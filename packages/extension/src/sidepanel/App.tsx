@@ -689,7 +689,7 @@ export function App() {
         flushQueueRef.current(localId);
       }
       if (msg.stopReason === "error" && localId === selectedIdRef.current) {
-        setError(t(localeRef.current, "turnError"));
+        setError(msg.error?.trim() || t(localeRef.current, "turnError"));
       }
       return;
     }

@@ -74,11 +74,16 @@ func Profiles() []AgentProfile {
 			Mark:         "opencode",
 			Launches:     []Launch{{Command: "opencode", Args: []string{"acp"}}},
 			Auth:         AuthKind{Type: "none"},
-			ModeMap:      map[protocol.AgentPolicy][]string{protocol.PolicyAsk: {"default", "ask"}, protocol.PolicyWorkspace: {"acceptEdits"}, protocol.PolicyAuto: {"bypassPermissions", "auto"}, protocol.PolicyUnattended: {"bypassPermissions", "auto"}},
+			ModeMap: map[protocol.AgentPolicy][]string{
+				protocol.PolicyAsk:        {"plan", "default", "ask"},
+				protocol.PolicyWorkspace:  {"build", "acceptEdits"},
+				protocol.PolicyAuto:       {"build", "bypassPermissions", "auto"},
+				protocol.PolicyUnattended: {"build", "bypassPermissions", "auto"},
+			},
 			ContextFiles: []string{"AGENTS.md"},
 			ListModels:   "opencode-models",
 			Caps:         stdCaps(protocol.AgentCaps{}),
-			LoginHint:    "Sign in with `opencode` or set OPENCODE_API_KEY, then retry.",
+			LoginHint:    "Run `opencode auth login` in a terminal, then retry.",
 		},
 		{
 			ID:   "copilot",
