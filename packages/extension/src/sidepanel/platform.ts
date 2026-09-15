@@ -20,6 +20,10 @@ export function detectDesktopOs(): DesktopOs {
 // 由它按仓库里的 skill 分步完成（探测平台、装桥接、引导加载扩展、验证）。
 // skill 入口固定在 main 分支：skill 自己会先解析最新 release 的 tag，再用该 tag 的
 // 文件与资产，保证与二进制同版本。
+//
+// 三段提示词一律只有两行：**意图 + 入口 URL + 按其流程执行**。读取、确认浏览器、
+// 选扩展目录、逐步验证这些约束全写在 skill 里——不要往提示词里再塞一遍，重复只会
+// 互相干扰（改 skill 时要同步 README 中英同名段落，两边逐字一致）。
 export const INSTALL_SKILL_URL =
   "https://raw.githubusercontent.com/parksben/opensider/main/skills/opensider/SKILL.md";
 
@@ -27,39 +31,37 @@ export function hostInstallPrompt(locale: Locale = "en"): string {
   if (locale === "zh") {
     return [
       "帮我安装 OpenSider 浏览器扩展。",
-      `请先读取 ${INSTALL_SKILL_URL}，然后严格按其中的流程执行。`,
-      "开始前先跟我确认我平时用哪个浏览器；每一步都分步引导我操作，并自己验证结果。",
+      `请先读取 ${INSTALL_SKILL_URL}，按其安装流程执行。`,
     ].join("\n");
   }
   return [
-    "Install OpenSider for me.",
-    `Read ${INSTALL_SKILL_URL} and follow it exactly.`,
-    "Ask me which browser I use before you start, walk me through every step that needs me, and verify each stage yourself.",
+    "Install the OpenSider browser extension for me.",
+    `Read ${INSTALL_SKILL_URL} and follow its install flow.`,
   ].join("\n");
 }
 
 export function hostUpdatePrompt(locale: Locale = "en"): string {
   if (locale === "zh") {
     return [
-      "帮我更新 OpenSider（浏览器扩展 + 本机桥接）。",
-      `请先读取 ${INSTALL_SKILL_URL}，按其更新流程执行：对比本机已装版本与最新 release，更新落后的那一半，再引导我在浏览器里重新加载扩展并验证。`,
+      "帮我更新 OpenSider 浏览器扩展。",
+      `请先读取 ${INSTALL_SKILL_URL}，按其更新流程执行。`,
     ].join("\n");
   }
   return [
-    "Update OpenSider (the browser extension and the local bridge) for me.",
-    `Read ${INSTALL_SKILL_URL} and follow its update flow: compare what is installed here with the latest release, refresh whichever half is behind, then walk me through reloading the extension and verify it.`,
+    "Update the OpenSider browser extension for me.",
+    `Read ${INSTALL_SKILL_URL} and follow its update flow.`,
   ].join("\n");
 }
 
 export function hostUninstallPrompt(locale: Locale = "en"): string {
   if (locale === "zh") {
     return [
-      "帮我卸载 OpenSider（浏览器扩展 + 本机桥接）。",
-      `请先读取 ${INSTALL_SKILL_URL}，按其卸载流程执行：先问我要不要连本地数据（会话历史、工作区、产物）一起清掉，再移除本机桥接，并引导我在浏览器里移除扩展。`,
+      "帮我卸载 OpenSider 浏览器扩展。",
+      `请先读取 ${INSTALL_SKILL_URL}，按其卸载流程执行。`,
     ].join("\n");
   }
   return [
-    "Uninstall OpenSider (the browser extension and the local bridge) for me.",
-    `Read ${INSTALL_SKILL_URL} and follow its removal flow: ask me whether to delete my local data (session history, workspace, outputs) as well, then remove the bridge and walk me through removing the extension from the browser.`,
+    "Uninstall the OpenSider browser extension for me.",
+    `Read ${INSTALL_SKILL_URL} and follow its removal flow.`,
   ].join("\n");
 }
