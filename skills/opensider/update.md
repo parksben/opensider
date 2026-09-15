@@ -28,7 +28,8 @@ Check: you can say which of the two (bridge, extension, both) is behind and by h
 Ask the user to **close the OpenSider side panel** first: the bridge process only lives
 while the panel is connected, and Windows cannot replace a running `.exe`.
 
-Then repeat Stage 3 of [`install.md`](./install.md) (same download, same checksum check,
+Then repeat Stage 3 of [`install.md`](./install.md) (same concurrent GitHub download from
+[`references/download.md`](./references/download.md), same checksum check,
 same quarantine / unblock step, same path) and re-run:
 
 ```sh
@@ -44,7 +45,8 @@ the tag, without its `v` prefix.
 
 ## Stage 3 — refresh the extension
 
-Same as Stage 4 of [`install.md`](./install.md): download `extension.zip` from the tag and
+Same as Stage 4 of [`install.md`](./install.md): download `extension.zip` from the tag
+with the helper in [`references/download.md`](./references/download.md) and
 replace the contents of the extension folder — the one `opensider extension-dir` prints (it is
 the folder the user picked during install and the browser is loading now).
 

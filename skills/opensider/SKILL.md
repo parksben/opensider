@@ -79,11 +79,70 @@ Windows (PowerShell):
 $tag = (Invoke-RestMethod "https://api.github.com/repos/parksben/opensider/releases/latest").tag_name
 ```
 
-* Fetch the rest of this skill from
-  `https://raw.githubusercontent.com/parksben/opensider/$tag/skills/opensider/…`
-  (`install.md`, `update.md`, `uninstall.md`, `doctor.md`, `references/*.md`).
-* Fetch binaries and `extension.zip` from
-  `https://github.com/parksben/opensider/releases/download/$tag/…`.
+Then pull the rest of this skill **in one parallel batch** (do not curl the files one
+by one). GitHub's CDN already allows concurrent GETs of independent objects;
+`raw.githubusercontent.com` is fine with that as long as you do **not** HEAD it:
+
+```sh
+raw="https://raw.githubusercontent.com/parksben/opensider/$tag/skills/opensider"
+skill=$(mktemp -d)
+mkdir -p "$skill/references"
+pids=
+for rel in \
+  install.md update.md uninstall.md doctor.md \
+  references/platforms.md references/download.md \
+  references/agents.md references/verification.md \
+  references/troubleshooting.md
+do
+  curl -fsSL --connect-timeout 20 --max-time 60 -o "$skill/$rel" "$raw/$rel" &
+  pids="$pids $!"
+done
+for p in $pids; do wait "$p" || true; done
+main="https://raw.githubusercontent.com/parksben/opensider/main/skills/opensider"
+for rel in \
+  install.md update.md uninstall.md doctor.md \
+  references/platforms.md references/download.md \
+  references/agents.md references/verification.md \
+  references/troubleshooting.md
+do
+  [ -s "$skill/$rel" ] || curl -fsSL --connect-timeout 20 --max-time 60 -o "$skill/$rel" "$main/$rel" || true
+done
+```
+
+Windows (PowerShell) — same files, `curl.exe`, jobs instead of `&`:
+
+```powershell
+$raw = "https://raw.githubusercontent.com/parksben/opensider/$tag/skills/opensider"
+$skill = Join-Path $env:TEMP ("opensider-skill-" + [guid]::NewGuid().ToString("n"))
+New-Item -ItemType Directory -Force "$skill\references" | Out-Null
+$rels = @(
+  "install.md", "update.md", "uninstall.md", "doctor.md",
+  "references/platforms.md", "references/download.md",
+  "references/agents.md", "references/verification.md",
+  "references/troubleshooting.md"
+)
+$jobs = foreach ($rel in $rels) {
+  Start-Job -ScriptBlock {
+    param($raw, $skill, $rel)
+    curl.exe -fsSL --connect-timeout 20 --max-time 60 -o (Join-Path $skill $rel) "$raw/$rel"
+  } -ArgumentList $raw, $skill, $rel
+}
+$jobs | Wait-Job | Out-Null
+$main = "https://raw.githubusercontent.com/parksben/opensider/main/skills/opensider"
+foreach ($rel in $rels) {
+  $path = Join-Path $skill $rel
+  if (-not (Test-Path $path) -or (Get-Item $path).Length -le 0) {
+    curl.exe -fsSL --connect-timeout 20 --max-time 60 -o $path "$main/$rel"
+  }
+}
+```
+
+If a listed file 404s on `$tag` (added after the latest release), the retry loop
+fetches **that file only** from `main`. Read `$skill/references/download.md` before
+any release asset: binaries and `extension.zip` come from
+`https://github.com/parksben/opensider/releases/download/$tag/…` and the large
+bridge binary is fetched with concurrent Range GETs against the signed CDN URL
+(`release-assets.githubusercontent.com` / `objects.githubusercontent.com`).
 
 If no tag can be resolved at all (offline, proxy, GitHub blocked): stop and tell the user you
 need network access to GitHub — do not install a version you cannot identify.

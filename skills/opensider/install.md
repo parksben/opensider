@@ -85,13 +85,19 @@ exact application you will open (for example `Google Chrome`, `Microsoft Edge`,
 
 ## Stage 3 — install the bridge
 
-Download the binary and its checksum file from the pinned tag (see `SKILL.md` step 1):
+Download the binary and its checksum file from the pinned tag (see `SKILL.md` step 1).
+Define the helper in [`references/download.md`](./references/download.md) first, then
+fetch **both** files at once — `SHA256SUMS` is a single GET; the ~10 MB binary uses
+GitHub's CDN Range concurrency:
 
 ```sh
 tmp=$(mktemp -d)
 base="https://github.com/parksben/opensider/releases/download/$tag"
-curl -fsSL -o "$tmp/SHA256SUMS" "$base/SHA256SUMS"
-curl -fsSL -o "$tmp/$asset" "$base/$asset"
+github_get "$tmp/SHA256SUMS" "$base/SHA256SUMS" &
+p1=$!
+github_get "$tmp/$asset" "$base/$asset" &
+p2=$!
+wait "$p1" && wait "$p2"
 ```
 
 Verify before you place anything:
@@ -106,8 +112,11 @@ If the checksum is missing or does not match: re-download **both** files once �
 can serve a stale copy of either right after a release — and compare again:
 
 ```sh
-curl -fsSL -H 'Cache-Control: no-cache' -o "$tmp/SHA256SUMS" "$base/SHA256SUMS"
-curl -fsSL -H 'Cache-Control: no-cache' -o "$tmp/$asset" "$base/$asset"
+curl -fsSL -H 'Cache-Control: no-cache' --connect-timeout 20 --max-time 180 -o "$tmp/SHA256SUMS" "$base/SHA256SUMS" &
+p1=$!
+curl -fsSL -H 'Cache-Control: no-cache' --connect-timeout 20 --max-time 180 -o "$tmp/$asset" "$base/$asset" &
+p2=$!
+wait "$p1" && wait "$p2"
 ```
 
 Only if it still mismatches: delete the file, stop, and tell the user what you saw (which
@@ -122,13 +131,16 @@ chmod 755 ~/.opensider/runtime/opensider
 xattr -d com.apple.quarantine ~/.opensider/runtime/opensider 2>/dev/null || true   # macOS
 ```
 
-Windows (PowerShell):
+Windows (PowerShell) — `curl.exe`, not the `curl` alias; Range recipe in
+[`references/download.md`](./references/download.md):
 
 ```powershell
 $tmp = Join-Path $env:TEMP "opensider"
 New-Item -ItemType Directory -Force $tmp | Out-Null
 $base = "https://github.com/parksben/opensider/releases/download/$tag"
-Invoke-WebRequest -Uri "$base/$asset" -OutFile "$tmp\opensider.exe"
+# prefer github_get / curl.exe Range (download.md); BITS is the native fallback:
+Start-BitsTransfer -Source @("$base/SHA256SUMS", "$base/$asset") `
+  -Destination @("$tmp\SHA256SUMS", "$tmp\opensider.exe")
 # compare (Get-FileHash "$tmp\opensider.exe" -Algorithm SHA256).Hash with SHA256SUMS
 Unblock-File "$tmp\opensider.exe"
 New-Item -ItemType Directory -Force "$env:USERPROFILE\.opensider\runtime" | Out-Null
@@ -181,11 +193,12 @@ $bin = "$env:USERPROFILE\.opensider\runtime\opensider.exe"
 $target = & $bin extension-dir "$env:USERPROFILE\OpenSider"
 ```
 
-**4c — download and unpack into it** (only now):
+**4c — download and unpack into it** (only now). `extension.zip` is small — one
+GET through the same helper is enough (it will not split under 1 MiB):
 
 ```sh
 parent=$(dirname "$target")
-curl -fsSL -o "$parent/OpenSider-extension-$tag.zip" "$base/extension.zip"
+github_get "$parent/OpenSider-extension-$tag.zip" "$base/extension.zip"
 rm -rf "$target"
 mkdir -p "$target"
 unzip -q -o "$parent/OpenSider-extension-$tag.zip" -d "$target"   # or: python3 -m zipfile -e
@@ -195,7 +208,7 @@ Windows (PowerShell):
 
 ```powershell
 $parent = Split-Path -Parent $target
-Invoke-WebRequest -Uri "$base/extension.zip" -OutFile "$parent\OpenSider-extension-$tag.zip"
+curl.exe -fsSL --connect-timeout 20 --max-time 180 -o "$parent\OpenSider-extension-$tag.zip" "$base/extension.zip"
 Remove-Item -Recurse -Force $target -ErrorAction SilentlyContinue
 Expand-Archive -LiteralPath "$parent\OpenSider-extension-$tag.zip" -DestinationPath $target -Force
 ```

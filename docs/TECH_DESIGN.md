@@ -500,7 +500,7 @@ cmd/opensider       唯一 Go 入口（host / install / pick）
 internal/           Host / install / pick / ACP
 packages/shared     扩展 ↔ Host 消息类型（TS）
 packages/extension  Chrome MV3（background / content / sidepanel）
-skills/opensider     skill：安装 / 更新 / 卸载 / 体检（提示词指向它，agent 用 curl 逐个拉）
+skills/opensider     skill：安装 / 更新 / 卸载 / 体检（提示词指向它，agent 用 GitHub CDN 并发拉）
 scripts/brand/      五家 Agent 的官方矢量素材原文件（只给 banner 生成脚本读，见「README Banner」）
 scripts/pack-extension.mjs  把 dist 打成 extension.zip（用构建产物 manifest 的 key 校验未打包 ID）
 .github/workflows   tag 发 Release
@@ -524,13 +524,15 @@ pnpm workspace 只编扩展。Host 用 Go。扩展用 Vite + `@crxjs/vite-plugin
 > 请先读取 https://raw.githubusercontent.com/parksben/opensider/main/skills/opensider/SKILL.md，然后严格按其中的流程执行。
 > 开始前先跟我确认我平时用哪个浏览器；每一步都分步引导我操作，并自己验证结果。
 
-`skills/opensider/` 是多文件 skill：`SKILL.md`（入口：能力清单、决策树、阶段顺序、验证门）+ `install.md` / `update.md` / `uninstall.md` / `doctor.md` + `references/`（`platforms.md` 平台与浏览器路径矩阵、`agents.md` CLI 名单与 ACP 适配器、`verification.md` 验证判据、`troubleshooting.md` 故障排查）。agent 用 curl 逐个拉，不要求用户装 Git 或克隆仓库。`SKILL.md` 先解析最新 tag，再用**该 tag** 的 raw 地址拉其余文件与 release 资产，保证 skill 与二进制同版本。**解析必须走 API**（`https://api.github.com/repos/parksben/opensider/releases/latest` 的 `tag_name`）：web 的 `/releases/latest` 重定向有 CDN 缓存，刚发的版本可能几分钟内还指向旧 tag（v0.2.1 重发时就踩到过，`latest` 仍解析成 v0.2.0）；web 重定向只作兜底。
+`skills/opensider/` 是多文件 skill：`SKILL.md`（入口：能力清单、决策树、阶段顺序、验证门）+ `install.md` / `update.md` / `uninstall.md` / `doctor.md` + `references/`（`platforms.md` 平台与浏览器路径矩阵、`download.md` GitHub 并发下载、`agents.md` CLI 名单与 ACP 适配器、`verification.md` 验证判据、`troubleshooting.md` 故障排查）。agent 不要求用户装 Git、克隆仓库或再装 aria2 / gh：本机 `curl`（Windows 用 `curl.exe`，不要用 PowerShell 的 `curl` 别名）就够。`SKILL.md` 先解析最新 tag，再用**该 tag** 的 raw 地址**并行**拉其余 skill 文件，release 资产走同一套并发规则，保证 skill 与二进制同版本。某个 skill 文件在该 tag 上 404（刚加的 reference 还没打进最新 release）则只把这一份改从 `main` 拉，其余仍钉在 tag 上。**解析必须走 API**（`https://api.github.com/repos/parksben/opensider/releases/latest` 的 `tag_name`）：web 的 `/releases/latest` 重定向有 CDN 缓存，刚发的版本可能几分钟内还指向旧 tag（v0.2.1 重发时就踩到过，`latest` 仍解析成 v0.2.0）；web 重定向只作兜底。
+
+下载为什么走 GitHub 自己的并发，而不是镜像或第三方加速器：release 资产的 `https://github.com/…/releases/download/<tag>/<file>` 会 302 到 `release-assets.githubusercontent.com`（旧资产也可能是 `objects.githubusercontent.com`）。这份 CDN **官方支持** `Accept-Ranges: bytes`，Range GET 回 `206 Partial Content`，所以对大约 10MB 的桥接二进制用 4 路并发 Range（先 HEAD/`-I` 解析出带签名的 CDN URL，再对**同一个** CDN URL 切 `bytes=start-end`，最后按序号拼接）是 GitHub 允许的加速方式；`raw.githubusercontent.com` 上的 skill 文件很小，且对 HEAD 不友好，只做多文件并行 GET、不做 Range。独立文件并行与单文件 Range 都把 PID 记下来再 `wait`，不要用脚本里经常是空的 `jobs -p`。单路失败或拼出来的字节数对不上就退回一次普通 `curl -fsSL`。不引入 unofficial GitHub 代理，也不把 aria2 / gh 写成依赖。Windows 同一套 `curl.exe`；BITS `Start-BitsTransfer` 是可选的本机多连接后备（同样走 HTTP Range）。连接数默认 4、上限 8，避免被当成滥用。
 
 安装阶段（每一步都要有验证判据，失败就停在那里引导修）：
 
 1. **探测**：OS / arch（`uname -s`、`uname -m`；Windows 先看 `PROCESSOR_ARCHITEW6432`（32 位 PowerShell 跑在 64 位系统上时 `PROCESSOR_ARCHITECTURE` 会是 `x86`）再看 `PROCESSOR_ARCHITECTURE`，`ARM64` 取 `opensider-windows-arm64.exe`）、已装 Chromium 浏览器（按 `platforms.md` 的路径矩阵判断）、已装 Agent CLI（`command -v` + 常见 bin 目录）、Node 18+（只有 Claude / Codex 的适配器需要）。
 2. **先问浏览器**：把检测到的浏览器列给用户挑一个（一个都没检测到就引导先装）。Native Messaging 清单仍写进**所有**检测到的浏览器与各 Profile，但加载扩展只引导用户选定的那一个。
-3. **装桥接**：从 `releases/latest/download/` 下载 `opensider-<os>-<arch>[.exe]` 与 `SHA256SUMS`，用本机 `sha256sum` / `shasum -a 256` / `Get-FileHash` 核验（对不上或 SUMS 里没有这一行就停），放到 `~/.opensider/runtime/` 并 `chmod 755`；macOS 再清 quarantine（`xattr -d com.apple.quarantine`）、Windows 走 `Unblock-File` 去 MOTW，避免 Gatekeeper / SmartScreen 拦住。随后跑 `~/.opensider/runtime/opensider install`：Go 侧负责 `Register()`（所有浏览器的 `NativeMessagingHosts/` 及各 Profile 目录，Windows 另写 HKCU 注册表）、`workspace.Ensure()`（`AGENTS.md` / `browser/tools.json` / `outputs/`）与 ACP 适配器。
+3. **装桥接**：按 `references/download.md` 从钉住的 tag 并发下载 `opensider-<os>-<arch>[.exe]` 与 `SHA256SUMS`（SUMS 与二进制并行；二进制走 CDN Range），用本机 `sha256sum` / `shasum -a 256` / `Get-FileHash` 核验（对不上或 SUMS 里没有这一行就停），放到 `~/.opensider/runtime/` 并 `chmod 755`；macOS 再清 quarantine（`xattr -d com.apple.quarantine`）、Windows 走 `Unblock-File` 去 MOTW，避免 Gatekeeper / SmartScreen 拦住。随后跑 `~/.opensider/runtime/opensider install`：Go 侧负责 `Register()`（所有浏览器的 `NativeMessagingHosts/` 及各 Profile 目录，Windows 另写 HKCU 注册表）、`workspace.Ensure()`（`AGENTS.md` / `browser/tools.json` / `outputs/`）与 ACP 适配器。
 4. **装扩展**：先把「扩展目录放哪儿」问清楚并**等用户回答**（建议 `~/OpenSider`；`~/Downloads/OpenSider` 要顺带说明清理下载的后果；其它绝对路径都接受，但拒绝放进 `~/.opensider`），用户未回答前不建目录、不下载、不落盘；随后用 `opensider extension-dir <路径>` 记到 `~/.opensider/extension-path` —— 更新 / 体检 / 卸载都从这条记录读，不另外猜。然后下载 `extension.zip` 解压到该目录（zip 放同级，用户可自行重装），确认 `manifest.json` 在位，用命令打开用户选定浏览器的 `chrome://extensions`（macOS `open -a "<浏览器>" "chrome://extensions"`；Linux / Windows 用对应浏览器可执行文件带该 URL），再**分步引导**用户：打开开发者模式 → 点「加载已解压的扩展程序」→ 选中该目录 →（可选）固定到工具栏。这一步必须由用户亲手点，skill 不得假装自动完成。
 5. **验证**：让用户点工具栏图标打开侧栏，检查 `~/.opensider/host.log` 出现新的 Host 启动行；侧栏能列出本机 Agent 即成功。分不清「本机没装 CLI」「桥接没注册」「扩展没加载」时不许下结论，按 `troubleshooting.md` 分流。
 
@@ -587,6 +589,7 @@ Release 资产名（skill 与文档都按这些名字取）：
 | 旧 `~/.opensider` 混着 Node Host 残留 | skill 的 doctor 识别后先备份、再重建 runtime / workspace；开发机 `pnpm install-host` |
 | macOS 拦 Chrome 执行 Desktop 上的 Host | 二进制固定放 `~/.opensider/runtime/opensider`（skill 下载后即放这里，并在 macOS 清掉 quarantine） |
 | 下载的二进制被 macOS quarantine / Windows MOTW 拦住 | skill 用 curl / 系统下载器拿文件，随后在 macOS `xattr -d com.apple.quarantine`、Windows `Unblock-File`；doctor 也检查这两项 |
+| GitHub 单连接下载慢或 Range 失败 | skill 走官方 CDN 并发（多文件并行 GET + 大文件 4 路 Range）；`raw.githubusercontent.com` 不做 HEAD；失败退回一次单路 `curl -fsSL`；不依赖镜像 / aria2 |
 | macos-latest 编不出 darwin/amd64 | 该资产可缺；Intel Mac 用户要等能编出来的 tag，或用源码 `go run` |
 | Cursor `WritableIterable is closed` | 成功轮次按 `end_turn`，剥掉该关流字；空轮仍报错。改不了 Cursor CLI 本身 |
 | `session/load` 不支持或失败 | 新建 ACP 会话，界面历史保留，下一条消息带前文 |

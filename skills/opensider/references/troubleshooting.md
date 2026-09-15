@@ -74,6 +74,16 @@ an unmanaged browser/profile.
 Some environments refuse to open internal URLs from a shell. Ask the user to paste
 `chrome://extensions` into the address bar themselves and continue the walkthrough.
 
+## The download is slow or a Range part fails
+
+Use the helper in [`download.md`](./download.md). The usual miss is curling skill
+files or the binary **one after another**, or sending `Range` to the
+`github.com/…/releases/download/…` hop instead of the signed CDN URL after the
+302. If a 4-way assemble does not match `Content-Length`, delete the parts and
+do one ordinary `curl -fsSL` of the original GitHub URL. Do not HEAD
+`raw.githubusercontent.com` (it can hang). Do not install aria2 / switch to a
+mirror unless the user asks.
+
 ## The download 404s
 
 * **Right after a release**: GitHub's CDN can serve a stale `releases/latest` redirect or

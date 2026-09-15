@@ -33,8 +33,9 @@ ls ~/.opensider/runtime/opensider
 
 The version must carry the same dotted numbers as the tag you resolved (no `v` prefix), not an
 older one. A binary whose checksum did not match `SHA256SUMS` is never installed — if you saw a
-mismatch, re-download both files with `-H 'Cache-Control: no-cache'` once (the CDN can serve
-a stale copy right after a release) and only give up if it still mismatches.
+mismatch, re-download both files once in parallel with `-H 'Cache-Control: no-cache'` (see
+[`download.md`](./download.md); the CDN can serve a stale copy right after a release) and only
+give up if it still mismatches.
 
 **Extension on disk** — the folder Chrome loads (`opensider extension-dir` prints it, and it is
 the folder the user picked during install):

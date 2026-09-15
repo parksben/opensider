@@ -66,7 +66,7 @@ Fix one thing at a time and re-run Stage 1 after each fix. The repairs allowed h
 all non-destructive:
 
 * re-run `~/.opensider/runtime/opensider install`
-* re-download and replace the binary (checksum first — `install.md` Stage 3)
+* re-download and replace the binary (checksum first — `install.md` Stage 3, helper in `references/download.md`)
 * re-unpack `extension.zip` into the extension folder (`opensider extension-dir`) and ask the
   user to click Reload in `chrome://extensions`
 * install a missing ACP adapter (Node 18+ required, `opensider install` does it)
