@@ -39,8 +39,7 @@ https://github.com/user-attachments/assets/f0a9c654-b66e-43ef-a233-6942a30e83c6
 
 ```
 帮我安装 OpenSider 浏览器扩展。
-请先读取 https://raw.githubusercontent.com/parksben/opensider/main/skills/opensider/SKILL.md，然后严格按其中的流程执行。
-开始前先跟我确认我平时用哪个浏览器；每一步都分步引导我操作，并自己验证结果。
+请先读取 https://raw.githubusercontent.com/parksben/opensider/main/skills/opensider/SKILL.md，按其安装流程执行。
 ```
 
 ### 2. 更新
@@ -48,8 +47,8 @@ https://github.com/user-attachments/assets/f0a9c654-b66e-43ef-a233-6942a30e83c6
 一键更新：当扩展程序界面中出现新版本提示时，可复制以下提示词给你的本地 Agent，在其引导下完成新版本的安装。
 
 ```
-帮我更新 OpenSider（浏览器扩展 + 本机桥接）。
-请先读取 https://raw.githubusercontent.com/parksben/opensider/main/skills/opensider/SKILL.md，按其更新流程执行：对比本机已装版本与最新 release，更新落后的那一半，再引导我在浏览器里重新加载扩展并验证。
+帮我更新 OpenSider 浏览器扩展。
+请先读取 https://raw.githubusercontent.com/parksben/opensider/main/skills/opensider/SKILL.md，按其更新流程执行。
 ```
 
 ### 3. 卸载
@@ -57,8 +56,8 @@ https://github.com/user-attachments/assets/f0a9c654-b66e-43ef-a233-6942a30e83c6
 一键卸载：同样只需一段提示词，卸载时可选择保留或移除本地已有数据。
 
 ```
-帮我卸载 OpenSider（浏览器扩展 + 本机桥接）。
-请先读取 https://raw.githubusercontent.com/parksben/opensider/main/skills/opensider/SKILL.md，按其卸载流程执行：先问我要不要连本地数据（会话历史、工作区、产物）一起清掉，再移除本机桥接，并引导我在浏览器里移除扩展。
+帮我卸载 OpenSider 浏览器扩展。
+请先读取 https://raw.githubusercontent.com/parksben/opensider/main/skills/opensider/SKILL.md，按其卸载流程执行。
 ```
 
 ## 工作区与本地数据

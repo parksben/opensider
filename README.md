@@ -38,9 +38,8 @@ https://github.com/user-attachments/assets/f0a9c654-b66e-43ef-a233-6942a30e83c6
 One-step install: paste the prompt below into the local AI Agent you already use (Claude Code, Codex, OpenCode, Cursor, …). It will prepare your local environment and walk you through installing the browser extension.
 
 ```
-Install OpenSider for me.
-Read https://raw.githubusercontent.com/parksben/opensider/main/skills/opensider/SKILL.md and follow it exactly.
-Ask me which browser I use before you start, walk me through every step that needs me, and verify each stage yourself.
+Install the OpenSider browser extension for me.
+Read https://raw.githubusercontent.com/parksben/opensider/main/skills/opensider/SKILL.md and follow its install flow.
 ```
 
 ### 2. Update
@@ -48,8 +47,8 @@ Ask me which browser I use before you start, walk me through every step that nee
 One-step update: when the side panel tells you a new version is available, copy the prompt below to your local Agent and let it guide you through the update.
 
 ```
-Update OpenSider (the browser extension and the local bridge) for me.
-Read https://raw.githubusercontent.com/parksben/opensider/main/skills/opensider/SKILL.md and follow its update flow: compare what is installed here with the latest release, refresh whichever half is behind, then walk me through reloading the extension and verify it.
+Update the OpenSider browser extension for me.
+Read https://raw.githubusercontent.com/parksben/opensider/main/skills/opensider/SKILL.md and follow its update flow.
 ```
 
 ### 3. Uninstall
@@ -57,8 +56,8 @@ Read https://raw.githubusercontent.com/parksben/opensider/main/skills/opensider/
 One-step uninstall: one prompt is all it takes, and you choose whether to keep or remove your local data.
 
 ```
-Uninstall OpenSider (the browser extension and the local bridge) for me.
-Read https://raw.githubusercontent.com/parksben/opensider/main/skills/opensider/SKILL.md and follow its removal flow: ask me whether to delete my local data (session history, workspace, outputs) as well, then remove the bridge and walk me through removing the extension from the browser.
+Uninstall the OpenSider browser extension for me.
+Read https://raw.githubusercontent.com/parksben/opensider/main/skills/opensider/SKILL.md and follow its removal flow.
 ```
 
 ## Workspace & Local Data
