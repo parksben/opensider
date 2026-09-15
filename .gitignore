@@ -14,3 +14,6 @@ dist-release
 scripts/keys/
 .env
 scripts/__pycache__/
+
+# 运营方案与物料仅本地维护，不入库
+marketing/
