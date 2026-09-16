@@ -167,14 +167,14 @@ export function ChatPane({
    * can be moved to another session without re-uploading its files. The payload goes into
    * extension storage rather than the clipboard (Chromium drops custom clipboard flavours
    * and we must not leak markers into other apps); a later paste of exactly that text
-   * restores it. Copy leaves this composer alone; cut clears the bar like it clears text.
+   * restores it. Carrying is all this does: copy and cut both leave the bar alone, and cut
+   * only loses the text because that is what the browser's own cut does.
    */
-  const carryAttachments = (action: "copy" | "cut") => {
+  const carryAttachments = () => {
     if (attachments.length === 0) return;
     const payload = encodeComposerCarry({ text: draft, attachments, at: Date.now() });
     carryRef.current = decodeComposerCarry(payload) ?? null;
     void chrome.storage.session.set({ [COMPOSER_CARRY_KEY]: payload }).catch(() => undefined);
-    if (action === "cut") setAttachments([]);
   };
 
   /** A paste whose text is exactly what was copied: bring the attachments along, once. */

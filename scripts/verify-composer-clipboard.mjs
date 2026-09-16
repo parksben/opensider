@@ -62,21 +62,34 @@ try {
     const composer = panel.locator('[contenteditable="true"]');
     return { panel, composer };
   };
+  const bodyText = (panel) => panel.evaluate(() => document.body.innerText);
+  const appears = (locator) =>
+    locator.waitFor({ state: "visible", timeout: 30_000 }).then(
+      () => true,
+      () => false,
+    );
   const connect = async (panel) => {
     // The first panel goes through onboarding; a later one already has the agent stored and
-    // lands straight in the composer.
+    // lands straight in the composer. Which of the two shows up first is timing dependent on
+    // a cold profile, so wait for either rather than sampling the button once.
+    const composer = panel.locator('[contenteditable="true"]');
     const agentButton = panel.getByRole("button", { name: "GitHub Copilot" });
-    if (await agentButton.count()) {
+    await Promise.race([appears(composer), appears(agentButton)]);
+    if (await agentButton.isVisible().catch(() => false)) {
       await agentButton.click({ timeout: 20_000 });
     }
-    await panel.locator('[contenteditable="true"]').waitFor({ state: "visible", timeout: 30_000 });
+    try {
+      await composer.waitFor({ state: "visible", timeout: 30_000 });
+    } catch (error) {
+      console.log(`--- panel body when the composer never came up ---\n${await bodyText(panel)}\n------------------`);
+      throw error;
+    }
   };
 
   const first = await openPanel();
   await connect(first.panel);
   ok("the side panel is connected and ready", true);
 
-  const bodyText = (panel) => panel.evaluate(() => document.body.innerText);
   const clearComposer = async ({ panel, composer }) => {
     await composer.click();
     await panel.keyboard.press(`${MOD}+a`);
@@ -154,17 +167,21 @@ try {
   ok("a partial selection still pastes its text", partial.includes(partialText), `copied ${JSON.stringify(partialText)}`);
   ok("a partial selection does not carry attachments", !partial.includes(ATTACHMENT));
 
-  // 3. Cut clears the attachment bar, and the clipboard still has everything.
-  await clearComposer(second);
+  // 3. Cut loses the text (that is the browser's own cut) but leaves the bar alone, and
+  // still carries everything. Paste into a fresh panel so nothing can come from step 1.
+  const fourth = await openPanel();
+  await connect(fourth.panel);
   await first.composer.click();
   await first.panel.keyboard.press(`${MOD}+a`);
   await first.panel.keyboard.press(`${MOD}+x`);
   await first.panel.waitForTimeout(300);
-  ok("cut clears the attachment bar", !(await bodyText(first.panel)).includes(ATTACHMENT));
-  await second.composer.click();
-  await second.panel.keyboard.press(`${MOD}+v`);
-  await second.panel.waitForTimeout(400);
-  const afterCut = await bodyText(second.panel);
+  const cutSource = await bodyText(first.panel);
+  ok("cut took the text out of the source composer", !cutSource.includes(DRAFT));
+  ok("cut left the attachment bar alone", cutSource.includes(ATTACHMENT));
+  await fourth.composer.click();
+  await fourth.panel.keyboard.press(`${MOD}+v`);
+  await fourth.panel.waitForTimeout(400);
+  const afterCut = await bodyText(fourth.panel);
   ok("cut carries text and attachments like copy", afterCut.includes(DRAFT) && afterCut.includes(ATTACHMENT));
 
   // 4. Pasting an image still lands in the attachment bar.

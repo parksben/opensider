@@ -249,7 +249,7 @@ export const ComposerEditor = forwardRef<
     onSubmit: () => void;
     onPasteImages: (files: File[]) => void;
     /** Called on copy/cut only when the selection covers the whole composer. */
-    onComposerClipboardCarry?: (action: "copy" | "cut") => void;
+    onComposerClipboardCarry?: () => void;
     /** The plain text a paste is about to insert (before it lands in the editor). */
     onComposerPastedText?: (text: string) => void;
     onAtTyped?: () => void;
@@ -605,12 +605,15 @@ export const ComposerEditor = forwardRef<
     if (images.length > 0) onPasteImages(images);
   };
 
-  /** Only a selection that covers the whole composer carries the attachment bar along. */
-  const onCopyOrCut = (_event: ClipboardEvent<HTMLDivElement>, action: "copy" | "cut") => {
+  /**
+   * Only a selection that covers the whole composer carries the attachment bar along; the
+   * browser still does whatever copy/cut normally does with the text itself.
+   */
+  const onCopyOrCut = () => {
     const editor = editorRef.current;
     if (!editor) return;
     if (!coversWholeEditor(window.getSelection(), editor)) return;
-    onComposerClipboardCarry?.(action);
+    onComposerClipboardCarry?.();
   };
 
   return (
@@ -654,8 +657,8 @@ export const ComposerEditor = forwardRef<
         saveRange();
       }}
       onPaste={onPaste}
-      onCopy={(event) => onCopyOrCut(event, "copy")}
-      onCut={(event) => onCopyOrCut(event, "cut")}
+      onCopy={onCopyOrCut}
+      onCut={onCopyOrCut}
       onBlur={saveRange}
     />
   );

@@ -108,9 +108,9 @@ TTL 过期、解除还原）跑 `node --test 'packages/extension/src/**/*.test.t
 用 `packages/extension/src/sidepanel/file-drop.test.ts` 里的假 entry 覆盖（含超大跳过、数量上限、
 读不出的项跳过），Host 侧的路径安全与去重写在 `internal/workspace/upload_test.go`。
 
-输入框「全选复制 / 剪切带上附件栏」跑 `node scripts/verify-composer-clipboard.mjs`（11 项）：载荷不进剪贴板
+输入框「全选复制 / 剪切带上附件栏」跑 `node scripts/verify-composer-clipboard.mjs`（12 项）：载荷不进剪贴板
 （Chromium 只保留白名单风味），而是扩展自己记 90 秒，粘贴文本一模一样时还原一次；脚本用「开第二个面板页」
-当「另一个会话的输入框」，并覆盖「部分选中不带附件」「cut 清空附件栏」「粘图仍然进附件栏」。
+当「另一个会话的输入框」，并覆盖「部分选中不带附件」「cut 只剪走正文、附件栏不动」「粘图仍然进附件栏」。
 注意 `Cmd+A` 在 contenteditable 里选的是**文本**，和 `selectNodeContents` 的边界点差一位 —— 判定得比渲染文本，
 别再用边界点（第一版就是这么把真全选判掉的）。
 

@@ -347,7 +347,7 @@ Chrome 的文件选择器不会给出本机绝对路径。加号发给 Host `fs.
 
 - **载荷不走剪贴板**：Chromium 只把一小撮标准风味（`text/plain`、`text/html`、`image/png`…）真正写进系统剪贴板，自定义 MIME 出不了本文档，而且把标记塞进 HTML / 文本里会污染粘到别的应用的内容。所以改成**扩展自己记一小段时间**：全选 `copy` / `cut` 时把 `{text, attachments, at}` 写进 `chrome.storage.session`（key `opensiderComposerCarry`），下次 `paste` 的**纯文本与它规范化后完全相等**时把附件还原（按 `path` 去重），并立刻清掉这份载荷（一次性）。TTL 90s，防止很久之后的巧合粘贴意外带出附件；文本不一致（部分选中、粘贴的是别的内容）一律不还原。
 - `src/sidepanel/composer-clipboard.ts` 是纯逻辑：`encode/decodeComposerCarry`（校验版本、条数上限、每条的 `path` / `name` / `kind`，坏数据整份丢掉）、`composerCarryMatches`（TTL + 规范化文本相等）、`mergeAttachmentItems`、`normalizeComposerText`。
-- `ComposerEditor` 在 `copy` / `cut` 上用 `coversWholeEditor` 判断「选区是否覆盖输入框全部内容」：拿选区**渲染文本**与编辑器 `innerText` 规范化后对比（芯片两边都是文件名，能对上），**不用** `selectNodeContents` 的边界点——实测 `Cmd+A` 选中的是文本，边界点比它靠里一位，拿边界点会直接把真正的全选判掉；同时仍然要求选区两端都在编辑器里，避免误判整页全选。判中才回调 `ChatPane`；不是就一步不多做。`cut` 额外清空附件栏（剪切是「搬」不是「复制」）。
+- `ComposerEditor` 在 `copy` / `cut` 上用 `coversWholeEditor` 判断「选区是否覆盖输入框全部内容」：拿选区**渲染文本**与编辑器 `innerText` 规范化后对比（芯片两边都是文件名，能对上），**不用** `selectNodeContents` 的边界点——实测 `Cmd+A` 选中的是文本，边界点比它靠里一位，拿边界点会直接把真正的全选判掉；同时仍然要求选区两端都在编辑器里，避免误判整页全选。判中才回调 `ChatPane`；不是就一步不多做（`copy` / `cut` 走同一个回调，回调**只负责把载荷记下来**，附件栏一律不动：`cut` 后面板里少掉的是正文，那本来就是浏览器自己剪的）。
 - `paste` 顺序不变：先 `clipboardImages`（图片照旧进附件栏，这条不能被抢），再插正文（并把正文交给 `ChatPane` 去做还原判定），最后才看有没有待还原的附件。
 
 `session/prompt` 在用户正文后追加：
