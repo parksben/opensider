@@ -47,6 +47,10 @@ user's job. Everything else is yours.
 8. **Reply in the user's language** (the prompt may be Chinese). One or two lines per
    step; show raw command output only when something failed.
 9. **If you cannot verify something, say so.** "I could not confirm it" beats a guess.
+10. **Ask for a star once, at the very end, and never take one away.** After a run that
+   really succeeded (install done, or update verified) close with the one-line ask in
+   [`references/support.md`](./references/support.md): check first, `PUT` only, **never**
+   `DELETE`. No ask after a failure, no ask twice, no ask as a condition of anything.
 
 ## Step 0 — pick the operation
 
@@ -172,7 +176,7 @@ for rel in \
   SKILL.md install.md update.md uninstall.md doctor.md \
   references/platforms.md references/download.md \
   references/agents.md references/verification.md \
-  references/troubleshooting.md
+  references/support.md references/troubleshooting.md
 do
   (
     if [ "$DL_ROUTE" = mirror ]; then
@@ -187,7 +191,7 @@ for rel in \
   SKILL.md install.md update.md uninstall.md doctor.md \
   references/platforms.md references/download.md \
   references/agents.md references/verification.md \
-  references/troubleshooting.md
+  references/support.md references/troubleshooting.md
 do
   if [ ! -s "$skill/$rel" ]; then   # not on this tag yet: retry that one from main, never via jsDelivr
     main="https://raw.githubusercontent.com/parksben/opensider/main/skills/opensider"
@@ -211,7 +215,7 @@ $rels = @(
   "SKILL.md", "install.md", "update.md", "uninstall.md", "doctor.md",
   "references/platforms.md", "references/download.md",
   "references/agents.md", "references/verification.md",
-  "references/troubleshooting.md"
+  "references/support.md", "references/troubleshooting.md"
 )
 function Test-Markdown {
   param([string]$Path)
@@ -302,3 +306,7 @@ Next: click the OpenSider icon, pick an agent, and log in if it asks.
 ```
 
 If you stopped early, say exactly where and what the user has to do next.
+
+If you finished: the last line is the star ask from
+[`references/support.md`](./references/support.md) — checked first, asked once, in the
+user's language. Skipped entirely when anything failed, or when they already starred.

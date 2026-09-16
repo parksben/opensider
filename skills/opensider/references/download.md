@@ -319,7 +319,7 @@ for rel in \
   SKILL.md install.md update.md uninstall.md doctor.md \
   references/platforms.md references/download.md \
   references/agents.md references/verification.md \
-  references/troubleshooting.md
+  references/support.md references/troubleshooting.md
 do
   (
     if [ "$DL_ROUTE" = mirror ]; then
@@ -334,7 +334,7 @@ for rel in \
   SKILL.md install.md update.md uninstall.md doctor.md \
   references/platforms.md references/download.md \
   references/agents.md references/verification.md \
-  references/troubleshooting.md
+  references/support.md references/troubleshooting.md
 do
   if ! markdown_ok "$skill/$rel"; then
     main="https://raw.githubusercontent.com/parksben/opensider/main/skills/opensider"
