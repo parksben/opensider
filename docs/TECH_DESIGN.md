@@ -158,6 +158,8 @@ Host 是一份 Go 二进制（`cmd/opensider` + `internal/`）。`browser/tools.
       results/<id>.json      # 扩展写回的结果
       screenshots/<id>.jpg   # 视口 / 元素截图
       pasted/<id>.jpg        # 用户从输入框粘贴的截图
+      uploads/<name>         # 拖进侧栏的文件 / 文件夹（复制一份，浏览器不给本机路径）
+      native-ui.json         # 最近 50 条原生 UI 事件（alert/confirm/...）
   session.json               # 最近一次选中的 ACP sessionId（兼容旧版）
   ui-state.json              # 侧栏权威状态（会话列表/消息/偏好）；扩展卸载后仍在
   extension-path             # 用户选定的扩展目录（单行绝对路径，`opensider extension-dir` 读写）
@@ -219,6 +221,14 @@ reveal 的平台实现分在 `internal/reveal/reveal_{darwin,linux,windows}.go`�
 - 覆盖与边界：JS 弹窗（alert/confirm/prompt）、`print()`、`window.open()`（含被拦下时返回 null）、`<input type=file>` 的 `click()` / `showPicker()` 都能感知，除文件选择器外都能代答。**真正的浏览器 / 系统 UI 做不到**——权限授权框、HTTP 认证框、下载气泡、系统文件选择器窗口、证书警告。只有 `chrome.debugger`（CDP 的 `Page.handleJavaScriptDialog`、`Page.fileChooserOpened` + `DOM.setFileInputFiles`、`Browser.setPermission`）能看能操作，代价是「正在调试此浏览器」横幅 + 与 DevTools 互斥 + `debugger` 权限。做与不做都要写进 `agents.md`，别让 Agent 去猜一个不存在的能力。
 - 工具面：新增 `getNativeUi`（事件 + 权限状态 + visibility/fullscreen/beforeunload）与 `setDialogPolicy`，`browser/tools.json` 的 `version` 8 → 9。
 
+**页面活动态（可见 / 有焦点）**：浏览器窗口被盖住、被最小化、或标签不在前台时，Chrome 把页面标成 `hidden`：`document.visibilityState === "hidden"`、`document.hasFocus()` 为假、`requestAnimationFrame` 不再回调、定时器降频（hidden 1/秒，5 分钟后 1/分钟）。不少站点据此自行暂停（懒加载、动画组件、把点击挡在「未激活」遮罩后面），后台跑页面自动化就卡住。扩展侧的处理是把「页面读到的状态」改掉，而不是去动窗口：
+
+- `src/activity-hook.ts` 同样是主世界 `content_scripts`（`document_start` / `all_frames` / `world: MAIN`），**默认完全惰性**，只往 `window` 挂一个不可配置、带 token 校验的 `__opensiderActivity`（与 native UI shim 同一套 caller-token 风格；token 只走 `chrome.scripting.executeScript` 的 args，页面拿不到，所以页面无法自己开关）。被武装后：`document.visibilityState` → `visible`、`document.hidden` → `false`、`document.hasFocus()` → `true`；在 `EventTarget.prototype` 上拦掉 `visibilitychange` / `blur` / `pagehide` / `freeze` 的监听注册（含 `document.onvisibilitychange` 访问器），页面因此不会自己暂停；真的被隐藏时把 `requestAnimationFrame` 回退成 ~16ms 定时器（等帧的页面/脚本才会继续跑）。解除武装即**还原原始 descriptor 与函数**，不留常驻 hack。
+- 生命周期由 SW 定：只要还有侧栏端口（`sidebars` 非空），就对「Agent 正在动的标签」武装——面板打开时的活动标签、以及 `requestPage` / `dispatchCommand` 每次触及的标签（`openTab` / `switchTab` 换页自然跟上），同时把这些标签的 `autoDiscardable` 置 false，避免后台被 Chrome 直接丢弃。**最后一个侧栏端口断开**（侧栏收起）就把全部标签解除武装、`autoDiscardable` 还原。SW 重启或页面导航会丢掉武装状态，靠「用到就重新武装」自愈（注入是幂等的）。
+- 不抢焦点：不 `windows.update({ focused: true })`、不取消最小化、不主动 `tabs.update({ active: true })`——用户看得见的窗口行为一点不变。
+- 边界（写进 `agents.md`，不许吹）：这层只改**页面可见的 API**，让页面自己认为可见；Chrome 自己的后台降频 / 渲染降级取消不掉（只有 `chrome.debugger` 的 CDP 能，代价同第 15 条），所以后台执行可能比前台慢，不等于「强制前台渲染」。另外在武装**之前**就注册好的 `visibilitychange` 监听会照旧收到事件（注入在 `document_start`，实际基本不会发生），`window.onblur` 这类 `on*` 属性只托管 `document.onvisibilitychange`。
+- 工具面：`browser/tools.json` 加静态说明项 `pageActivity`（「面板开着时，Agent 在动的标签被强制为可见 / 有焦点；窗口不被抢焦点」），`version` 9 → 10；`getNativeUi` 报的 `visibility` 就是强制后的值。
+
 ## 多会话与 fork
 
 工作区仍是一个。ACP 会话可以有多条，侧栏用本地 `id` 和 `acpSessionId` 对应。
@@ -261,6 +271,8 @@ chrome.storage.local 与 ~/.opensider/ui-state.json（同形）
 | `update` / `turn.end` / `permission` / `cursor` 带 `sessionId` | 侧栏按 ACP id 精确映射到本地会话，**不按当前选中项；映射不到就丢弃**（不允许落到「当前选中」，那是串戏的主要通道）。`turn.end` 在 `stopReason=error` 时带 `error` 原文（Host 已改写成可执行的登录提示），侧栏顶栏直接显示，不要换成一句笼统的「这一轮以错误结束」 |
 | `fs.pick` | Host 弹出本机选文件/文件夹对话框，回 `fs.picked`（绝对路径 + kind） |
 | `fs.save` | Host 把侧栏压好的 JPEG 写到 `browser/pasted/`，回 `fs.saved`（绝对路径 + kind=image） |
+| `fs.upload` + `name` + `dir?` + `base64` | 拖进来的文件：Host 校验并写到 `browser/uploads/<dir?>/<name>`（逐段 sanitize，不许 `..` / 绝对路径），回 `fs.uploaded`；`dir` 是拖进来的文件夹名时同时带回顶层文件夹项（新增的目录才带，便于侧栏只挂一次） |
+| `fs.uploaded`（Host → 侧栏） | 拖入的文件 / 文件夹写盘结果：`items`（绝对路径 + kind，文件夹那张只在新建了目录时带）+ 可选 `error`；侧栏按 `path` 去重合并进输入框附件栏 |
 | `fs.reveal` + `path` | Host 打开系统文件管理器并选中该文件；路径不存在则回 `fs.revealed`（`missing: true` + error），其它失败也回 error 但不标 missing；成功不回 |
 | `fs.revealed`（Host → 侧栏） | reveal 失败时带 `path` / `error` / 可选 `missing`；侧栏只在 `missing` 时按 path 把该条产物标失效并持久化 |
 | `fs.preview` + `path` + `requestId` | Host 读本机图片（绝对路径、常规文件、图像类型、上限 32MB），按 512KiB 原文分片 base64 回多条 `fs.previewed` |
@@ -316,6 +328,13 @@ chrome.storage.local 与 ~/.opensider/ui-state.json（同形）
 Chrome 的文件选择器不会给出本机绝对路径。加号发给 Host `fs.pick`（带 `mode`: `mixed` | `files` | `folders`）。侧栏用 UA 判断：macOS 直接 `mixed`（`NSOpenPanel` 一次混选）；其它系统在回形针上方弹出「多选文件 / 多选文件夹」再发对应 mode。Host **exec 自己**加 `pick`（Chrome 子进程里直接弹框经常出不来）。Windows `IFileOpenDialog` 与 Linux zenity/kdialog/portal 都是文件或文件夹二选一：选项为 `FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST | FOS_ALLOWMULTISELECT`，文件再或 `FOS_FILEMUSTEXIST`、文件夹再或 `FOS_PICKFOLDERS`；多选连着 `FOS_ALLOWMULTISELECT`，所以结果必须走 `IFileOpenDialog::GetResults`（`IShellItemArray`）而不是 `IFileDialog::GetResult`，否则拿不到用户选的项。取消时 `Show` 返回 `HRESULT_FROM_WIN32(ERROR_CANCELLED)`，按「用户取消」回空列表，不当错误。`fs.stat` 分成 `image` / `file` / `folder`。侧栏芯片只展示 `basename`，`title` 是全路径。未连上就点加号，侧栏写明确错误。
 
 剪贴板里的截图同样没有本机路径，不能当文件选。composer `paste` 若带 `image/*`，先按页面截图那套压成 JPEG（最长边约 1280、质量约 0.72、base64 &lt; 700KB，以免 Native Messaging 超 1MB），再 `fs.save` 落到 `~/.opensider/workspace/browser/pasted/`。回包后当普通 `kind: image` 芯片，走同一套 `wrapAttachments`。Chrome 会把同一张图同时挂在 `clipboardData.files` 和 `items` 上，且 `getAsFile()` 的 `lastModified` 往往对不上，按 name/size/mtime 去重会漏。`clipboardImages` 只读 `files` 里的图片；没有才退到 `items`。有图时 `preventDefault`，避免二进制糊进 textarea；若同时带纯文本则插到光标处。落盘完成前不让发送，以免消息先走、图还没进附件。未连上或压图/写盘失败写明确错误。
+
+拖进来的文件同样没有本机路径，做法是把字节送到 Host 写盘再当普通附件（`TypeScript` 侧拿不到路径，`File.path` 在 Chrome 里不存在）：
+
+- 面板根部（`ChatPane`）挂一个 `dropTarget`：`dragenter` / `dragover` 上判断 `dataTransfer.types` 是否含 `Files`，含就 `preventDefault`（这一步是基础——不做的话浏览器会直接导航/打开那个文件，就是用户看到的现象），并显示盖满整屏的提示层；`dragleave`（计数归零）/ `drop` 收掉。不带 `Files` 的拖拽（文本、面板内 `draggable`）一概不碰。
+- `drop` 里先同步抓 `dataTransfer.items` 的 entry（异步之后 `items` 就失效了），用 `webkitGetAsEntry()` 区分文件 / 文件夹：文件直接用 `File`，文件夹递归读子树（上限：单文件 ≤ 480KiB 原文、整次拖拽 ≤ 200 个文件，超了报错并提示改用回形针，那条走系统选择器直接拿路径、无大小限制）。符号链接 / 读不出来的项跳过。
+- 每个文件读成 base64（分块 `btoa`，别用 `String.fromCharCode(...bytes)` 爆栈），发 `{ type: "fs.upload", requestId, name, dir?, base64 }`（`dir` 为拖进来的文件夹名，文件在子目录时带上相对路径）。Host 写 `browser/uploads/`，回 `fs.uploaded`，侧栏 `mergeAttachments` 去重后落进输入框附件栏。进行中同样可拖（跟附件栏其它入口一致）。
+- 限制在两侧都做：侧栏先拦（超限不上传、给文案），Host 复核（base64 长度、段级 sanitize、`..` 与绝对路径一律拒），不信任侧栏。
 
 `session/prompt` 在用户正文后追加：
 
