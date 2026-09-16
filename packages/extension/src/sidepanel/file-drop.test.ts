@@ -79,6 +79,14 @@ const fakeDir = (name: string, children: FakeEntry[]): FakeEntry => ({
   },
 });
 
+/** A reader that never calls back: Chrome does that for a folder it will not list. */
+const silentDir = (name: string): FakeEntry => ({
+  name,
+  isFile: false,
+  isDirectory: true,
+  createReader: () => ({ readEntries: () => undefined }),
+});
+
 const walk = (entry: FakeEntry, dir?: string, fallback?: unknown) => {
   const raw: { name: string; dir?: string; file: { size?: number } }[] = [];
   const skipped = emptySkips();
@@ -185,6 +193,13 @@ test("an entry that cannot be read falls back to the item's file", async () => {
   const { out, skipped } = await walk(unreadableFile("ghost.txt"), undefined, backup);
   assert.deepEqual(out.map((item) => [item.name, item.size]), [["ghost.txt", 42]]);
   assert.equal(skipped.unreadable, 0);
+});
+
+test("a folder Chrome will not list ends the walk instead of hanging the drop", async () => {
+  const tree = fakeDir("proj", [fakeFile("found.txt"), silentDir("locked")]);
+  const { out } = await walk(tree);
+  // Whatever the reader did hand over is kept; the silent folder just stops the walk.
+  assert.deepEqual(out.map((item) => item.name), ["found.txt"]);
 });
 
 test("an entry whose file() never calls back gives up and is still reported", async () => {

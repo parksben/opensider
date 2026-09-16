@@ -201,19 +201,35 @@ export async function walkEntry(
   }
   const reader = (entry as FileSystemDirectoryEntry).createReader();
   for (;;) {
-    const batch = await new Promise<FileSystemEntry[]>((resolve) => {
-      try {
-        reader.readEntries(
-          (values) => resolve(values),
-          () => resolve([]),
-        );
-      } catch {
-        resolve([]);
-      }
-    });
+    const batch = await readBatch(reader);
     if (batch.length === 0) break;
     for (const child of batch) {
       await walkEntry(child, dir ?? entry.name, out, skipped);
     }
   }
+}
+
+/**
+ * One `readEntries` round. Same bound as `fileFromEntry`: a folder Chrome will not list must
+ * end the walk (with whatever was collected) instead of hanging the drop for good.
+ */
+function readBatch(reader: FileSystemDirectoryReader): Promise<FileSystemEntry[]> {
+  return new Promise<FileSystemEntry[]>((resolve) => {
+    let settled = false;
+    const finish = (values: FileSystemEntry[]) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(values);
+    };
+    const timer = setTimeout(() => finish([]), ENTRY_FILE_TIMEOUT_MS);
+    try {
+      reader.readEntries(
+        (values) => finish(values),
+        () => finish([]),
+      );
+    } catch {
+      finish([]);
+    }
+  });
 }
