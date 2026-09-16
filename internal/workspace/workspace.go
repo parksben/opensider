@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 
 	_ "embed"
 
@@ -113,6 +114,111 @@ func SavePastedJPEG(imageBase64 string, suggestedName string) (protocol.Attachme
 }
 
 var errPastedTooLarge = pastedError("pasted image is empty or too large")
+
+// SaveUploaded 把用户拖进侧栏的一个文件写到 `browser/uploads/` 下，并回它对应的附件项。
+//
+// Chrome 不给拖入文件的本机路径（DataTransfer 里只有 File 对象），所以侧栏把字节送过来、
+// 这里落盘，之后一切都按普通路径附件走（Agent 读的是工作区里的这份副本）。
+//
+//   - 单个文件：`name` 是文件名，`dir` 为空；
+//   - 文件夹里的文件：`dir` 是拖进来的文件夹名，`name` 是该文件夹内的相对路径，
+//     例如 `dir=proj` + `name=src/a.ts` 写成 `uploads/proj/src/a.ts`。
+//
+// `dir` / `name` 逐段 sanitize，拒绝空段、`.`、`..` 与绝对路径；同名文件加时间戳后缀，
+// 不覆盖之前的。
+func SaveUploaded(name, dir, encoded string) ([]protocol.AttachmentItem, error) {
+	const maxBase64 = 800_000
+	if encoded == "" || len(encoded) > maxBase64 {
+		return nil, errUploadTooLarge
+	}
+	rel, err := uploadRelPath(name, dir)
+	if err != nil {
+		return nil, err
+	}
+	root := paths.UploadsDir()
+	target := filepath.Join(root, rel)
+	// 双重保险：拼出来的路径必须真的落在 uploads/ 里。
+	if !strings.HasPrefix(target, root+string(os.PathSeparator)) {
+		return nil, errUploadPath
+	}
+	created := false
+	if dir != "" {
+		folder := filepath.Join(root, sanitizeSegment(dir))
+		if _, statErr := os.Stat(folder); statErr != nil {
+			created = true
+		}
+	}
+	if mkErr := os.MkdirAll(filepath.Dir(target), 0o755); mkErr != nil {
+		return nil, mkErr
+	}
+	if _, statErr := os.Stat(target); statErr == nil {
+		ext := filepath.Ext(target)
+		stem := strings.TrimSuffix(target, ext)
+		target = stem + "-" + isoStamp() + ext
+	}
+	data, err := decodeBase64(encoded)
+	if err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(target, data, 0o644); err != nil {
+		return nil, err
+	}
+	items := make([]protocol.AttachmentItem, 0, 2)
+	// 文件夹只在这次真的建出来时带一条：侧栏按 path 去重，多报也无害，但少报会让
+	// 用户看不到那个文件夹附件。
+	if dir != "" && created {
+		folder := filepath.Join(root, sanitizeSegment(dir))
+		items = append(items, protocol.AttachmentItem{
+			Path: folder,
+			Name: filepath.Base(folder),
+			Kind: protocol.KindFolder,
+		})
+	}
+	items = append(items, protocol.AttachmentItem{
+		Path: target,
+		Name: filepath.Base(target),
+		Kind: protocol.KindFile,
+	})
+	return items, nil
+}
+
+// uploadRelPath 把 (name, dir) 变成 uploads/ 下的相对路径；任何可疑段都直接报错。
+func uploadRelPath(name, dir string) (string, error) {
+	segments := []string{}
+	if dir != "" {
+		// 文件夹名只是拖进来那一层的名字，出现路径语法说明输入不可能是我们发出去的。
+		if dir == "." || dir == ".." || strings.ContainsAny(dir, `/\`) || filepath.IsAbs(dir) {
+			return "", errUploadPath
+		}
+		segments = append(segments, sanitizeSegment(dir))
+	}
+	for _, part := range strings.Split(strings.ReplaceAll(name, "\\", "/"), "/") {
+		if part == "" || part == "." {
+			continue
+		}
+		if part == ".." {
+			return "", errUploadPath
+		}
+		segments = append(segments, sanitizeSegment(part))
+	}
+	if len(segments) == 0 || filepath.IsAbs(name) {
+		return "", errUploadPath
+	}
+	return filepath.Join(segments...), nil
+}
+
+func sanitizeSegment(part string) string {
+	safe := sanitizeName(part)
+	if safe == "" || safe == "." || safe == ".." {
+		return "upload-" + isoStamp()
+	}
+	return safe
+}
+
+var (
+	errUploadTooLarge = pastedError("dropped file is empty or too large")
+	errUploadPath     = pastedError("dropped file has an unusable name")
+)
 
 type pastedError string
 

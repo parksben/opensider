@@ -1034,6 +1034,16 @@ func (h *Host) dispatch(typ string, msg map[string]any) error {
 		log.Log("saved paste " + item.Path)
 		h.send(map[string]any{"type": "fs.saved", "requestId": requestID, "items": []protocol.AttachmentItem{item}})
 		return nil
+	case "fs.upload":
+		requestID := str(msg["requestId"])
+		items, err := workspace.SaveUploaded(str(msg["name"]), str(msg["dir"]), str(msg["base64"]))
+		if err != nil {
+			h.send(map[string]any{"type": "fs.uploaded", "requestId": requestID, "items": []any{}, "error": err.Error()})
+			return nil
+		}
+		log.Log("saved drop " + str(msg["name"]))
+		h.send(map[string]any{"type": "fs.uploaded", "requestId": requestID, "items": items})
+		return nil
 	case "fs.preview":
 		requestID := str(msg["requestId"])
 		path := str(msg["path"])

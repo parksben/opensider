@@ -14,6 +14,7 @@ import type {
 import { MousePointer2 } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { encodeImageBlob } from "../image-encode";
+import { fileToBase64, type DropPlan } from "./file-drop";
 import { blobUrlFromBase64Chunks, isAttachedImagePath } from "./image-preview";
 import { applyAcpUpdate, applyBrowserTool, createUserMessage } from "./acp-messages";
 import { connectSidebar } from "./bridge";
@@ -590,7 +591,12 @@ export function App() {
       }
       return;
     }
-    if (msg.type === "fs.picked" || msg.type === "fs.saved" || msg.type === "page.picked") {
+    if (
+      msg.type === "fs.picked" ||
+      msg.type === "fs.saved" ||
+      msg.type === "fs.uploaded" ||
+      msg.type === "page.picked"
+    ) {
       const waiter = pickWaiters.current.get(msg.requestId);
       pickWaiters.current.delete(msg.requestId);
       if (msg.type === "page.picked") setPickingElement(false);
@@ -1083,6 +1089,40 @@ export function App() {
     return items;
   };
 
+  const onUploadFiles = async (plan: DropPlan) => {
+    if (statusRef.current !== "ready") {
+      setError(t(localeRef.current, "uploadFailed"));
+      return [] as AttachmentItem[];
+    }
+    if (plan.skipped.tooMany > 0) setError(t(localeRef.current, "uploadTooMany"));
+    else if (plan.skipped.tooLarge > 0) setError(t(localeRef.current, "uploadTooLarge"));
+    const items: AttachmentItem[] = [];
+    for (const dropped of plan.files) {
+      try {
+        const base64 = await fileToBase64(dropped.file);
+        if (!base64) {
+          setError(t(localeRef.current, "uploadTooLarge"));
+          continue;
+        }
+        const saved = await new Promise<AttachmentItem[]>((resolve) => {
+          const requestId = crypto.randomUUID();
+          pickWaiters.current.set(requestId, resolve);
+          sendRef.current({
+            type: "fs.upload",
+            requestId,
+            name: dropped.name,
+            dir: dropped.dir,
+            base64,
+          });
+        });
+        items.push(...saved);
+      } catch (error) {
+        setError(error instanceof Error ? error.message : t(localeRef.current, "uploadFailed"));
+      }
+    }
+    return items;
+  };
+
   const onPickElement = () =>
     new Promise<AttachmentItem[]>((resolve) => {
       const requestId = crypto.randomUUID();
@@ -1412,6 +1452,7 @@ export function App() {
               onRegenerate={regenerateFromMessage}
               onPickAttachments={onPickAttachments}
               onPasteImages={onPasteImages}
+              onUploadFiles={onUploadFiles}
               onPickElement={onPickElement}
               onCancelElementPick={onCancelElementPick}
               onPreviewImage={onPreviewImage}

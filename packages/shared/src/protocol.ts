@@ -310,6 +310,15 @@ export type ExtToHost =
   | { type: "session.fork"; sessionId: string; requestId?: string }
   | { type: "fs.pick"; requestId: string; mode?: FsPickMode }
   | { type: "fs.save"; requestId: string; name?: string; imageBase64: string; mime: "image/jpeg" }
+  | {
+      type: "fs.upload";
+      requestId: string;
+      /** File name, or the path inside the dropped folder when `dir` is set. */
+      name: string;
+      /** Set when the file came from a dropped folder: the dropped folder's own name. */
+      dir?: string;
+      base64: string;
+    }
   | { type: "fs.reveal"; path: string }
   | { type: "fs.preview"; requestId: string; path: string }
   | { type: "page.pick"; requestId: string; hint?: string }
@@ -355,6 +364,12 @@ export type HostToExt =
     }
   | {
       type: "fs.saved";
+      requestId: string;
+      items: AttachmentItem[];
+      error?: string;
+    }
+  | {
+      type: "fs.uploaded";
       requestId: string;
       items: AttachmentItem[];
       error?: string;

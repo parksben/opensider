@@ -1,5 +1,5 @@
 import type { AgentModel, AttachmentItem, CurrentPage, FsPickMode } from "@shared";
-import { ArrowDown, AtSign, Check, ChevronDown, Copy, FolderPen, GitFork, LoaderCircle, MousePointer2, Paperclip, RefreshCw, Send, Shield, Square, Unlock, X, Zap } from "lucide-react";
+import { ArrowDown, AtSign, Check, ChevronDown, Copy, FileDown, FolderPen, GitFork, LoaderCircle, MousePointer2, Paperclip, RefreshCw, Send, Shield, Square, Unlock, X, Zap } from "lucide-react";
 import logoUrl from "../../../assets/icon.svg?url";
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import type { ChatMessage, ChatPart, TodoItem } from "../chat-types";
@@ -8,6 +8,14 @@ import type { Locale } from "../i18n";
 import { t } from "../i18n";
 import { closeAtMenuLock, installAtMenuGuard, openAtMenuLock, shouldBlockSubmit } from "../at-menu-lock";
 import { composerHasContent, stripAttachmentMentions } from "../mentions";
+import {
+  MAX_DROP_FILES,
+  collectDrop,
+  isTooLarge,
+  walkEntry,
+  type DropPlan,
+  type DroppedFile,
+} from "../file-drop";
 import { stripEnvPrompt, textOf, type AgentMode } from "../persist";
 import { detectDesktopOs } from "../platform";
 import { useRipple } from "../useRipple";
@@ -55,6 +63,7 @@ export function ChatPane({
   onRegenerate,
   onPickAttachments,
   onPasteImages,
+  onUploadFiles,
   onPickElement,
   onCancelElementPick,
   onPreviewImage,
@@ -95,6 +104,7 @@ export function ChatPane({
   onRegenerate: (messageId: string) => void;
   onPickAttachments: (mode?: FsPickMode) => Promise<AttachmentItem[]>;
   onPasteImages: (files: File[]) => Promise<AttachmentItem[]>;
+  onUploadFiles: (plan: DropPlan) => Promise<AttachmentItem[]>;
   onPickElement: () => Promise<AttachmentItem[]>;
   onCancelElementPick: () => void;
   onPreviewImage: (path: string) => Promise<string>;
@@ -110,6 +120,7 @@ export function ChatPane({
   const [attachOpen, setAttachOpen] = useState(false);
   const paperclipRef = useRef<HTMLSpanElement>(null);
   const [savingPaste, setSavingPaste] = useState(false);
+  const [dropping, setDropping] = useState(false);
   const [editingId, setEditingId] = useState<string>();
   const [editingQueueId, setEditingQueueId] = useState<string>();
   const [stash, setStash] = useState<{ draft: string; attachments: AttachmentItem[] } | null>(null);
@@ -325,6 +336,73 @@ export function ChatPane({
     }
   };
 
+  /** Drops land here: the bytes go to the host, which writes them into the workspace. */
+  const addDroppedFiles = async (plan: DropPlan) => {
+    if (plan.files.length === 0 && plan.skipped.tooLarge === 0 && plan.skipped.tooMany === 0) return;
+    mergeAttachments(await onUploadFiles(plan));
+  };
+
+  // The whole panel accepts files, not just the composer: dropping one used to hand it to
+  // the browser, which opened it and navigated away from the conversation.
+  useEffect(() => {
+    const hasFiles = (event: DragEvent) =>
+      Array.from(event.dataTransfer?.types ?? []).includes("Files");
+    let depth = 0;
+    const onEnter = (event: DragEvent) => {
+      if (!hasFiles(event)) return;
+      event.preventDefault();
+      depth += 1;
+      setDropping(true);
+    };
+    const onOver = (event: DragEvent) => {
+      if (!hasFiles(event)) return;
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+    };
+    const onLeave = (event: DragEvent) => {
+      if (!hasFiles(event)) return;
+      depth = Math.max(0, depth - 1);
+      if (depth === 0) setDropping(false);
+    };
+    const onDrop = (event: DragEvent) => {
+      if (!hasFiles(event)) return;
+      event.preventDefault();
+      depth = 0;
+      setDropping(false);
+      // `items` is only readable during the event, so capture the entries now.
+      const captured = collectDrop(event.dataTransfer);
+      void (async () => {
+        const skipped = { tooLarge: 0, tooMany: captured.skippedTooMany };
+        const files: DroppedFile[] = [];
+        for (const item of captured.entries) {
+          await walkEntry(item.entry, item.dir, files, skipped);
+        }
+        for (const file of captured.plainFiles) {
+          if (files.length >= MAX_DROP_FILES) {
+            skipped.tooMany += 1;
+            continue;
+          }
+          if (isTooLarge(file.size)) {
+            skipped.tooLarge += 1;
+            continue;
+          }
+          files.push({ name: file.name, file });
+        }
+        await addDroppedFiles({ files, skipped });
+      })();
+    };
+    window.addEventListener("dragenter", onEnter);
+    window.addEventListener("dragover", onOver);
+    window.addEventListener("dragleave", onLeave);
+    window.addEventListener("drop", onDrop);
+    return () => {
+      window.removeEventListener("dragenter", onEnter);
+      window.removeEventListener("dragover", onOver);
+      window.removeEventListener("dragleave", onLeave);
+      window.removeEventListener("drop", onDrop);
+    };
+  }, [onUploadFiles]);
+
   const startElementPick = async () => {
     if (pickingElement) {
       onCancelElementPick();
@@ -336,6 +414,14 @@ export function ChatPane({
 
   return (
     <div className="relative flex h-full min-h-0 flex-col">
+      {dropping ? (
+        <div className="pointer-events-none fixed inset-0 z-40 flex items-center justify-center bg-[var(--overlay)] p-4 backdrop-blur-[1px]">
+          <div className="flex h-full w-full flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-[var(--brass)] bg-[var(--panel)]/85 text-[var(--text)]">
+            <FileDown size={28} className="text-[var(--brass)]" />
+            <p className="text-[13px] font-medium">{label("dropToAttach")}</p>
+          </div>
+        </div>
+      ) : null}
       {messages.length === 0 ? (
         <div className="flex min-h-0 w-full flex-1 select-none flex-col items-center justify-center">
           <img src={logoUrl} alt="" width={120} height={120} aria-hidden="true" draggable={false} className="opacity-30 saturate-[.2]" />

@@ -26,13 +26,18 @@ func SidebarHome() string {
 	return filepath.Join(Home(), ".opensider")
 }
 
-func WorkspaceDir() string    { return filepath.Join(SidebarHome(), "workspace") }
-func OutputsDir() string      { return filepath.Join(WorkspaceDir(), "outputs") }
-func BrowserDir() string      { return filepath.Join(WorkspaceDir(), "browser") }
-func CommandsDir() string     { return filepath.Join(BrowserDir(), "commands") }
-func ResultsDir() string      { return filepath.Join(BrowserDir(), "results") }
-func ScreenshotsDir() string  { return filepath.Join(BrowserDir(), "screenshots") }
-func PastedDir() string       { return filepath.Join(BrowserDir(), "pasted") }
+func WorkspaceDir() string   { return filepath.Join(SidebarHome(), "workspace") }
+func OutputsDir() string     { return filepath.Join(WorkspaceDir(), "outputs") }
+func BrowserDir() string     { return filepath.Join(WorkspaceDir(), "browser") }
+func CommandsDir() string    { return filepath.Join(BrowserDir(), "commands") }
+func ResultsDir() string     { return filepath.Join(BrowserDir(), "results") }
+func ScreenshotsDir() string { return filepath.Join(BrowserDir(), "screenshots") }
+func PastedDir() string      { return filepath.Join(BrowserDir(), "pasted") }
+
+// UploadsDir 是用户拖进侧栏的文件/文件夹的落盘位置。Chrome 不给拖入文件的
+// 本机路径（DataTransfer 里只有 File 对象），所以只能把字节复制一份再当路径附件；
+// 与粘贴截图落 pasted/ 是同一个思路。
+func UploadsDir() string      { return filepath.Join(BrowserDir(), "uploads") }
 func ToolsPath() string       { return filepath.Join(BrowserDir(), "tools.json") }
 func CurrentPagePath() string { return filepath.Join(BrowserDir(), "current.json") }
 func TabsPath() string        { return filepath.Join(BrowserDir(), "tabs.json") }
