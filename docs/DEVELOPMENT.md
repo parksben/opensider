@@ -66,6 +66,7 @@ scripts/verify-native-ui.mjs  原生 UI shim 的端到端验证（真 Chromium +
 scripts/verify-page-activity.mjs  页面活动态（面板开着强制可见 / 关掉还原）的端到端验证
 scripts/verify-queue-send-now.mjs  消息队列「立即发送」的端到端验证
 scripts/verify-file-drop.mjs  拖文件到侧栏 → 变附件的端到端验证
+scripts/verify-composer-clipboard.mjs  输入框全选复制/剪切带上附件栏的端到端验证
 scripts/lib/sandbox.mjs  上面几个脚本共用的沙箱（临时 HOME / 现编 Host / 假 Agent / profile 内桥接清单）
 scripts/fake-acp-agent.mjs  假 ACP Agent（e2e 用，按行 JSON，可控分片/是否响应 cancel）
 scripts/install       已删除（用户侧不再有壳脚本）

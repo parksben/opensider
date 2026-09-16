@@ -1,13 +1,20 @@
 import type { AgentModel, AttachmentItem, CurrentPage, FsPickMode } from "@shared";
 import { ArrowDown, AtSign, Check, ChevronDown, Copy, FileDown, FolderPen, GitFork, LoaderCircle, MousePointer2, Paperclip, RefreshCw, Send, Shield, Square, Unlock, X, Zap } from "lucide-react";
 import logoUrl from "../../../assets/icon.svg?url";
-import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from "react";
 import type { ChatMessage, ChatPart, TodoItem } from "../chat-types";
 import { useComposerHistory } from "../composer-history";
 import type { Locale } from "../i18n";
 import { t } from "../i18n";
 import { closeAtMenuLock, installAtMenuGuard, openAtMenuLock, shouldBlockSubmit } from "../at-menu-lock";
 import { composerHasContent, stripAttachmentMentions } from "../mentions";
+import {
+  composerCarryMatches,
+  decodeComposerCarry,
+  encodeComposerCarry,
+  mergeAttachmentItems,
+  type ComposerCarry,
+} from "../composer-clipboard";
 import {
   MAX_DROP_FILES,
   collectDrop,
@@ -35,6 +42,8 @@ import { TodoList } from "./TodoList";
 import { ToolCard } from "./ToolCard";
 
 const STICKY_PX = 96;
+/** Where the "copy/cut carried the attachments" payload waits for its paste. */
+const COMPOSER_CARRY_KEY = "opensiderComposerCarry";
 
 function stickToBottom(node: HTMLElement | null, smooth = false): void {
   if (!node) return;
@@ -121,6 +130,7 @@ export function ChatPane({
   const paperclipRef = useRef<HTMLSpanElement>(null);
   const [savingPaste, setSavingPaste] = useState(false);
   const [dropping, setDropping] = useState(false);
+  const carryRef = useRef<ComposerCarry | null>(null);
   const [editingId, setEditingId] = useState<string>();
   const [editingQueueId, setEditingQueueId] = useState<string>();
   const [stash, setStash] = useState<{ draft: string; attachments: AttachmentItem[] } | null>(null);
@@ -149,10 +159,41 @@ export function ChatPane({
   const busy = locking;
 
   const mergeAttachments = (items: AttachmentItem[]) => {
-    setAttachments((current) => {
-      const seen = new Set(current.map((item) => item.path));
-      return [...current, ...items.filter((item) => !seen.has(item.path))];
-    });
+    setAttachments((current) => mergeAttachmentItems(current, items));
+  };
+
+  /**
+   * Copy/cut with the whole composer selected also carries the attachment bar, so a draft
+   * can be moved to another session without re-uploading its files. The payload goes into
+   * extension storage rather than the clipboard (Chromium drops custom clipboard flavours
+   * and we must not leak markers into other apps); a later paste of exactly that text
+   * restores it. Copy leaves this composer alone; cut clears the bar like it clears text.
+   */
+  const carryAttachments = (action: "copy" | "cut") => {
+    if (attachments.length === 0) return;
+    const payload = encodeComposerCarry({ text: draft, attachments, at: Date.now() });
+    carryRef.current = decodeComposerCarry(payload) ?? null;
+    void chrome.storage.session.set({ [COMPOSER_CARRY_KEY]: payload }).catch(() => undefined);
+    if (action === "cut") setAttachments([]);
+  };
+
+  /** A paste whose text is exactly what was copied: bring the attachments along, once. */
+  const restoreCarriedAttachments = (pastedText: string) => {
+    const apply = (carry: ComposerCarry | null) => {
+      if (!composerCarryMatches(carry ?? undefined, pastedText, Date.now())) return;
+      carryRef.current = null;
+      void chrome.storage.session.remove(COMPOSER_CARRY_KEY).catch(() => undefined);
+      mergeAttachments(carry!.attachments);
+    };
+    if (carryRef.current) {
+      apply(carryRef.current);
+      return;
+    }
+    // Another panel page (or a fresh mount) may hold the payload.
+    void chrome.storage.session
+      .get(COMPOSER_CARRY_KEY)
+      .then((raw) => apply(decodeComposerCarry(raw?.[COMPOSER_CARRY_KEY] as string) ?? null))
+      .catch(() => undefined);
   };
 
   const openAtMenu = () => {
@@ -528,6 +569,8 @@ export function ChatPane({
             onChange={setDraft}
             onSubmit={() => submit(true)}
             onPasteImages={(files) => void addPastedImages(files)}
+            onComposerClipboardCarry={carryAttachments}
+            onComposerPastedText={restoreCarriedAttachments}
             onAtTyped={openAtMenu}
             onAtQueryChange={handleAtQueryChange}
           />

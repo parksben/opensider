@@ -236,6 +236,9 @@ export type PermissionOption = {
 
 export type AttachmentKind = "image" | "file" | "folder" | "element";
 
+/** Runtime list of the kinds above, for validation outside the type system. */
+export const ATTACHMENT_KINDS: readonly AttachmentKind[] = ["image", "file", "folder", "element"];
+
 export type AttachmentItem = {
   path: string;
   name: string;

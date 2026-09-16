@@ -17,6 +17,9 @@ import {
 } from "../at-menu-lock";
 import { consumeAtBeforeCaret, readAtQuery } from "../at-query";
 import {
+  coversWholeEditor,
+} from "../composer-clipboard";
+import {
   parseMentionSegments,
   parseMentionToken,
   serializeMention,
@@ -245,10 +248,28 @@ export const ComposerEditor = forwardRef<
     onChange: (value: string) => void;
     onSubmit: () => void;
     onPasteImages: (files: File[]) => void;
+    /** Called on copy/cut only when the selection covers the whole composer. */
+    onComposerClipboardCarry?: (action: "copy" | "cut") => void;
+    /** The plain text a paste is about to insert (before it lands in the editor). */
+    onComposerPastedText?: (text: string) => void;
     onAtTyped?: () => void;
     onAtQueryChange?: (query: string | null) => void;
   }
->(function ComposerEditor({ value, placeholder, menuOpen, onChange, onSubmit, onPasteImages, onAtTyped, onAtQueryChange }, ref) {
+>(function ComposerEditor(
+  {
+    value,
+    placeholder,
+    menuOpen,
+    onChange,
+    onSubmit,
+    onPasteImages,
+    onComposerClipboardCarry,
+    onComposerPastedText,
+    onAtTyped,
+    onAtQueryChange,
+  },
+  ref,
+) {
   const editorRef = useRef<HTMLDivElement>(null);
   const rootsRef = useRef(new Map<HTMLElement, Root>());
   const lastRangeRef = useRef<Range | null>(null);
@@ -577,8 +598,19 @@ export const ComposerEditor = forwardRef<
     if (images.length === 0 && !text) return;
     event.preventDefault();
     event.stopPropagation();
-    if (text) insertSerialized(text);
+    if (text) {
+      onComposerPastedText?.(text);
+      insertSerialized(text);
+    }
     if (images.length > 0) onPasteImages(images);
+  };
+
+  /** Only a selection that covers the whole composer carries the attachment bar along. */
+  const onCopyOrCut = (_event: ClipboardEvent<HTMLDivElement>, action: "copy" | "cut") => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    if (!coversWholeEditor(window.getSelection(), editor)) return;
+    onComposerClipboardCarry?.(action);
   };
 
   return (
@@ -622,6 +654,8 @@ export const ComposerEditor = forwardRef<
         saveRange();
       }}
       onPaste={onPaste}
+      onCopy={(event) => onCopyOrCut(event, "copy")}
+      onCut={(event) => onCopyOrCut(event, "cut")}
       onBlur={saveRange}
     />
   );
