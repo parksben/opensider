@@ -38,11 +38,15 @@ func CurrentPagePath() string { return filepath.Join(BrowserDir(), "current.json
 func TabsPath() string        { return filepath.Join(BrowserDir(), "tabs.json") }
 func SnapshotPath() string    { return filepath.Join(BrowserDir(), "snapshot.md") }
 func InteractivePath() string { return filepath.Join(BrowserDir(), "interactive.md") }
-func AgentsMDPath() string    { return filepath.Join(WorkspaceDir(), "AGENTS.md") }
-func ClaudeMDPath() string    { return filepath.Join(WorkspaceDir(), "CLAUDE.md") }
-func SessionPath() string     { return filepath.Join(SidebarHome(), "session.json") }
-func UIStatePath() string     { return filepath.Join(SidebarHome(), "ui-state.json") }
-func HostLogPath() string     { return filepath.Join(SidebarHome(), "host.log") }
+
+// NativeUIPath 是扩展报上来的原生 UI 事件流（页面弹的 alert / confirm / prompt / print /
+// window.open / 文件选择器），最近 50 条，供 Agent 读；见 TECH_DESIGN「原生 UI 感知与代答」。
+func NativeUIPath() string { return filepath.Join(BrowserDir(), "native-ui.json") }
+func AgentsMDPath() string { return filepath.Join(WorkspaceDir(), "AGENTS.md") }
+func ClaudeMDPath() string { return filepath.Join(WorkspaceDir(), "CLAUDE.md") }
+func SessionPath() string  { return filepath.Join(SidebarHome(), "session.json") }
+func UIStatePath() string  { return filepath.Join(SidebarHome(), "ui-state.json") }
+func HostLogPath() string  { return filepath.Join(SidebarHome(), "host.log") }
 
 // ReleaseCheckPath 缓存「最新 Release 的 tag」，见 internal/release。
 func ReleaseCheckPath() string { return filepath.Join(SidebarHome(), "release-check.json") }

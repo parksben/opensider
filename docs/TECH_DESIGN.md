@@ -209,6 +209,16 @@ Host 在 `session/new` 之前写好 `AGENTS.md` 和 `browser/tools.json`，这�
 
 reveal 的平台实现分在 `internal/reveal/reveal_{darwin,linux,windows}.go`：macOS `open -R <path>`；Linux 先 `dbus-send … FileManager1.ShowItems`（path 转 `file://` URI），失败退 `xdg-open <dir>`；Windows 用 `explorer.exe /select,"<path>"`。**Windows 这条不能交给 Go 拼参数**：`explorer.exe` 不按 `CommandLineToArgvW` 解析命令行，而 `os/exec` 只要参数里含空格就把整串加引号，拼出来是 `explorer "/select,C:\a b\c.txt"`——explorer 认不出 `/select` 开关，只会弹一个与目标无关的窗口。路径带空格时必现，而 Windows 主目录/用户名带空格极常见，所以这不是边角。做法是自己拼命令行（`SysProcAttr.CmdLine` 原样交给 `CreateProcess`），等价于手敲 `explorer.exe /select,"C:\a b\c.txt"`。拼装函数 `explorerSelectCmdLine` 与断言放在**不带 build tag** 的 `reveal.go` / `reveal_test.go` 里：写进 windows-only 文件就只有 Windows 跑得到，本机与 CI 都测不了。explorer 成功也常返回 1，按老规矩容忍；`CmdLine` 真起不来（含双引号等非法情形）才退到打开所在目录。
 
+**原生 UI 感知与代答**：页面调 `alert` / `confirm` / `prompt` / `print()` / `window.open()`，或点 `<input type=file>` 唤出系统选择器时，扩展要把这件事变成 Agent 能读的事件，并在被授权时同步代答。这些 API 全在页面的 JS 线程里，Chrome 扩展没有别的入口，所以做法是**主世界注入 + 预推策略**：
+
+- `src/native-ui-hook.ts` 作为主世界 `content_scripts` 注入（`run_at: document_start`、`all_frames: true`），在闭包里包住那几个入口——不往 `window` 上挂任何全局，页面既读不到也改不掉。每次调用先生成事件、`postMessage` 给隔离世界，再决定「放行（调原生）/ 代答（直接返回策略值）」。
+- `src/native-ui-relay.ts` 是隔离世界里的同域注入（同样 `all_frames`）：与主世界用一次性 token 握手（页面可以伪造 `postMessage`，带对 token 的才算数），把事件转给 SW，把 SW 下发的策略转给主世界。
+- **默认 `observe`**：只记录、真弹窗照旧。因为放行后我们拿到返回值，所以**用户自己答案是 true/false 还是那段文本都能记下来**。`answer` 模式必须 Agent 显式 `setDialogPolicy` 打开，带过期时间（默认 120s），过期自动回 `observe`——否则用户之后正常浏览时的弹窗会被静默吞掉。
+- **为什么不能「挂起等答复」**：`confirm` / `prompt` 是同步 API，代答必须在调用当帧返回，所以策略只能提前推下去缓存。这也决定了工具面的形状：先 `setDialogPolicy`，再触发那一下点击，而不是弹出来再回答。
+- 事件汇总：SW 按 tab 留最近 50 条并转发 Host（`browser/native-ui.json`）；命令执行期间到达的事件**并进该命令的结果**（`data.nativeUi`），Agent 点一下就知道弹了什么，不必再读文件。
+- 覆盖与边界：JS 弹窗（alert/confirm/prompt）、`print()`、`window.open()`（含被拦下时返回 null）、`<input type=file>` 的 `click()` / `showPicker()` 都能感知，除文件选择器外都能代答。**真正的浏览器 / 系统 UI 做不到**——权限授权框、HTTP 认证框、下载气泡、系统文件选择器窗口、证书警告。只有 `chrome.debugger`（CDP 的 `Page.handleJavaScriptDialog`、`Page.fileChooserOpened` + `DOM.setFileInputFiles`、`Browser.setPermission`）能看能操作，代价是「正在调试此浏览器」横幅 + 与 DevTools 互斥 + `debugger` 权限。做与不做都要写进 `agents.md`，别让 Agent 去猜一个不存在的能力。
+- 工具面：新增 `getNativeUi`（事件 + 权限状态 + visibility/fullscreen/beforeunload）与 `setDialogPolicy`，`browser/tools.json` 的 `version` 8 → 9。
+
 ## 多会话与 fork
 
 工作区仍是一个。ACP 会话可以有多条，侧栏用本地 `id` 和 `acpSessionId` 对应。

@@ -116,6 +116,12 @@
 12. Host 启动、会话建立时，工作区已写好 `AGENTS.md` 和 `browser/tools.json`，并确保 `outputs/` 存在。Agent 在插件连上的第一时刻就能读到全部页面方法（含截图、标签/窗口、交互快照、`runScript`）以及产物回传 `reportArtifacts`，不必等用户再说明。打开的标签实时写在 `browser/tabs.json`，当前页控件写在 `browser/interactive.md`，Agent 先读这两份再动手，不要猜 tabId 或 CSS。写完会给用户看的文件后必须再调一次 `reportArtifacts`（路径优先 `outputs/...`）。
 13. 以下页面不注入、不抓取、不操作、不截图、不跑 `runScript`：`chrome://`、`chrome-extension://`、Chrome Web Store。仍可出现在 `tabs.json` 里并允许 `switchTab`（只是切过去看），但不能对这些页跑页面读/写/截图/脚本。
 14. 页面自动化默认执行，不再逐步弹权限（用户装这个扩展就是为了让 Agent 动手）。本地文件写入和 Shell 仍走 ACP 权限条。
+15. **浏览器原生 UI 的感知与受控代答**：页面弹 `alert` / `confirm` / `prompt`、调 `print()`、开 `window.open()`、或点 `<input type=file>` 唤系统选择器，都算「原生 UI 状态变化」，Agent 必须能感知，并能在明确授权下代答：
+    - **感知（默认就有）**：主世界在 `document_start` 包住这几个入口，每次触发都记一条事件（kind、message、defaultValue、frame url、时间、是否发生在 Agent 命令执行中、是否被代答、答案），写进 `browser/native-ui.json`（最近 50 条，Host 落盘），并附在**触发它的那条命令结果**里（`data.nativeUi`）——Agent 点一下就知道这一下弹了什么，不用再去翻文件。
+    - **代答（默认不做）**：默认只观察、不改行为：真弹窗照旧由用户点，我们只记录事件与用户给出的答案（`confirm` 的 true/false、`prompt` 的文本都拿得到）。Agent 需要用 `setDialogPolicy` 显式切到 `answer` 模式（可带 `expiresAt`，默认 120s）才由我们同步代答：`alert` 直接关掉、`confirm` 按策略返回 true/false、`prompt` 返回策略文本、`<input type=file>` 的 `click()` / `showPicker()` 在代答模式下**不弹系统选择器**（它会把整页 JS 线程卡死）只记事件——这是 Agent 能在「点一下就要求选文件 / 确认」的站点上继续干活的关键。
+    - **同步约束**：`confirm` / `prompt` 是同步 API，代答必须在调用当刻就返回，所以策略是**提前**推给主世界缓存的（不存在「挂起等 Agent 事后答复」这种做法）；`answer` 模式会过期，过期即回 `observe`，避免用户之后正常浏览时的弹窗被静默吞掉。
+    - **可读的 UI 状态**：`getNativeUi` 同时返回当前标签的权限状态（`navigator.permissions`：geolocation / camera / microphone / notifications / clipboard-read / clipboard-write）、`visibility`、`fullscreen`、是否注册了 `beforeunload`，让 Agent 知道「点下去会不会弹系统授权框」。
+    - **边界必须说清楚，不许吹**：Chrome 扩展 API 看不到也点不到真正的浏览器 / 系统 UI——权限授权框、HTTP 认证框、下载气泡、系统文件选择器窗口、原生右键菜单、证书警告。只有 `chrome.debugger`（CDP：`Page.handleJavaScriptDialog` / `Page.fileChooserOpened` + `DOM.setFileInputFiles` / `Browser.setPermission`）能看到并操作，代价是「正在调试此浏览器」横幅、与 DevTools 互斥、以及 `debugger` 权限（会多一条权限提示）；v1 不做，只在 TECH_DESIGN 里备着。
 
 ### 跨页工作
 

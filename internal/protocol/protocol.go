@@ -19,7 +19,7 @@ var PageMethods = []string{
 	"fillForm", "select", "check", "press", "scroll", "scrollIntoView", "waitFor",
 	"navigate", "goBack", "goForward", "reload", "runScript", "screenshot",
 	"screenshotElement", "listTabs", "switchTab", "openTab", "closeTab",
-	"moveTabsToWindow",
+	"moveTabsToWindow", "getNativeUi", "setDialogPolicy",
 }
 
 var HostMethods = []string{"reportArtifacts"}
@@ -153,6 +153,7 @@ var ToolCatalog = []ToolEntry{
 	{Name: "getReadable", Kind: "read", Args: "", Summary: "main text extract"},
 	{Name: "getInteractive", Kind: "read", Args: "", Summary: "numbered interactive controls; prefer args.index from this list"},
 	{Name: "getUnsavedChanges", Kind: "read", Args: "", Summary: "detect unsaved form/editor edits before navigate/close"},
+	{Name: "getNativeUi", Kind: "read", Args: "", Summary: "recent native UI events (alert/confirm/prompt/print/popup/file chooser) plus permissions, visibility and fullscreen"},
 	{Name: "getSelection", Kind: "read", Args: "", Summary: "highlighted text"},
 	{Name: "getLinks", Kind: "read", Args: "", Summary: "same-origin links"},
 	{Name: "getOutline", Kind: "read", Args: "", Summary: "h1–h3 headings"},
@@ -187,6 +188,7 @@ var ToolCatalog = []ToolEntry{
 	{Name: "openTab", Kind: "act", Args: "url, windowId?", Summary: "open http(s) in a new tab without touching the current page"},
 	{Name: "closeTab", Kind: "act", Args: "tabId?, force?", Summary: "close a tab; blocked if unsaved unless force"},
 	{Name: "moveTabsToWindow", Kind: "act", Args: "tabIds, windowId?", Summary: "pull tabs into a new window, or into windowId"},
+	{Name: "setDialogPolicy", Kind: "act", Args: "policy{mode,confirm,promptText,alert,expiresAt}", Summary: "mode=answer returns those values to the page instead of showing JS dialogs (default observe only records them)"},
 	{Name: "reportArtifacts", Kind: "workspace", Args: "files[{path, name?}] | paths[] | path", Summary: "replace the sidebar artifact list with these local files after you finish writing outputs; prefer outputs/... paths"},
 }
 

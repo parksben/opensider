@@ -14,6 +14,8 @@ When the user talks about "this page", "the current tab", or the site they are l
 
 These files track the focused window's **active** tab in real time — including when the user clicks another tab, closes the current tab and Chrome activates another already-open tab, or focuses a different window. If `current.json` still names a tabId that is gone from `tabs.json`, treat it as stale and re-read both files. Re-read after navigation, after `switchTab`, or if the user says they changed pages.
 
+4. **`browser/native-ui.json`** — the browser UI the page popped up: JS dialogs (`alert` / `confirm` / `prompt`), `window.print()`, `window.open()` (including ones Chrome blocked), and the native file picker behind `<input type=file>`. Newest last, 50 entries. You usually do not need to read this file to see what your own click caused: those events ride along in that command's result as `data.nativeUi`.
+
 ## Before you automate (required)
 
 1. **Explore first.** Read `browser/interactive.md` and `browser/snapshot.md` (and `getUnsavedChanges` / a screenshot if needed). Match what you see against the user's request.
@@ -65,7 +67,45 @@ Do not invent tab IDs. To switch tabs, call `switchTab` with `args.tabId` from t
 
 `restricted: true` means chrome://, edge://, brave://, chrome-extension://, or a browser store page. You may `switchTab` to those, but do not run page read / act / screenshot on them.
 
-### Protect unsaved page edits (required)
+### Native dialogs and other browser UI a page can pop up
+
+A page can stop its own JS thread with `alert` / `confirm` / `prompt`, ask for a file with
+`<input type=file>`, call `print()`, or open a window. OpenSider watches all of them and puts
+what happened in `browser/native-ui.json` (and in `data.nativeUi` of the command that caused
+it).
+
+**Default: observe.** The real dialog still opens and the user answers it; you only get the
+event, including the answer they gave (`answer: true|false`, or the text they typed). That is
+usually enough to know why your click did not do what you expected.
+
+**Answering it yourself** (`setDialogPolicy`): `confirm` and `prompt` are *synchronous* — the
+page's JS thread is frozen while they are open, so nobody can decide after the fact. If you
+want to answer instead of the user, arm the policy **before** the click that triggers it:
+
+```json
+{"id":"cmd_policy","method":"setDialogPolicy","args":{"policy":{"mode":"answer","confirm":true,"promptText":"ada"}}}
+{"id":"cmd_click","method":"click","args":{"selector":"#delete"}}
+```
+
+- `confirm: true|false` is what the page receives, `promptText` is what `prompt()` returns,
+  and `alert` is dismissed (`"alert":"observe"` keeps alerts visible).
+- The policy **expires** (`expiresAt`, default 120s, max 30min) and then behaves like
+  observe again — that is deliberate: a policy left armed would silently swallow the dialogs
+  of whatever the user does next. Re-arm it for each action that needs it.
+- While armed, a click on `<input type=file>` does **not** open the system picker (that picker
+  freezes the page just like `confirm` does); you get an event with `blocked: true`. File
+  inputs cannot be filled from script — ask the user for the file path and handle the upload
+  yourself, or ask them to pick it in the page.
+- `window.open()` and `print()` are never suppressed: the first is ordinary navigation (use
+  `openTab` yourself when you want a new tab), the second is a surface the user asked for.
+  Both still show up as events, blocked popups included (`blocked: true`).
+
+**What this cannot see.** Chrome gives extensions no API for real browser or system UI:
+permission prompts (camera, microphone, geolocation, notifications), HTTP auth dialogs,
+download bubbles, the OS file-chooser window itself, certificate warnings. Those are not in
+the event stream no matter what the page does, so do not wait for them — check
+`permissions` in `getNativeUi` to know whether clicking something will raise a prompt, and
+otherwise ask the user to handle it.
 
 Before `navigate`, `reload`, `goBack`, `goForward`, or `closeTab` on a page the user may have edited, call `getUnsavedChanges` on that tab (switch to it first if needed).
 
@@ -95,6 +135,7 @@ Find elements with `args.index` (from `interactive.md`), `args.label` / `args.na
 
 - `getInteractive` — refresh the numbered control list (same as `browser/interactive.md`)
 - `getUnsavedChanges` — whether the page has unsaved form / editor edits (`dirty`, `reasons`, `fields`)
+- `getNativeUi` — what the page popped up since your last read (`events`), the dialog policy in force, plus `permissions` / `visibility` / `fullscreen` / `beforeunload`
 - `getMeta` — url, title, description
 - `getReadable` — main text
 - `getSelection` — highlighted text
@@ -118,6 +159,7 @@ Find elements with `args.index` (from `interactive.md`), `args.label` / `args.na
 - `check` — checkbox/radio/switch, optional `args.checked`
 - `press` — `args.key` such as `Enter` or `Escape`
 - `scroll` — element if index/selector/text, else window by `args.x` / `args.y`
+- `setDialogPolicy` — how to treat the page's JS dialogs **before** you trigger them (see below)
 - `scrollIntoView`
 - `waitFor` — poll until the element exists (`args.timeoutMs`, max 20000)
 - `navigate` — `args.url`, http(s) only; blocked if unsaved unless `args.force`

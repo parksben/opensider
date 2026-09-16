@@ -37,6 +37,15 @@ export default defineManifest({
       js: ["src/content.ts"],
       run_at: "document_start",
     },
+    // Native UI shim: must be in the MAIN world (it patches the page's own alert/confirm/
+    // prompt/print/open/file-picker entry points) and must run before any page script.
+    {
+      matches: ["http://*/*", "https://*/*"],
+      js: ["src/native-ui-hook.ts"],
+      run_at: "document_start",
+      all_frames: true,
+      world: "MAIN",
+    },
   ],
   permissions: ["sidePanel", "nativeMessaging", "tabs", "windows", "storage", "scripting", "favicon"],
   host_permissions: ["http://*/*", "https://*/*"],

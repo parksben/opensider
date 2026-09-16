@@ -1,3 +1,5 @@
+import type { NativeUiEvent } from "./native-ui";
+
 export const HOST_NAME = "com.opensider.host";
 // 未打包 ID（用户实际在用的那个）：由下面 EXTENSION_KEY 决定，改了会让用户丢侧栏数据；
 // pack-extension.mjs 会用构建产物 manifest 的 key 校验它
@@ -49,6 +51,8 @@ export const PAGE_METHODS = [
   "openTab",
   "closeTab",
   "moveTabsToWindow",
+  "getNativeUi",
+  "setDialogPolicy",
 ] as const;
 
 export const TAB_METHODS = ["navigate", "goBack", "goForward", "reload"] as const;
@@ -79,11 +83,20 @@ export const ACTION_METHODS = [
   "openTab",
   "closeTab",
   "moveTabsToWindow",
+  "getNativeUi",
+  "setDialogPolicy",
 ] as const;
 
 export type PageMethod = (typeof PAGE_METHODS)[number];
 export type TabMethod = (typeof TAB_METHODS)[number];
 export type WindowMethod = (typeof WINDOW_METHODS)[number];
+
+/** Methods the service worker answers itself by talking to the main-world native UI shim. */
+export const NATIVE_UI_METHODS = ["getNativeUi", "setDialogPolicy"] as const;
+
+export function isNativeUiMethod(method: PageMethod): boolean {
+  return (NATIVE_UI_METHODS as readonly string[]).includes(method);
+}
 
 export function isTabMethod(method: PageMethod): method is TabMethod {
   return (TAB_METHODS as readonly string[]).includes(method);
@@ -139,6 +152,10 @@ export type BrowserCommandArgs = {
   code?: string;
   world?: "ISOLATED" | "MAIN";
   fields?: FormFieldArg[];
+  /** setDialogPolicy: `observe` (default) or `answer` with the per-kind answers. */
+  policy?: unknown;
+  /** setDialogPolicy / getNativeUi: how long an answer policy stays armed. */
+  expiresAt?: number;
 };
 
 export type TabRecord = {
@@ -300,6 +317,7 @@ export type ExtToHost =
   | { type: "page.update"; page: CurrentPage }
   | { type: "tabs.update"; snapshot: TabsSnapshot }
   | { type: "browser.result"; result: BrowserResult }
+  | { type: "native.ui"; tabId: number; url: string; events: NativeUiEvent[] }
   | {
       type: "permission.reply";
       id: number;

@@ -4,12 +4,25 @@ import type {
   BrowserResult,
   ClipRect,
   CurrentPage,
+  DialogPolicy,
   ExtToHost,
   HostToExt,
+  NativeUiEvent,
+  NativeUiSnapshot,
   TabRecord,
   TabsSnapshot,
 } from "@shared";
-import { HOST_NAME, isActionMethod, isCaptureMethod, isScriptMethod, isTabMethod, isWindowMethod } from "@shared";
+import {
+  HOST_NAME,
+  NATIVE_UI_HOOK_KEY,
+  isActionMethod,
+  isCaptureMethod,
+  isNativeUiMethod,
+  isScriptMethod,
+  isTabMethod,
+  isWindowMethod,
+  normalizeDialogPolicy,
+} from "@shared";
 import {
   isPickablePageUrl,
   isRestrictedUrl,
@@ -42,6 +55,16 @@ let startingWatchdog = 0;
 const STARTING_TIMEOUT_MS = 10_000;
 
 const INSTALL_HINT = "Send the prompt shown in the side panel to your local AI Agent.";
+
+// Test seam: `scripts/verify-native-ui.mjs` drives real commands through this instead of
+// going through the native host and the side panel, so it can run without a registered host.
+// Reachable only from extension contexts (a page cannot call into the service worker), and it
+// exposes nothing the host could not already ask for. Declared up here so it exists as soon
+// as the module starts evaluating.
+(globalThis as unknown as Record<string, unknown>)["__opensiderDispatch"] = (command: BrowserCommand) =>
+  new Promise<BrowserResult | undefined>((resolve) => {
+    void dispatchCommand(command, undefined, resolve);
+  });
 
 function isHostMissingError(message: string): boolean {
   const text = message.toLowerCase();
@@ -663,8 +686,143 @@ async function runWindowMethod(command: BrowserCommand): Promise<BrowserResult> 
   };
 }
 
-async function dispatchCommand(command: BrowserCommand, sessionId?: string): Promise<void> {
+// --- native UI (JS dialogs and other browser surfaces a page can pop up) ---------------
+//
+// The shim lives in the page's MAIN world (`native-ui-hook.ts`) because that is the only
+// place `alert` / `confirm` / `prompt` / the file picker can be intercepted. It cannot talk
+// to us — main-world scripts have no chrome.* APIs — so everything is pull-based: the hook
+// buffers events and holds the dialog policy, and we read them here.
+
+const NATIVE_UI_TOKENS_KEY = "opensiderNativeUiTokens";
+const nativeUiTokens = new Map<number, string>();
+
+/** Per-tab token so page scripts cannot drive the shim (the token only travels in args). */
+async function nativeUiToken(tabId: number): Promise<string> {
+  const cached = nativeUiTokens.get(tabId);
+  if (cached) return cached;
+  let stored: Record<string, string> | undefined;
+  try {
+    stored = (await chrome.storage.session.get(NATIVE_UI_TOKENS_KEY))?.[NATIVE_UI_TOKENS_KEY] as
+      | Record<string, string>
+      | undefined;
+  } catch {
+    stored = undefined;
+  }
+  const token = stored?.[String(tabId)] ?? crypto.randomUUID().replace(/-/g, "");
+  nativeUiTokens.set(tabId, token);
+  try {
+    await chrome.storage.session.set({
+      [NATIVE_UI_TOKENS_KEY]: { ...(stored ?? {}), [String(tabId)]: token },
+    });
+  } catch {
+    // storage.session is best-effort: a service-worker restart just re-arms the token
+  }
+  return token;
+}
+
+type NativeUiCall<T> = { ok: true; value: T } | { ok: false; error: string };
+
+/** Runs one shim call in every frame and merges the answers. */
+async function callNativeUi<T>(tabId: number, method: "read" | "setPolicy", args: unknown[]): Promise<NativeUiCall<T>> {
+  const token = await nativeUiToken(tabId);
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      world: "MAIN",
+      args: [NATIVE_UI_HOOK_KEY as string, method, token, args],
+      func: (key: string, fn: string, caller: string, fnArgs: unknown[]) => {
+        const api = (globalThis as unknown as Record<string, Record<string, (...a: unknown[]) => unknown>>)[
+          key
+        ];
+        if (!api || typeof api[fn] !== "function") return { ok: false as const, error: "not installed" };
+        try {
+          return { ok: true as const, value: api[fn](caller, ...fnArgs) as unknown };
+        } catch (error) {
+          return { ok: false as const, error: error instanceof Error ? error.message : String(error) };
+        }
+      },
+    });
+    const frames = results
+      .map((entry) => entry.result as { ok: boolean; value?: unknown; error?: string } | undefined)
+      .filter((entry): entry is { ok: boolean; value?: unknown; error?: string } => Boolean(entry));
+    if (frames.length === 0 || !frames.some((frame) => frame.ok)) {
+      return {
+        ok: false,
+        error:
+          "The browser UI shim is not installed in this tab yet. Reload the tab and try again.",
+      };
+    }
+    if (method === "setPolicy") {
+      return { ok: true, value: frames.find((frame) => frame.ok)?.value as T };
+    }
+    const snapshots = frames
+      .filter((frame) => frame.ok)
+      .map((frame) => frame.value as NativeUiSnapshot);
+    const events = snapshots
+      .flatMap((snapshot) => snapshot.events ?? [])
+      .sort((a, b) => a.at - b.at);
+    const first = snapshots[0];
+    return {
+      ok: true,
+      value: {
+        events,
+        policy: first?.policy ?? normalizeDialogPolicy(undefined, Date.now()),
+        ui: first?.ui ?? { visibility: "unknown", fullscreen: false, beforeunload: false, permissions: {} },
+      } as T,
+    };
+  } catch (error) {
+    return { ok: false, error: pageCommandError(error) };
+  }
+}
+
+/** Take whatever the page popped up since the last read (used after every page command). */
+async function drainNativeUi(tabId: number): Promise<NativeUiEvent[]> {
+  const pulled = await callNativeUi<NativeUiSnapshot>(tabId, "read", [true]);
+  if (!pulled.ok) return [];
+  return pulled.value.events ?? [];
+}
+
+function reportNativeUi(tabId: number, url: string, events: NativeUiEvent[]): void {
+  if (events.length === 0) return;
+  sendNative({ type: "native.ui", tabId, url, events });
+}
+
+async function runNativeUiMethod(tabId: number, command: BrowserCommand): Promise<BrowserResult> {
+  if (command.method === "setDialogPolicy") {
+    const policy: DialogPolicy = normalizeDialogPolicy(command.args?.policy ?? command.args, Date.now());
+    const applied = await callNativeUi<DialogPolicy>(tabId, "setPolicy", [policy]);
+    if (!applied.ok) return fail(command, applied.error);
+    return {
+      id: command.id,
+      ok: true,
+      method: command.method,
+      data: { tabId, policy: applied.value },
+    };
+  }
+  const pulled = await callNativeUi<NativeUiSnapshot>(tabId, "read", [true]);
+  if (!pulled.ok) return fail(command, pulled.error);
+  const snapshot = pulled.value;
+  reportNativeUi(tabId, "", snapshot.events ?? []);
+  return {
+    id: command.id,
+    ok: true,
+    method: command.method,
+    data: {
+      tabId,
+      policy: snapshot.policy,
+      events: snapshot.events ?? [],
+      ui: snapshot.ui,
+    },
+  };
+}
+
+async function dispatchCommand(
+  command: BrowserCommand,
+  sessionId?: string,
+  onResult?: (result: BrowserResult) => void,
+): Promise<void> {
   const publish = (result: BrowserResult) => {
+    onResult?.(result);
     sendNative({ type: "browser.result", result });
     broadcast({ type: "browser.result", result, sessionId });
   };
@@ -690,6 +848,12 @@ async function dispatchCommand(command: BrowserCommand, sessionId?: string): Pro
     return;
   }
 
+  if (isNativeUiMethod(command.method)) {
+    const result = await runNativeUiMethod(tab.id, command);
+    publish(result);
+    return;
+  }
+
   const allowed = pageToolsAllowed(tab.url);
   if (!allowed.ok && !isTabMethod(command.method)) {
     publish(fail(command, allowed.error));
@@ -707,6 +871,14 @@ async function dispatchCommand(command: BrowserCommand, sessionId?: string): Pro
           : await runContentMethod(tab.id, command);
   } catch (error) {
     result = fail(command, pageCommandError(error));
+  }
+
+  // Anything the page popped up while this command ran belongs in its result: that is how the
+  // Agent learns "the click I just sent opened a confirm()" without a second round trip.
+  const popped = await drainNativeUi(tab.id);
+  if (popped.length > 0) {
+    result = { ...result, data: { ...(result.data ?? {}), nativeUi: popped } };
+    reportNativeUi(tab.id, tab.url ?? "", popped);
   }
 
   publish(result);

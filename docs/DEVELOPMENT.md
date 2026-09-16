@@ -62,8 +62,16 @@ packages/extension    Chrome MV3 侧栏 / 内容脚本 / Service Worker
 skills/opensider      安装 / 更新 / 卸载 / 体检测 skill（README 的提示词指向它）
 scripts/dev-host.mjs  开发用：编二进制 + 拷扩展 + 注册桥接（= pnpm install-host）
 scripts/pack-extension.mjs  扩展 zip 打包
+scripts/verify-native-ui.mjs  原生 UI shim 的端到端验证（真 Chromium + 已构建扩展）
 scripts/install       已删除（用户侧不再有壳脚本）
 .github/workflows     推 v* tag 发 Release
 ```
 
 pnpm workspace 只编扩展。Host 用 Go。扩展用 Vite + `@crxjs/vite-plugin` 打包。
+
+扩展的单元测试用 Node 自带的 runner（仓库没有 vitest）：`node --test packages/extension/src/*.test.ts`。
+原生 UI（`alert` / `confirm` / `prompt` / `print` / `window.open` / 文件选择器）这条链路单测盖不到，
+改完跑 `node scripts/verify-native-ui.mjs`：它用本机缓存的 Chromium 拉起一个真浏览器、装上
+`packages/extension/dist`，用两个固定页面（含一个 `script-src 'self'` 的 strict CSP 页面）验证
+「默认只观察、真弹窗照旧且能拿到用户答案」「`answer` 策略下同步代答且不弹窗」「文件选择器不弹」
+「策略过期后回到观察」，共 15 项检查。它依赖全局装的 playwright（`npm i -g playwright`）。

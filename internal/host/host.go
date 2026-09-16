@@ -861,6 +861,9 @@ func (h *Host) dispatch(typ string, msg map[string]any) error {
 		}
 		h.settlePageCommand(result.ID)
 		return watch.WriteCommandResult(result)
+	case "native.ui":
+		h.handleNativeUi(msg)
+		return nil
 	case "session.new":
 		h.mu.Lock()
 		ready := len(h.runtimes) > 0
