@@ -70,7 +70,7 @@ scripts/verify-composer-clipboard.mjs  输入框全选复制/剪切带上附件�
 scripts/verify-page-overlays.mjs  动作后自动上报页面浮层（模态框/抽屉）的端到端验证
 scripts/verify-host-skew.mjs  本机 Host 比扩展旧时的提示（可见 / 可关 / 不影响可用功能）
 scripts/lib/sandbox.mjs  上面几个脚本共用的沙箱（临时 HOME / 现编 Host / 假 Agent / profile 内桥接清单）
-scripts/fake-acp-agent.mjs  假 ACP Agent（e2e 用，按行 JSON，可控分片/是否响应 cancel）
+scripts/fake-acp-agent.mjs  假 ACP Agent（e2e 用，按行 JSON，可控分片/是否响应 cancel；另答 `<cli> models`）
 scripts/install       已删除（用户侧不再有壳脚本）
 .github/workflows     推 v* tag 发 Release
 ```
@@ -121,6 +121,12 @@ Host 侧的路径安全与去重写在 `internal/workspace/upload_test.go`。
 提醒自己：`setError` 在 `status === "ready"` 时只当 tooltip（`Header` 的 title），**用户看不见**。
 凡是「刚才那一下没成功」的提示（拖入 / 粘贴失败、桥接太旧或没响应）都走 `notice`，
 在输入框上方渲染成一条可关闭的提示条（`App.tsx` 的 `notice` / `ChatPane` 的 `notice` prop）。
+
+**沙箱里的假 Agent 必须答 `<cli> models`**（`scripts/fake-acp-agent.mjs` 开头的分支）：
+Host 打开会话前会跑一次 `<cli> models`（`internal/models` 的 20s 超时），假 Agent 不答的话
+每次握手都要白等 20s 才回落，整个面板连上要约 28s —— 正好卡在脚本 30s 等待的边缘，
+表现为「随机失败」。补上这一条后 `verify-file-drop` 从 ~30s 降到 ~18s（剩下的基本是 `go build`
+和浏览器启动）。别把这段当冗余删掉。
 
 输入框「全选复制 / 剪切带上附件栏」跑 `node scripts/verify-composer-clipboard.mjs`（12 项）：载荷不进剪贴板
 （Chromium 只保留白名单风味），而是扩展自己记 90 秒，粘贴文本一模一样时还原一次；脚本用「开第二个面板页」

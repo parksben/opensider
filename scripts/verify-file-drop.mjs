@@ -51,12 +51,27 @@ try {
   const panel = await context.newPage();
   const panelUrl = `chrome-extension://${sandbox.extensionId}/src/sidepanel/index.html`;
   await panel.goto(panelUrl);
-  await panel.getByRole("button", { name: "GitHub Copilot" }).click({ timeout: 20_000 });
-  const composer = panel.locator('[contenteditable="true"]');
-  await composer.waitFor({ state: "visible", timeout: 30_000 });
-  ok("the side panel is connected and ready", true);
-
   const bodyText = () => panel.evaluate(() => document.body.innerText);
+  // On a cold profile the onboarding screen can take a moment to render (it asks the host for
+  // the agent list first), so wait for either it or the composer instead of sampling once.
+  const composer = panel.locator('[contenteditable="true"]');
+  const agentButton = panel.getByRole("button", { name: "GitHub Copilot" });
+  const appears = (locator) =>
+    locator.waitFor({ state: "visible", timeout: 30_000 }).then(
+      () => true,
+      () => false,
+    );
+  await Promise.race([appears(composer), appears(agentButton)]);
+  if (await agentButton.isVisible().catch(() => false)) {
+    await agentButton.click({ timeout: 20_000 });
+  }
+  try {
+    await composer.waitFor({ state: "visible", timeout: 30_000 });
+  } catch (error) {
+    console.log(`--- panel body when the composer never came up ---\n${await bodyText()}\n------------------`);
+    throw error;
+  }
+  ok("the side panel is connected and ready", true);
   const drop = (content, name) =>
     panel.evaluate(
       async ({ content, name }) => {
@@ -168,6 +183,7 @@ try {
 
   const failed = results.filter((result) => !result.ok);
   console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
+  if (failed.length > 0) console.log(`--- panel ---\n${await bodyText()}\n-------------`);
   process.exitCode = failed.length > 0 ? 1 : 0;
 } finally {
   await context.close();

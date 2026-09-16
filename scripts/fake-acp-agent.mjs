@@ -20,6 +20,17 @@ const chunkMs = Number(process.env.FAKE_ACP_CHUNK_MS ?? 300);
 const ignoreCancelMs = Number(process.env.FAKE_ACP_IGNORE_CANCEL_MS ?? 0);
 const tracePath = process.env.FAKE_ACP_TRACE ?? "";
 
+// The bridge also runs the CLI once as `<cli> models` before opening a session (see
+// internal/models). Answering that here matters: without it the bridge waits out its own
+// 20s timeout and only then falls back, which made every panel handshake in these tests
+// take ~28s - right at the edge of the scripts' waits, so they failed at random.
+if (process.argv.includes("models")) {
+  process.stdout.write(
+    ["auto - Auto (current)", "claude-sonnet-4 - Claude Sonnet 4", "gpt-5 - GPT-5"].join("\n") + "\n",
+  );
+  process.exit(0);
+}
+
 let sessionId = "";
 let turn = 0;
 let cancelledAt = 0;
