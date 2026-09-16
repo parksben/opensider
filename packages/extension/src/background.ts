@@ -9,12 +9,14 @@ import type {
   HostToExt,
   NativeUiEvent,
   NativeUiSnapshot,
+  PageActivityState,
   TabRecord,
   TabsSnapshot,
 } from "@shared";
 import {
   HOST_NAME,
   NATIVE_UI_HOOK_KEY,
+  PAGE_ACTIVITY_HOOK_KEY,
   isActionMethod,
   isCaptureMethod,
   isNativeUiMethod,
@@ -695,29 +697,44 @@ async function runWindowMethod(command: BrowserCommand): Promise<BrowserResult> 
 
 const NATIVE_UI_TOKENS_KEY = "opensiderNativeUiTokens";
 const nativeUiTokens = new Map<number, string>();
+/** In-flight lookups: two shim calls in the same tick must not mint two tokens. */
+const nativeUiTokenPending = new Map<number, Promise<string>>();
 
-/** Per-tab token so page scripts cannot drive the shim (the token only travels in args). */
+/** Per-tab token so page scripts cannot drive either MAIN-world shim (the token only
+ * ever travels in `chrome.scripting.executeScript` args). Shared by the native UI hook
+ * and the page activity hook — each learns it from the first call it receives. */
 async function nativeUiToken(tabId: number): Promise<string> {
   const cached = nativeUiTokens.get(tabId);
   if (cached) return cached;
-  let stored: Record<string, string> | undefined;
+  const pending = nativeUiTokenPending.get(tabId);
+  if (pending) return pending;
+  const mint = async () => {
+    let stored: Record<string, string> | undefined;
+    try {
+      stored = (await chrome.storage.session.get(NATIVE_UI_TOKENS_KEY))?.[NATIVE_UI_TOKENS_KEY] as
+        | Record<string, string>
+        | undefined;
+    } catch {
+      stored = undefined;
+    }
+    const token = stored?.[String(tabId)] ?? crypto.randomUUID().replace(/-/g, "");
+    nativeUiTokens.set(tabId, token);
+    try {
+      await chrome.storage.session.set({
+        [NATIVE_UI_TOKENS_KEY]: { ...(stored ?? {}), [String(tabId)]: token },
+      });
+    } catch {
+      // storage.session is best-effort: a service-worker restart just re-arms the token
+    }
+    return token;
+  };
+  const task = mint();
+  nativeUiTokenPending.set(tabId, task);
   try {
-    stored = (await chrome.storage.session.get(NATIVE_UI_TOKENS_KEY))?.[NATIVE_UI_TOKENS_KEY] as
-      | Record<string, string>
-      | undefined;
-  } catch {
-    stored = undefined;
+    return await task;
+  } finally {
+    nativeUiTokenPending.delete(tabId);
   }
-  const token = stored?.[String(tabId)] ?? crypto.randomUUID().replace(/-/g, "");
-  nativeUiTokens.set(tabId, token);
-  try {
-    await chrome.storage.session.set({
-      [NATIVE_UI_TOKENS_KEY]: { ...(stored ?? {}), [String(tabId)]: token },
-    });
-  } catch {
-    // storage.session is best-effort: a service-worker restart just re-arms the token
-  }
-  return token;
 }
 
 type NativeUiCall<T> = { ok: true; value: T } | { ok: false; error: string };
@@ -816,6 +833,144 @@ async function runNativeUiMethod(tabId: number, command: BrowserCommand): Promis
   };
 }
 
+// --- page activity (the Agent's page must stay "visible" while the panel is open) ----
+//
+// Chrome hides a page whenever its tab is not the active one of a visible, unoccluded,
+// non-minimised window: `document.visibilityState` flips to "hidden", `hasFocus()` goes
+// false, `requestAnimationFrame` stops firing and timers get throttled. Sites use that
+// signal to pause themselves, so page automation in the background stalls. The shim
+// (`activity-hook.ts`, MAIN world) rewrites what the page reads; here we decide *when*:
+// while any side panel is open, for the tabs the Agent actually touches. Closing the
+// panel puts every tab back the way it was.
+
+/** Tabs we have armed the shim on. Mirrored into `chrome.storage.session` because the
+ * service worker can be torn down between arming and the panel closing, and a page must
+ * never be left pretending to be visible. */
+const activityArmed = new Set<number>();
+const ACTIVITY_TABS_KEY = "opensiderActivityTabs";
+const ACTIVITY_HOOK_MARKER = "activity-hook";
+
+async function rememberActivityTabs(tabs: number[]): Promise<void> {
+  try {
+    await chrome.storage.session.set({ [ACTIVITY_TABS_KEY]: tabs });
+  } catch {
+    // storage.session is best-effort; the shim's own TTL is the backstop
+  }
+}
+
+async function persistedActivityTabs(): Promise<number[]> {
+  try {
+    const raw = (await chrome.storage.session.get(ACTIVITY_TABS_KEY))?.[ACTIVITY_TABS_KEY];
+    return Array.isArray(raw) ? raw.filter((id): id is number => Number.isInteger(id)) : [];
+  } catch {
+    return [];
+  }
+}
+
+function activityHookFiles(): string[] {
+  for (const entry of chrome.runtime.getManifest().content_scripts ?? []) {
+    const files = (entry.js ?? []).filter((file) => file.includes(ACTIVITY_HOOK_MARKER));
+    if (files.length > 0) return files;
+  }
+  return [];
+}
+
+type ActivityCall = { ok: true; value: PageActivityState } | { ok: false; error: string };
+
+/** Runs one shim call in every frame and merges the answers (main frame wins). */
+async function callActivity(tabId: number, enabled: boolean, inject: boolean): Promise<ActivityCall> {
+  const token = await nativeUiToken(tabId);
+  const run = async () =>
+    chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      world: "MAIN",
+      args: [PAGE_ACTIVITY_HOOK_KEY as string, token, enabled],
+      func: (key: string, caller: string, value: boolean) => {
+        const api = (globalThis as unknown as Record<string, Record<string, (...a: unknown[]) => unknown>>)[
+          key
+        ];
+        if (!api || typeof api.set !== "function") return { ok: false as const, error: "not installed" };
+        try {
+          return { ok: true as const, value: api.set(caller, value) as unknown };
+        } catch (error) {
+          return { ok: false as const, error: error instanceof Error ? error.message : String(error) };
+        }
+      },
+    });
+
+  try {
+    let results = await run();
+    const frames = results.map((entry) => entry.result).filter(Boolean) as Array<
+      { ok: true; value: unknown } | { ok: false; error: string }
+    >;
+    // A tab that was already open when this version landed has no shim yet: inject the
+    // content script by hand once, then try again.
+    const missing = frames.length > 0 && frames.every((frame) => !frame.ok);
+    if (missing && inject) {
+      const files = activityHookFiles();
+      if (files.length === 0) return { ok: false, error: "activity hook missing from manifest" };
+      await chrome.scripting.executeScript({
+        target: { tabId, allFrames: true },
+        files,
+        injectImmediately: true,
+        world: "MAIN",
+      });
+      results = await run();
+    }
+    const answers = results
+      .map((entry) => entry.result as { ok: boolean; value?: unknown; error?: string } | undefined)
+      .filter((entry): entry is { ok: boolean; value?: unknown; error?: string } => Boolean(entry));
+    const armed = answers.find((answer) => answer.ok && (answer.value as PageActivityState)?.armed);
+    const first = armed ?? answers.find((answer) => answer.ok);
+    if (!first) {
+      return { ok: false, error: answers[0]?.error ?? "activity shim not installed" };
+    }
+    return { ok: true, value: first.value as PageActivityState };
+  } catch (error) {
+    return { ok: false, error: pageCommandError(error) };
+  }
+}
+
+/** Arm the shim on a tab the Agent is about to work with. No-op while the panel is shut. */
+async function armActivity(tabId: number): Promise<void> {
+  if (sidebars.size === 0) return;
+  // Re-armed (and thus refreshed) on every touch: arming carries a TTL so a panel that
+  // disappears without us noticing cannot leave pages faking visibility forever.
+  const armed = await callActivity(tabId, true, true);
+  if (!armed.ok) return;
+  if (!activityArmed.has(tabId)) {
+    activityArmed.add(tabId);
+    void rememberActivityTabs([...activityArmed]);
+  }
+  // Keep Chrome from discarding the tab while it backs the Agent's work.
+  try {
+    await chrome.tabs.update(tabId, { autoDiscardable: false });
+  } catch {
+    // tab already gone
+  }
+}
+
+/** Arm whichever tab the Agent would act on right now (the focused window's active one). */
+async function armCurrentTab(): Promise<void> {
+  const tab = await resolveFocusedActiveChromeTab();
+  if (tab?.id != null) void armActivity(tab.id);
+}
+
+/** Put every armed tab back to stock behaviour (side panel closed, or extension reset). */
+async function releaseActivity(): Promise<void> {
+  const tabs = [...new Set([...(await persistedActivityTabs()), ...activityArmed])];
+  activityArmed.clear();
+  await rememberActivityTabs([]);
+  for (const tabId of tabs) {
+    await callActivity(tabId, false, false).catch(() => undefined);
+    try {
+      await chrome.tabs.update(tabId, { autoDiscardable: true });
+    } catch {
+      // tab already gone
+    }
+  }
+}
+
 async function dispatchCommand(
   command: BrowserCommand,
   sessionId?: string,
@@ -847,6 +1002,7 @@ async function dispatchCommand(
     publish(fail(command, "No active tab"));
     return;
   }
+  void armActivity(tab.id);
 
   if (isNativeUiMethod(command.method)) {
     const result = await runNativeUiMethod(tab.id, command);
@@ -917,6 +1073,7 @@ async function requestPage(tabId: number, writeGen?: number): Promise<void> {
   try {
     if (pageToolsAllowed(tab.url).ok) {
       await ensureContent(tabId);
+      void armActivity(tabId);
       const snap = await callPageApi<CurrentPage>(tabId, "snapshot", [tabId]);
       if (!snap.ok || !snap.value) throw new Error(snap.error ?? "snapshot failed");
       const page = { ...snap.value, favIconUrl };
@@ -1112,6 +1269,9 @@ chrome.runtime.onConnect.addListener((port) => {
   sidebars.add(port);
   replay(port);
   connectNative();
+  // A panel just opened: the tab it will work with has to start reading as visible even
+  // if the Agent does not touch it until later.
+  void armCurrentTab();
   port.onMessage.addListener((msg: ExtToHost) => {
     if (msg.type === "page.pick") {
       void startPagePick(msg.requestId, msg.hint);
@@ -1123,7 +1283,11 @@ chrome.runtime.onConnect.addListener((port) => {
     }
     sendNative(msg);
   });
-  port.onDisconnect.addListener(() => sidebars.delete(port));
+  port.onDisconnect.addListener(() => {
+    sidebars.delete(port);
+    // Last panel gone: the pages should stop pretending to be visible.
+    if (sidebars.size === 0) void releaseActivity();
+  });
 });
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {

@@ -46,6 +46,16 @@ export default defineManifest({
       all_frames: true,
       world: "MAIN",
     },
+    // Page activity shim: also MAIN world, also `document_start` (it redirects what the
+    // page reads for visibility/focus, and hangs on to the original rAF before the page
+    // can). Inert until the service worker arms it for a tab.
+    {
+      matches: ["http://*/*", "https://*/*"],
+      js: ["src/activity-hook.ts"],
+      run_at: "document_start",
+      all_frames: true,
+      world: "MAIN",
+    },
   ],
   permissions: ["sidePanel", "nativeMessaging", "tabs", "windows", "storage", "scripting", "favicon"],
   host_permissions: ["http://*/*", "https://*/*"],

@@ -63,6 +63,7 @@ skills/opensider      安装 / 更新 / 卸载 / 体检测 skill（README 的提
 scripts/dev-host.mjs  开发用：编二进制 + 拷扩展 + 注册桥接（= pnpm install-host）
 scripts/pack-extension.mjs  扩展 zip 打包
 scripts/verify-native-ui.mjs  原生 UI shim 的端到端验证（真 Chromium + 已构建扩展）
+scripts/verify-page-activity.mjs  页面活动态（面板开着强制可见 / 关掉还原）的端到端验证
 scripts/verify-queue-send-now.mjs  消息队列「立即发送」的端到端验证
 scripts/fake-acp-agent.mjs  假 ACP Agent（e2e 用，按行 JSON，可控分片/是否响应 cancel）
 scripts/install       已删除（用户侧不再有壳脚本）
@@ -86,3 +87,11 @@ bin 目录冒充 `copilot`，并把本机桥接清单写进临时 profile 的 `N
 覆盖「消息进队列 → 点立即发送 → 新消息上屏且真的被 Agent 收到 → 新一轮起来 → 旧一轮
 被砍短 → Host 日志里确实走了 interrupt 路径」。注意：清单里 `copilot` 的解析顺序依赖
 `paths.AgentSearchDirs()`，改了那段要同步改这个脚本。
+
+页面活动态（面板开着时把 Agent 在动的标签强制成「可见 + 有焦点」，关掉侧栏还原）分两层验：
+核心机制（`packages/extension/src/activity-shim.ts` 的可见性 / 焦点改写、事件静音、rAF 回退、
+TTL 过期、解除还原）跑 `node --test packages/extension/src/*.test.ts` 里的单测，用最小的假 DOM；
+接线与生命周期跑 `node scripts/verify-page-activity.mjs`（7 项检查），它用扩展自己的 `switchTab`
+把页面变成当前标签、再用主世界的 `chrome.scripting.executeScript` 看页面自己读到什么，
+最后关掉侧栏验证还原。**注意它测不了「真的被隐藏」**：Playwright 的 Chromium 自己开着焦点模拟，
+页面永远是 visible，所以那部分只能在单测里用假环境覆盖，脚本注释里写明了这个边界。

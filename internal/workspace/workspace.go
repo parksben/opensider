@@ -24,13 +24,21 @@ func Ensure() {
 	_ = os.WriteFile(paths.AgentsMDPath(), []byte(agentsMD), 0o644)
 	_ = os.WriteFile(paths.ClaudeMDPath(), []byte(agentsMD), 0o644)
 	tools := map[string]any{
-		"version":        9,
+		"version":        10,
 		"transport":      "workspace-files",
 		"commandsDir":    "browser/commands",
 		"resultsDir":     "browser/results",
 		"screenshotsDir": "browser/screenshots",
 		"outputsDir":     "outputs",
-		"methods":        protocol.ToolCatalog,
+		// While the side panel is open the tab the Agent works with is forced to look
+		// visible and focused to the page (see agents.md). Static description: the live
+		// state is per tab and per moment.
+		"pageActivity": map[string]any{
+			"forcedWhilePanelOpen": true,
+			"stealsWindowFocus":    false,
+			"note":                 "The tab you operate reads document.visibilityState === \"visible\" and hasFocus() === true, and does not receive visibilitychange/blur/pagehide/freeze, while the side panel is open.",
+		},
+		"methods": protocol.ToolCatalog,
 	}
 	raw, _ := json.MarshalIndent(tools, "", "  ")
 	_ = os.WriteFile(paths.ToolsPath(), append(raw, '\n'), 0o644)

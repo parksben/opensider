@@ -107,6 +107,31 @@ the event stream no matter what the page does, so do not wait for them — check
 `permissions` in `getNativeUi` to know whether clicking something will raise a prompt, and
 otherwise ask the user to handle it.
 
+### The page stays "visible" while the side panel is open
+
+Chrome hides a page (`document.visibilityState === "hidden"`) whenever its tab is not the
+active one of a visible, unoccluded, non-minimised window. Sites react to that by pausing
+themselves — lazy loading stops, animated widgets stall, sometimes a "the page is not
+active" overlay swallows clicks — and `requestAnimationFrame` stops firing, so any page
+script that waits for a frame hangs.
+
+While the side panel is open, OpenSider keeps the tab you are working with armed against
+that: it reads `visible`, `document.hidden` is `false`, `document.hasFocus()` is `true`, the
+page never receives `visibilitychange` / `blur` / `pagehide` / `freeze`, and waiting on a
+frame still resolves. Closing the panel hands the tab back to the browser.
+
+What that means in practice:
+
+- Do **not** tell the user to bring the browser window to the front, un-minimise it, or stop
+  covering it. Operate the tab; it will behave as if it were visible.
+- Do not trust a page that claims it cannot work because it is not visible — retry the action
+  first (`visibility` from `getNativeUi` reports the forced value).
+- The window is **not** stolen: focus does not move, the window is not raised, and no tab is
+  switched behind the user's back. If a task genuinely needs the window in front (a native
+  OS surface, for example), tell the user instead of assuming.
+- Background execution can still be slower than foreground: this fixes what the *page* sees,
+  not Chrome's own background scheduling.
+
 Before `navigate`, `reload`, `goBack`, `goForward`, or `closeTab` on a page the user may have edited, call `getUnsavedChanges` on that tab (switch to it first if needed).
 
 If `dirty` is true:
