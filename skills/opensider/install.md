@@ -86,13 +86,15 @@ exact application you will open (for example `Google Chrome`, `Microsoft Edge`,
 ## Stage 3 — install the bridge
 
 Download the binary and its checksum file from the pinned tag (see `SKILL.md` step 1).
-Define the helper in [`references/download.md`](./references/download.md) first, then
-fetch **both** files at once — `SHA256SUMS` is a single GET; the ~10 MB binary uses
-GitHub's CDN Range concurrency:
+Define the helpers in [`references/download.md`](./references/download.md) first, then run
+`dl_probe` on the **binary** — it is the first really big file, so it is the honest speed
+test for the route — and fetch both files at once. `SHA256SUMS` is a single GET; the
+~10 MB binary uses Range concurrency on the direct route and a plain GET on a mirror:
 
 ```sh
 tmp=$(mktemp -d)
 base="https://github.com/parksben/opensider/releases/download/$tag"
+dl_probe "$base/$asset"          # sets DL_ROUTE from a 512 KiB sample; tell the user what it picked
 github_get "$tmp/SHA256SUMS" "$base/SHA256SUMS" &
 p1=$!
 github_get "$tmp/$asset" "$base/$asset" &
@@ -108,13 +110,18 @@ actual=$(shasum -a 256 "$tmp/$asset" | awk '{ print $1 }')   # sha256sum on Linu
 [ -n "$expected" ] && [ "$expected" = "$actual" ] || echo MISMATCH
 ```
 
-If the checksum is missing or does not match: re-download **both** files once — GitHub's CDN
-can serve a stale copy of either right after a release — and compare again:
+If the checksum is missing or does not match, do **not** just curl the same URLs again:
+take the reasons a mirror gives you stale bytes seriously and re-fetch both files with the
+routes **swapped** and the cache busted (`fresh` adds `Cache-Control: no-cache` and a `?t=`
+stamp on the proxy URL). A mirror that cached the binary must not also be the one handing
+you the `SHA256SUMS` that blesses it:
 
 ```sh
-curl -fsSL -H 'Cache-Control: no-cache' --connect-timeout 20 --max-time 180 -o "$tmp/SHA256SUMS" "$base/SHA256SUMS" &
+other=mirror
+if [ "$DL_ROUTE" = mirror ]; then other=direct; fi
+( DL_ROUTE=$other; github_get "$tmp/SHA256SUMS" "$base/SHA256SUMS" fresh ) &
 p1=$!
-curl -fsSL -H 'Cache-Control: no-cache' --connect-timeout 20 --max-time 180 -o "$tmp/$asset" "$base/$asset" &
+( github_get "$tmp/$asset" "$base/$asset" fresh ) &
 p2=$!
 wait "$p1" && wait "$p2"
 ```
@@ -138,9 +145,16 @@ Windows (PowerShell) — `curl.exe`, not the `curl` alias; Range recipe in
 $tmp = Join-Path $env:TEMP "opensider"
 New-Item -ItemType Directory -Force $tmp | Out-Null
 $base = "https://github.com/parksben/opensider/releases/download/$tag"
-# prefer github_get / curl.exe Range (download.md); BITS is the native fallback:
-Start-BitsTransfer -Source @("$base/SHA256SUMS", "$base/$asset") `
-  -Destination @("$tmp\SHA256SUMS", "$tmp\opensider.exe")
+Dl-Probe "$base/$asset"                     # sets $Global:DlRoute from a 512 KiB sample
+if ($Global:DlRoute -eq "direct") {
+  # BITS is the native multi-connection transfer; Range recipe is in download.md
+  Start-BitsTransfer -Source @("$base/SHA256SUMS", "$base/$asset") `
+    -Destination @("$tmp\SHA256SUMS", "$tmp\opensider.exe")
+} else {
+  # mirror route: plain GETs, sliced downloads get truncated there
+  Github-Get "$tmp\SHA256SUMS" "$base/SHA256SUMS"
+  Github-Get "$tmp\opensider.exe" "$base/$asset"
+}
 # compare (Get-FileHash "$tmp\opensider.exe" -Algorithm SHA256).Hash with SHA256SUMS
 Unblock-File "$tmp\opensider.exe"
 New-Item -ItemType Directory -Force "$env:USERPROFILE\.opensider\runtime" | Out-Null
@@ -148,10 +162,18 @@ Move-Item -Force "$tmp\opensider.exe" "$env:USERPROFILE\.opensider\runtime\opens
 ```
 
 Register it. This writes the manifests, prepares the workspace and installs the
-Claude / Codex ACP adapters when needed (and only then):
+Claude / Codex ACP adapters when needed (and only then). On a slow route (mainland China)
+point npm at the mirror — the adapter install shells out to npm/pnpm/bun and inherits the
+environment, so the variable is enough, and the default registry is roughly an order of
+magnitude slower there:
 
 ```sh
-~/.opensider/runtime/opensider install
+bin=~/.opensider/runtime/opensider
+if [ "$DL_ROUTE" = mirror ]; then
+  npm_config_registry=https://registry.npmmirror.com "$bin" install
+else
+  "$bin" install
+fi
 ```
 
 Check: the output contains `Registered com.opensider.host`, a `Version:` line, and a
@@ -216,8 +238,10 @@ Expand-Archive -LiteralPath "$parent\OpenSider-extension-$tag.zip" -DestinationP
 Keeping the zip beside the folder is deliberate — it is the installer the user can reuse
 without you. `manifest.json` must end up **directly** inside the target folder.
 
-Check: `test -f "$target/manifest.json"` (PowerShell: `Test-Path "$target\manifest.json"`)
-and the file contains `"manifest_version": 3`.
+Check: `test -f "$target/manifest.json"` (PowerShell: `Test-Path "$target\manifest.json"`),
+the file contains `"manifest_version": 3`, and its own `"version"` equals `$tag` without the
+leading `v` — a stale `extension.zip` served from a mirror cache shows up exactly here, so on
+a mismatch re-fetch it with `fresh` through the **other** route instead of shipping it.
 
 ## Stage 5 — let the user load it (this part is theirs)
 

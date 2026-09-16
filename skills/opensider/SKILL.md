@@ -60,52 +60,143 @@ user's job. Everything else is yours.
 If the request is ambiguous ("装一下"), run `doctor.md` first: it tells you whether this
 is a fresh install, a half-finished one, or a broken one.
 
-## Step 1 — pin one version (do this first, always)
+## Step 1 — pick the route and pin one version (do this first, always)
 
-Skill files and release assets must come from the same release. Resolve the latest tag first —
-ask the **API**, which is authoritative right after a release:
+Skill files and release assets must come from the same release, and the whole run uses
+**one** download route: `direct` (GitHub itself) or `mirror` (mainland proxies). Decide it
+once here and keep it. [`references/download.md`](./references/download.md) has the full
+helper, the cache rules and the mirror list; the snippets below are the self-contained
+version needed before that file exists.
+
+| Signal | How | How to read it |
+|---|---|---|
+| Where this machine is (hint) | `gstatic.com/generate_204` vs `baidu.com`, 2 s each | gstatic fast → outside the GFW or a proxy/VPN is up; baidu fast while gstatic fails → mainland China; both fast or both slow → inconclusive |
+| Is GitHub usable (decides) | a real GET of a small file from the pinned tag, and its time to first byte (below); `install.md` re-probes with the ~10 MB binary and flips to `mirror` if that is slow | stalling, or a first byte slower than ~3 s → `mirror` |
+
+Say which route you took, in one line (`GitHub 直连可用，走直连` /
+`GitHub 直连超时，走国内镜像 gh-proxy.com`) — and say it again if a later stage switches.
+
+Ask the **API** for the tag; it is authoritative right after a release, while the web
+`/releases/latest` redirect is CDN-cached and can lag behind a fresh release. Both are
+tried directly and through the proxy, always with `Cache-Control: no-cache`:
 
 ```sh
-tag=$(curl -fsSL https://api.github.com/repos/parksben/opensider/releases/latest \
-  | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p')
-# fallback only (the web redirect is cached and can lag behind a fresh release):
-[ -n "$tag" ] || tag=$(curl -fsSLI -o /dev/null -w '%{url_effective}' \
-  https://github.com/parksben/opensider/releases/latest | sed 's#.*/tag/##')
+curl -s -o /dev/null -m 2 -w 'gstatic=%{http_code} ' https://www.gstatic.com/generate_204
+curl -s -o /dev/null -m 2 -w 'baidu=%{http_code}\n' https://www.baidu.com
+DL_MIRROR_1="https://gh-proxy.com"
+DL_MIRROR_2="https://ghproxy.net"
+tag=
+for u in "https://api.github.com/repos/parksben/opensider/releases/latest" \
+         "$DL_MIRROR_1/https://api.github.com/repos/parksben/opensider/releases/latest"; do
+  tag=$(curl -fsSL --connect-timeout 20 --max-time 60 -H 'Cache-Control: no-cache' "$u" 2>/dev/null \
+    | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p')
+  [ -n "$tag" ] && break
+done
+if [ -z "$tag" ]; then   # fallback only: the cached web redirect, cache-busted
+  for u in "https://github.com/parksben/opensider/releases/latest" \
+           "$DL_MIRROR_1/https://github.com/parksben/opensider/releases/latest"; do
+    tag=$(curl -fsSL -L --connect-timeout 20 --max-time 60 -H 'Cache-Control: no-cache' \
+      -o /dev/null -w '%{url_effective}' "$u" 2>/dev/null | sed 's#.*/tag/##')
+    case "$tag" in v[0-9]*.[0-9]*.[0-9]*) break ;; *) tag= ;; esac
+  done
+fi
+DL_ROUTE=mirror
+if [ -n "$tag" ]; then
+  # A tiny file that "works eventually" is not good enough: require a fast first byte,
+  # otherwise a stalled link still counts as usable and the batch crawls.
+  ttfb=$(curl -fsSL --connect-timeout 5 --max-time 8 -o /dev/null -w '%{time_starttransfer}' \
+    "https://github.com/parksben/opensider/releases/download/$tag/SHA256SUMS" 2>/dev/null || echo 99)
+  if awk -v t="$ttfb" 'BEGIN { exit !(t + 0 < 3) }'; then DL_ROUTE=direct; fi
+fi
+echo "route=$DL_ROUTE tag=$tag"
 ```
 
 Windows (PowerShell):
 
 ```powershell
-$tag = (Invoke-RestMethod "https://api.github.com/repos/parksben/opensider/releases/latest").tag_name
+$Global:DlMirror1 = "https://gh-proxy.com"
+$Global:DlMirror2 = "https://ghproxy.net"
+$tag = ""
+foreach ($u in @(
+  "https://api.github.com/repos/parksben/opensider/releases/latest",
+  "$Global:DlMirror1/https://api.github.com/repos/parksben/opensider/releases/latest")) {
+  try {
+    $r = Invoke-RestMethod -Headers @{ "Cache-Control" = "no-cache" } -Uri $u -TimeoutSec 60
+    if ($r.tag_name) { $tag = $r.tag_name; break }
+  } catch { }
+}
+if (-not $tag) {          # fallback only: the cached web redirect, cache-busted
+  foreach ($u in @(
+    "https://github.com/parksben/opensider/releases/latest",
+    "$Global:DlMirror1/https://github.com/parksben/opensider/releases/latest")) {
+    $loc = & curl.exe -fsSLI -L --connect-timeout 20 --max-time 60 -H "Cache-Control: no-cache" -o NUL -w "%{url_effective}" $u
+    if ($loc -match '/tag/(v[0-9]+\.[0-9]+\.[0-9]+)$') { $tag = $Matches[1]; break }
+  }
+}
+$Global:DlRoute = "mirror"
+if ($tag) {
+  # A tiny file that "works eventually" is not good enough: require a fast first byte.
+  $ttfb = & curl.exe -fsSL --connect-timeout 5 --max-time 8 -o NUL -w "%{time_starttransfer}" `
+    "https://github.com/parksben/opensider/releases/download/$tag/SHA256SUMS"
+  if ($LASTEXITCODE -eq 0 -and [double]$ttfb -lt 3) { $Global:DlRoute = "direct" }
+}
+Write-Host "route=$Global:DlRoute tag=$tag"
 ```
 
-Then pull the rest of this skill **in one parallel batch** (do not curl the files one
-by one). GitHub's CDN already allows concurrent GETs of independent objects;
-`raw.githubusercontent.com` is fine with that as long as you do **not** HEAD it:
+Then pull the rest of this skill **in one parallel batch** (do not curl the files one by
+one). Each file tries the chosen route first, then the other one; a candidate only counts
+if the result is non-empty markdown and **not** a proxy's HTML error page. `SKILL.md`
+itself is in the list on purpose: the prompt fetched it from `main`, which
+raw.githubusercontent caches for minutes, so the copy you started from can be older than
+the release — read the `$skill/SKILL.md` one before the later stages and follow that one
+if they differ.
 
 ```sh
 raw="https://raw.githubusercontent.com/parksben/opensider/$tag/skills/opensider"
+jdel="https://gcore.jsdelivr.net/gh/parksben/opensider@$tag/skills/opensider"
 skill=$(mktemp -d)
 mkdir -p "$skill/references"
-pids=
+markdown_try() {   # markdown_try <dest> <url> … — first candidate that is really markdown wins
+  local d=$1
+  shift
+  for u in "$@"; do
+    curl -fsSL --connect-timeout 20 --max-time 60 -o "$d" "$u" 2>/dev/null || continue
+    [ -s "$d" ] || continue
+    head -c 200 "$d" | grep -qiE '<!doctype|<html' && continue
+    return 0
+  done
+  : > "$d"
+  return 1
+}
 for rel in \
-  install.md update.md uninstall.md doctor.md \
+  SKILL.md install.md update.md uninstall.md doctor.md \
   references/platforms.md references/download.md \
   references/agents.md references/verification.md \
   references/troubleshooting.md
 do
-  curl -fsSL --connect-timeout 20 --max-time 60 -o "$skill/$rel" "$raw/$rel" &
-  pids="$pids $!"
+  (
+    if [ "$DL_ROUTE" = mirror ]; then
+      markdown_try "$skill/$rel" "$DL_MIRROR_1/$raw/$rel" "$jdel/$rel" "$raw/$rel"
+    else
+      markdown_try "$skill/$rel" "$raw/$rel" "$DL_MIRROR_1/$raw/$rel" "$jdel/$rel"
+    fi
+  ) &
 done
-for p in $pids; do wait "$p" || true; done
-main="https://raw.githubusercontent.com/parksben/opensider/main/skills/opensider"
+wait
 for rel in \
-  install.md update.md uninstall.md doctor.md \
+  SKILL.md install.md update.md uninstall.md doctor.md \
   references/platforms.md references/download.md \
   references/agents.md references/verification.md \
   references/troubleshooting.md
 do
-  [ -s "$skill/$rel" ] || curl -fsSL --connect-timeout 20 --max-time 60 -o "$skill/$rel" "$main/$rel" || true
+  if [ ! -s "$skill/$rel" ]; then   # not on this tag yet: retry that one from main, never via jsDelivr
+    main="https://raw.githubusercontent.com/parksben/opensider/main/skills/opensider"
+    if [ "$DL_ROUTE" = mirror ]; then
+      markdown_try "$skill/$rel" "$DL_MIRROR_1/$main/$rel?t=$(date +%s)" "$main/$rel"
+    else
+      markdown_try "$skill/$rel" "$main/$rel" "$DL_MIRROR_1/$main/$rel?t=$(date +%s)"
+    fi
+  fi
 done
 ```
 
@@ -113,39 +204,65 @@ Windows (PowerShell) — same files, `curl.exe`, jobs instead of `&`:
 
 ```powershell
 $raw = "https://raw.githubusercontent.com/parksben/opensider/$tag/skills/opensider"
+$jdel = "https://gcore.jsdelivr.net/gh/parksben/opensider@$tag/skills/opensider"
 $skill = Join-Path $env:TEMP ("opensider-skill-" + [guid]::NewGuid().ToString("n"))
 New-Item -ItemType Directory -Force "$skill\references" | Out-Null
 $rels = @(
-  "install.md", "update.md", "uninstall.md", "doctor.md",
+  "SKILL.md", "install.md", "update.md", "uninstall.md", "doctor.md",
   "references/platforms.md", "references/download.md",
   "references/agents.md", "references/verification.md",
   "references/troubleshooting.md"
 )
+function Test-Markdown {
+  param([string]$Path)
+  if (-not (Test-Path $Path) -or (Get-Item $Path).Length -le 0) { return $false }
+  $head = Get-Content -Path $Path -TotalCount 5 -Raw
+  return -not ($head -match '(?i)<!doctype|<html')
+}
+function Get-One {
+  param([string]$Dest, [string[]]$Urls)
+  foreach ($u in $Urls) {
+    & curl.exe -fsSL --connect-timeout 20 --max-time 60 -o $Dest $u 2>$null
+    if ((Test-Markdown $Dest)) { return }
+  }
+  Set-Content -NoNewline -Path $Dest -Value ""
+}
 $jobs = foreach ($rel in $rels) {
+  $urls = @("$raw/$rel", "$Global:DlMirror1/$raw/$rel", "$jdel/$rel")
+  if ($Global:DlRoute -eq "mirror") {
+    $urls = @("$Global:DlMirror1/$raw/$rel", "$jdel/$rel", "$raw/$rel")
+  }
   Start-Job -ScriptBlock {
-    param($raw, $skill, $rel)
-    curl.exe -fsSL --connect-timeout 20 --max-time 60 -o (Join-Path $skill $rel) "$raw/$rel"
-  } -ArgumentList $raw, $skill, $rel
+    param($dest, $urls)
+    foreach ($u in $urls) {
+      & curl.exe -fsSL --connect-timeout 20 --max-time 60 -o $dest $u 2>$null
+      if ((Test-Path $dest) -and (Get-Item $dest).Length -gt 0) { return }
+    }
+    Set-Content -NoNewline -Path $dest -Value ""
+  } -ArgumentList (Join-Path $skill $rel), $urls
 }
 $jobs | Wait-Job | Out-Null
-$main = "https://raw.githubusercontent.com/parksben/opensider/main/skills/opensider"
+$stamp = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
 foreach ($rel in $rels) {
   $path = Join-Path $skill $rel
-  if (-not (Test-Path $path) -or (Get-Item $path).Length -le 0) {
-    curl.exe -fsSL --connect-timeout 20 --max-time 60 -o $path "$main/$rel"
-  }
+  if (Test-Markdown $path) { continue }
+  $main = "https://raw.githubusercontent.com/parksben/opensider/main/skills/opensider/$rel"
+  $murls = @("$main", "$Global:DlMirror1/$main`?t=$stamp")
+  if ($Global:DlRoute -eq "mirror") { $murls = @("$Global:DlMirror1/$main`?t=$stamp", "$main") }
+  Get-One $path $murls
 }
 ```
 
-If a listed file 404s on `$tag` (added after the latest release), the retry loop
-fetches **that file only** from `main`. Read `$skill/references/download.md` before
-any release asset: binaries and `extension.zip` come from
-`https://github.com/parksben/opensider/releases/download/$tag/…` and the large
-bridge binary is fetched with concurrent Range GETs against the signed CDN URL
-(`release-assets.githubusercontent.com` / `objects.githubusercontent.com`).
+If a listed file 404s on `$tag` (added after the latest release), the retry loop fetches
+**that file only** from `main`. If the batch feels slow (any single small file taking more
+than ~20 s), flip `DL_ROUTE=mirror` and run the batch once more — the route is a bet on the
+network, and the batch is cheap to repeat. Read `$skill/references/download.md` before any
+release asset: binaries and `extension.zip` come from
+`https://github.com/parksben/opensider/releases/download/$tag/…`, fetched with
+`github_get` (route-aware, cache-aware, concurrent for the large ones).
 
-If no tag can be resolved at all (offline, proxy, GitHub blocked): stop and tell the user you
-need network access to GitHub — do not install a version you cannot identify.
+If no tag can be resolved at all (offline, GitHub blocked, proxies dead): stop and tell the
+user you need network access to GitHub — do not install a version you cannot identify.
 
 Never mix files from different tags, and never install an asset you could not verify.
 

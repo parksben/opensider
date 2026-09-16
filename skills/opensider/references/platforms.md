@@ -21,8 +21,9 @@
 Everything is downloaded from `https://github.com/parksben/opensider/releases/…`
 (`/download/<tag>/` after the tag is pinned — do not use the cached web
 `/latest/download/` hop as the source of truth), so no Git and no Go toolchain
-is needed. How to pull those URLs fast — parallel files + Range on the GitHub
-CDN — is in [`download.md`](./download.md).
+is needed. Where those bytes come from — GitHub directly or a mainland mirror, and
+how to keep a mirror from handing you the previous release — is in
+[`download.md`](./download.md).
 
 macOS note: the darwin binaries are built with cgo and ad-hoc signed. Do not strip,
 re-sign or modify them — Gatekeeper on Apple Silicon refuses to run a modified arm64

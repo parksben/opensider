@@ -74,28 +74,49 @@ an unmanaged browser/profile.
 Some environments refuse to open internal URLs from a shell. Ask the user to paste
 `chrome://extensions` into the address bar themselves and continue the walkthrough.
 
-## The download is slow or a Range part fails
+## The download is slow, or a Range part fails
 
-Use the helper in [`download.md`](./download.md). The usual miss is curling skill
-files or the binary **one after another**, or sending `Range` to the
-`github.com/…/releases/download/…` hop instead of the signed CDN URL after the
-302. If a 4-way assemble does not match `Content-Length`, delete the parts and
-do one ordinary `curl -fsSL` of the original GitHub URL. Do not HEAD
-`raw.githubusercontent.com` (it can hang). Do not install aria2 / switch to a
-mirror unless the user asks.
+Start with the route decision in [`download.md`](./download.md) — `dl_probe` on the real
+binary, a few seconds, once per run. Getting that wrong is the usual cause of a ten-minute
+install: "GitHub answers" is not the same as "GitHub is fast", and a mainland link that
+returns a 600-byte file quickly can still crawl on 10 MB. Where the bytes come from is a
+policy, not a preference: pin the tag, try the chosen route first, fall back to the other,
+hash everything.
 
-## The download 404s
+The other usual misses:
 
-* **Right after a release**: GitHub's CDN can serve a stale `releases/latest` redirect or
-  404 an asset that was uploaded seconds ago. Resolve the tag from the **API**
-  (`api.github.com/repos/parksben/opensider/releases/latest`) instead of the web redirect,
-  and if an asset 404s, retry once with `-H 'Cache-Control: no-cache'` before assuming it is
-  missing.
+* curling files one after another instead of in parallel (independent files: many at once);
+* sending `Range` to the `github.com/…/releases/download/…` hop instead of the signed CDN URL
+  from the 302;
+* slicing a file on the **mirror** route — `gh-proxy.com` answers `206`, but `ghproxy.net`
+  truncates parts (measured: a 1 MiB part came back as 322932 B). Parallelise files, never
+  parts of one file;
+* HEAD-ing `raw.githubusercontent.com` (it can hang).
+
+If a 4-way assemble does not match `Content-Length`, drop the parts and do one ordinary full
+GET through the same helper (it moves to the next candidate by itself). Do not install aria2
+— `curl` is enough on every platform here.
+
+## The download 404s, or the bytes look wrong
+
+* **Right after a release**: a mirror (or GitHub's own CDN) can still be holding the previous
+  object for that path. Bust the cache first — `fresh` in the helper adds
+  `Cache-Control: no-cache` and a `?t=` stamp on the proxy URL, measured to turn gh-proxy's
+  `cf-cache-status: HIT` into `MISS` — and/or use the other route, before believing a 404.
+* **A checksum mismatch is a route problem before it is a mirror problem**: re-fetch
+  `SHA256SUMS` over the route the binary did **not** use, then re-fetch the binary with
+  `fresh`. A mirror vouching for its own cached binary is exactly the failure this step
+  exists to catch. If it still mismatches, stop and report both hashes and the routes you
+  tried — never install an asset you could not hash.
+* **HTML where markdown should be**: a proxy answered for us instead of GitHub (measured:
+  `ghproxy.cn` returns a web page). The helpers reject bodies that start with `<!doctype` /
+  `<html` and move to the next candidate; do the same if you see it by hand.
 * `opensider-darwin-amd64` and `opensider-windows-arm64.exe` are optional assets — if one
   is missing for the user's machine, say so plainly and stop; do not substitute another
   architecture's binary (Rosetta or emulation is the user's call, not yours, and the
   manifest path must point at a binary that really runs).
-* Any other 404: the tag you pinned may have been removed → re-resolve `latest` and retry.
+* Any other 404: the tag you pinned may have been removed → re-pin it (API first, see
+  `SKILL.md` step 1) and retry.
 
 ## The panel connects but prompts fail
 

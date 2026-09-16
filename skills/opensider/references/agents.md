@@ -53,6 +53,15 @@ package). It needs **Node 18+ with npm, pnpm or bun** on PATH; without one it pr
 note and continues — the bridge still installs, that CLI just will not appear until Node
 is available.
 
+This npm install is a download too, so it follows the same network judgement as
+[`download.md`](./download.md): on the mainland mirror route, point npm at the registry
+mirror for this one command — the adapter install inherits the environment, and the
+default registry is roughly an order of magnitude slower there:
+
+```sh
+npm_config_registry=https://registry.npmmirror.com ~/.opensider/runtime/opensider install
+```
+
 Requirements to state to the user, not to work around:
 
 * no Node → tell them to install Node 18+ (or use a CLI that needs no adapter)
