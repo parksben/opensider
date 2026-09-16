@@ -488,7 +488,7 @@ macOS 清单路径：`~/Library/Application Support/Google/Chrome/NativeMessagin
 
 ```
 AGENTS.md           仓库根开发协作约定。不是 ~/.opensider/workspace/AGENTS.md（Host 写入的页面协议）
-README.md           面向使用者的产品页（英文，仓库默认）：英文 slogan + 扩展介绍（CLI 顺序 Claude Code / Copilot / OpenCode / Cursor）+ 3 条要点、演示、一步安装提示词（不写开发搭建，不单独开适用场景）
+README.md           面向使用者的产品页（英文，仓库默认）：英文 slogan + 扩展介绍（CLI 顺序 Claude Code / Codex / OpenCode / Cursor）+ 7 条要点（与中文版同一组、同序）、演示、一步安装提示词（不写开发搭建，不单独开适用场景）
 README_ZH.md        README 的中文版；顶部与英文版各放一行居中 `中文 | English` 切换，只非当前语言那侧带链接
 docs/REQUIREMENTS.md  需求：做什么、为什么
 docs/TECH_DESIGN.md   本文件：怎么做、为什么选这个方案

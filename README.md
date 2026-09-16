@@ -16,13 +16,25 @@
 
 <br />
 
-OpenSider is a browser extension that drives local Agents (Claude Code CLI, Copilot CLI, OpenCode CLI, Cursor CLI, and other local Agent tools) from within your browser for web information gathering, web automation, and more.
+OpenSider is a browser extension that drives local Agents (Claude Code, Codex, OpenCode, Cursor and other local Agent CLIs that speak ACP) from within your browser for web information gathering, web automation, and more.
 
 - **Collaborate with Agents in the browser**  
   Chat with your local Agent directly in the browser side panel, without opening command line or terminal tools.
 
+- **Reuse your real browser state**  
+  Your identity on a site (login state) and any form input you have already filled in are reused, so you never have to reconstruct the scene.
+
 - **Automatic web page context**  
   No need to tell the Agent which page you are viewing — the Agent automatically gets the page information loaded in your browser and can operate on it.
+
+- **Web automation**  
+  Navigation, reading, clicking, form filling, screenshots and more are injected into the Agent as tools, and the automation plays out live on the page (simulated mouse clicks, keyboard input, …).
+
+- **Collaborate in place**  
+  Wherever you are, the Agent works with the information on that page. You can also pick a page element to ask about it.
+
+- **Switch Agents and models freely**  
+  Switch Agent/model with one click, and even within the same session you can use different Agents — no terminal tooling to hold you back.
 
 - **Data persistence**  
   All session data is stored locally, so it won't be lost when the app is updated or reinstalled.
