@@ -62,7 +62,7 @@ Cursor Agent 在 ACP 模式下仍然自己执行本地工具（读文件、写�
 - 在 Side Panel、Content Script、Host 之间转发消息；`page.pick` 只走内容脚本，不进 Native Host。内容脚本 `run_at: document_start`，避免 YouTube `/watch` 迟迟不到 `document_idle`。先在活动主框探测 `__opensiderPage` API，失败则 `executeScript` 补注入（`injectImmediately`，先 `allFrames` 再退回主框），并轮询等到 CRXJS loader 的 `import()` 挂上 API。**页面命令、快照、量测、未保存探测与拾取走同一通道**：就绪后在**当前活动文档的主框**里直接调用 `runCommand` / `snapshot` / `measure` / `viewport` / `startPick`。不用 `tabs.sendMessage` 做页面 RPC：扩展重载后旧标签内容脚本已成孤儿、CRXJS loader 尚未 `import`、YouTube 预渲染文档都会变成 `Receiving end does not exist`。`dispatchCommand` 的目标标签与 `current.json` 相同——焦点普通窗口的活动标签，不用 Service Worker 的 `currentWindow`。YouTube / youtu.be 是普通 http(s)，不当系统页。系统页不注入，命令回明确 restricted 错误；http(s) 注入失败则 `ok: false` 并写清原因。`requestPage` 同样先 ensure 再 snapshot，避免 `snapshot.md` / `interactive.md` 只剩 url/title。
 - 监听 `tabs.onActivated` / `onUpdated` / `onRemoved` / `onReplaced` / `onCreated` / `onMoved` / `onAttached` / `onDetached` 以及 `windows.onFocusChanged` / `onRemoved`。活动标签可能变化时，解析焦点普通窗口里当前 `active` 的标签（不要用刚关掉的 tabId），立刻并在 250ms 防抖后再推 `page.update`，同时防抖写 `tabs.update`。Chrome 关掉活动标签后不一定再发 `onActivated`，所以 `onRemoved` 必须自己跟上替换标签，禁止 `current.json` 停在已关闭 tabId
 - 点击工具栏图标打开 Side Panel（`setPanelBehavior({ openPanelOnActionClick: true })`）。manifest **没有** `default_popup`：工具栏点击不会弹出独立 action 窗，侧栏画在当前浏览器窗口里。录演示时禁止把 Side Panel 拖出窗口。
-- Go Host 一启动就往 `~/.opensider/host.log` 打一行，便于判断 Chrome 有没有真正拉起 Host
+- Go Host 一启动就往 `~/.opensider/host.log` 打一行，便于判断 Chrome 有没有真正拉起 Host（该文件按大小与日期轮转，见下）
 
 ### Content Script
 
@@ -135,6 +135,23 @@ Cursor Agent 在 ACP 模式下仍然自己执行本地工具（读文件、写�
 
 Host 是一份 Go 二进制（`cmd/opensider` + `internal/`）。`browser/tools.json` 由 `internal/protocol.ToolCatalog` 在启动时写入，不在 TS 里再维护一份。stdout 只给 Chrome，ACP 走子进程管道，日志只写 `~/.opensider/host.log`。`fs.pick` 时 exec 自己的 `pick` 子命令（独立进程才能把系统对话框拉到前台）。`hello` 不带 os；选文件分流用侧栏 UA。`page.pick` 到不了 Host。
 
+### Host 请求的可靠性与版本错配
+
+扩展与本机 Host 是**两份各自更新的东西**：扩展随 release 走，Host 只在用户跑安装 / 更新 skill 时才被覆盖。于是「新扩展 + 旧 Host」是常态，而旧 Host 对不认识的消息只有一句 `default: return nil`——静默丢掉。用户看到的就是「拖进去了（提示都弹了）但附件栏没变化」，没有任何线索。三道门都要堵上：
+
+- **Host 必须应答**（`internal/host/host.go`）：带 `requestId` 的消息走 `default` 分支时，回一条 `{type: "host.unsupported", requestId, command, error}`，侧栏当普通失败处理（`hostUnsupported` 文案 + 指向更新 Host）。新命令遇上旧 Host 从此是「一句明确的错」，不是无限等。
+- **侧栏侧超时**（`App.tsx`）：`fs.save` / `fs.upload` 这类「发出去等回执」的请求带超时（20s），超时即报错并让那次调用返回空——不能让 `await` 悬死。`fs.pick` / `page.pick` 要等人操作（系统选择器、页面上点元素），不设超时。判定用「回调身份比对」：回执先 `delete` 再调回调，超时回调发现自己的函数已经不在表里就直接返回，不会双次结算。
+- **版本错配要明说**：Host 的 `hello` 带 `version`；侧栏用 `isNewer(EXTENSION_VERSION, hostVersion)` 判断 Host 落后，落后就报一次（只报一次，避免刷屏），文案指向更新 Host / 看 `~/.opensider/host.log`。两边版本任何一边解析不出数字（本地 dev 构建）时就闭嘴。
+- **提示要看得见**：上面这些失败都走侧栏的 `notice`（输入框上方一条可关闭的提示条），**不是** `error`——`error` 只在 `status === "error"` 时作为正文渲染，`ready` 时只是状态药丸的 `title` tooltip，而拖入 / 粘贴失败恰恰发生在 `ready` 状态下，用 `error` 等于没提示（用户的原话是「拖进去了但附件栏没变化」）。
+
+拖入文件的取数链路也按「不许只有一条路」重写（`packages/extension/src/sidepanel/file-drop.ts`）：每个 `item` 先试 `webkitGetAsEntry()`，拿不到 entry 就用同一个 item 的 `getAsFile()`；**有 entry 时也把 `getAsFile()` 的结果带着**，作为 `entry.file()` 失败或迟迟不回调（3s 超时）时的兜底；一个 entry 都没有、item 也拿不到文件时，才退回 `dataTransfer.files`（放在最后是为了不重复：真拖拽里 `files` 与 `getAsFile()` 是同一批对象，两边都收会变成两份附件）。整条链路跑完一个文件都没有、也没跳过任何文件时，侧栏报「读不出拖入的文件」——用户至少知道拖拽这条路没通。
+
+### 日志轮转（host.log）
+
+`internal/log` 每次写之前先看两件事：当前文件加上这一行会不会超过 `MaxBytes`（2MB），以及文件的修改日期是不是还停在「今天」（本机时区）。任一不成立就把 `host.log` 改名成 `host.log.<YYYYMMDD-HHMMSS>`，再按名字倒序只留最近 `MaxFiles`（5）份。**正在写的那份路径永不变**，所以 README 表格、`doctor`、skill 里的 `tail -n 12 ~/.opensider/host.log` 都不受影响；日期规则保证长期挂着的 Host 跨天也会切片，不会把几天混在一个文件里。
+
+几个不动声色的细节：改名失败（Windows 上用户可能正用编辑器占着这个文件）时记一个 60s 的退避时间戳，期间不再尝试——否则每写一行都要失败一次；调用方完全无感，切片不影响当次写入；历史片只按名字删，不做「按内容/时间排序」的重活（`internal/log/log_test.go` 覆盖大小切片、跨天切片、保留份数、以及切片不丢行）。
+
 ## 工作区布局
 
 ```
@@ -164,7 +181,7 @@ Host 是一份 Go 二进制（`cmd/opensider` + `internal/`）。`browser/tools.
   ui-state.json              # 侧栏权威状态（会话列表/消息/偏好）；扩展卸载后仍在
   extension-path             # 用户选定的扩展目录（单行绝对路径，`opensider extension-dir` 读写）
   release-check.json         # 最新 Release tag 的 1h 缓存
-  host.log
+  host.log                   # 正在写的那份；历史片是同目录的 host.log.<YYYYMMDD-HHMMSS>
 ```
 
 解压后的扩展**不在** `~/.opensider` 下：它的位置由用户在安装时选定（skill 先问，建议 `~/OpenSider`，`paths.DefaultExtensionDir()` 只在没读过记录时兜底），并记在 `~/.opensider/extension-path`（`opensider extension-dir` 读写）。不默认放下载目录：那是「清理下载」和清理工具的常客，删了扩展就一直失效到重新加载。点目录在系统文件选择器里默认不可见，而「加载已解压的扩展程序」是用户手动的一步，放在看得见的地方才做得下去。

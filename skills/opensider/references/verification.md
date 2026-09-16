@@ -46,17 +46,21 @@ test -f "$repo_ext/manifest.json" && echo OK
 ```
 
 **Extension actually loaded (the user's click)** — ask the user, then look for the fresh
-bridge start:
+bridge start. Compare the **newest** start line rather than counting them: `host.log`
+rotates by size and by date (`host.log.<YYYYMMDD-HHMMSS>` next to it), so a count can drop
+when a rotation happens mid-check.
 
 ```sh
-before=$(grep -c 'go host starting' ~/.opensider/host.log 2>/dev/null || echo 0)
+before=$(grep 'go host starting' ~/.opensider/host.log 2>/dev/null | tail -n 1)
 # …user clicks the toolbar icon and the side panel opens…
-after=$(grep -c 'go host starting' ~/.opensider/host.log 2>/dev/null || echo 0)
-echo "$before -> $after"
+after=$(grep 'go host starting' ~/.opensider/host.log 2>/dev/null | tail -n 1)
+echo "${before:-none} -> ${after:-none}"
 ```
 
-`after > before` (or the first-ever line appearing) proves the whole chain: the
-extension is loaded, its manifest allowed origin matches, and Chrome spawned our host.
+A new (or first-ever) timestamp line proves the whole chain: the extension is loaded, its
+manifest allowed origin matches, and Chrome spawned our host. If `after` is empty while
+`host.log` exists, also check the rotated files — the current file may have just rotated
+and the line is in `host.log.<stamp>`.
 
 **Agents** — the panel lists them; `idle agents=` in the log names them from the bridge's
 side. An empty list with `agents=none` means no supported CLI was detected — see

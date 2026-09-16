@@ -68,6 +68,7 @@ scripts/verify-queue-send-now.mjs  消息队列「立即发送」的端到端验
 scripts/verify-file-drop.mjs  拖文件到侧栏 → 变附件的端到端验证
 scripts/verify-composer-clipboard.mjs  输入框全选复制/剪切带上附件栏的端到端验证
 scripts/verify-page-overlays.mjs  动作后自动上报页面浮层（模态框/抽屉）的端到端验证
+scripts/verify-host-skew.mjs  本机 Host 比扩展旧时的提示（可见 / 可关 / 不影响可用功能）
 scripts/lib/sandbox.mjs  上面几个脚本共用的沙箱（临时 HOME / 现编 Host / 假 Agent / profile 内桥接清单）
 scripts/fake-acp-agent.mjs  假 ACP Agent（e2e 用，按行 JSON，可控分片/是否响应 cancel）
 scripts/install       已删除（用户侧不再有壳脚本）
@@ -101,12 +102,25 @@ TTL 过期、解除还原）跑 `node --test 'packages/extension/src/**/*.test.t
 最后关掉侧栏验证还原。**注意它测不了「真的被隐藏」**：Playwright 的 Chromium 自己开着焦点模拟，
 页面永远是 visible，所以那部分只能在单测里用假环境覆盖，脚本注释里写明了这个边界。
 
-拖文件进侧栏（整个面板都能接）跑 `node scripts/verify-file-drop.mjs`：它在同一个沙箱里连上假 Agent，
-合成一次 `DataTransfer` 拖放（真机拖拽的 `webkitGetAsEntry` 合成不出来，脚本里会走 `dataTransfer.files`
-回退分支），断言「拖入时出现投放提示」「文件变成附件芯片」「Host 真的把副本写进
-`workspace/browser/uploads/` 且字节一致」「面板没有被浏览器导航走」。「拖文件夹」那条链路的递归读取
-用 `packages/extension/src/sidepanel/file-drop.test.ts` 里的假 entry 覆盖（含超大跳过、数量上限、
-读不出的项跳过），Host 侧的路径安全与去重写在 `internal/workspace/upload_test.go`。
+拖文件进侧栏（整个面板都能接）跑 `node scripts/verify-file-drop.mjs`（12 项）：它在同一个沙箱里连上假 Agent，
+先用合成的 `DataTransfer` 拖一次，**再用 CDP 真拖一次**（`Input.setInterceptDrags` 打开后
+`Input.dispatchDragEvent` 带 `files: [路径]`，页面拿到的是 Chrome 自己造的那份 DataTransfer，
+有真 entry）——合成拖拽永远走 `dataTransfer.files` 回退分支，`webkitGetAsEntry()` + `entry.file()`
+这条真机路径靠它才有人看着。断言「拖入时出现投放提示」「文件变成附件芯片」「Host 真的把副本写进
+`workspace/browser/uploads/` 且字节一致」「面板没有被浏览器导航走」，最后拖一个超过上限的文件，
+断言**面板会把原因说出来**（提示条可见）而不是默不作声。「拖文件夹」那条链路的递归读取用
+`packages/extension/src/sidepanel/file-drop.test.ts` 里的假 entry 覆盖（含超大跳过、数量上限、
+entry 读不出 / 永远不回调时回退到同一个 item 的文件、几条路都空算 unreadable），
+Host 侧的路径安全与去重写在 `internal/workspace/upload_test.go`。
+
+本机 Host 比扩展旧时的提示跑 `node scripts/verify-host-skew.mjs`（6 项）：沙箱把 Host 编成
+`v0.2.0`（`createSandbox({ hostVersion })` 注入 ldflags，代码还是当前这份），断言侧栏里能看见
+「Host 比扩展旧」、能关掉、并且关之前拖文件照样进附件栏——旧 Host 静默丢掉不认识的命令
+正是用户报的「拖进去没反应」，所以这条链路必须有测试盯着。
+
+提醒自己：`setError` 在 `status === "ready"` 时只当 tooltip（`Header` 的 title），**用户看不见**。
+凡是「刚才那一下没成功」的提示（拖入 / 粘贴失败、桥接太旧或没响应）都走 `notice`，
+在输入框上方渲染成一条可关闭的提示条（`App.tsx` 的 `notice` / `ChatPane` 的 `notice` prop）。
 
 输入框「全选复制 / 剪切带上附件栏」跑 `node scripts/verify-composer-clipboard.mjs`（12 项）：载荷不进剪贴板
 （Chromium 只保留白名单风味），而是扩展自己记 90 秒，粘贴文本一模一样时还原一次；脚本用「开第二个面板页」

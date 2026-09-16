@@ -12,7 +12,7 @@ remove from `chrome://extensions`. And there is data — ask about it, never ass
 | `workspace/` | page snapshots the Agent reads | nothing important (it is regenerated) |
 | `workspace/outputs/` | files the Agent wrote for the user | **yes — real user files** |
 | `ui-state.json` | session list and every chat message | **yes — the whole chat history** |
-| `host.log`, `release-check.json` | logs and the version cache | nothing important |
+| `host.log` (+ its rotated `host.log.<stamp>` files), `release-check.json` | logs and the version cache | nothing important |
 | `runtime/` | the bridge binary + ACP adapters | nothing important (reinstallable) |
 
 Ask one clear question: **remove everything (`~/.opensider` included), or keep the chat

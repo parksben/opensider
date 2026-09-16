@@ -87,7 +87,7 @@ OpenSider never uploads your configuration or chats to any server: all sessions 
 | `~/.opensider/workspace/outputs/` | Artifacts the Agent produces during a session (tables, documents, code, …) |
 | `~/.opensider/ui-state.json` | Session list, chat history and preferences |
 | `~/.opensider/runtime/` | The local bridge binary, plus the Claude Code / Codex ACP adapters |
-| `~/.opensider/host.log` | Bridge log — the Agent can use it to debug problems |
+| `~/.opensider/host.log` | Bridge log — the Agent can use it to debug problems. Rotated by size and by date, keeping the last few files as `host.log.<timestamp>` |
 | The extension folder you picked at install (suggested `~/OpenSider/`) | The folder the browser actually loads — **do not move or delete it**, or the extension breaks |
 
 On Windows these live under `%USERPROFILE%\.opensider` and `%USERPROFILE%\OpenSider`.

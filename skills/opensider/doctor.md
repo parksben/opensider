@@ -19,6 +19,10 @@ grep -o '"version": *"[^"]*"' "$repo_ext/manifest.json" | head -1
 tail -n 12 ~/.opensider/host.log        # "go host starting" lines, newest last
 ```
 
+`host.log` rotates by size (2MB) and by date, and keeps the last 5 files as
+`host.log.<YYYYMMDD-HHMMSS>` in the same folder — so "no start line" means **the current
+file and every rotated file**: `grep -h 'go host starting' ~/.opensider/host.log*`.
+
 Windows: same three paths under `$env:USERPROFILE\.opensider`, and `Get-Content -Tail 12`
 for the log.
 
@@ -27,7 +31,7 @@ Which ones are missing tells you where to go:
 | State | Meaning | Go to |
 |---|---|---|
 | no binary | never installed, or the runtime folder was wiped | [`install.md`](./install.md) |
-| binary, no `host.log` line | bridge installed but no browser ever started it — manifest missing, extension not loaded, or nobody opened the panel yet | Stage 2 below |
+| binary, no `host.log` line in the current file or its rotated neighbours | bridge installed but no browser ever started it — manifest missing, extension not loaded, or nobody opened the panel yet | Stage 2 below |
 | binary + old `host.log` line, panel says offline | Chrome cannot reach the manifest, or the host crashed | Stage 3 below |
 | everything present, one version old | nothing is broken | [`update.md`](./update.md) |
 
