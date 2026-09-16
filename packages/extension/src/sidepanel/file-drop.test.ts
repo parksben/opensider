@@ -4,9 +4,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  ENTRY_FILE_TIMEOUT_MS,
   MAX_DROP_FILES,
   MAX_UPLOAD_BYTES,
+  collectDrop,
+  emptySkips,
   encodeBase64,
+  fileFromEntry,
   isTooLarge,
   walkEntry,
 } from "./file-drop.ts";
@@ -75,11 +79,17 @@ const fakeDir = (name: string, children: FakeEntry[]): FakeEntry => ({
   },
 });
 
-const walk = (entry: FakeEntry, dir?: string) => {
-  const out: { name: string; dir?: string; size: number }[] = [];
-  const skipped = { tooLarge: 0, tooMany: 0 };
-  return walkEntry(entry as unknown as FileSystemEntry, dir, out as never, skipped).then(() => ({
-    out,
+const walk = (entry: FakeEntry, dir?: string, fallback?: unknown) => {
+  const raw: { name: string; dir?: string; file: { size?: number } }[] = [];
+  const skipped = emptySkips();
+  return walkEntry(
+    entry as unknown as FileSystemEntry,
+    dir,
+    raw as never,
+    skipped,
+    (fallback ?? null) as never,
+  ).then(() => ({
+    out: raw.map((item) => ({ name: item.name, dir: item.dir, size: item.file.size ?? 0 })),
     skipped,
   }));
 };
@@ -110,9 +120,82 @@ test("the drop budget stops the walk instead of hanging", async () => {
   assert.ok(skipped.tooMany >= 1);
 });
 
-test("an unreadable entry is skipped quietly", async () => {
+test("an unreadable entry is counted instead of vanishing", async () => {
   const tree = fakeDir("proj", [unreadableFile("ghost.txt"), fakeFile("real.txt")]);
   const { out, skipped } = await walk(tree);
   assert.deepEqual(out.map((item) => item.name), ["real.txt"]);
-  assert.deepEqual(skipped, { tooLarge: 0, tooMany: 0 });
+  assert.deepEqual(skipped, { tooLarge: 0, tooMany: 0, unreadable: 1 });
+});
+
+// --- the ways a real drop can hand over its files -----------------------------
+
+const fakeItem = (options: { entry?: unknown; file?: unknown; throws?: boolean }) => ({
+  kind: "file",
+  webkitGetAsEntry: () => {
+    if (options.throws) throw new Error("nope");
+    return options.entry ?? null;
+  },
+  getAsFile: () => options.file ?? null,
+});
+
+const fakeTransfer = (items: unknown[], files: unknown[] = []) =>
+  ({ items, files } as unknown as DataTransfer);
+
+const fakeFileObject = (name: string, size = 12) => ({ name, size });
+
+test("an item with an entry is walked, and keeps its own file as a backup", () => {
+  const entry = fakeFile("dropped.txt");
+  const file = fakeFileObject("dropped.txt");
+  const captured = collectDrop(fakeTransfer([fakeItem({ entry, file })], [file]));
+  assert.equal(captured.entries.length, 1);
+  assert.equal(captured.entries[0].fallback, file);
+  assert.equal(captured.entries[0].dir, undefined);
+  // `files` holds the same objects as `getAsFile()`: taking both would attach it twice.
+  assert.deepEqual(captured.plainFiles, []);
+});
+
+test("an item without an entry still contributes its file", () => {
+  const file = fakeFileObject("plain.txt");
+  const captured = collectDrop(fakeTransfer([fakeItem({ file })]));
+  assert.deepEqual(captured.entries, []);
+  assert.deepEqual(captured.plainFiles, [file]);
+});
+
+test("a throwing entry lookup falls back to the item's file", () => {
+  const file = fakeFileObject("plain.txt");
+  const captured = collectDrop(fakeTransfer([fakeItem({ file, throws: true })]));
+  assert.deepEqual(captured.plainFiles, [file]);
+});
+
+test("a drop with nothing to describe itself falls back to dataTransfer.files", () => {
+  const files = [fakeFileObject("a.txt"), fakeFileObject("b.txt")];
+  const captured = collectDrop(fakeTransfer([fakeItem({})], files));
+  assert.deepEqual(captured.plainFiles, files);
+});
+
+test("a folder entry is marked with the folder name", () => {
+  const folder = { name: "proj", isFile: false, isDirectory: true };
+  const captured = collectDrop(fakeTransfer([fakeItem({ entry: folder })]));
+  assert.equal(captured.entries[0].dir, "proj");
+  assert.equal(captured.entries[0].fallback, null);
+});
+
+test("an entry that cannot be read falls back to the item's file", async () => {
+  const backup = fakeFileObject("ghost.txt", 42) as never;
+  const { out, skipped } = await walk(unreadableFile("ghost.txt"), undefined, backup);
+  assert.deepEqual(out.map((item) => [item.name, item.size]), [["ghost.txt", 42]]);
+  assert.equal(skipped.unreadable, 0);
+});
+
+test("an entry whose file() never calls back gives up and is still reported", async () => {
+  const silent: FakeEntry = { name: "frozen.txt", isFile: true, isDirectory: false, file: () => {} };
+  const started = Date.now();
+  const file = await fileFromEntry(silent as unknown as FileSystemFileEntry, 30);
+  assert.equal(file, null);
+  assert.ok(Date.now() - started >= 25, "must wait for the timeout, not return early");
+  assert.ok(ENTRY_FILE_TIMEOUT_MS >= 1_000, "the real budget should be generous");
+
+  const { out, skipped } = await walk(silent);
+  assert.deepEqual(out, []);
+  assert.equal(skipped.unreadable, 1);
 });

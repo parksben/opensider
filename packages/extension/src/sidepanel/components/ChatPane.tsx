@@ -1,5 +1,5 @@
 import type { AgentModel, AttachmentItem, CurrentPage, FsPickMode } from "@shared";
-import { ArrowDown, AtSign, Check, ChevronDown, Copy, FileDown, FolderPen, GitFork, LoaderCircle, MousePointer2, Paperclip, RefreshCw, Send, Shield, Square, Unlock, X, Zap } from "lucide-react";
+import { ArrowDown, AtSign, Check, ChevronDown, Copy, FileDown, FolderPen, GitFork, LoaderCircle, MousePointer2, Paperclip, RefreshCw, Send, Shield, Square, TriangleAlert, Unlock, X, Zap } from "lucide-react";
 import logoUrl from "../../../assets/icon.svg?url";
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from "react";
 import type { ChatMessage, ChatPart, TodoItem } from "../chat-types";
@@ -18,6 +18,7 @@ import {
 import {
   MAX_DROP_FILES,
   collectDrop,
+  emptySkips,
   isTooLarge,
   walkEntry,
   type DropPlan,
@@ -85,6 +86,8 @@ export function ChatPane({
   todos,
   artifacts,
   onRevealArtifact,
+  notice,
+  onDismissNotice,
   queue,
 }: {
   locale: Locale;
@@ -100,6 +103,9 @@ export function ChatPane({
   todos?: TodoItem[];
   artifacts?: AttachmentItem[];
   onRevealArtifact?: (path: string) => void;
+  /** Something the user just tried did not work (a drop, a paste, a stale bridge). */
+  notice?: string;
+  onDismissNotice?: () => void;
   queue: QueuedMessage[];
   onSend: (text: string, attachments: AttachmentItem[]) => void;
   onEnqueue: (text: string, attachments: AttachmentItem[]) => void;
@@ -379,7 +385,9 @@ export function ChatPane({
 
   /** Drops land here: the bytes go to the host, which writes them into the workspace. */
   const addDroppedFiles = async (plan: DropPlan) => {
-    if (plan.files.length === 0 && plan.skipped.tooLarge === 0 && plan.skipped.tooMany === 0) return;
+    // Even an empty plan is handed over: the uploader is what tells the user why nothing
+    // was attached (too large, too many, unreadable, host silent), and a drop that ends in
+    // silence is the bug we are not allowed to have.
     mergeAttachments(await onUploadFiles(plan));
   };
 
@@ -413,10 +421,11 @@ export function ChatPane({
       // `items` is only readable during the event, so capture the entries now.
       const captured = collectDrop(event.dataTransfer);
       void (async () => {
-        const skipped = { tooLarge: 0, tooMany: captured.skippedTooMany };
+        const skipped = emptySkips();
+        skipped.tooMany += captured.skippedTooMany;
         const files: DroppedFile[] = [];
         for (const item of captured.entries) {
-          await walkEntry(item.entry, item.dir, files, skipped);
+          await walkEntry(item.entry, item.dir, files, skipped, item.fallback);
         }
         for (const file of captured.plainFiles) {
           if (files.length >= MAX_DROP_FILES) {
@@ -545,6 +554,21 @@ export function ChatPane({
               >
                 {label("cancelEdit")}
               </RippleButton>
+            </div>
+          ) : null}
+          {notice ? (
+            <div className="mb-1.5 flex items-start gap-1.5 px-1 text-[11px] leading-snug text-[var(--warn)]">
+              <TriangleAlert size={12} className="mt-[1px] shrink-0" />
+              <p className="min-w-0 flex-1">{notice}</p>
+              <button
+                type="button"
+                onClick={onDismissNotice}
+                aria-label={label("dismissNotice")}
+                title={label("dismissNotice")}
+                className="shrink-0 rounded text-[var(--muted)] hover:text-[var(--text)]"
+              >
+                <X size={12} />
+              </button>
             </div>
           ) : null}
           {attachments.length > 0 ? (

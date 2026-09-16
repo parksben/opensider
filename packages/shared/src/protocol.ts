@@ -348,7 +348,7 @@ export type HostStatusState = "starting" | "idle" | "connecting" | "ready" | "er
 export type FsPickMode = "mixed" | "files" | "folders";
 
 export type HostToExt =
-  | { type: "hello"; workspace: string; agentPath: string; providerId?: string }
+  | { type: "hello"; workspace: string; agentPath: string; providerId?: string; version?: string }
   | { type: "ui.state"; state: Record<string, unknown> | null }
   | { type: "status"; state: HostStatusState; error?: string }
   | { type: "agents"; agents: AgentInfo[]; selectedId?: string }
@@ -382,6 +382,8 @@ export type HostToExt =
     }
   | { type: "models"; models: AgentModel[]; currentId: string }
   | { type: "fs.revealed"; path: string; missing?: boolean; error?: string }
+  // An older host replying to a command it does not implement: see internal/host/host.go.
+  | { type: "host.unsupported"; requestId: string; command?: string; error?: string }
   | {
       type: "fs.previewed";
       requestId: string;

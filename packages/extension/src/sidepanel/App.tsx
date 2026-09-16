@@ -70,6 +70,8 @@ import {
 
 /** 扩展自己的版本（manifest version）。模块级取一次：侧栏多处要拿它和最新 release 比。 */
 const EXTENSION_VERSION = chrome.runtime.getManifest().version;
+/** How long the bridge may take to answer a file upload before we call it silent. */
+const HOST_FILE_TIMEOUT_MS = 20_000;
 /** 「暂无新版本」/「检查失败」这类结果提示亮多久。 */
 const CHECK_FEEDBACK_MS = 1500;
 /** 手点检查后等 Host 回话的上限；超了就当没检查成（离线 / 桥接没起来）。 */
@@ -98,6 +100,9 @@ export function App() {
   const mainColumnRef = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState<HostStatusState>("starting");
   const [error, setError] = useState<string>();
+  // 与 status 无关的「刚才那一下没成功」：拖入 / 粘贴失败、桥接太旧或没响应。这些必须
+  // 在对话区里看得见（status=ready 时 error 只当 tooltip，用户等于什么都没看到）。
+  const [notice, setNotice] = useState<string>();
   const [release, setRelease] = useState<{ version: string; latest: string }>();
   const [updateOpen, setUpdateOpen] = useState(false);
   const [uninstallOpen, setUninstallOpen] = useState(false);
@@ -139,6 +144,9 @@ export function App() {
   const skipIdleConnectRef = useRef(false);
   const awaitingCancelRef = useRef(false);
   const pickWaiters = useRef(new Map<string, (items: AttachmentItem[]) => void>());
+  // A host older than the extension silently drops commands it does not know, so a stale
+  // bridge is worth saying out loud - once, not on every `hello`.
+  const hostSkewRef = useRef(false);
   const previewWaiters = useRef(
     new Map<
       string,
@@ -475,6 +483,14 @@ export function App() {
     }
     if (msg.type === "hello") {
       if (msg.providerId) connectedProviderRef.current = msg.providerId;
+      const host = displayVersion(msg.version);
+      const extension = displayVersion(EXTENSION_VERSION);
+      // Only compare real versions: a dev build reports something unparseable, and nagging
+      // about it would be noise.
+      if (host && extension && isNewer(extension, host) && !hostSkewRef.current) {
+        hostSkewRef.current = true;
+        setNotice(t(localeRef.current, "hostOutdated"));
+      }
       return;
     }
     if (msg.type === "ui.state") {
@@ -604,6 +620,15 @@ export function App() {
       else if (msg.error === "inject") setError(t(localeRef.current, "pickInjectFailed"));
       else if (msg.error) setError(msg.error);
       waiter?.(msg.items ?? []);
+      return;
+    }
+    if (msg.type === "host.unsupported") {
+      // The bridge is older than the extension: it does not have this command. Say so
+      // instead of leaving the caller waiting for a reply that is never coming.
+      const waiter = pickWaiters.current.get(msg.requestId);
+      pickWaiters.current.delete(msg.requestId);
+      setNotice(t(localeRef.current, "hostUnsupported"));
+      waiter?.([]);
       return;
     }
     if (msg.type === "fs.previewed") {
@@ -1061,6 +1086,28 @@ export function App() {
     });
   }, []);
 
+  /**
+   * A host reply, or `undefined` when the bridge stayed silent for too long. Without this a
+   * request to a bridge that does not know the command (an older host) hangs forever with
+   * the UI showing nothing at all.
+   */
+  const waitForHostReply = (requestId: string, timeoutMs: number) =>
+    new Promise<AttachmentItem[] | undefined>((resolve) => {
+      let timer: number | undefined;
+      const settle = (items: AttachmentItem[]) => {
+        if (timer !== undefined) window.clearTimeout(timer);
+        resolve(items);
+      };
+      pickWaiters.current.set(requestId, settle);
+      timer = window.setTimeout(() => {
+        // The message handler deletes the waiter before calling it, so a missing entry means
+        // the reply already landed (or something cancelled it) - do not resolve twice.
+        if (pickWaiters.current.get(requestId) !== settle) return;
+        pickWaiters.current.delete(requestId);
+        resolve(undefined);
+      }, timeoutMs);
+    });
+
   const onPasteImages = async (files: File[]) => {
     if (statusRef.current !== "ready") {
       setError(t(localeRef.current, "pasteFailed"));
@@ -1070,20 +1117,24 @@ export function App() {
     for (const [index, file] of files.entries()) {
       try {
         const payload = await encodeImageBlob(file);
-        const saved = await new Promise<AttachmentItem[]>((resolve) => {
-          const requestId = crypto.randomUUID();
-          pickWaiters.current.set(requestId, resolve);
-          sendRef.current({
-            type: "fs.save",
-            requestId,
-            name: `paste-${Date.now()}-${index}.jpg`,
-            imageBase64: payload.imageBase64,
-            mime: "image/jpeg",
-          });
+        const requestId = crypto.randomUUID();
+        const pending = waitForHostReply(requestId, HOST_FILE_TIMEOUT_MS);
+        sendRef.current({
+          type: "fs.save",
+          requestId,
+          name: `paste-${Date.now()}-${index}.jpg`,
+          imageBase64: payload.imageBase64,
+          mime: "image/jpeg",
         });
+        const saved = await pending;
+        if (!saved) {
+          setNotice(t(localeRef.current, "hostTimeout"));
+          continue;
+        }
         items.push(...saved);
+        setNotice(undefined);
       } catch (error) {
-        setError(error instanceof Error ? error.message : t(localeRef.current, "pasteFailed"));
+        setNotice(error instanceof Error ? error.message : t(localeRef.current, "pasteFailed"));
       }
     }
     return items;
@@ -1091,33 +1142,46 @@ export function App() {
 
   const onUploadFiles = async (plan: DropPlan) => {
     if (statusRef.current !== "ready") {
-      setError(t(localeRef.current, "uploadFailed"));
+      setNotice(t(localeRef.current, "uploadFailed"));
       return [] as AttachmentItem[];
     }
-    if (plan.skipped.tooMany > 0) setError(t(localeRef.current, "uploadTooMany"));
-    else if (plan.skipped.tooLarge > 0) setError(t(localeRef.current, "uploadTooLarge"));
+    if (plan.files.length === 0) {
+      // A drop that attached nothing has to say why - silence here is the bug users report
+      // as "the hint appeared but nothing happened".
+      if (plan.skipped.tooMany > 0) setNotice(t(localeRef.current, "uploadTooMany"));
+      else if (plan.skipped.tooLarge > 0) setNotice(t(localeRef.current, "uploadTooLarge"));
+      else if (plan.skipped.unreadable > 0) setNotice(t(localeRef.current, "uploadUnreadable"));
+      else setNotice(t(localeRef.current, "uploadEmpty"));
+      return [] as AttachmentItem[];
+    }
+    if (plan.skipped.tooMany > 0) setNotice(t(localeRef.current, "uploadTooMany"));
+    else if (plan.skipped.tooLarge > 0) setNotice(t(localeRef.current, "uploadTooLarge"));
     const items: AttachmentItem[] = [];
     for (const dropped of plan.files) {
       try {
         const base64 = await fileToBase64(dropped.file);
         if (!base64) {
-          setError(t(localeRef.current, "uploadTooLarge"));
+          setNotice(t(localeRef.current, "uploadTooLarge"));
           continue;
         }
-        const saved = await new Promise<AttachmentItem[]>((resolve) => {
-          const requestId = crypto.randomUUID();
-          pickWaiters.current.set(requestId, resolve);
-          sendRef.current({
-            type: "fs.upload",
-            requestId,
-            name: dropped.name,
-            dir: dropped.dir,
-            base64,
-          });
+        const requestId = crypto.randomUUID();
+        const pending = waitForHostReply(requestId, HOST_FILE_TIMEOUT_MS);
+        sendRef.current({
+          type: "fs.upload",
+          requestId,
+          name: dropped.name,
+          dir: dropped.dir,
+          base64,
         });
+        const saved = await pending;
+        if (!saved) {
+          setNotice(t(localeRef.current, "hostTimeout"));
+          continue;
+        }
         items.push(...saved);
+        setNotice(undefined);
       } catch (error) {
-        setError(error instanceof Error ? error.message : t(localeRef.current, "uploadFailed"));
+        setNotice(error instanceof Error ? error.message : t(localeRef.current, "uploadFailed"));
       }
     }
     return items;
@@ -1489,6 +1553,8 @@ export function App() {
               todos={selected.todos}
               artifacts={selected.artifacts ?? []}
               onRevealArtifact={(path) => sendRef.current({ type: "fs.reveal", path })}
+              notice={notice}
+              onDismissNotice={() => setNotice(undefined)}
               queue={queues[selected.id] ?? []}
               onEnqueue={onEnqueue}
               onUpdateQueued={onUpdateQueued}

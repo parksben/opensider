@@ -52,7 +52,7 @@ export function extensionIdFromDist(dist) {
  *     args: [--disable-extensions-except=${dist}, --load-extension=${dist}], env: {...},
  *   });
  */
-export function createSandbox({ root, prefix, dist }) {
+export function createSandbox({ root, prefix, dist, hostVersion }) {
   const sandbox = mkdtempSync(join(tmpdir(), prefix));
   const home = join(sandbox, "home");
   const hostBin = join(sandbox, "runtime", "opensider");
@@ -63,7 +63,12 @@ export function createSandbox({ root, prefix, dist }) {
   mkdirSync(stubDir, { recursive: true });
   mkdirSync(home, { recursive: true });
 
-  execFileSync("go", ["build", "-o", hostBin, "./cmd/opensider"], { cwd: root, stdio: "inherit" });
+  // hostVersion 让 Host 报一个旧版本号：用来验「扩展比 Host 新」时的提示（见
+  // scripts/verify-host-skew.mjs）。不传就照常编成 dev。
+  const buildArgs = ["build", "-o", hostBin];
+  if (hostVersion) buildArgs.push("-ldflags", `-X github.com/parksben/opensider/internal/version.Version=v${hostVersion.replace(/^v/, "")}`);
+  buildArgs.push("./cmd/opensider");
+  execFileSync("go", buildArgs, { cwd: root, stdio: "inherit" });
 
   const stub = join(stubDir, "copilot");
   writeFileSync(stub, `#!/bin/sh\nexec node "${join(root, "scripts", "fake-acp-agent.mjs")}" "$@"\n`);

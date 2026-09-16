@@ -1103,7 +1103,29 @@ func (h *Host) dispatch(typ string, msg map[string]any) error {
 		h.mu.Unlock()
 		return nil
 	default:
+		// 扩展比 Host 新是常态（Host 只在用户跑安装 / 更新 skill 时才换）。旧 Host 遇上
+		// 不认识的命令若就这么丢掉，用户看到的是「点了 / 拖了没反应」，一点线索都没有。
+		// 所以带 requestId 的一律回一条明确的「不支持」，让侧栏立刻报出来并指向更新。
+		log.Log("unsupported command: " + typ)
+		if reply := unsupportedReply(typ, msg); reply != nil {
+			h.send(reply)
+		}
 		return nil
+	}
+}
+
+// unsupportedReply 是「本机 Host 不认识这条命令」的回执。没有 requestId 的消息（单向通知）
+// 不需要回执，返回 nil。
+func unsupportedReply(command string, msg map[string]any) map[string]any {
+	requestID := str(msg["requestId"])
+	if requestID == "" {
+		return nil
+	}
+	return map[string]any{
+		"type":      "host.unsupported",
+		"requestId": requestID,
+		"command":   command,
+		"error":     `this host does not know the command "` + command + `"`,
 	}
 }
 

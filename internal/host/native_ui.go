@@ -10,8 +10,8 @@ import (
 	"github.com/parksben/opensider/internal/paths"
 )
 
-// nativeUIEventLimit 是 browser/native-ui.json 里保留的事件条数：只给 Agent 看最近发生了什么，
-// 不做日志归档（要全量看 host.log）。
+// nativeUIEventLimit 是 browser/native-ui.json 里保留的事件条数：只给 Agent 看最近发生了什么。
+// 全量历史看 host.log（那份按大小与日期轮转，所以不会无限涨，但也别依赖它回溯很久以前的事件）。
 const nativeUIEventLimit = 50
 
 type nativeUIDoc struct {
