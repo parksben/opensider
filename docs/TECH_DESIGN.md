@@ -229,6 +229,13 @@ reveal 的平台实现分在 `internal/reveal/reveal_{darwin,linux,windows}.go`�
 - 边界（写进 `agents.md`，不许吹）：这层只改**页面可见的 API**，让页面自己认为可见；Chrome 自己的后台降频 / 渲染降级取消不掉（只有 `chrome.debugger` 的 CDP 能，代价同第 15 条），所以后台执行可能比前台慢，不等于「强制前台渲染」。另外在武装**之前**就注册好的 `visibilitychange` 监听会照旧收到事件（注入在 `document_start`，实际基本不会发生），`window.onblur` 这类 `on*` 属性只托管 `document.onvisibilitychange`。
 - 工具面：`browser/tools.json` 加静态说明项 `pageActivity`（「面板开着时，Agent 在动的标签被强制为可见 / 有焦点；窗口不被抢焦点」），`version` 9 → 10；`getNativeUi` 报的 `visibility` 就是强制后的值。
 
+**页面自己的浮层（模态框 / 抽屉 / 遮罩）**：点一下按钮之后，站点常常不是在原地变，而是弹一个**页面自己**的层（`role=dialog`、`aria-modal`、`<dialog open>`、高 z-index 且 fixed/absolute 盖住可观察面积的容器）。这层不在浏览器原生弹窗那套里，Agent 很容易把「弹了模态框」当成「点了没反应」，重复点或直接告诉用户没效果。做法：
+
+- 页面方法 `getOverlays`：在开放 Shadow DOM 与同源 iframe 里找出上面那几类层，每条带 `role` / 可读标题 / 正文摘录 / `zIndex` / 盖住视口的比例 / 是否几乎铺满，以及背景被 `inert` 或 `aria-hidden` 的迹象。判定逻辑抽在纯函数里（拿样式与属性喂它），DOM 收集部分在 `interactive.ts` 旁边的 `overlays.ts`，跟交互快照一样忽略我们自己的光标与拾取层。
+- **操作类命令自动带上**：SW 在 `isActionMethod` 的命令跑完后再拉一次浮层快照，把结果挂进 `data.overlays`——但只在**集合出现或变化**时挂（按 tab 记上一份签名），没变化就不往结果里塞噪音。它和 `data.nativeUi`（浏览器原生弹窗）互补，看局面时两个都要看。
+- 同一份快照发给 Host 落盘 `browser/overlays.json`（没有浮层就写空表，不留下上一次的旧值），Agent 随时可读。
+- 工具面：`browser/tools.json` 的 `version` 10 → 11；`agents.md` 里写清「动作后先确认预期变化有没有发生」的整套流程。
+
 ## 多会话与 fork
 
 工作区仍是一个。ACP 会话可以有多条，侧栏用本地 `id` 和 `acpSessionId` 对应。
@@ -335,6 +342,12 @@ Chrome 的文件选择器不会给出本机绝对路径。加号发给 Host `fs.
 - `drop` 里先同步抓 `dataTransfer.items` 的 entry（异步之后 `items` 就失效了），用 `webkitGetAsEntry()` 区分文件 / 文件夹：文件直接用 `File`，文件夹递归读子树（上限：单文件 ≤ 480KiB 原文、整次拖拽 ≤ 200 个文件，超了报错并提示改用回形针，那条走系统选择器直接拿路径、无大小限制）。符号链接 / 读不出来的项跳过。
 - 每个文件读成 base64（分块 `btoa`，别用 `String.fromCharCode(...bytes)` 爆栈），发 `{ type: "fs.upload", requestId, name, dir?, base64 }`（`dir` 为拖进来的文件夹名，文件在子目录时带上相对路径）。Host 写 `browser/uploads/`，回 `fs.uploaded`，侧栏 `mergeAttachments` 去重后落进输入框附件栏。进行中同样可拖（跟附件栏其它入口一致）。
 - 限制在两侧都做：侧栏先拦（超限不上传、给文案），Host 复核（base64 长度、段级 sanitize、`..` 与绝对路径一律拒），不信任侧栏。
+
+剪切 / 复制整个输入框时把附件栏一起带走（跨会话搬草稿不用重上传）：
+
+- `src/sidepanel/composer-clipboard.ts` 是纯逻辑：剪贴板里加一份自定义 MIME `application/x-opensider-composer`，内容是 `{v:1, attachments:[{path,name,kind}]}`（正文不用重复带——普通文本那份就是不动的原生文本，粘到别的应用里只会看到人话）。解析时校验版本、条数上限与每条的 `path` / `name` / `kind`，坏数据整份丢掉。
+- `ComposerEditor` 在 `copy` / `cut` 上判断「选区是否覆盖输入框全部内容」（选区文本与编辑器序列化文本**规范化后相等**，空编辑器不算），是才回调 `ChatPane`；不是就一步不多做。`ChatPane` 把附件写进 `event.clipboardData.setData(MIME, payload)`——**不 `preventDefault`**，文本照旧由浏览器负责。`cut` 时额外清空附件栏（剪切是「搬」不是「复制」）。
+- `paste` 的处理顺序不变：先 `clipboardImages(clipboardData)`（图片照旧进附件栏，这条不能被抢），再读文本，最后看有没有自定义 MIME 并把它里面的附件 `mergeAttachments` 去重合并。这样「全选复制 → 换会话粘贴」得到正文 + 附件，而部分选中的复制、图片粘贴、`«@att:…»` 芯片搬运全部保持原样。
 
 `session/prompt` 在用户正文后追加：
 
