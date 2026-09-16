@@ -5,8 +5,8 @@
     Give your browser AI wings
   </p>
   <p>
-    <a href="https://github.com/parksben/opensider/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/parksben/opensider?label=release" /></a>
-    <a href="./LICENSE"><img alt="License" src="https://img.shields.io/github/license/parksben/opensider?label=license" /></a>
+    <a href="https://github.com/parksben/opensider/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/parksben/opensider?label=RELEASE" /></a>
+    <a href="./LICENSE"><img alt="License" src="https://img.shields.io/github/license/parksben/opensider?label=LICENSE" /></a>
   </p>
 </div>
 

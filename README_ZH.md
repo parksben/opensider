@@ -5,8 +5,8 @@
     为你的浏览器插上AI的翅膀
   </p>
   <p>
-    <a href="https://github.com/parksben/opensider/releases/latest"><img alt="最新版本" src="https://img.shields.io/github/v/release/parksben/opensider?label=release" /></a>
-    <a href="./LICENSE"><img alt="License" src="https://img.shields.io/github/license/parksben/opensider?label=license" /></a>
+    <a href="https://github.com/parksben/opensider/releases/latest"><img alt="最新版本" src="https://img.shields.io/github/v/release/parksben/opensider?label=RELEASE" /></a>
+    <a href="./LICENSE"><img alt="License" src="https://img.shields.io/github/license/parksben/opensider?label=LICENSE" /></a>
   </p>
 </div>
 
@@ -51,7 +51,7 @@ https://github.com/user-attachments/assets/f0a9c654-b66e-43ef-a233-6942a30e83c6
 
 > 本扩展程序适用于 Chrome / Edge / Brave 等 Chromium 内核的浏览器。安装前请确保本机已有正在运行的 Agent CLI 程序。
 
-一键安装：把下面这段提示词复制给你正在使用的本地 AI Agent（Claude Code、Codex、OpenCode、Cursor 等），它会完成与本地环境准备并引导你完成浏览器扩展程序的安装。
+一键安装：把下面这段提示词复制给你正在使用的本地 AI Agent（Claude Code、Codex、OpenCode、Cursor 等），它会完成本地环境准备并引导你完成扩展程序的安装。
 
 ```
 帮我安装 OpenSider 浏览器扩展。
