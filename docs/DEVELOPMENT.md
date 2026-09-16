@@ -63,6 +63,8 @@ skills/opensider      安装 / 更新 / 卸载 / 体检测 skill（README 的提
 scripts/dev-host.mjs  开发用：编二进制 + 拷扩展 + 注册桥接（= pnpm install-host）
 scripts/pack-extension.mjs  扩展 zip 打包
 scripts/verify-native-ui.mjs  原生 UI shim 的端到端验证（真 Chromium + 已构建扩展）
+scripts/verify-queue-send-now.mjs  消息队列「立即发送」的端到端验证
+scripts/fake-acp-agent.mjs  假 ACP Agent（e2e 用，按行 JSON，可控分片/是否响应 cancel）
 scripts/install       已删除（用户侧不再有壳脚本）
 .github/workflows     推 v* tag 发 Release
 ```
@@ -75,3 +77,12 @@ pnpm workspace 只编扩展。Host 用 Go。扩展用 Vite + `@crxjs/vite-plugin
 `packages/extension/dist`，用两个固定页面（含一个 `script-src 'self'` 的 strict CSP 页面）验证
 「默认只观察、真弹窗照旧且能拿到用户答案」「`answer` 策略下同步代答且不弹窗」「文件选择器不弹」
 「策略过期后回到观察」，共 15 项检查。它依赖全局装的 playwright（`npm i -g playwright`）。
+
+消息队列的「立即发送」（打断当前一轮 + 立刻把这条发出去）也靠真浏览器验证：
+`node scripts/verify-queue-send-now.mjs`。它在一个临时沙箱里跑：临时 HOME、现编的 Host
+二进制、把假 Agent（`scripts/fake-acp-agent.mjs`）放到检测顺序最靠前的 OpenSider 自有
+bin 目录冒充 `copilot`，并把本机桥接清单写进临时 profile 的 `NativeMessagingHosts/`
+（Chromium 自己的构建只认 profile 内这份，临时 HOME 会被忽略）。跑完 12 项检查，
+覆盖「消息进队列 → 点立即发送 → 新消息上屏且真的被 Agent 收到 → 新一轮起来 → 旧一轮
+被砍短 → Host 日志里确实走了 interrupt 路径」。注意：清单里 `copilot` 的解析顺序依赖
+`paths.AgentSearchDirs()`，改了那段要同步改这个脚本。
