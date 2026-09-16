@@ -258,7 +258,9 @@ foreach ($rel in $rels) {
 ```
 
 If a listed file 404s on `$tag` (added after the latest release), the retry loop fetches
-**that file only** from `main`. If the batch feels slow (any single small file taking more
+**that file only** from `main`. If it is still empty after that, retry that one file once more
+(any route) before assuming it is gone — the very first fetch of a path pushed minutes ago can
+come back empty. If the batch feels slow (any single small file taking more
 than ~20 s), flip `DL_ROUTE=mirror` and run the batch once more — the route is a bet on the
 network, and the batch is cheap to repeat. Read `$skill/references/download.md` before any
 release asset: binaries and `extension.zip` come from
