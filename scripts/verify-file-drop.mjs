@@ -157,7 +157,7 @@ try {
   for (let attempt = 0; attempt < 40 && !explained; attempt += 1) {
     await panel.waitForTimeout(250);
     const body = await bodyText();
-    explained = /too large to drop|这个文件太大/.test(body);
+    explained = /too large to drop|文件体积过大/.test(body);
   }
   ok("an oversized drop explains why nothing was attached", explained);
   ok("...and does not attach it", !(await bodyText()).includes(BIG_NAME));
