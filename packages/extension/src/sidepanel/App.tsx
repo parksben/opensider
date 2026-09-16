@@ -156,8 +156,8 @@ export function App() {
   const runningIdsRef = useRef<Set<string>>(new Set());
   const queuesRef = useRef<Record<string, QueuedMessage[]>>({});
   const editingQueueRef = useRef<{ sessionId: string; id: string } | null>(null);
-  const pendingForceSend = useRef<Record<string, QueuedMessage[]>>({});
   const flushQueueRef = useRef<(sessionId: string) => void>(() => undefined);
+
   const sendToSessionRef = useRef<(localId: string, text: string, attachments?: AttachmentItem[]) => void>(
     () => undefined,
   );
@@ -214,7 +214,7 @@ export function App() {
    * 发 prompt 并登记 requestId：Host 若因 `session/load` 失败被迫换新会话，
    * 会带这个 id 回一条 `session` 回执，让本地绑定跟上新会话。
    */
-  const sendPrompt = (localId: string, sessionId: string, text: string) => {
+  const sendPrompt = (localId: string, sessionId: string, text: string, interrupt = false) => {
     const requestId = crypto.randomUUID();
     bindRegistry.current.add(requestId, localId, "prompt");
     sendRef.current({
@@ -222,6 +222,7 @@ export function App() {
       text,
       sessionId,
       requestId,
+      interrupt,
       currentPage: pageRef.current
         ? { title: pageRef.current.title, url: pageRef.current.url }
         : undefined,
@@ -413,6 +414,17 @@ export function App() {
     );
   };
 
+  // 结算一轮的结果：补时长 + 把没收尾的内容收干净。
+  const stampTurnEnd = (target: string, started: number) => {
+    const durationMs = Math.max(0, Date.now() - started);
+    updateSessionMessages(target, (messages) => {
+      const last = messages[messages.length - 1];
+      if (last?.role !== "assistant" || last.durationMs != null) return messages;
+      if (last.createdAt.getTime() < started - 2000) return messages;
+      return [...messages.slice(0, -1), { ...last, durationMs, content: settleFinishedContent(last.content) }];
+    });
+  };
+
   const finishTurn = (id?: string) => {
     const target = id ?? selectedIdRef.current;
     if (!target) return;
@@ -423,13 +435,16 @@ export function App() {
     next.delete(target);
     syncRunning(next);
     if (started == null) return;
-    const durationMs = Math.max(0, Date.now() - started);
-    updateSessionMessages(target, (messages) => {
-      const last = messages[messages.length - 1];
-      if (last?.role !== "assistant" || last.durationMs != null) return messages;
-      if (last.createdAt.getTime() < started - 2000) return messages;
-      return [...messages.slice(0, -1), { ...last, durationMs, content: settleFinishedContent(last.content) }];
-    });
+    stampTurnEnd(target, started);
+  };
+
+  // 被「立即发送」顶掉的那一轮：只结算它的时长 / 内容，running 留给接上来的新一轮
+  // （新消息已经上屏，所以新一轮的流式内容会落到新消息上）。
+  const settleSupersededTurn = (target: string) => {
+    const started = turnStartedAt.current.get(target);
+    if (started == null) return;
+    turnStartedAt.current.delete(target);
+    stampTurnEnd(target, started);
   };
 
   const finishAllTurns = () => {
@@ -485,7 +500,6 @@ export function App() {
       if (msg.state === "error" || msg.state === "missing") {
         pendingConnectRef.current = "";
         connectedProviderRef.current = "";
-        pendingForceSend.current = {};
         finishAllTurns();
       }
       if (msg.state !== "ready") appliedModelRef.current = "";
@@ -678,17 +692,15 @@ export function App() {
       if (!localId) return;
       // 该回合已结束，不会再收到这轮 prompt 的绑定修正回执，清掉悬挂项。
       bindRegistry.current.dropPrompts(localId);
-      finishTurn(localId);
-      const forced = pendingForceSend.current[localId];
-      const next = forced?.[0];
-      if (next) {
-        pendingForceSend.current[localId] = forced.slice(1);
-        if (pendingForceSend.current[localId].length === 0) delete pendingForceSend.current[localId];
-        sendToSessionRef.current(localId, next.text, next.attachments);
+      if (msg.interrupted) {
+        // 被「立即发送」顶掉的那一轮：只结算它自己，不清 running、也不 flush 队列 ——
+        // 新消息已经带着 interrupt 交给 Host，新一轮正在接上来。
+        settleSupersededTurn(localId);
       } else {
+        finishTurn(localId);
         flushQueueRef.current(localId);
       }
-      if (msg.stopReason === "error" && localId === selectedIdRef.current) {
+      if (msg.stopReason === "error" && !msg.interrupted && localId === selectedIdRef.current) {
         setError(msg.error?.trim() || t(localeRef.current, "turnError"));
       }
       return;
@@ -879,7 +891,12 @@ export function App() {
     setQueues(next);
   };
 
-  const sendToSession = (localId: string, text: string, attachments: AttachmentItem[] = []) => {
+  const sendToSession = (
+    localId: string,
+    text: string,
+    attachments: AttachmentItem[] = [],
+    options: { interrupt?: boolean } = {},
+  ) => {
     if (!localId) return;
     const session = sessionsRef.current.find((item) => item.id === localId);
     const user = createUserMessage(text, attachments);
@@ -901,7 +918,20 @@ export function App() {
       if (!bindRegistry.current.hasLocal(localId)) requestSession("new", localId);
       return;
     }
-    sendPrompt(localId, session.acpSessionId, context ? `${wrapForkContext(context)}\n\n${body}` : body);
+    sendPrompt(
+      localId,
+      session.acpSessionId,
+      context ? `${wrapForkContext(context)}\n\n${body}` : body,
+      options.interrupt,
+    );
+  };
+
+  // 「立即发送」：Host 收到 interrupt 会先停掉正在跑的那一轮、等它收尾再跑这条，
+  // 所以侧栏只需要立刻把消息上屏并发出去，不用自己等 turn.end 猜时机。
+  const sendQueuedNow = (sessionId: string, item: QueuedMessage) => {
+    sendToSession(sessionId, item.text, item.attachments, {
+      interrupt: runningIdsRef.current.has(sessionId),
+    });
   };
   sendToSessionRef.current = sendToSession;
 
@@ -969,21 +999,7 @@ export function App() {
     if (editingQueueRef.current?.sessionId === sessionId && editingQueueRef.current.id === id) {
       editingQueueRef.current = null;
     }
-    if (runningIdsRef.current.has(sessionId)) {
-      const session = sessionsRef.current.find((entry) => entry.id === sessionId);
-      if (session?.acpSessionId) {
-        // Host 那边确实在跑：先打断，等它的 turn.end 再发这条（立即发送会打断当前一轮）。
-        sendRef.current({ type: "cancel", sessionId: session.acpSessionId });
-        finishTurn(sessionId);
-        pendingForceSend.current[sessionId] = [...(pendingForceSend.current[sessionId] ?? []), item];
-        return;
-      }
-      // 本地 running 只是在等绑定（Host 没在跑）：没有可打断的，直接发。
-      finishTurn(sessionId);
-      sendToSession(sessionId, item.text, item.attachments);
-      return;
-    }
-    sendToSession(sessionId, item.text, item.attachments);
+    sendQueuedNow(sessionId, item);
   };
 
   const onEditingQueued = (id?: string) => {
@@ -1166,7 +1182,6 @@ export function App() {
     clearHitl(id);
     if (queuesRef.current[id]) setSessionQueue(id, []);
     if (editingQueueRef.current?.sessionId === id) editingQueueRef.current = null;
-    delete pendingForceSend.current[id];
     bindRegistry.current.dropLocal(id);
     pendingRegen.current.delete(id);
     const remaining = sessionsRef.current.filter((session) => session.id !== id);
