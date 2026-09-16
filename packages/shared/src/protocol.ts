@@ -1,4 +1,5 @@
 import type { NativeUiEvent } from "./native-ui";
+import type { OverlayReport } from "./overlays";
 
 export const HOST_NAME = "com.opensider.host";
 // 未打包 ID（用户实际在用的那个）：由下面 EXTENSION_KEY 决定，改了会让用户丢侧栏数据；
@@ -16,6 +17,7 @@ export const PAGE_METHODS = [
   "getMeta",
   "getReadable",
   "getInteractive",
+  "getOverlays",
   "getUnsavedChanges",
   "getSelection",
   "getLinks",
@@ -332,6 +334,7 @@ export type ExtToHost =
   | { type: "tabs.update"; snapshot: TabsSnapshot }
   | { type: "browser.result"; result: BrowserResult }
   | { type: "native.ui"; tabId: number; url: string; events: NativeUiEvent[] }
+  | { type: "overlays"; tabId: number; url: string; overlays: OverlayReport[]; modal: boolean }
   | {
       type: "permission.reply";
       id: number;

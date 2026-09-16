@@ -9,6 +9,7 @@ import type {
   HostToExt,
   NativeUiEvent,
   NativeUiSnapshot,
+  OverlaySnapshot,
   PageActivityState,
   TabRecord,
   TabsSnapshot,
@@ -24,6 +25,7 @@ import {
   isTabMethod,
   isWindowMethod,
   normalizeDialogPolicy,
+  overlaySignature,
 } from "@shared";
 import {
   isPickablePageUrl,
@@ -792,6 +794,33 @@ async function callNativeUi<T>(tabId: number, method: "read" | "setPolicy", args
   }
 }
 
+// --- page-level overlays (the modal / drawer / popup a site puts up itself) -------------
+//
+// Distinct from the native UI events above: these live in the page's DOM, and they are the
+// usual reason an Agent decides "the click did nothing". Reported with the action result so
+// the Agent does not have to ask, and persisted for `browser/overlays.json`.
+
+/** Last overlay signature reported per tab, so unchanged state stays out of results. */
+const overlaySignatures = new Map<number, string>();
+
+/** Returns the overlay snapshot when it appeared or changed, otherwise undefined. */
+async function readOverlays(tabId: number): Promise<OverlaySnapshot | undefined> {
+  const command: BrowserCommand = {
+    id: `overlays-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    method: "getOverlays",
+    args: {},
+  };
+  const result = await runContentMethod(tabId, command);
+  if (!result.ok) return undefined;
+  const snapshot = result.data as OverlaySnapshot | undefined;
+  if (!snapshot || !Array.isArray(snapshot.overlays)) return undefined;
+  const signature = overlaySignature(snapshot);
+  if (signature === (overlaySignatures.get(tabId) ?? "")) return undefined;
+  overlaySignatures.set(tabId, signature);
+  sendNative({ type: "overlays", tabId, url: "", overlays: snapshot.overlays, modal: snapshot.modal });
+  return snapshot;
+}
+
 /** Take whatever the page popped up since the last read (used after every page command). */
 async function drainNativeUi(tabId: number): Promise<NativeUiEvent[]> {
   const pulled = await callNativeUi<NativeUiSnapshot>(tabId, "read", [true]);
@@ -1035,6 +1064,14 @@ async function dispatchCommand(
   if (popped.length > 0) {
     result = { ...result, data: { ...(result.data ?? {}), nativeUi: popped } };
     reportNativeUi(tab.id, tab.url ?? "", popped);
+  }
+
+  // The page's own layers too (modal / drawer / overlay): an action that "did nothing" has
+  // often just opened one of these. Only reported when the set appears or changes, so a
+  // command that leaves the page as it was stays quiet.
+  if (isActionMethod(command.method)) {
+    const overlays = await readOverlays(tab.id);
+    if (overlays) result = { ...result, data: { ...(result.data ?? {}), overlays } };
   }
 
   publish(result);

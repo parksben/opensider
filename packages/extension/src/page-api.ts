@@ -14,6 +14,7 @@ import {
   refreshInteractive,
 } from "./interactive";
 import { getUnsavedChanges } from "./unsaved";
+import { collectOverlays } from "./overlays";
 
 const MAX_TEXT = 200_000;
 
@@ -391,6 +392,8 @@ async function invoke(method: PageMethod, args: BrowserCommandArgs): Promise<unk
       const snap = refreshInteractive();
       return { count: snap.count, text: interactiveText(), elements: snap.elements };
     }
+    case "getOverlays":
+      return collectOverlays();
     case "getUnsavedChanges":
       return getUnsavedChanges();
     case "getSelection":

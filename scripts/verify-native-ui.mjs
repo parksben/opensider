@@ -87,7 +87,8 @@ const nativeUi = (result) => result?.data?.nativeUi ?? [];
 
 try {
   let [sw] = context.serviceWorkers();
-  if (!sw) sw = await context.waitForEvent("serviceworker", { timeout: 15_000 });
+  // The first launch of a fresh profile can be slow to register the worker.
+  if (!sw) sw = await context.waitForEvent("serviceworker", { timeout: 30_000 });
   const swReady = async () => (await sw.evaluate(() => typeof globalThis.__opensiderDispatch)) === "function";
   for (let i = 0; i < 40 && !(await swReady()); i += 1) {
     await new Promise((resolve) => setTimeout(resolve, 250));

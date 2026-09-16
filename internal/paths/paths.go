@@ -47,6 +47,10 @@ func InteractivePath() string { return filepath.Join(BrowserDir(), "interactive.
 // NativeUIPath 是扩展报上来的原生 UI 事件流（页面弹的 alert / confirm / prompt / print /
 // window.open / 文件选择器），最近 50 条，供 Agent 读；见 TECH_DESIGN「原生 UI 感知与代答」。
 func NativeUIPath() string { return filepath.Join(BrowserDir(), "native-ui.json") }
+
+// OverlaysPath 是扩展报上来的「页面自己的浮层」快照（模态框 / 抽屉 / 遮罩），
+// 每次出现或变化覆盖一次，供 Agent 读；见 TECH_DESIGN「页面自己的浮层」。
+func OverlaysPath() string { return filepath.Join(BrowserDir(), "overlays.json") }
 func AgentsMDPath() string { return filepath.Join(WorkspaceDir(), "AGENTS.md") }
 func ClaudeMDPath() string { return filepath.Join(WorkspaceDir(), "CLAUDE.md") }
 func SessionPath() string  { return filepath.Join(SidebarHome(), "session.json") }

@@ -116,7 +116,7 @@ export async function launchSandbox(chromium, { dist, sandbox, env = {} }) {
 }
 
 /** The service worker, waiting for it if this is the first launch. */
-export async function waitForWorker(context, timeout = 15_000) {
+export async function waitForWorker(context, timeout = 30_000) {
   const [worker] = context.serviceWorkers();
   if (worker) return worker;
   return context.waitForEvent("serviceworker", { timeout });

@@ -132,6 +132,44 @@ What that means in practice:
 - Background execution can still be slower than foreground: this fixes what the *page* sees,
   not Chrome's own background scheduling.
 
+### If an action seems to do nothing
+
+Clicking a button and seeing no change usually means the change is *not where you were
+looking*. Sites answer a click by putting a layer on top of the page — a modal, a drawer, a
+floating panel, a full-screen overlay, a menu — and "nothing happened" is the wrong
+conclusion. This happens often enough that you should treat it as the first hypothesis.
+
+After every action command, the result carries what is on top of the page right now:
+
+- `data.overlays` — the page's **own** layers (`role=dialog` / `aria-modal` / `<dialog open>`
+  / a high floating container big enough to be a layer), each with its role, readable title,
+  text excerpt, z-index and how much of the viewport it covers. It is only attached when the
+  set **appears or changes**, so its absence means "nothing new came up".
+- `data.nativeUi` — **browser** dialogs the action triggered (`alert` / `confirm` / `prompt` /
+  a file picker / a popup). Different thing, same idea.
+
+So when the change you expected did not happen, in this order:
+
+1. Look at `data.overlays` from the action you just sent. Non-empty? The click worked: read
+   the overlay's text and act **inside it** — usually `getInteractive` again, because the
+   controls you need are in the layer and the indexes have shifted. `getOverlays` asks for
+   the same snapshot at any time (it is also on disk as `browser/overlays.json`, newest
+   snapshot only).
+2. Look at `data.nativeUi`. A `confirm`/`prompt` freezes the page's JS thread until someone
+   answers; see the section above for how to answer it yourself.
+3. Re-read the page instead of trusting your memory: `getInteractive` (indexes may have
+   changed), `getMeta` for the URL and title, `browser/tabs.json` for a tab that appeared or
+   navigated, `getUnsavedChanges`, `getReadable`.
+4. Wait for something specific rather than clicking again — `waitFor` with a selector, or
+   `runScript` for a condition. A slow backend looks exactly like a dead button for a while.
+5. Only then consider that the click did not register: re-check that you hit the right
+   element (`getInteractive` again, then `args.index`), and retry **once**.
+
+Do not send the same click over and over, and do not report "the button does not work" after
+one attempt: two attempts with a look in between is the budget. If it still does nothing,
+say what you tried, what the page looked like (`overlays`, `nativeUi`, current URL) and ask
+the user — that is far more useful than another silent retry.
+
 Before `navigate`, `reload`, `goBack`, `goForward`, or `closeTab` on a page the user may have edited, call `getUnsavedChanges` on that tab (switch to it first if needed).
 
 If `dirty` is true:

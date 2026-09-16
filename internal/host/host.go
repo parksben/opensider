@@ -934,6 +934,8 @@ func (h *Host) dispatch(typ string, msg map[string]any) error {
 		}
 		h.settlePageCommand(result.ID)
 		return watch.WriteCommandResult(result)
+	case "overlays":
+		return h.handleOverlays(msg)
 	case "native.ui":
 		h.handleNativeUi(msg)
 		return nil

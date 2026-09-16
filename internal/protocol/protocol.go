@@ -152,6 +152,7 @@ var ToolCatalog = []ToolEntry{
 	{Name: "getMeta", Kind: "read", Args: "", Summary: "url, title, description"},
 	{Name: "getReadable", Kind: "read", Args: "", Summary: "main text extract"},
 	{Name: "getInteractive", Kind: "read", Args: "", Summary: "numbered interactive controls; prefer args.index from this list"},
+	{Name: "getOverlays", Kind: "read", Args: "", Summary: "page-level modals/drawers/overlays on top right now (not browser dialogs); check this before concluding an action did nothing"},
 	{Name: "getUnsavedChanges", Kind: "read", Args: "", Summary: "detect unsaved form/editor edits before navigate/close"},
 	{Name: "getNativeUi", Kind: "read", Args: "", Summary: "recent native UI events (alert/confirm/prompt/print/popup/file chooser) plus permissions, visibility and fullscreen"},
 	{Name: "getSelection", Kind: "read", Args: "", Summary: "highlighted text"},

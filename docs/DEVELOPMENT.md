@@ -67,6 +67,7 @@ scripts/verify-page-activity.mjs  页面活动态（面板开着强制可见 / �
 scripts/verify-queue-send-now.mjs  消息队列「立即发送」的端到端验证
 scripts/verify-file-drop.mjs  拖文件到侧栏 → 变附件的端到端验证
 scripts/verify-composer-clipboard.mjs  输入框全选复制/剪切带上附件栏的端到端验证
+scripts/verify-page-overlays.mjs  动作后自动上报页面浮层（模态框/抽屉）的端到端验证
 scripts/lib/sandbox.mjs  上面几个脚本共用的沙箱（临时 HOME / 现编 Host / 假 Agent / profile 内桥接清单）
 scripts/fake-acp-agent.mjs  假 ACP Agent（e2e 用，按行 JSON，可控分片/是否响应 cancel）
 scripts/install       已删除（用户侧不再有壳脚本）
@@ -106,3 +107,14 @@ TTL 过期、解除还原）跑 `node --test 'packages/extension/src/**/*.test.t
 `workspace/browser/uploads/` 且字节一致」「面板没有被浏览器导航走」。「拖文件夹」那条链路的递归读取
 用 `packages/extension/src/sidepanel/file-drop.test.ts` 里的假 entry 覆盖（含超大跳过、数量上限、
 读不出的项跳过），Host 侧的路径安全与去重写在 `internal/workspace/upload_test.go`。
+
+输入框「全选复制 / 剪切带上附件栏」跑 `node scripts/verify-composer-clipboard.mjs`（11 项）：载荷不进剪贴板
+（Chromium 只保留白名单风味），而是扩展自己记 90 秒，粘贴文本一模一样时还原一次；脚本用「开第二个面板页」
+当「另一个会话的输入框」，并覆盖「部分选中不带附件」「cut 清空附件栏」「粘图仍然进附件栏」。
+注意 `Cmd+A` 在 contenteditable 里选的是**文本**，和 `selectNodeContents` 的边界点差一位 —— 判定得比渲染文本，
+别再用边界点（第一版就是这么把真全选判掉的）。
+
+页面浮层（页面自己的模态框 / 抽屉 / 遮罩）跑 `node scripts/verify-page-overlays.mjs`（10 项）：点开按钮后
+`click` 的结果里直接带 `data.overlays`，集合没变化时不带，关掉时带一份空表，同时 Host 把
+`browser/overlays.json` 整表覆盖。判定规则（role / aria-modal / `<dialog open>` / 高 z-index 且够大的浮层）
+是纯函数，单测在 `packages/extension/src/overlays.test.ts`。
