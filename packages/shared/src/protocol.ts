@@ -301,6 +301,8 @@ export type ExtToHost =
       sessionId?: string;
       requestId?: string;
       currentPage?: { title: string; url: string };
+      /** 「立即发送」：该会话正在跑就先取消它，等它收尾再开始这一轮（顺序由 Host 定）。 */
+      interrupt?: boolean;
     }
   | { type: "cancel"; sessionId?: string }
   | { type: "session.new"; requestId?: string }
@@ -340,7 +342,7 @@ export type HostToExt =
   | { type: "update"; update: Record<string, unknown>; sessionId?: string }
   | { type: "permission"; id: number; params: Record<string, unknown>; sessionId?: string }
   | { type: "cursor"; id?: number; method: string; params: Record<string, unknown>; sessionId?: string }
-  | { type: "turn.end"; stopReason: string; sessionId?: string; error?: string }
+  | { type: "turn.end"; stopReason: string; sessionId?: string; error?: string; interrupted?: boolean }
   | { type: "page"; page: CurrentPage }
   | { type: "browser.command"; command: BrowserCommand; sessionId?: string }
   | { type: "browser.result"; result: BrowserResult; sessionId?: string }

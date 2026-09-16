@@ -30,7 +30,17 @@ type acpRuntime struct {
 	client    *acp.Client
 	prompting bool
 	binding   bool
+
+	// turnDone 在那一轮 prompt 返回时被关闭（每开始一轮换一个新的）。
+	// 「立即发送」靠它知道旧一轮真的收尾了，而不是去等侧栏永远可能等不到的 turn.end。
+	turnDone chan struct{}
+	// interrupted 标记「这一轮是被立即发送顶掉的」，turn.end 要带上去让侧栏区分处理。
+	interrupted bool
 }
+
+// interruptWait 是「立即发送」等旧一轮收尾的上限：等不到也照样往下走，
+// 否则一个不响应 session/cancel 的 Agent 会把新消息永远卡住。
+const interruptWait = 15 * time.Second
 
 var errConnectCancelled = errors.New("connect cancelled")
 
@@ -552,6 +562,69 @@ func (h *Host) enqueueSessionOp(work func() error) error {
 	return work()
 }
 
+// interruptTurn 停下该会话正在跑的那一轮，并等它收尾（上限 interruptWait）。
+//
+// 「立即发送」靠它保证顺序：先旧一轮结束、再新一轮开始，而不是让侧栏去猜
+// turn.end 什么时候来 —— 猜不中，消息就永远发不出去。
+func (h *Host) interruptTurn(sessionID string) {
+	if sessionID == "" {
+		return
+	}
+	runtime := h.runtimeBySession(sessionID)
+	if runtime == nil {
+		return
+	}
+	h.interruptRunning(runtime)
+}
+
+// interruptRunning 标记并取消该 runtime 正在跑的那一轮；返回是否真的要求了打断。
+// 没在跑就什么都不做：不能把标记挂上去，否则侧栏会把一个普通的 turn.end 当成
+// “新一轮已经接上”而不再清 running。
+func (h *Host) interruptRunning(runtime *acpRuntime) bool {
+	h.mu.Lock()
+	prompting := runtime.prompting
+	done := runtime.turnDone
+	if prompting {
+		runtime.interrupted = true
+	}
+	h.mu.Unlock()
+	if !prompting {
+		return false
+	}
+	log.Log("prompt interrupt requested " + runtime.client.GetSessionID())
+	runtime.client.Cancel()
+	waitTurnDone(done, interruptWait)
+	return true
+}
+
+// endPrompt 收尾一轮：清 prompting、取出并复位 interrupted、把 turnDone 交出去关闭。
+func (h *Host) endPrompt(runtime *acpRuntime) (bool, chan struct{}) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	runtime.prompting = false
+	interrupted := runtime.interrupted
+	runtime.interrupted = false
+	done := runtime.turnDone
+	runtime.turnDone = nil
+	return interrupted, done
+}
+
+// waitTurnDone 等这一轮结束（channel 关闭），最多 timeout；返回是否等到了。
+func waitTurnDone(done <-chan struct{}, timeout time.Duration) bool {
+	if done == nil {
+		return false
+	}
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-done:
+		return true
+	case <-timer.C:
+		log.Log("prompt interrupt timed out waiting for the running turn to end")
+		return false
+	}
+}
+
 func (h *Host) attachClient(runtime *acpRuntime) error {
 	h.mu.Lock()
 	agent := h.currentAgent
@@ -1031,6 +1104,12 @@ func (h *Host) handlePrompt(msg map[string]any) error {
 	}
 	sessionID := str(msg["sessionId"])
 	requestID := str(msg["requestId"])
+	// 「立即发送」带上了 interrupt：先把旧一轮停下来并等它真的收尾，再走下面的
+	// 绑定 / 开跑流程。顺序必须由 Host 来定 —— 侧栏自己等 turn.end 再发的话，
+	// 只要那一轮没能正常返回（cancel 打空、ACP 会话 id 漂了），新消息就永远发不出去。
+	if msg["interrupt"] == true {
+		h.interruptTurn(sessionID)
+	}
 	var runtime *acpRuntime
 	err := h.enqueueSessionOp(func() error {
 		if sessionID != "" {
@@ -1092,6 +1171,7 @@ func (h *Host) handlePrompt(msg map[string]any) error {
 		return err
 	}
 	if runtime == nil {
+		// 会话正在跑、而这次也没有要求打断：保持原有的“忽略”语义，不改老行为。
 		return nil
 	}
 	prefix := ""
@@ -1102,12 +1182,26 @@ func (h *Host) handlePrompt(msg map[string]any) error {
 			prefix = "[Current tab] " + title + " — " + url + "\n\n"
 		}
 	}
-	defer func() { runtime.prompting = false }()
+	h.mu.Lock()
+	runtime.turnDone = make(chan struct{})
+	h.mu.Unlock()
 	stop, err := runtime.client.Prompt(prefix + str(msg["text"]))
+	interrupted, done := h.endPrompt(runtime)
+	if done != nil {
+		close(done)
+	}
 	if err != nil {
+		if interrupted {
+			// 被打断的那一轮报错是预期内的，按 interrupted 收尾，别走 dispatch 的错误
+			// 分支：那条分支发出去的 turn.end 不带 interrupted，侧栏会把已经接上的
+			// 新一轮当成结束了（正是这次要修的 bug 形态）。
+			log.Log("interrupted turn ended with error: " + err.Error())
+			h.send(map[string]any{"type": "turn.end", "stopReason": "cancelled", "interrupted": true, "sessionId": runtime.client.GetSessionID()})
+			return nil
+		}
 		return err
 	}
-	h.send(map[string]any{"type": "turn.end", "stopReason": stop, "sessionId": runtime.client.GetSessionID()})
+	h.send(map[string]any{"type": "turn.end", "stopReason": stop, "interrupted": interrupted, "sessionId": runtime.client.GetSessionID()})
 	return nil
 }
 
