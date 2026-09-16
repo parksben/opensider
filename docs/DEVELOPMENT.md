@@ -65,6 +65,8 @@ scripts/pack-extension.mjs  扩展 zip 打包
 scripts/verify-native-ui.mjs  原生 UI shim 的端到端验证（真 Chromium + 已构建扩展）
 scripts/verify-page-activity.mjs  页面活动态（面板开着强制可见 / 关掉还原）的端到端验证
 scripts/verify-queue-send-now.mjs  消息队列「立即发送」的端到端验证
+scripts/verify-file-drop.mjs  拖文件到侧栏 → 变附件的端到端验证
+scripts/lib/sandbox.mjs  上面几个脚本共用的沙箱（临时 HOME / 现编 Host / 假 Agent / profile 内桥接清单）
 scripts/fake-acp-agent.mjs  假 ACP Agent（e2e 用，按行 JSON，可控分片/是否响应 cancel）
 scripts/install       已删除（用户侧不再有壳脚本）
 .github/workflows     推 v* tag 发 Release
@@ -72,7 +74,8 @@ scripts/install       已删除（用户侧不再有壳脚本）
 
 pnpm workspace 只编扩展。Host 用 Go。扩展用 Vite + `@crxjs/vite-plugin` 打包。
 
-扩展的单元测试用 Node 自带的 runner（仓库没有 vitest）：`node --test packages/extension/src/*.test.ts`。
+扩展的单元测试用 Node 自带的 runner（仓库没有 vitest）：`node --test 'packages/extension/src/**/*.test.ts'`。
+**必须带 `**`**：`sidepanel/` 下面还有一批用例，写成 `src/*.test.ts` 会静默跳过它们（之前就这么漏了一批）。
 原生 UI（`alert` / `confirm` / `prompt` / `print` / `window.open` / 文件选择器）这条链路单测盖不到，
 改完跑 `node scripts/verify-native-ui.mjs`：它用本机缓存的 Chromium 拉起一个真浏览器、装上
 `packages/extension/dist`，用两个固定页面（含一个 `script-src 'self'` 的 strict CSP 页面）验证
@@ -90,8 +93,15 @@ bin 目录冒充 `copilot`，并把本机桥接清单写进临时 profile 的 `N
 
 页面活动态（面板开着时把 Agent 在动的标签强制成「可见 + 有焦点」，关掉侧栏还原）分两层验：
 核心机制（`packages/extension/src/activity-shim.ts` 的可见性 / 焦点改写、事件静音、rAF 回退、
-TTL 过期、解除还原）跑 `node --test packages/extension/src/*.test.ts` 里的单测，用最小的假 DOM；
+TTL 过期、解除还原）跑 `node --test 'packages/extension/src/**/*.test.ts'` 里的单测，用最小的假 DOM；
 接线与生命周期跑 `node scripts/verify-page-activity.mjs`（7 项检查），它用扩展自己的 `switchTab`
 把页面变成当前标签、再用主世界的 `chrome.scripting.executeScript` 看页面自己读到什么，
 最后关掉侧栏验证还原。**注意它测不了「真的被隐藏」**：Playwright 的 Chromium 自己开着焦点模拟，
 页面永远是 visible，所以那部分只能在单测里用假环境覆盖，脚本注释里写明了这个边界。
+
+拖文件进侧栏（整个面板都能接）跑 `node scripts/verify-file-drop.mjs`：它在同一个沙箱里连上假 Agent，
+合成一次 `DataTransfer` 拖放（真机拖拽的 `webkitGetAsEntry` 合成不出来，脚本里会走 `dataTransfer.files`
+回退分支），断言「拖入时出现投放提示」「文件变成附件芯片」「Host 真的把副本写进
+`workspace/browser/uploads/` 且字节一致」「面板没有被浏览器导航走」。「拖文件夹」那条链路的递归读取
+用 `packages/extension/src/sidepanel/file-drop.test.ts` 里的假 entry 覆盖（含超大跳过、数量上限、
+读不出的项跳过），Host 侧的路径安全与去重写在 `internal/workspace/upload_test.go`。
