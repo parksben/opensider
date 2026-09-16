@@ -142,7 +142,7 @@ Host 是一份 Go 二进制（`cmd/opensider` + `internal/`）。`browser/tools.
 - **Host 必须应答**（`internal/host/host.go`）：带 `requestId` 的消息走 `default` 分支时，回一条 `{type: "host.unsupported", requestId, command, error}`，侧栏当普通失败处理（`hostUnsupported` 文案 + 指向更新 Host）。新命令遇上旧 Host 从此是「一句明确的错」，不是无限等。
 - **侧栏侧超时**（`App.tsx`）：`fs.save` / `fs.upload` 这类「发出去等回执」的请求带超时（20s），超时即报错并让那次调用返回空——不能让 `await` 悬死。`fs.pick` / `page.pick` 要等人操作（系统选择器、页面上点元素），不设超时。判定用「回调身份比对」：回执先 `delete` 再调回调，超时回调发现自己的函数已经不在表里就直接返回，不会双次结算。
 - **版本错配要明说**：Host 的 `hello` 带 `version`；侧栏用 `isNewer(EXTENSION_VERSION, hostVersion)` 判断 Host 落后，落后就报一次（只报一次，避免刷屏），文案指向更新 Host / 看 `~/.opensider/host.log`。两边版本任何一边解析不出数字（本地 dev 构建）时就闭嘴。
-- **提示要看得见**：上面这些失败都走侧栏的 `notice`（输入框上方一条可关闭的提示条），**不是** `error`——`error` 只在 `status === "error"` 时作为正文渲染，`ready` 时只是状态药丸的 `title` tooltip，而拖入 / 粘贴失败恰恰发生在 `ready` 状态下，用 `error` 等于没提示（用户的原话是「拖进去了但附件栏没变化」）。
+- **提示要看得见**：上面这些失败都走侧栏的 `notice`（输入框上方一条可关闭的提示条），**不是** `error`——`error` 只在 `status === "error"` 时作为正文渲染，`ready` 时只是状态药丸的 `title` tooltip，而拖入 / 粘贴失败恰恰发生在 `ready` 状态下，用 `error` 等于没提示（用户的原话是「拖进去了但附件栏没变化」）。文案口径见 REQUIREMENTS「聊天」第 16 条：按钮叫它自己的名字（「添加附件 / Add attachments」）、位置写「输入框底部 / under the input field」、不出现「回形针」这类图标外号，面向用户也不出现 `Host`（统一叫「本地桥接程序 / the local bridge」，`versionBridge` 与 `hello` 版本错配提示同一套词）。
 
 拖入文件的取数链路也按「不许只有一条路」重写（`packages/extension/src/sidepanel/file-drop.ts`）：每个 `item` 先试 `webkitGetAsEntry()`，拿不到 entry 就用同一个 item 的 `getAsFile()`；**有 entry 时也把 `getAsFile()` 的结果带着**，作为 `entry.file()` 失败或迟迟不回调（3s 超时）时的兜底；一个 entry 都没有、item 也拿不到文件时，才退回 `dataTransfer.files`（放在最后是为了不重复：真拖拽里 `files` 与 `getAsFile()` 是同一批对象，两边都收会变成两份附件）。整条链路跑完一个文件都没有、也没跳过任何文件时，侧栏报「读不出拖入的文件」——用户至少知道拖拽这条路没通。
 
