@@ -207,6 +207,8 @@ Host 在 `session/new` 之前写好 `AGENTS.md` 和 `browser/tools.json`，这�
 
 `reportArtifacts` 不是页面方法。Agent 仍写 `browser/commands/<id>.json`，Host 监视时认出 `method` 后自己解析、写 `browser/results/<id>.json`，**不**转成 `browser.command`。命令监视用 `id + 内容哈希` 去重：同一文件的 Create 后紧跟 Write 只处理一次；Agent 用同一个 id 改写命令（常见于再次 `reportArtifacts`）必须再跑一遍，不能因为 id 已经处理过就丢掉。参数接受 `args.files[{path, name?}]`、`args.paths[]` 或单个 `args.path`；相对路径相对工作区 cwd。示例与说明优先 `outputs/...`，但仍接受任意已存在路径。每条须存在于本机，按路径去重，用和附件同一套规则标 `kind`。随后推 `{ type: "artifacts", items, sessionId? }`：`sessionId` 优先取正在 `prompt` 的 ACP 会话，侧栏映射到本地会话后 **整表覆盖** `Session.artifacts`（新表不含 `missing`，上次打开位置失败留下的失效标记一起清掉，按路径替换而不是按路径合并）。侧栏 `fs.reveal` 让 Host 调系统文件管理器打开目录并选中该文件。路径不存在时 Host 回 `{ type: "fs.revealed", path, missing: true, error }`，不能只打日志；侧栏按 `path` 把该条 `missing: true` 写进 `Session.artifacts` 并随会话持久化。其它 reveal 失败（空路径、非绝对路径、系统文件管理器报错）也回 `fs.revealed` + `error`，但不标 `missing`，按钮保留。成功打开不回结果。
 
+reveal 的平台实现分在 `internal/reveal/reveal_{darwin,linux,windows}.go`：macOS `open -R <path>`；Linux 先 `dbus-send … FileManager1.ShowItems`（path 转 `file://` URI），失败退 `xdg-open <dir>`；Windows 用 `explorer.exe /select,"<path>"`。**Windows 这条不能交给 Go 拼参数**：`explorer.exe` 不按 `CommandLineToArgvW` 解析命令行，而 `os/exec` 只要参数里含空格就把整串加引号，拼出来是 `explorer "/select,C:\a b\c.txt"`——explorer 认不出 `/select` 开关，只会弹一个与目标无关的窗口。路径带空格时必现，而 Windows 主目录/用户名带空格极常见，所以这不是边角。做法是自己拼命令行（`SysProcAttr.CmdLine` 原样交给 `CreateProcess`），等价于手敲 `explorer.exe /select,"C:\a b\c.txt"`。拼装函数 `explorerSelectCmdLine` 与断言放在**不带 build tag** 的 `reveal.go` / `reveal_test.go` 里：写进 windows-only 文件就只有 Windows 跑得到，本机与 CI 都测不了。explorer 成功也常返回 1，按老规矩容忍；`CmdLine` 真起不来（含双引号等非法情形）才退到打开所在目录。
+
 ## 多会话与 fork
 
 工作区仍是一个。ACP 会话可以有多条，侧栏用本地 `id` 和 `acpSessionId` 对应。
@@ -300,7 +302,7 @@ chrome.storage.local 与 ~/.opensider/ui-state.json（同形）
 
 ## 附件（只传路径）
 
-Chrome 的文件选择器不会给出本机绝对路径。加号发给 Host `fs.pick`（带 `mode`: `mixed` | `files` | `folders`）。侧栏用 UA 判断：macOS 直接 `mixed`（`NSOpenPanel` 一次混选）；其它系统在回形针上方弹出「多选文件 / 多选文件夹」再发对应 mode。Host **exec 自己**加 `pick`（Chrome 子进程里直接弹框经常出不来）。Windows `IFileOpenDialog` 与 Linux zenity/kdialog/portal 都是文件或文件夹二选一。`fs.stat` 分成 `image` / `file` / `folder`。侧栏芯片只展示 `basename`，`title` 是全路径。未连上就点加号，侧栏写明确错误。
+Chrome 的文件选择器不会给出本机绝对路径。加号发给 Host `fs.pick`（带 `mode`: `mixed` | `files` | `folders`）。侧栏用 UA 判断：macOS 直接 `mixed`（`NSOpenPanel` 一次混选）；其它系统在回形针上方弹出「多选文件 / 多选文件夹」再发对应 mode。Host **exec 自己**加 `pick`（Chrome 子进程里直接弹框经常出不来）。Windows `IFileOpenDialog` 与 Linux zenity/kdialog/portal 都是文件或文件夹二选一：选项为 `FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST | FOS_ALLOWMULTISELECT`，文件再或 `FOS_FILEMUSTEXIST`、文件夹再或 `FOS_PICKFOLDERS`；多选连着 `FOS_ALLOWMULTISELECT`，所以结果必须走 `IFileOpenDialog::GetResults`（`IShellItemArray`）而不是 `IFileDialog::GetResult`，否则拿不到用户选的项。取消时 `Show` 返回 `HRESULT_FROM_WIN32(ERROR_CANCELLED)`，按「用户取消」回空列表，不当错误。`fs.stat` 分成 `image` / `file` / `folder`。侧栏芯片只展示 `basename`，`title` 是全路径。未连上就点加号，侧栏写明确错误。
 
 剪贴板里的截图同样没有本机路径，不能当文件选。composer `paste` 若带 `image/*`，先按页面截图那套压成 JPEG（最长边约 1280、质量约 0.72、base64 &lt; 700KB，以免 Native Messaging 超 1MB），再 `fs.save` 落到 `~/.opensider/workspace/browser/pasted/`。回包后当普通 `kind: image` 芯片，走同一套 `wrapAttachments`。Chrome 会把同一张图同时挂在 `clipboardData.files` 和 `items` 上，且 `getAsFile()` 的 `lastModified` 往往对不上，按 name/size/mtime 去重会漏。`clipboardImages` 只读 `files` 里的图片；没有才退到 `items`。有图时 `preventDefault`，避免二进制糊进 textarea；若同时带纯文本则插到光标处。落盘完成前不让发送，以免消息先走、图还没进附件。未连上或压图/写盘失败写明确错误。
 
