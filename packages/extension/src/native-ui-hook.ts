@@ -11,6 +11,7 @@ import {
   type NativeUiKind,
   type NativeUiSnapshot,
 } from "@shared";
+import { createCallerGuard, type HookHandshake } from "./hook-caller";
 
 /**
  * Main-world shim for the browser UI a page can pop up: `alert` / `confirm` / `prompt`,
@@ -30,16 +31,10 @@ import {
   const host = window as unknown as Record<string, unknown>;
   if (host[NATIVE_UI_HOOK_KEY]) return;
 
-  let token = "";
+  const guard = createCallerGuard();
   let policy: DialogPolicy = defaultDialogPolicy();
   let events: NativeUiEvent[] = [];
   const permissions: Record<string, string> = {};
-
-  function authorized(candidate: unknown): boolean {
-    if (typeof candidate !== "string" || candidate.length < 16) return false;
-    if (!token) token = candidate;
-    return candidate === token;
-  }
 
   function note(kind: NativeUiKind, message: unknown, extra: Partial<NativeUiEvent> = {}): void {
     events = pushEvent(events, {
@@ -169,9 +164,13 @@ import {
     writable: false,
     value: {
       // Both entry points take the caller token first — the service worker calls
-      // `api[method](token, ...args)`.
+      // `api[method](token, ...args)`. `handshake` is how it learns whether it still
+      // holds the hook (a page can claim it first, see `hook-caller.ts`).
+      handshake(caller: unknown): HookHandshake {
+        return guard.handshake(caller);
+      },
       setPolicy(caller: unknown, raw: unknown): DialogPolicy {
-        if (!authorized(caller)) return policy;
+        if (!guard.authorized(caller)) return policy;
         policy = normalizeDialogPolicy(raw, Date.now());
         return policy;
       },
@@ -186,15 +185,15 @@ import {
             permissions: { ...permissions },
           },
         };
-        if (!authorized(caller)) return snapshot;
+        if (!guard.authorized(caller)) return snapshot;
         snapshot.events = events;
         if (drain) events = [];
         return snapshot;
       },
       /** Unwrap every entry point, forget the buffered events and drop the global. Never
-       * learns a token, so only a caller that already proved itself can do it. */
+       * claims the token, so only a caller that already proved itself can do it. */
       release(caller: unknown): boolean {
-        if (!token || caller !== token) return false;
+        if (!guard.mayRelease(caller)) return false;
         for (const entry of restores.splice(0)) {
           try {
             entry.holder[entry.key] = entry.original;

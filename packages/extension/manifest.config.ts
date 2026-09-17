@@ -37,33 +37,12 @@ export default defineManifest({
       js: ["src/content.ts"],
       run_at: "document_start",
     },
-    // The two MAIN-world hooks are injected on demand instead of on every page (see
-    // `ensurePageHooks` in background.ts): patching a page's own `window` from its main
-    // world is visible to the site, and doing that on pages the Agent never touches — and
-    // *during* their initialisation, which is when a bundler's `document_start` loader
-    // really lands — breaks sites that check their own environment on load (Douyin's
-    // player, among others).
-    //
-    // They stay declared here for one reason only: it is the single place where the CRXJS
-    // build's hash-suffixed file names can be read back at runtime
-    // (`chrome.runtime.getManifest()`). `exclude_matches` covering the same patterns means
-    // Chrome itself never injects them, so the declaration costs the pages nothing.
-    {
-      matches: ["http://*/*", "https://*/*"],
-      exclude_matches: ["http://*/*", "https://*/*"],
-      js: ["src/native-ui-hook.ts"],
-      run_at: "document_start",
-      all_frames: true,
-      world: "MAIN",
-    },
-    {
-      matches: ["http://*/*", "https://*/*"],
-      exclude_matches: ["http://*/*", "https://*/*"],
-      js: ["src/activity-hook.ts"],
-      run_at: "document_start",
-      all_frames: true,
-      world: "MAIN",
-    },
+    // The two MAIN-world hooks are deliberately *not* content scripts. Patching a page's own
+    // `window` from its main world is something the site can see, so it only happens on tabs
+    // the Agent actually works with, injected by the service worker (`injectPageHook` in
+    // background.ts) while the side panel is open. They are built as classic scripts with
+    // fixed names by `scripts/build-page-hooks.mjs` — a hook has to be re-runnable, and an ESM
+    // loader would be evaluated once per document.
   ],
   permissions: ["sidePanel", "nativeMessaging", "tabs", "windows", "storage", "scripting", "favicon"],
   host_permissions: ["http://*/*", "https://*/*"],

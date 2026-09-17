@@ -81,7 +81,8 @@ const base = `http://127.0.0.1:${port}`;
 const { chromium } = loadPlaywright();
 const profile = mkdtempSync(join(tmpdir(), "opensider-native-ui-"));
 const context = await chromium.launchPersistentContext(profile, {
-  headless: true,
+  // Headed unless HEADLESS=1: this is the end-to-end check a user would run.
+  headless: process.env.HEADLESS === "1",
   executablePath: cachedChromium(),
   args: [`--disable-extensions-except=${dist}`, `--load-extension=${dist}`],
 });

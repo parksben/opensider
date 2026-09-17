@@ -124,7 +124,9 @@ const { chromium } = loadPlaywright();
 async function launch(withExtension) {
   const profile = mkdtempSync(join(tmpdir(), "opensider-tamper-"));
   const context = await chromium.launchPersistentContext(profile, {
-    headless: true,
+    // Headed unless HEADLESS=1: the fingerprint has to hold in the browser a user actually
+    // browses with, not in a stripped-down headless one.
+    headless: process.env.HEADLESS === "1",
     executablePath: cachedChromium(),
     args: withExtension ? [`--disable-extensions-except=${dist}`, `--load-extension=${dist}`] : [],
   });
@@ -239,6 +241,68 @@ try {
   );
   const releasedRoundTrip = await page.evaluate(ON_VISIBILITY_ROUND_TRIP);
   check("the page's own onvisibilitychange works again", releasedRoundTrip === 1, `handler fired ${releasedRoundTrip}x`);
+
+  // Working with the same tab again has to install the hooks a second time. This is where the
+  // ESM-loader build quietly fell over: a module is evaluated once per document, so injecting
+  // it again did nothing and the Agent stayed blind until the page was reloaded.
+  const panelAgain = await context.newPage();
+  await panelAgain.goto(`chrome-extension://${extensionId}/src/sidepanel/index.html`);
+  await panelAgain.waitForFunction(() => document.body.innerText.trim().length > 0, undefined, { timeout: 15_000 });
+  await command({ id: "switch-2", method: "switchTab", args: { tabId } });
+  await command({ id: "touch-2", method: "getInteractive", args: {} });
+  const retouched = await waitFor(
+    () => page.evaluate(FINGERPRINT),
+    (fingerprint) => fingerprint.injectedGlobals.length === 2,
+  );
+  check(
+    "the hooks can be installed again after a release",
+    retouched.ok,
+    `globals=${JSON.stringify(retouched.last?.injectedGlobals)}`,
+  );
+
+  // The hook lives in the page's own world, so page script can call it — and the first caller
+  // is the one it trusts. A page that grabs a fresh instance must not be able to blind the
+  // Agent: the service worker has to notice and re-seat the hook.
+  await page.evaluate(() => {
+    delete window.__opensiderNativeUi;
+    // One-shot claimer: grab the next instance to appear, then stop being greedy.
+    const timer = setInterval(() => {
+      const api = window.__opensiderNativeUi;
+      if (!api) return;
+      clearInterval(timer);
+      try {
+        api.handshake("j".repeat(32));
+      } catch {
+        /* ignore */
+      }
+    }, 1);
+  });
+  const afterHijack = await command({ id: "hijack-1", method: "getInteractive", args: {} });
+  const hijackState = await waitFor(
+    () => page.evaluate(FINGERPRINT),
+    (fingerprint) => fingerprint.injectedGlobals.includes("__opensiderNativeUi"),
+    10_000,
+  );
+  check(
+    "a page that grabbed the hook cannot blind the Agent",
+    afterHijack?.ok === true && hijackState.ok,
+    `command ok=${afterHijack?.ok} globals=${JSON.stringify(hijackState.last?.injectedGlobals)}`,
+  );
+
+  // One more release, to show what a grabbed instance costs: the activity patches still come
+  // out (they belong to the instance we hold), while the wrapper layer the page claimed stays
+  // — its originals live in a closure we cannot reach. That layer behaves as a pass-through.
+  await panelAgain.close();
+  const finalRelease = await waitFor(
+    () => page.evaluate(FINGERPRINT),
+    (fingerprint) => fingerprint.documentProtoOwn.length === 1 && fingerprint.injectedGlobals.length === 0,
+    20_000,
+  );
+  check(
+    "releasing after a grab still restores the activity patches",
+    finalRelease.ok,
+    `state=${JSON.stringify(finalRelease.last)}`,
+  );
 } finally {
   await context.close().catch(() => {});
   server.close();

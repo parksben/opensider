@@ -7,6 +7,7 @@ import {
   type PageActivityState,
 } from "@shared";
 import { createActivityShim } from "./activity-shim";
+import { createCallerGuard, type HookHandshake } from "./hook-caller";
 
 /**
  * Page activity hook (MAIN world, `document_start`, all frames).
@@ -23,13 +24,7 @@ import { createActivityShim } from "./activity-shim";
   const host = window as unknown as Record<string, unknown>;
   if (host[PAGE_ACTIVITY_HOOK_KEY]) return;
 
-  let token = "";
-
-  function authorized(candidate: unknown): boolean {
-    if (typeof candidate !== "string" || candidate.length < 16) return false;
-    if (!token) token = candidate;
-    return candidate === token;
-  }
+  const guard = createCallerGuard();
 
   const shim = createActivityShim({
     document,
@@ -47,18 +42,22 @@ import { createActivityShim } from "./activity-shim";
     configurable: true,
     writable: false,
     value: {
-      // The service worker calls `api[method](token, ...args)`.
+      // The service worker calls `api[method](token, ...args)`. `handshake` is how it learns
+      // whether it still holds the hook (a page can claim it first, see `hook-caller.ts`).
+      handshake(caller: unknown): HookHandshake {
+        return guard.handshake(caller);
+      },
       set(caller: unknown, enabled: unknown): PageActivityState {
-        if (!authorized(caller)) return shim.read();
+        if (!guard.authorized(caller)) return shim.read();
         return shim.set(Boolean(enabled));
       },
       read(caller: unknown): PageActivityState {
-        return authorized(caller) ? shim.read() : IDLE_PAGE_ACTIVITY;
+        return guard.authorized(caller) ? shim.read() : IDLE_PAGE_ACTIVITY;
       },
-      /** Disarm and uninstall: never learns a token, so only a caller that already proved
+      /** Disarm and uninstall: never claims the token, so only a caller that already proved
        * itself (the service worker) can do it. */
       release(caller: unknown): boolean {
-        if (!token || caller !== token) return false;
+        if (!guard.mayRelease(caller)) return false;
         shim.set(false);
         try {
           delete host[PAGE_ACTIVITY_HOOK_KEY];

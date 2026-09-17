@@ -75,7 +75,9 @@ const port = await new Promise((resolve) => server.listen(0, "127.0.0.1", () => 
 const { chromium } = loadPlaywright();
 const profile = mkdtempSync(join(tmpdir(), "opensider-activity-"));
 const context = await chromium.launchPersistentContext(profile, {
-  headless: true,
+  // Headed unless HEADLESS=1. A real window is the point: visibility/occlusion are exactly
+  // what this feature is about, and Playwright's focus emulation only exists with a UI.
+  headless: process.env.HEADLESS === "1",
   executablePath: cachedChromium(),
   args: [`--disable-extensions-except=${dist}`, `--load-extension=${dist}`],
 });

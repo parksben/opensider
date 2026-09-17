@@ -59,6 +59,7 @@ internal/             Host / install / pick / ACP
 docs/                 需求、技术设计、本文件；README banner / 成片也在这一层
 packages/shared       扩展 ↔ Host 消息类型
 packages/extension    Chrome MV3 侧栏 / 内容脚本 / Service Worker
+packages/extension/scripts/build-page-hooks.mjs  把两个主世界钩子编成经典脚本（page-hooks/*.js）
 skills/opensider      安装 / 更新 / 卸载 / 体检测 skill（README 的提示词指向它）
 scripts/dev-host.mjs  开发用：编二进制 + 拷扩展 + 注册桥接（= pnpm install-host）
 scripts/pack-extension.mjs  扩展 zip 打包
@@ -77,6 +78,11 @@ scripts/install       已删除（用户侧不再有壳脚本）
 ```
 
 pnpm workspace 只编扩展。Host 用 Go。扩展用 Vite + `@crxjs/vite-plugin` 打包。
+
+扩展的构建是**两步**：`pnpm --filter @opensider/extension build` 先跑 `vite build`（侧栏 / 内容脚本 /
+SW），再由 `packages/extension/scripts/build-page-hooks.mjs` 把两个主世界钩子编成经典脚本放进
+`dist/page-hooks/`。顺序不能反：`vite build` 会清空 `dist`。只改钩子时可以单跑
+`pnpm --filter @opensider/extension build:page-hooks`。
 
 扩展的单元测试用 Node 自带的 runner（仓库没有 vitest）：`node --test 'packages/extension/src/**/*.test.ts'`。
 **必须带 `**`**：`sidepanel/` 下面还有一批用例，写成 `src/*.test.ts` 会静默跳过它们（之前就这么漏了一批）。
@@ -105,14 +111,18 @@ TTL 过期、解除还原）跑 `node --test 'packages/extension/src/**/*.test.t
 
 主世界钩子只在「面板开着 + Agent 触及该标签页」时注入（原因与做法见 TECH_DESIGN 的
 「主世界钩子的注入时机」），所以「没在用的页面一点都不该被改动」这件事单独验：
-`node scripts/verify-page-tamper.mjs`（10 项）。它先跑一次干净 Chromium 记下基准指纹，
+`node scripts/verify-page-tamper.mjs`（13 项）。它先跑一次干净 Chromium 记下基准指纹，
 再装上扩展比一遍：未触碰的标签页必须**逐项一致**（11 个原生入口都是 `[native code]`、
 `window` 上没有 `__opensider*` 全局、`Object.getOwnPropertyNames(HTMLDocument.prototype)`
 仍是 `["constructor"]`）；同时确认 `listTabs` 依旧看得到所有标签、当前活动标签也认得出（这两件事
-本来就不依赖主世界注入）；然后让 Agent 真的碰一下该标签页，断言钩子装上了；最后关掉面板，
-断言又回到与基准完全一致。改了 `manifest.config.ts` / `background.ts` 的注入路径，
-或改了 `activity-shim.ts` 的还原逻辑，都要跑这个脚本——它当初就是这么找出
-`hasFocus` 还原不干净、`document.onvisibilitychange` 代管从来没装上这两个问题的。
+本来就不依赖主世界注入）；然后让 Agent 真的碰一下该标签页，断言钩子装上了；关掉面板断言回到基准；
+再触及一次断言**能第二次装上**（钩子是经典脚本就是为了这一条：ESM loader 一个文档只求值一次，
+重新注入会空转）；最后模拟页面抢走钩子（页面自己 `delete` 再抢先 `handshake`），断言扩展自愈、
+Agent 不会失明。改了 `manifest.config.ts` / `build-page-hooks.mjs` / `background.ts` 的注入路径，
+或改了 `activity-shim.ts` 的还原逻辑，都要跑这个脚本——它已经扣出过 `hasFocus` 还原不干净、
+`document.onvisibilitychange` 代管从来没装上、以及「释放后再注入装不回来」三个问题。
+
+上面几个脚本默认**带界面跑**（真窗口，方便看它到底在干什么）；要无头就加 `HEADLESS=1`。
 
 拖文件进侧栏（整个面板都能接）跑 `node scripts/verify-file-drop.mjs`（12 项）：它在同一个沙箱里连上假 Agent，
 先用合成的 `DataTransfer` 拖一次，**再用 CDP 真拖一次**（`Input.setInterceptDrags` 打开后

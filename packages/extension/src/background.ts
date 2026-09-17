@@ -742,29 +742,15 @@ async function nativeUiToken(tabId: number): Promise<string> {
 type NativeUiCall<T> = { ok: true; value: T } | { ok: false; error: string };
 
 /**
- * The bundled loader files of one of the MAIN-world hooks, read back from the manifest.
- *
- * The hooks are deliberately *not* always-on content scripts (patching a page's own
- * `window` is something any site can detect, so it only happens on tabs the Agent actually
- * touches — see `manifest.config.ts`), but the manifest is still the only place the build's
- * hash-suffixed file names are discoverable at runtime.
+ * The two MAIN-world hooks: the classic script that installs each one, and the global it
+ * leaves behind. Built by `packages/extension/scripts/build-page-hooks.mjs` with these exact
+ * names, so they can be named here instead of being looked up in the manifest.
  */
-function pageHookFiles(marker: string): string[] {
-  for (const entry of chrome.runtime.getManifest().content_scripts ?? []) {
-    const files = (entry.js ?? []).filter((file) => file.includes(marker));
-    if (files.length > 0) return files;
-  }
-  return [];
-}
-
-const ACTIVITY_HOOK_MARKER = "activity-hook";
-const NATIVE_UI_HOOK_MARKER = "native-ui-hook";
-
-/** The global each hook installs, keyed by the marker its file name carries. */
-const HOOK_KEYS: Record<string, string> = {
-  [ACTIVITY_HOOK_MARKER]: PAGE_ACTIVITY_HOOK_KEY,
-  [NATIVE_UI_HOOK_MARKER]: NATIVE_UI_HOOK_KEY,
-};
+const PAGE_HOOKS = {
+  "native-ui-hook": { file: "page-hooks/native-ui-hook.js", key: NATIVE_UI_HOOK_KEY as string },
+  "activity-hook": { file: "page-hooks/activity-hook.js", key: PAGE_ACTIVITY_HOOK_KEY as string },
+} as const;
+type PageHookName = keyof typeof PAGE_HOOKS;
 
 /** Is the hook's global already standing in the tab's main frame? */
 async function pageHookInstalled(tabId: number, key: string): Promise<boolean> {
@@ -782,36 +768,56 @@ async function pageHookInstalled(tabId: number, key: string): Promise<boolean> {
 }
 
 /**
- * Fires one MAIN-world hook into every frame of a tab and waits until it is listening.
+ * Fires one MAIN-world hook into every frame of a tab.
  *
- * The wait matters twice over: the built hook is a loader that `await import()`s the real
- * module, so it is not there the instant `executeScript` resolves — and a call that lands
- * too early leaves the hook installed but without its caller token (the first call it
- * receives is the one it learns the token from). Idempotent: both hooks bail out when they
- * find themselves already installed.
+ * They are classic scripts, so `executeScript` resolving means the hook is already listening
+ * (an ESM loader would not be, and the call after it would have left the hook installed
+ * without its caller token). Idempotent either way: both hooks bail out when they find
+ * themselves already installed.
  */
-async function injectPageHook(tabId: number, marker: string): Promise<boolean> {
-  const files = pageHookFiles(marker);
-  if (files.length === 0) return false;
-  const key = HOOK_KEYS[marker];
-  if (key && (await pageHookInstalled(tabId, key))) return true;
+async function injectPageHook(tabId: number, name: PageHookName): Promise<boolean> {
+  const hook = PAGE_HOOKS[name];
+  if (await pageHookInstalled(tabId, hook.key)) return true;
   try {
     await chrome.scripting.executeScript({
       target: { tabId, allFrames: true },
-      files,
+      files: [hook.file],
       injectImmediately: true,
       world: "MAIN",
     });
+    return true;
   } catch {
-    // restricted URL, closed tab, no host permission for it
+    // restricted URL, closed tab, no host permission for it, missing file
     return false;
   }
-  if (!key) return true;
-  for (let attempt = 0; attempt < 24; attempt += 1) {
-    if (await pageHookInstalled(tabId, key)) return true;
-    await new Promise((resolve) => setTimeout(resolve, 25));
+}
+
+/**
+ * A hook that is installed but reports `authorized: false` was claimed by the page: its API is
+ * reachable from page script and the first caller becomes the trusted one (`hook-caller.ts`).
+ * That only ever affects that page's own tab, but it would leave the Agent blind, so drop the
+ * instance and install a fresh one — the very next call claims it. Bounded: one re-seat per
+ * call site, so a page that keeps racing costs us one extra injection, not a loop.
+ */
+async function reseatPageHook(tabId: number, name: PageHookName): Promise<boolean> {
+  const key = PAGE_HOOKS[name].key;
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      world: "MAIN",
+      args: [key],
+      func: (hookKey: string) => {
+        try {
+          delete (globalThis as unknown as Record<string, unknown>)[hookKey];
+        } catch {
+          // ignore
+        }
+      },
+    });
+  } catch {
+    return false;
   }
-  return false;
+  return injectPageHook(tabId, name);
 }
 
 /** Runs one shim call in every frame and merges the answers. */
@@ -832,6 +838,8 @@ async function callNativeUi<T>(
           key
         ];
         if (!api || typeof api[fn] !== "function") return { ok: false as const, error: "not installed" };
+        const handshake = api.handshake?.(caller) as { authorized?: boolean } | undefined;
+        if (handshake && handshake.authorized !== true) return { ok: false as const, error: "held" };
         try {
           return { ok: true as const, value: api[fn](caller, ...fnArgs) as unknown };
         } catch (error) {
@@ -855,9 +863,13 @@ async function callNativeUi<T>(
       inject &&
       sidebars.size > 0 &&
       !frames.some((frame) => frame.ok) &&
-      (await injectPageHook(tabId, NATIVE_UI_HOOK_MARKER))
+      (await injectPageHook(tabId, "native-ui-hook"))
     ) {
       frames = framesOf(await run());
+    }
+    // A hook the page got to first answers `held`; re-seat it and ask once more.
+    if (inject && frames.some((frame) => !frame.ok && frame.error === "held")) {
+      if (await reseatPageHook(tabId, "native-ui-hook")) frames = framesOf(await run());
     }
     if (frames.length === 0 || !frames.some((frame) => frame.ok)) {
       return {
@@ -1007,6 +1019,8 @@ async function callActivity(tabId: number, enabled: boolean, inject: boolean): P
           key
         ];
         if (!api || typeof api.set !== "function") return { ok: false as const, error: "not installed" };
+        const handshake = api.handshake?.(caller) as { authorized?: boolean } | undefined;
+        if (handshake && handshake.authorized !== true) return { ok: false as const, error: "held" };
         try {
           return { ok: true as const, value: api.set(caller, value) as unknown };
         } catch (error) {
@@ -1017,18 +1031,28 @@ async function callActivity(tabId: number, enabled: boolean, inject: boolean): P
 
   try {
     let results = await run();
-    const frames = results.map((entry) => entry.result).filter(Boolean) as Array<
-      { ok: true; value: unknown } | { ok: false; error: string }
-    >;
+    const framesOf = (
+      injected: chrome.scripting.InjectionResult<unknown>[],
+    ): Array<{ ok: boolean; value?: unknown; error?: string }> =>
+      injected
+        .map((entry) => entry.result as { ok: boolean; value?: unknown; error?: string } | undefined)
+        .filter((entry): entry is { ok: boolean; value?: unknown; error?: string } => Boolean(entry));
+    let frames = framesOf(results);
     // The hook is injected per tab on demand, so the first touch finds nothing installed:
     // put it in by hand once, then ask again.
     const missing = frames.length > 0 && frames.every((frame) => !frame.ok);
-    if (missing && inject && (await injectPageHook(tabId, ACTIVITY_HOOK_MARKER))) {
+    if (missing && inject && (await injectPageHook(tabId, "activity-hook"))) {
       results = await run();
+      frames = framesOf(results);
     }
-    const answers = results
-      .map((entry) => entry.result as { ok: boolean; value?: unknown; error?: string } | undefined)
-      .filter((entry): entry is { ok: boolean; value?: unknown; error?: string } => Boolean(entry));
+    // A hook the page got to first answers `held`; re-seat it and ask once more.
+    if (inject && frames.some((frame) => !frame.ok && frame.error === "held")) {
+      if (await reseatPageHook(tabId, "activity-hook")) {
+        results = await run();
+        frames = framesOf(results);
+      }
+    }
+    const answers = frames;
     const armed = answers.find((answer) => answer.ok && (answer.value as PageActivityState)?.armed);
     const first = armed ?? answers.find((answer) => answer.ok);
     if (!first) {

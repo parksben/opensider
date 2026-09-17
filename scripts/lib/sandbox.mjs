@@ -110,10 +110,16 @@ export function createSandbox({ root, prefix, dist, hostVersion }) {
   };
 }
 
+/**
+ * Runs headed by default: "verify it the way a user would" needs a real UI (occlusion, focus
+ * and visibility behave differently without one). Set `HEADLESS=1` to run without a window.
+ */
+export const HEADED = process.env.HEADLESS !== "1";
+
 /** Launches the sandboxed browser with the extension loaded. */
 export async function launchSandbox(chromium, { dist, sandbox, env = {} }) {
   return chromium.launchPersistentContext(sandbox.profile, {
-    headless: true,
+    headless: !HEADED,
     executablePath: cachedChromium(),
     args: [`--disable-extensions-except=${dist}`, `--load-extension=${dist}`],
     env: { ...process.env, ...env },
