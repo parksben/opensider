@@ -72,6 +72,7 @@ scripts/verify-composer-clipboard.mjs  输入框全选复制/剪切带上附件�
 scripts/verify-page-overlays.mjs  动作后自动上报页面浮层（模态框/抽屉）的端到端验证
 scripts/verify-host-skew.mjs  本机 Host 比扩展旧时的提示（可见 / 可关 / 不影响可用功能）
 scripts/lib/sandbox.mjs  上面几个脚本共用的沙箱（临时 HOME / 现编 Host / 假 Agent / profile 内桥接清单）
+scripts/fixtures/player-check.html  模拟「站点自己做环境自检就拒绝播」的假播放器（人工验收用）
 scripts/fake-acp-agent.mjs  假 ACP Agent（e2e 用，按行 JSON，可控分片/是否响应 cancel；另答 `<cli> models`）
 scripts/install       已删除（用户侧不再有壳脚本）
 .github/workflows     推 v* tag 发 Release
@@ -123,6 +124,18 @@ Agent 不会失明。改了 `manifest.config.ts` / `build-page-hooks.mjs` / `bac
 `document.onvisibilitychange` 代管从来没装上、以及「释放后再注入装不回来」三个问题。
 
 上面几个脚本默认**带界面跑**（真窗口，方便看它到底在干什么）；要无头就加 `HEADLESS=1`。
+
+想在浏览器里肉眼确认「我们不碰的页面没被动过」，用 `scripts/fixtures/player-check.html`：它是
+一个自己查环境、查不过就停下不放的假播放器（原生入口是不是 `[native code]`、`document` 原型上
+有没有多出自有属性、有没有可疑全局）。直接在 VS Code 内置浏览器里打开（工作区文件可行 `file://`），
+或者用真 Chrome 加载 `packages/extension/dist`：
+
+- 没装扩展 / 没在用的标签页：横幅 `state=running`（录播器照常跑）。
+- 点页面上的「simulate the old always-on hooks」（那正是 v0.2.11 对**每个**页面做的事）：横幅立刻变红，
+  `failed:` 列出多出来的 `hidden` / `visibilityState` / `hasFocus` 和可疑全局。
+- 装了扩展、且让 Agent 真的碰一下这个标签页：也会变红（这是已知代价，写在 `REQUIREMENTS.md` 第 18 条）。
+- 关掉侧栏（面板释放该标签页）：全局消失、原型回到只有 `constructor`，再点「restart the player」
+  就又能跑起来。
 
 拖文件进侧栏（整个面板都能接）跑 `node scripts/verify-file-drop.mjs`（12 项）：它在同一个沙箱里连上假 Agent，
 先用合成的 `DataTransfer` 拖一次，**再用 CDP 真拖一次**（`Input.setInterceptDrags` 打开后

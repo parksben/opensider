@@ -1,0 +1,131 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>player fixture</title>
+<script>
+// A player that checks its own JS environment the way an anti-tamper/anti-bot bundle does,
+// and refuses to initialise (or keeps running, if already started) when it looks tampered.
+window.__player = { state: "idle", failures: [], frames: 0 };
+(function () {
+  const native = (fn) => {
+    try { return /\{\s*\[native code\]\s*\}/.test(Function.prototype.toString.call(fn)); }
+    catch (e) { return false; }
+  };
+  const entryPoints = {
+    "EventTarget.prototype.addEventListener": EventTarget.prototype.addEventListener,
+    "EventTarget.prototype.removeEventListener": EventTarget.prototype.removeEventListener,
+    "window.requestAnimationFrame": window.requestAnimationFrame,
+    "window.cancelAnimationFrame": window.cancelAnimationFrame,
+    "window.alert": window.alert,
+    "window.confirm": window.confirm,
+    "window.prompt": window.prompt,
+    "window.print": window.print,
+    "window.open": window.open,
+    "HTMLInputElement.prototype.click": HTMLInputElement.prototype.click,
+    "HTMLInputElement.prototype.showPicker": HTMLInputElement.prototype.showPicker,
+  };
+  function inspect() {
+    const failures = [];
+    for (const [name, fn] of Object.entries(entryPoints)) if (!native(fn)) failures.push(name + " is not native");
+    const proto = Object.getPrototypeOf(document);
+    for (const key of ["hidden", "visibilityState", "hasFocus", "onvisibilitychange"]) {
+      if (Object.getOwnPropertyDescriptor(proto, key)) failures.push("document prototype grew an own " + key);
+    }
+    for (const name of Object.getOwnPropertyNames(window)) {
+      if (/^(__opensider|__agent|__puppeteer|__playwright)/.test(name)) failures.push("suspicious global " + name);
+    }
+    return failures;
+  }
+  const banner = () => document.getElementById("banner");
+  function render() {
+    const bits = ["state=" + window.__player.state];
+    if (window.__player.failures.length) bits.push("failed: " + window.__player.failures.slice(0, 3).join("; "));
+    bits.push("rAF frames=" + window.__player.frames);
+    bits.push("visible=" + document.visibilityState + " hasFocus=" + document.hasFocus());
+    banner().textContent = bits.join(" | ");
+    banner().className = window.__player.state === "running" ? "ok" : "bad";
+  }
+  function halt(reason) {
+    window.__player.state = "halted";
+    window.__player.failures = reason;
+    render();
+  }
+  window.__player.start = function start() {
+    const failures = inspect();
+    if (failures.length) {
+      window.__player.state = "blocked";
+      window.__player.failures = failures;
+      render();
+      return;
+    }
+    window.__player.state = "running";
+    window.__player.failures = [];
+    render();
+    const tick = () => {
+      if (window.__player.state !== "running") return;
+      window.__player.frames += 1;
+      const failuresNow = inspect();
+      if (failuresNow.length) { halt(failuresNow); return; }
+      if (window.__player.frames % 20 === 0) render();
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  };
+  window.__player.inspect = inspect;
+  window.__player.render = render;
+})();
+</script>
+<style>
+  body { font: 16px/1.5 system-ui, sans-serif; padding: 24px; }
+  #banner { font-family: ui-monospace, monospace; font-size: 15px; padding: 12px 14px; border-radius: 10px; }
+  #banner.ok { background: #e8f6ec; border: 1px solid #2f9e44; color: #1b5e20; }
+  #banner.bad { background: #fdecec; border: 1px solid #e03131; color: #8a1c1c; }
+  button { font: inherit; margin: 4px 8px 4px 0; padding: 6px 12px; }
+</style>
+</head>
+<body>
+<h1>player fixture</h1>
+<p id="banner">starting…</p>
+<p style="color:#666">The page runs its own integrity check on start and on every frame — the shape
+that makes a byte-dance flavoured player bundle refuse to play. OpenSider must never trip this on a
+tab the Agent is not working with; on a tab it does work with you should see it go red while the
+side panel is open, and go back to <code>running</code> (fresh check) once the panel closes.</p>
+<p style="color:#666">Background tabs get no frames: if you leave this tab, <code>rAF</code> freezes
+(that is what OpenSider's page-activity feature is for). The buttons simulate the main-world hooks
+from inside the page, so this can be checked in any browser — no extension needed.</p>
+<button id="tamper">simulate the old always-on hooks</button>
+<button id="restore">undo them (a fresh check should pass)</button>
+<button id="restart">restart the player</button>
+<script>
+  // Start once the document is ready, the way a real player waits for its feed.
+  document.addEventListener("DOMContentLoaded", () => {
+    document.getElementById("banner").className = "bad";
+    window.__player.start();
+    // Keep the banner moving even without frames, and mirror what the page reads.
+    setInterval(() => window.__player.render(), 800);
+
+    // Simulate v0.2.11: the hooks ran on every page and patched the page's own JS world.
+    document.getElementById("tamper").onclick = () => {
+      Object.defineProperty(Object.getPrototypeOf(document), "hidden", {
+        configurable: true, enumerable: true, get() { return false; },
+      });
+      Object.defineProperty(Object.getPrototypeOf(document), "visibilityState", {
+        configurable: true, enumerable: true, get() { return "visible"; },
+      });
+      Object.defineProperty(Object.getPrototypeOf(document), "hasFocus", {
+        configurable: true, enumerable: true, writable: true, value: function hasFocus() { return true; },
+      });
+      Object.defineProperty(window, "__opensiderNativeUi", { configurable: true, value: {} });
+      window.__player.render();
+    };
+
+    // Simulate the on-demand build's release path: the patches go away with the panel.
+    document.getElementById("restore").onclick = () => {
+      const proto = Object.getPrototypeOf(document);
+      for (const key of ["hidden", "visibilityState", "hasFocus", "onvisibilitychange"]) delete proto[key];
+      delete window.__opensiderNativeUi;
+      window.__player.render();
+    };
+
+    document.getElementById("restart").onclick = () => window.__player.start();
+  });
+</script>
+</body></html>
