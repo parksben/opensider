@@ -41,11 +41,51 @@ pnpm pack-extension
 
 把 `packages/extension/dist` 打成 `dist-release/extension.zip`（不写出 CRX）。打包**不需要任何密钥文件**：脚本用构建产物 `manifest.json` 里的 `key` 算出未打包 ID，和常量比对，拦住「误改 key 让用户丢侧栏数据」这种情况。`dist-release/` 不入库。`pnpm build` = 编扩展 + 打包，不再碰本机 Host。
 
-## tag 发 Release
+## 发 Release（本地构建，不走 Actions）
 
-推送 `v*` tag 会跑 `.github/workflows/release.yml`：macOS 开 cgo 编 darwin 二进制，Ubuntu 交叉编译 linux / windows，再打 `extension.zip` 和 `SHA256SUMS`，用最近 3 个 commit 发 GitHub Release（不上传 `opensider.crx`；**不再发 `install.sh` / `install.ps1`**）。二进制用 `-ldflags "-X …/internal/version.Version=${tag}"` 注入版本号，`opensider version` 与侧栏的版本行都读它（显示时统一剥掉 tag 的 `v`，见 `internal/version.Display()`）；走 `go build ./cmd/opensider` 手编时版本是 `dev`，侧栏不会据此报「有新版本」。
+发布**全在本机完成**，然后用 `gh release` 把产物推上去。原因写死在 `AGENTS.md`：GitHub 账号被账单锁着，跑 Actions 只会失败，所以 `.github/workflows/release.yml` 现在是参考/备用，不是发版路径（它的触发条件是 `push: tags: v*`，**推 tag 会真的拉起它**，下面的步骤因此要先禁用）。
 
-发版前记得把 `packages/extension/manifest.config.ts` 的 `version` 改成同一个 tag（去掉 `v`）——侧栏把扩展版本和最新 tag 比较，对不上就会一直提示更新；流水线里有一条 `test` 专门挡这种情况。本地开发想要同样的版本号时，`pnpm install-host` 会自动取最近一个 `v*` tag 注进二进制（没有 tag 就是 `dev`）。
+```bash
+# 1. 版本号：扩展 manifest 必须等于 tag（去掉 v），侧栏拿它和最新 tag 比。
+#    改 packages/extension/manifest.config.ts 的 version，commit + push。
+
+# 2. 扩展 + 打包
+pnpm --filter @opensider/extension build   # vite build + page-hooks
+pnpm pack-extension                        # dist-release/extension.zip
+
+# 3. 六个平台二进制（版本号用 ldflags 注进去，手编不带就是 dev）
+tag=v0.2.12
+ldflags="-X github.com/parksben/opensider/internal/version.Version=$tag"
+CGO_ENABLED=1 go build -ldflags "$ldflags" -o dist-release/opensider-darwin-arm64 ./cmd/opensider
+CGO_ENABLED=1 GOARCH=amd64 CC="clang -arch x86_64" \
+  go build -ldflags "$ldflags" -o dist-release/opensider-darwin-amd64 ./cmd/opensider
+for target in linux/amd64 linux/arm64; do
+  GOOS=${target%/*} GOARCH=${target#*/} CGO_ENABLED=0 \
+    go build -ldflags "$ldflags" -o "dist-release/opensider-${target%/*}-${target#*/}" ./cmd/opensider
+done
+for arch in amd64 arm64; do
+  GOOS=windows GOARCH=$arch CGO_ENABLED=0 \
+    go build -ldflags "$ldflags" -o "dist-release/opensider-windows-$arch.exe" ./cmd/opensider
+done
+chmod +x dist-release/opensider-darwin-* dist-release/opensider-linux-*
+
+# 4. 校验和（顺序照抄上一次，skill 按名字取）+ Release 正文
+cd dist-release && shasum -a 256 opensider-darwin-* opensider-linux-* opensider-windows-* extension.zip > SHA256SUMS
+cd .. && bash scripts/release-notes.sh HEAD <本 tag 以来的 commit 数> > dist-release/NOTES.md
+
+# 5. 发上去（先禁掉 workflow，免得推 tag 触发它）
+gh workflow disable release.yml
+git tag -a $tag -m $tag && git push origin $tag
+gh run list --limit 3                 # 应当看不到新 run
+gh release create $tag --title $tag --notes-file dist-release/NOTES.md \
+  dist-release/opensider-darwin-* dist-release/opensider-linux-* \
+  dist-release/opensider-windows-* dist-release/extension.zip dist-release/SHA256SUMS
+gh workflow enable release.yml         # 恢复仓库状态
+```
+
+发完自查：`dist-release/opensider-darwin-arm64 version` 应是 `0.2.12`（`internal/version.Display()` 剥掉 `v`）；`node -p "require('./packages/extension/dist/manifest.json').version"` 要和 tag 一致；`gh release view $tag --json assets` 应当正好 8 个（六个二进制 + `extension.zip` + `SHA256SUMS`）；`https://api.github.com/repos/parksben/opensider/releases/latest` 刷新到新 tag（侧栏的更新提示就看它，缓存 TTL 一小时）。
+
+踩过的坑：资产已经存在时上传会被拒，补传用 `gh release upload $tag <file> --clobber`；`dist-release/` 不入库（只提交 manifest 版本号和文档）；darwin 开 cgo 是为了 `internal/pick` 的 AppKit，x86_64 那条靠 `CC="clang -arch x86_64"`，SDK 不支持时宁可少了 amd64 也不能发个不能跑的；本地开发想要同样的版本号，`pnpm install-host` 会自动取最近一个 `v*` tag 注进二进制（没有 tag 就是 `dev`）。
 
 Release 资产名必须和 skill 一致，见 TECH_DESIGN「发布与 skill 安装」。
 

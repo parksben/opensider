@@ -636,9 +636,13 @@ ACP 适配器仍只在 Go 里实现：`install` 里一个 `acpAdapterSpec`（本
 
 根 `package.json`：`install-host`（**只给开发**）→ `go build -o ~/.opensider/runtime/opensider ./cmd/opensider`，再把 `packages/extension/dist` 拷到 `paths.ExtensionDir()`（默认家目录下的 `OpenSider`，与用户侧同一个位置），最后跑该二进制 `install`；`pack-extension` → `node scripts/pack-extension.mjs`（把 `packages/extension/dist` 打成 `dist-release/extension.zip`，用构建产物 manifest 的 key 校验未打包 ID，**不写出** `opensider.crx`）；`build` = 编扩展 + 打包，不再碰本机 Host。**用户侧没有任何本地构建入口**：`install --local` 与 `scripts/install/*` 已删除，安装 / 更新 / 卸载统一由「提示词 + skill」驱动。`dev` 仍只起 Vite。打包脚本只用 Node 内置 `crypto` / `zlib`。`dist-release/` 不入库。
 
-### tag 发 Release
+### 发 Release
 
-`.github/workflows/release.yml` 在推送 `v*` tag 时跑，`contents: write` 以便 `gh release create`。
+**发布在本机做，不走 Actions**（账号被账单锁着，跑起来也只会失败）：`.github/workflows/release.yml` 保留为参考实现与备用路径，触发条件是 `push: tags: v*`，所以本地发版时要先 `gh workflow disable release.yml`，推完 tag、建完 release 再 enable 回来（否则推 tag 就会真的拉起一次注定失败的 run）。逐步命令写在 `docs/DEVELOPMENT.md`「发 Release（本地构建，不走 Actions）」。
+
+本地流程必须在**产物集合上与 workflow 等价**（skill 和文档都按这些名字取）：macOS 上 `CGO_ENABLED=1` 编 `opensider-darwin-arm64`，再用 `CC="clang -arch x86_64"` 编 `opensider-darwin-amd64`（cgo 是 `internal/pick` 的 AppKit 需要；SDK 编不动宁可少 amd64，也不能发个不能跑的）；linux / windows 四份 `CGO_ENABLED=0` 交叉编译；扩展只编一次（`pnpm --filter @opensider/extension build` + `pnpm pack-extension`，不发 CRX）；`shasum -a 256` 按固定顺序写 `SHA256SUMS`；`scripts/release-notes.sh` 打 commit 列表当正文。
+
+workflow 里的动作与理由（下文）仍然成立，只是执行的机器从 runner 换成开发机；两条路径唯一不能省的约束是**扩展 manifest 的 `version` 必须等于 tag**——侧栏拿它和 `releases/latest` 比，对不上就会一直提示更新。
 
 | Job | Runner | 做什么 |
 |---|---|---|
