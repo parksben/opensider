@@ -64,6 +64,7 @@ scripts/dev-host.mjs  开发用：编二进制 + 拷扩展 + 注册桥接（= pn
 scripts/pack-extension.mjs  扩展 zip 打包
 scripts/verify-native-ui.mjs  原生 UI shim 的端到端验证（真 Chromium + 已构建扩展）
 scripts/verify-page-activity.mjs  页面活动态（面板开着强制可见 / 关掉还原）的端到端验证
+scripts/verify-page-tamper.mjs  主世界钩子「不留痕」的端到端验证（未触碰页面必须与干净 Chromium 一致）
 scripts/verify-queue-send-now.mjs  消息队列「立即发送」的端到端验证
 scripts/verify-file-drop.mjs  拖文件到侧栏 → 变附件的端到端验证
 scripts/verify-composer-clipboard.mjs  输入框全选复制/剪切带上附件栏的端到端验证
@@ -101,6 +102,17 @@ TTL 过期、解除还原）跑 `node --test 'packages/extension/src/**/*.test.t
 把页面变成当前标签、再用主世界的 `chrome.scripting.executeScript` 看页面自己读到什么，
 最后关掉侧栏验证还原。**注意它测不了「真的被隐藏」**：Playwright 的 Chromium 自己开着焦点模拟，
 页面永远是 visible，所以那部分只能在单测里用假环境覆盖，脚本注释里写明了这个边界。
+
+主世界钩子只在「面板开着 + Agent 触及该标签页」时注入（原因与做法见 TECH_DESIGN 的
+「主世界钩子的注入时机」），所以「没在用的页面一点都不该被改动」这件事单独验：
+`node scripts/verify-page-tamper.mjs`（10 项）。它先跑一次干净 Chromium 记下基准指纹，
+再装上扩展比一遍：未触碰的标签页必须**逐项一致**（11 个原生入口都是 `[native code]`、
+`window` 上没有 `__opensider*` 全局、`Object.getOwnPropertyNames(HTMLDocument.prototype)`
+仍是 `["constructor"]`）；同时确认 `listTabs` 依旧看得到所有标签、当前活动标签也认得出（这两件事
+本来就不依赖主世界注入）；然后让 Agent 真的碰一下该标签页，断言钩子装上了；最后关掉面板，
+断言又回到与基准完全一致。改了 `manifest.config.ts` / `background.ts` 的注入路径，
+或改了 `activity-shim.ts` 的还原逻辑，都要跑这个脚本——它当初就是这么找出
+`hasFocus` 还原不干净、`document.onvisibilitychange` 代管从来没装上这两个问题的。
 
 拖文件进侧栏（整个面板都能接）跑 `node scripts/verify-file-drop.mjs`（12 项）：它在同一个沙箱里连上假 Agent，
 先用合成的 `DataTransfer` 拖一次，**再用 CDP 真拖一次**（`Input.setInterceptDrags` 打开后

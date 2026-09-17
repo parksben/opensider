@@ -3,6 +3,10 @@
 // fixture pages that pop `confirm` / `prompt` / `window.open` / a file picker, and commands
 // driven through the service worker's test seam (`globalThis.__opensiderDispatch`).
 //
+// The shim is injected on demand (into the tabs the Agent works with, while the panel is
+// open), so the harness connects a side panel first and lets the first `getNativeUi`
+// install it — see TECH_DESIGN "主世界钩子的注入时机".
+//
 //   node scripts/verify-native-ui.mjs            # expects packages/extension/dist to be built
 //
 // It prints one line per check and exits non-zero on the first failure. Uses the globally
@@ -102,15 +106,24 @@ try {
     await dialog.accept("typed-by-user");
   });
 
-  // The first page of a fresh profile can load before the extension has registered its
-  // content scripts, so give the shim a few chances (a reload is the cheapest way).
-  const hookReady = async (target) => (await target.evaluate(() => typeof window.__opensiderNativeUi)) === "object";
+  // The shim is injected on demand, into the tabs the Agent works with, while the side
+  // panel is open — so the panel has to be connected first, and the page becomes
+  // "watched" the first time a command touches it.
+  const extensionId = new URL(sw.url()).host;
+  const panel = await context.newPage();
+  await panel.goto(`chrome-extension://${extensionId}/src/sidepanel/index.html`);
+  await panel.waitForFunction(() => document.body.innerText.trim().length > 0, undefined, { timeout: 15_000 });
+
+  const hookReady = (target) => target.evaluate(() => typeof window.__opensiderNativeUi === "object");
   const waitForHook = async (target, url) => {
     await target.goto(url);
     for (let i = 0; i < 10; i += 1) {
       if (await hookReady(target)) return true;
+      // Commands follow the focused window's active tab, and the panel is a tab here.
+      await target.bringToFront();
+      // `getNativeUi` is the Agent's own way of asking, and asking is what installs the shim.
+      await command(sw, { id: `touch-${Date.now()}`, method: "getNativeUi", args: {} });
       await new Promise((resolve) => setTimeout(resolve, 250));
-      await target.reload();
     }
     return false;
   };
