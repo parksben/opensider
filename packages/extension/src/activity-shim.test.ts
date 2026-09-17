@@ -199,12 +199,71 @@ test("a document.onvisibilitychange handler survives arming and disarm", () => {
   const seen: string[] = [];
   const handler = () => seen.push("on");
   env.proto["onvisibilitychange"] = handler;
-  assert.equal(env.proto["onvisibilitychange"], handler);
+  assert.equal(env.document["onvisibilitychange"], handler);
 
   env.shim.set(true);
-  assert.equal(env.proto["onvisibilitychange"], handler, "still the page's handler, never called");
+  assert.equal(env.document["onvisibilitychange"], handler, "still the page's handler, never called");
   assert.deepEqual(seen, []);
 
   env.shim.set(false);
-  assert.equal(env.proto["onvisibilitychange"], handler);
+  assert.equal(env.document["onvisibilitychange"], handler, "handed back through the browser's own setter");
+  assert.equal(
+    Object.getOwnPropertyDescriptor(env.proto, "onvisibilitychange")?.get,
+    undefined,
+    "our shadow accessor is gone",
+  );
+});
+
+test("a handler assigned while armed is kept and restored, not swallowed", () => {
+  const env = makeEnv({ hidden: true });
+  const handler = () => undefined;
+  env.shim.set(true);
+  env.document["onvisibilitychange"] = handler;
+  env.shim.set(false);
+  assert.equal(env.document["onvisibilitychange"], handler);
+});
+
+test("disarming also puts hasFocus back (it shadows a prototype that has none)", () => {
+  // Real browsers keep `hidden` / `visibilityState` / `hasFocus` on `Document.prototype`,
+  // while the shim patches the document's *immediate* prototype — so `delete` is the only
+  // correct restore for those, and a missing native descriptor used to leave the patched
+  // `hasFocus` in place forever.
+  class Bare {
+    addEventListener(): void {}
+
+    removeEventListener(): void {}
+  }
+  const proto: Record<string, unknown> = {};
+  Object.defineProperty(proto, "hidden", { configurable: true, enumerable: true, get: () => true });
+  Object.defineProperty(proto, "visibilityState", {
+    configurable: true,
+    enumerable: true,
+    get: () => "hidden",
+  });
+  const document = Object.create(proto) as Document;
+  const window = {
+    requestAnimationFrame: () => 1,
+    cancelAnimationFrame: () => undefined,
+    setTimeout: () => 2,
+    clearTimeout: () => undefined,
+  } as unknown as Window;
+  const shim = createActivityShim({
+    document,
+    window,
+    eventTarget: Bare as unknown as typeof EventTarget,
+    now: () => 0,
+    frameMs: 16,
+    ttlMs: 1_000,
+    muted: new Set(["visibilitychange"]),
+  });
+
+  shim.set(true);
+  assert.equal(document.hasFocus(), true);
+  shim.set(false);
+  assert.equal(
+    Object.getOwnPropertyDescriptor(proto, "hasFocus"),
+    undefined,
+    "no leftover hasFocus patch on the prototype",
+  );
+  assert.equal(document.hidden, true, "and the native getter shows through again");
 });

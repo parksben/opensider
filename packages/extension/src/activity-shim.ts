@@ -16,6 +16,19 @@ import type { PageActivityState } from "@shared";
  *
  * Disarming restores the original descriptors and functions. Arming carries a TTL so a
  * panel that disappears without notice cannot leave a page faking visibility forever.
+ *
+ * Two details of the DOM that the patches depend on:
+ *   - everything lands on `Object.getPrototypeOf(document)`, which is
+ *     `HTMLDocument.prototype`; the native `hidden` / `visibilityState` accessors live one
+ *     level further down on `Document.prototype`, so ours shadow them and `delete` puts
+ *     things back.
+ *   - reading `documentProto.onvisibilitychange` would call the native getter with a
+ *     prototype as `this` and throw (Illegal invocation), so the page's existing handler is
+ *     read off the document instead.
+ *
+ * It is a MAIN-world hook, i.e. every patch it makes is something the page can detect.
+ * That is why it is injected on demand into the tabs the Agent works with rather than
+ * running on every page (see `ensurePageHooks` in `background.ts`).
  */
 
 export type ActivityGlobals = {
@@ -44,14 +57,18 @@ export function createActivityShim(globals: ActivityGlobals): ActivityShim {
   const documentProto = Object.getPrototypeOf(document) as unknown as Record<string, unknown>;
 
   // The browser's own answers, captured before anything is patched.
-  let nativeHidden = descriptor(documentProto, "hidden");
-  let nativeVisibility = descriptor(documentProto, "visibilityState");
-  let nativeHasFocus = documentProto["hasFocus"] as AnyFn | undefined;
+  const nativeHidden = descriptor(documentProto, "hidden");
+  const nativeVisibility = descriptor(documentProto, "visibilityState");
+  // `hasFocus` is *own* on the object only in the fake DOM the tests use; in a browser it is
+  // inherited from `Document.prototype`. Restoring has to distinguish the two — writing the
+  // inherited function back as an own property would leave a patch behind that was never
+  // there (`nativeHasFocusDescriptor` is what gets restored).
+  const nativeHasFocusDescriptor = descriptor(documentProto, "hasFocus");
+  const nativeHasFocus = (nativeHasFocusDescriptor?.value ?? documentProto["hasFocus"]) as AnyFn | undefined;
   const nativeAdd = eventTarget.prototype.addEventListener;
   const nativeRemove = eventTarget.prototype.removeEventListener;
   const nativeRaf = window.requestAnimationFrame;
   const nativeCancelRaf = window.cancelAnimationFrame;
-  const nativeOnVisibility = descriptor(documentProto, "onvisibilitychange");
 
   let armed = false;
   let expiresAt = 0;
@@ -93,16 +110,20 @@ export function createActivityShim(globals: ActivityGlobals): ActivityShim {
 
   function patchDocument(): void {
     try {
+      // Same shape as the browser's own accessors on `Document.prototype` (enumerable,
+      // configurable) — ours sit on the document's immediate prototype, so they *shadow*
+      // the native ones. The tell that we were here is that they exist at all, which is
+      // why the hook is only ever injected into tabs the Agent works with.
       Object.defineProperty(documentProto, "hidden", {
         configurable: true,
-        enumerable: false,
+        enumerable: true,
         get(this: Document) {
           return live() ? false : Boolean(nativeHidden?.get?.call(this));
         },
       });
       Object.defineProperty(documentProto, "visibilityState", {
         configurable: true,
-        enumerable: false,
+        enumerable: true,
         get(this: Document) {
           if (!live()) return nativeVisibility?.get?.call(this);
           return "visible";
@@ -110,7 +131,7 @@ export function createActivityShim(globals: ActivityGlobals): ActivityShim {
       });
       Object.defineProperty(documentProto, "hasFocus", {
         configurable: true,
-        enumerable: false,
+        enumerable: true,
         writable: true,
         value: function hasFocus(this: Document) {
           if (live()) return true;
@@ -122,42 +143,26 @@ export function createActivityShim(globals: ActivityGlobals): ActivityShim {
     }
   }
 
-  function restoreDocument(): void {
-    for (const [key, original] of [
-      ["hidden", nativeHidden],
-      ["visibilityState", nativeVisibility],
-    ] as const) {
-      try {
-        if (original) Object.defineProperty(documentProto, key, original);
-        else delete documentProto[key];
-      } catch {
-        // ignore
-      }
-    }
+  /** Puts one property back the way it was: the captured descriptor, or nothing at all. */
+  function restoreProperty(key: string, original: PropertyDescriptor | undefined): void {
     try {
-      if (typeof nativeHasFocus === "function") {
-        Object.defineProperty(documentProto, "hasFocus", {
-          configurable: true,
-          writable: true,
-          enumerable: false,
-          value: nativeHasFocus,
-        });
-      }
+      if (original) Object.defineProperty(documentProto, key, original);
+      else delete documentProto[key];
     } catch {
       // ignore
     }
+  }
+
+  function restoreDocument(): void {
+    restoreProperty("hidden", nativeHidden);
+    restoreProperty("visibilityState", nativeVisibility);
+    restoreProperty("hasFocus", nativeHasFocusDescriptor);
+    // `onvisibilitychange` is an accessor on `Document.prototype` in a real browser (not on
+    // the object we patch), so restoring means dropping our shadow and handing the page's
+    // handler back through the browser's own setter.
     try {
-      if (nativeOnVisibility) Object.defineProperty(documentProto, "onvisibilitychange", nativeOnVisibility);
-      else if (onVisibilityHandler) {
-        Object.defineProperty(documentProto, "onvisibilitychange", {
-          configurable: true,
-          enumerable: true,
-          writable: true,
-          value: onVisibilityHandler,
-        });
-      } else {
-        delete documentProto["onvisibilitychange"];
-      }
+      delete documentProto["onvisibilitychange"];
+      if (typeof onVisibilityHandler === "function") document.onvisibilitychange = onVisibilityHandler;
     } catch {
       // ignore
     }
@@ -205,13 +210,17 @@ export function createActivityShim(globals: ActivityGlobals): ActivityShim {
     try {
       // Whatever the page assigned before we armed stays readable (it is simply never
       // called while armed), so disarming gives the page its handler back intact.
+      // Read it off the *document*: the native accessor lives on `Document.prototype`, and
+      // reading it there (`documentProto.onvisibilitychange`) invokes its getter with a
+      // prototype as the receiver — a TypeError (Illegal invocation) that used to abort
+      // this whole patch inside the catch below.
       if (onVisibilityHandler === null) {
-        const existing = documentProto["onvisibilitychange"];
+        const existing = document["onvisibilitychange" as keyof Document] as unknown;
         if (typeof existing === "function") onVisibilityHandler = existing as (ev: Event) => unknown;
       }
       Object.defineProperty(documentProto, "onvisibilitychange", {
         configurable: true,
-        enumerable: false,
+        enumerable: true,
         get() {
           return onVisibilityHandler;
         },
