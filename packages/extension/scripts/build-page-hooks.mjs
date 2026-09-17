@@ -29,6 +29,9 @@ for (const name of hooks) {
   await build({
     configFile: false,
     logLevel: "warn",
+    // No `public/` copying: this step only owns `dist/page-hooks/`, and the panel build has
+    // already put the icons where the manifest points at them.
+    publicDir: false,
     resolve: { alias: { "@shared": resolve(pkg, "../shared/src/index.ts") } },
     build: {
       outDir: dist,
