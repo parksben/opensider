@@ -741,11 +741,89 @@ async function nativeUiToken(tabId: number): Promise<string> {
 
 type NativeUiCall<T> = { ok: true; value: T } | { ok: false; error: string };
 
-/** Runs one shim call in every frame and merges the answers. */
-async function callNativeUi<T>(tabId: number, method: "read" | "setPolicy", args: unknown[]): Promise<NativeUiCall<T>> {
-  const token = await nativeUiToken(tabId);
+/**
+ * The bundled loader files of one of the MAIN-world hooks, read back from the manifest.
+ *
+ * The hooks are deliberately *not* always-on content scripts (patching a page's own
+ * `window` is something any site can detect, so it only happens on tabs the Agent actually
+ * touches — see `manifest.config.ts`), but the manifest is still the only place the build's
+ * hash-suffixed file names are discoverable at runtime.
+ */
+function pageHookFiles(marker: string): string[] {
+  for (const entry of chrome.runtime.getManifest().content_scripts ?? []) {
+    const files = (entry.js ?? []).filter((file) => file.includes(marker));
+    if (files.length > 0) return files;
+  }
+  return [];
+}
+
+const ACTIVITY_HOOK_MARKER = "activity-hook";
+const NATIVE_UI_HOOK_MARKER = "native-ui-hook";
+
+/** The global each hook installs, keyed by the marker its file name carries. */
+const HOOK_KEYS: Record<string, string> = {
+  [ACTIVITY_HOOK_MARKER]: PAGE_ACTIVITY_HOOK_KEY,
+  [NATIVE_UI_HOOK_MARKER]: NATIVE_UI_HOOK_KEY,
+};
+
+/** Is the hook's global already standing in the tab's main frame? */
+async function pageHookInstalled(tabId: number, key: string): Promise<boolean> {
   try {
-    const results = await chrome.scripting.executeScript({
+    const [entry] = await chrome.scripting.executeScript({
+      target: { tabId, frameIds: [0] },
+      world: "MAIN",
+      args: [key],
+      func: (hookKey: string) => Boolean((globalThis as unknown as Record<string, unknown>)[hookKey]),
+    });
+    return Boolean(entry?.result);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Fires one MAIN-world hook into every frame of a tab and waits until it is listening.
+ *
+ * The wait matters twice over: the built hook is a loader that `await import()`s the real
+ * module, so it is not there the instant `executeScript` resolves — and a call that lands
+ * too early leaves the hook installed but without its caller token (the first call it
+ * receives is the one it learns the token from). Idempotent: both hooks bail out when they
+ * find themselves already installed.
+ */
+async function injectPageHook(tabId: number, marker: string): Promise<boolean> {
+  const files = pageHookFiles(marker);
+  if (files.length === 0) return false;
+  const key = HOOK_KEYS[marker];
+  if (key && (await pageHookInstalled(tabId, key))) return true;
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      files,
+      injectImmediately: true,
+      world: "MAIN",
+    });
+  } catch {
+    // restricted URL, closed tab, no host permission for it
+    return false;
+  }
+  if (!key) return true;
+  for (let attempt = 0; attempt < 24; attempt += 1) {
+    if (await pageHookInstalled(tabId, key)) return true;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  return false;
+}
+
+/** Runs one shim call in every frame and merges the answers. */
+async function callNativeUi<T>(
+  tabId: number,
+  method: "read" | "setPolicy",
+  args: unknown[],
+  inject = false,
+): Promise<NativeUiCall<T>> {
+  const token = await nativeUiToken(tabId);
+  const run = async () =>
+    chrome.scripting.executeScript({
       target: { tabId, allFrames: true },
       world: "MAIN",
       args: [NATIVE_UI_HOOK_KEY as string, method, token, args],
@@ -761,14 +839,30 @@ async function callNativeUi<T>(tabId: number, method: "read" | "setPolicy", args
         }
       },
     });
-    const frames = results
+  const framesOf = (
+    results: chrome.scripting.InjectionResult<unknown>[],
+  ): Array<{ ok: boolean; value?: unknown; error?: string }> =>
+    results
       .map((entry) => entry.result as { ok: boolean; value?: unknown; error?: string } | undefined)
       .filter((entry): entry is { ok: boolean; value?: unknown; error?: string } => Boolean(entry));
+
+  try {
+    let frames = framesOf(await run());
+    // The hook is injected per tab on demand, so the first call on a tab finds nothing:
+    // put it in and ask again. Only while the panel is open — the Agent's commands are the
+    // only thing that reads these events, and a closed panel means no injection anywhere.
+    if (
+      inject &&
+      sidebars.size > 0 &&
+      !frames.some((frame) => frame.ok) &&
+      (await injectPageHook(tabId, NATIVE_UI_HOOK_MARKER))
+    ) {
+      frames = framesOf(await run());
+    }
     if (frames.length === 0 || !frames.some((frame) => frame.ok)) {
       return {
         ok: false,
-        error:
-          "The browser UI shim is not installed in this tab yet. Reload the tab and try again.",
+        error: "The browser UI hook could not be installed in this tab (system page or no access).",
       };
     }
     if (method === "setPolicy") {
@@ -821,9 +915,12 @@ async function readOverlays(tabId: number): Promise<OverlaySnapshot | undefined>
   return snapshot;
 }
 
-/** Take whatever the page popped up since the last read (used after every page command). */
+/** Take whatever the page popped up since the last read (used after every page command).
+ *
+ * This is also the moment a tab counts as "touched": every page command runs through here,
+ * and the hook is installed on demand the first time. */
 async function drainNativeUi(tabId: number): Promise<NativeUiEvent[]> {
-  const pulled = await callNativeUi<NativeUiSnapshot>(tabId, "read", [true]);
+  const pulled = await callNativeUi<NativeUiSnapshot>(tabId, "read", [true], true);
   if (!pulled.ok) return [];
   return pulled.value.events ?? [];
 }
@@ -836,7 +933,7 @@ function reportNativeUi(tabId: number, url: string, events: NativeUiEvent[]): vo
 async function runNativeUiMethod(tabId: number, command: BrowserCommand): Promise<BrowserResult> {
   if (command.method === "setDialogPolicy") {
     const policy: DialogPolicy = normalizeDialogPolicy(command.args?.policy ?? command.args, Date.now());
-    const applied = await callNativeUi<DialogPolicy>(tabId, "setPolicy", [policy]);
+    const applied = await callNativeUi<DialogPolicy>(tabId, "setPolicy", [policy], true);
     if (!applied.ok) return fail(command, applied.error);
     return {
       id: command.id,
@@ -845,7 +942,7 @@ async function runNativeUiMethod(tabId: number, command: BrowserCommand): Promis
       data: { tabId, policy: applied.value },
     };
   }
-  const pulled = await callNativeUi<NativeUiSnapshot>(tabId, "read", [true]);
+  const pulled = await callNativeUi<NativeUiSnapshot>(tabId, "read", [true], true);
   if (!pulled.ok) return fail(command, pulled.error);
   const snapshot = pulled.value;
   reportNativeUi(tabId, "", snapshot.events ?? []);
@@ -877,7 +974,6 @@ async function runNativeUiMethod(tabId: number, command: BrowserCommand): Promis
  * never be left pretending to be visible. */
 const activityArmed = new Set<number>();
 const ACTIVITY_TABS_KEY = "opensiderActivityTabs";
-const ACTIVITY_HOOK_MARKER = "activity-hook";
 
 async function rememberActivityTabs(tabs: number[]): Promise<void> {
   try {
@@ -894,14 +990,6 @@ async function persistedActivityTabs(): Promise<number[]> {
   } catch {
     return [];
   }
-}
-
-function activityHookFiles(): string[] {
-  for (const entry of chrome.runtime.getManifest().content_scripts ?? []) {
-    const files = (entry.js ?? []).filter((file) => file.includes(ACTIVITY_HOOK_MARKER));
-    if (files.length > 0) return files;
-  }
-  return [];
 }
 
 type ActivityCall = { ok: true; value: PageActivityState } | { ok: false; error: string };
@@ -932,18 +1020,10 @@ async function callActivity(tabId: number, enabled: boolean, inject: boolean): P
     const frames = results.map((entry) => entry.result).filter(Boolean) as Array<
       { ok: true; value: unknown } | { ok: false; error: string }
     >;
-    // A tab that was already open when this version landed has no shim yet: inject the
-    // content script by hand once, then try again.
+    // The hook is injected per tab on demand, so the first touch finds nothing installed:
+    // put it in by hand once, then ask again.
     const missing = frames.length > 0 && frames.every((frame) => !frame.ok);
-    if (missing && inject) {
-      const files = activityHookFiles();
-      if (files.length === 0) return { ok: false, error: "activity hook missing from manifest" };
-      await chrome.scripting.executeScript({
-        target: { tabId, allFrames: true },
-        files,
-        injectImmediately: true,
-        world: "MAIN",
-      });
+    if (missing && inject && (await injectPageHook(tabId, ACTIVITY_HOOK_MARKER))) {
       results = await run();
     }
     const answers = results
@@ -985,6 +1065,37 @@ async function armCurrentTab(): Promise<void> {
   if (tab?.id != null) void armActivity(tab.id);
 }
 
+/**
+ * Undo everything both MAIN-world hooks patched in a tab and drop their globals.
+ *
+ * Releasing a tab has to leave it stock again: the patches are things the page (and the
+ * site's own integrity checks) can see, and a tab the Agent is done with goes back to being
+ * an ordinary page. The next touch re-injects both hooks — injecting is idempotent and the
+ * hooks reappear from the manifest's file names.
+ */
+async function releasePageHooks(tabId: number): Promise<void> {
+  const token = await nativeUiToken(tabId);
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      world: "MAIN",
+      args: [NATIVE_UI_HOOK_KEY as string, PAGE_ACTIVITY_HOOK_KEY as string, token],
+      func: (nativeKey: string, activityKey: string, caller: string) => {
+        const host = globalThis as unknown as Record<string, { release?: (c: unknown) => unknown }>;
+        for (const key of [activityKey, nativeKey]) {
+          try {
+            host[key]?.release?.(caller);
+          } catch {
+            // one hook failing must not block the other
+          }
+        }
+      },
+    });
+  } catch {
+    // restricted URL, closed tab, no access
+  }
+}
+
 /** Put every armed tab back to stock behaviour (side panel closed, or extension reset). */
 async function releaseActivity(): Promise<void> {
   const tabs = [...new Set([...(await persistedActivityTabs()), ...activityArmed])];
@@ -992,6 +1103,7 @@ async function releaseActivity(): Promise<void> {
   await rememberActivityTabs([]);
   for (const tabId of tabs) {
     await callActivity(tabId, false, false).catch(() => undefined);
+    await releasePageHooks(tabId);
     try {
       await chrome.tabs.update(tabId, { autoDiscardable: true });
     } catch {

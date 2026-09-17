@@ -42,7 +42,9 @@ import { createActivityShim } from "./activity-shim";
   });
 
   Object.defineProperty(host, PAGE_ACTIVITY_HOOK_KEY, {
-    configurable: false,
+    // Configurable so `release` can take the hook back out: a tab nobody is working with
+    // must look stock again (see `releasePageHooks` in background.ts).
+    configurable: true,
     writable: false,
     value: {
       // The service worker calls `api[method](token, ...args)`.
@@ -52,6 +54,18 @@ import { createActivityShim } from "./activity-shim";
       },
       read(caller: unknown): PageActivityState {
         return authorized(caller) ? shim.read() : IDLE_PAGE_ACTIVITY;
+      },
+      /** Disarm and uninstall: never learns a token, so only a caller that already proved
+       * itself (the service worker) can do it. */
+      release(caller: unknown): boolean {
+        if (!token || caller !== token) return false;
+        shim.set(false);
+        try {
+          delete host[PAGE_ACTIVITY_HOOK_KEY];
+        } catch {
+          // ignore
+        }
+        return true;
       },
     },
   });

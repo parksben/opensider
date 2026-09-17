@@ -127,7 +127,7 @@
 
 ### 页面感知与操作
 
-1. 浏览器**活动标签**一旦变化，扩展必须实时更新「当前页」：用户点击其它标签、关掉当前标签后浏览器激活另一张已打开的标签、窗口获得焦点、标签在窗口间移动 / 挂接 / 分离，或当前页 URL 变化。关掉当前标签时不得继续把已关闭的 tabId / URL 当作当前页。每次活动标签变化都要同时刷新工作区 `browser/current.json`（以及 `snapshot.md` / `interactive.md`）和 `browser/tabs.json`，好让下一条用户消息的 `[Current tab]` 行、侧栏页面状态、以及 Agent 读到的工作区文件都指向新的活动标签。同域链接点击仍按原规则在当前标签跳转，不另开标签；本条管的是标签身份 / 当前页，不是页内链接。
+1. 浏览器**活动标签**一旦变化，扩展必须实时更新「当前页」：用户点击其它标签、关掉当前标签后浏览器激活另一张已打开的标签、窗口获得焦点、标签在窗口间移动 / 挂接 / 分离，或当前页 URL 变化。关掉当前标签时不得继续把已关闭的 tabId / URL 当作当前页。每次活动标签变化都要同时刷新工作区 `browser/current.json`（以及 `snapshot.md` / `interactive.md`）和 `browser/tabs.json`，好让下一条用户消息的 `[Current tab]` 行、侧栏页面状态、以及 Agent 读到的工作区文件都指向新的活动标签。同域链接点击仍按原规则在当前标签跳转，不另开标签；本条管的是标签身份 / 当前页，不是页内链接。**这条能力来自扩展的 service worker（`chrome.tabs` / `chrome.windows`）与隔离世界的内容脚本，不依赖任何主世界注入**：不管用户有没有在用 OpenSider、页面上有没有被注入过钩子，`tabs.json` / `current.json` 都必须实时反映「所有已加载的标签」和「当前激活的那一个」。
 2. 侧栏不再用 banner 或顶栏 favicon 展示当前页标题与 URL。Agent 正在执行页面命令时，不要把该方法名挂在顶栏：它是工具调用提示，写进当前这一轮对话正文（和其它 tool-call 同一套灰字折叠），不是 Todo List。
 3. 每条用户消息在发给 Agent 时附带一行当前页上下文（标题 + URL），界面里只显示用户自己输入的文字。
 4. 内容脚本向页面注入白名单方法；批处理另可由 SW 执行 `runScript`。Agent 通过工作区命令文件调用，不走 MCP。扩展刚刷新、标签在注入前就打开、或页面（如 YouTube）在 `document_start` 之后内容脚本还在异步加载时，页面读取 / 操作 / 快照必须先补注入并等到页面 API 就绪，不能因为没有消息接收端就让 Agent 读到空的 `snapshot.md` / `interactive.md`，或只看到 Chrome 的 `Receiving end does not exist`。命令无论成败都要写出 `browser/results/<id>.json`；失败错误要能看懂（系统页、未注入、超时分开说）。
@@ -142,17 +142,19 @@
 13. 以下页面不注入、不抓取、不操作、不截图、不跑 `runScript`：`chrome://`、`chrome-extension://`、Chrome Web Store。仍可出现在 `tabs.json` 里并允许 `switchTab`（只是切过去看），但不能对这些页跑页面读/写/截图/脚本。
 14. 页面自动化默认执行，不再逐步弹权限（用户装这个扩展就是为了让 Agent 动手）。本地文件写入和 Shell 仍走 ACP 权限条。
 15. **浏览器原生 UI 的感知与受控代答**：页面弹 `alert` / `confirm` / `prompt`、调 `print()`、开 `window.open()`、或点 `<input type=file>` 唤系统选择器，都算「原生 UI 状态变化」，Agent 必须能感知，并能在明确授权下代答：
-    - **感知（默认就有）**：主世界在 `document_start` 包住这几个入口，每次触发都记一条事件（kind、message、defaultValue、frame url、时间、是否发生在 Agent 命令执行中、是否被代答、答案），写进 `browser/native-ui.json`（最近 50 条，Host 落盘），并附在**触发它的那条命令结果**里（`data.nativeUi`）——Agent 点一下就知道这一下弹了什么，不用再去翻文件。
+    - **感知范围＝Agent 真正碰过的标签页**：这层只能从页面的主世界注入，而往主世界注入就等于改掉页面能读到的原生 API（`Function.prototype.toString` 不再是 `[native code]`、`HTMLDocument.prototype` 上多出自有访问器、`window` 上多出全局），是站点反爬 / 完整性校验一眼能看出来的指纹，实测会打坏「加载期就做环境自检」的站点（抖音等的播放器初始化即属此类）。所以**只在侧栏开着、且 Agent 已经触及这个标签页时才注入**（`chrome.scripting.executeScript`，见 TECH_DESIGN「主世界钩子的注入时机」）：用户没在用的标签页一律不注入、不留任何可探测的改动。
+    - **感知内容**：注入后包住这几个入口，每次触发都记一条事件（kind、message、defaultValue、frame url、时间、是否发生在 Agent 命令执行中、是否被代答、答案），写进 `browser/native-ui.json`（最近 50 条，Host 落盘），并附在**触发它的那条命令结果**里（`data.nativeUi`）——Agent 点一下就知道这一下弹了什么，不用再去翻文件。
+    - **边界（不许吹）**：注入之前——页面刚打开、Agent 还没碰过它的时候——弹出的原生对话框不会被记录，也不会被代答；`getNativeUi` 只见证从注入那一刻起的调用。做不到「全站常驻感知」，因为代价就是上一条说的指纹。
     - **代答（默认不做）**：默认只观察、不改行为：真弹窗照旧由用户点，我们只记录事件与用户给出的答案（`confirm` 的 true/false、`prompt` 的文本都拿得到）。Agent 需要用 `setDialogPolicy` 显式切到 `answer` 模式（可带 `expiresAt`，默认 120s）才由我们同步代答：`alert` 直接关掉、`confirm` 按策略返回 true/false、`prompt` 返回策略文本、`<input type=file>` 的 `click()` / `showPicker()` 在代答模式下**不弹系统选择器**（它会把整页 JS 线程卡死）只记事件——这是 Agent 能在「点一下就要求选文件 / 确认」的站点上继续干活的关键。
     - **同步约束**：`confirm` / `prompt` 是同步 API，代答必须在调用当刻就返回，所以策略是**提前**推给主世界缓存的（不存在「挂起等 Agent 事后答复」这种做法）；`answer` 模式会过期，过期即回 `observe`，避免用户之后正常浏览时的弹窗被静默吞掉。
     - **可读的 UI 状态**：`getNativeUi` 同时返回当前标签的权限状态（`navigator.permissions`：geolocation / camera / microphone / notifications / clipboard-read / clipboard-write）、`visibility`、`fullscreen`、是否注册了 `beforeunload`，让 Agent 知道「点下去会不会弹系统授权框」。
     - **边界必须说清楚，不许吹**：Chrome 扩展 API 看不到也点不到真正的浏览器 / 系统 UI——权限授权框、HTTP 认证框、下载气泡、系统文件选择器窗口、原生右键菜单、证书警告。只有 `chrome.debugger`（CDP：`Page.handleJavaScriptDialog` / `Page.fileChooserOpened` + `DOM.setFileInputFiles` / `Browser.setPermission`）能看到并操作，代价是「正在调试此浏览器」横幅、与 DevTools 互斥、以及 `debugger` 权限（会多一条权限提示）；v1 不做，只在 TECH_DESIGN 里备着。
 16. **面板开着的时候，页面必须保持「活着且可见」**：浏览器窗口被别的窗口盖住、被最小化、或标签不在前台时，Chrome 会让页面变成 `hidden`（`document.visibilityState === "hidden"`、`hasFocus()` 为假、`requestAnimationFrame` 不再回调、定时器被降频到 1/秒、5 分钟后进一步降到 1/分钟）。很多站点据此暂停自己（懒加载、动画组件、把点击挡在「页面未激活」的遮罩后面），Agent 的点击和脚本就会卡住——用户看到的是「浏览器被遮住的时候点不动」。要求：
-    - **只要侧栏开着**（面板连着扩展），Agent 正在操作的那个标签页就要被强制成「可见 + 有焦点」：页面读 `document.visibilityState` 得到 `visible`、`document.hidden` 为 `false`、`document.hasFocus()` 为 `true`，并且**收不到** `visibilitychange` / `blur` / `pagehide` / `freeze` 这些「你被藏起来了」的事件（页面因此不会自己暂停）。
+    - **只要侧栏开着**（面板连着扩展），Agent 正在操作的那个标签页就要被强制成「可见 + 有焦点」：页面读 `document.visibilityState` 得到 `visible`、`document.hidden` 为 `false`、`document.hasFocus()` 为 `true`，并且**收不到** `visibilitychange` / `blur` / `pagehide` / `freeze` 这些「你被藏起来了」的事件（页面因此不会自己暂停）。这层同样是主世界注入，注入范围与第 15 条同一条规矩：**只装 Agent 触及的标签页**，其它页面一点都不动。
     - 页面被真的隐藏时 `requestAnimationFrame` 不会回调，要让等帧的页面 / 脚本继续动：改成定时器回退（约 16ms）。
     - **不抢用户焦点**：不得为了这个把窗口提到最前、取消最小化、或切到别的标签。用户该干嘛干嘛，页面在后台也照常能操作。
     - 覆盖的标签是「Agent 正在动的那一个」：面板打开时当前活动标签，以及之后每条页面命令 / 当前页快照触及的标签（Agent `openTab` / `switchTab` 换页后同样要跟上）。
-    - **侧栏一关就还原**：所有被改过的状态（可见性 / 焦点 / 帧回退 / 防丢弃标记）都要恢复成浏览器本来的行为，不留下常驻的 hack。页面刷新后重新生效（重新注入）。
+    - **侧栏一关就还原**：所有被改过的状态（可见性 / 焦点 / 帧回退 / 防丢弃标记）都要恢复成浏览器本来的行为，不留下常驻的 hack；`hidden` / `visibilityState` / `hasFocus` / `document.onvisibilitychange` / `requestAnimationFrame` / `EventTarget.prototype` 的监听方法都要回到原生实现（`requestAnimationFrame` 等入口无法恢复成「从没被碰过」的同一性，但行为必须与原生一致）。页面刷新后钩子随页面消失，重新触及时补注入。
     - 顺带：被强制期间不允许多余行为——不改页面 DOM、不拦用户自己的交互、不加可见元素；`getNativeUi` 里的 `visibility` 要反映**强制后**的值（Agent 不该看到 `hidden` 而以为自己不能动手）。
     - **边界**：这层强制发生在**页面可见的 API 层面**，让页面自己认为可见。Chrome 自己的后台降频 / 渲染降级无法用扩展 API 取消（只有 `chrome.debugger` 能做到，代价同第 15 条），所以后台执行可能比前台慢；不得宣传成「强制前台渲染」。
 17. **动作之后要自己看局面，不能凭「点了没反应」就继续试**：Agent 点一个按钮 / 提交一个表单后，页面经常不是在原地变，而是弹出一个**页面自己的模态框、抽屉、浮层、下拉面板或全屏遮罩**（不是第 15 条那种浏览器原生弹窗）。这种变化必须在 Agent 的视野里，否则它会把「弹了模态框」当成「点了没反应」，重复点、点别的、或者去猜，最后告诉用户「这个按钮不管用」。要求：
@@ -160,6 +162,7 @@
     - 每条**页面的操作类命令**（click / fill / select / check / press / 滚动…）执行完，结果里直接带上这个快照（只在**出现或变化**时带，避免噪音）——不是弹窗时什么都不加。它要和已有的原生弹窗事件（`data.nativeUi`）一起看：一个是页面自己的层，一个是浏览器弹的窗。
     - 命中过的快照同时落盘 `browser/overlays.json`，Agent 随时可读；没有浮层时写空表，不留上一次的旧值。
     - `AGENTS.md` 里要写清这套流程：动作后先看「预期变化有没有发生」→ 没发生就不要重复点，先查页面浮层、再查原生弹窗、再重新取一次交互列表（编号可能已经变了）、看 URL / 标题 / 标签页有没有变，必要时用 `waitFor` 等具体元素；同一个控件连续点两次没反应就停下来换思路或问用户。
+18. **不给没在用的页面留痕（硬约束）**：扩展在**主世界**（页面自己的 JS 世界）动过的东西，页面都探测得到——`Function.prototype.toString` 不再是 `[native code]`、`HTMLDocument.prototype` 上多出自有的 `hidden` / `visibilityState` / `hasFocus`、`window` 上多出固定名字的全局，全是站点判断「环境被篡改」的现成指纹；而这类判定一旦命中，站点常见的反应就是拒绝初始化自己的重型组件（播放器、编辑器）。因此：**主世界注入只允许发生在「侧栏开着 + Agent 已经触及该标签页」的页面上**，注入后也不得借机改别的东西；用户没在用的页面必须与干净浏览器**逐项一致**。隔离世界（内容脚本默认世界）页面看不见，可以按需在 `document_start` 注入。注入过的标签页被释放（侧栏关闭）后要还原到与原生行为一致。
 
 ### 跨页工作
 

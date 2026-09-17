@@ -37,20 +37,28 @@ export default defineManifest({
       js: ["src/content.ts"],
       run_at: "document_start",
     },
-    // Native UI shim: must be in the MAIN world (it patches the page's own alert/confirm/
-    // prompt/print/open/file-picker entry points) and must run before any page script.
+    // The two MAIN-world hooks are injected on demand instead of on every page (see
+    // `ensurePageHooks` in background.ts): patching a page's own `window` from its main
+    // world is visible to the site, and doing that on pages the Agent never touches — and
+    // *during* their initialisation, which is when a bundler's `document_start` loader
+    // really lands — breaks sites that check their own environment on load (Douyin's
+    // player, among others).
+    //
+    // They stay declared here for one reason only: it is the single place where the CRXJS
+    // build's hash-suffixed file names can be read back at runtime
+    // (`chrome.runtime.getManifest()`). `exclude_matches` covering the same patterns means
+    // Chrome itself never injects them, so the declaration costs the pages nothing.
     {
       matches: ["http://*/*", "https://*/*"],
+      exclude_matches: ["http://*/*", "https://*/*"],
       js: ["src/native-ui-hook.ts"],
       run_at: "document_start",
       all_frames: true,
       world: "MAIN",
     },
-    // Page activity shim: also MAIN world, also `document_start` (it redirects what the
-    // page reads for visibility/focus, and hangs on to the original rAF before the page
-    // can). Inert until the service worker arms it for a tab.
     {
       matches: ["http://*/*", "https://*/*"],
+      exclude_matches: ["http://*/*", "https://*/*"],
       js: ["src/activity-hook.ts"],
       run_at: "document_start",
       all_frames: true,

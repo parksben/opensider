@@ -74,6 +74,13 @@ A page can stop its own JS thread with `alert` / `confirm` / `prompt`, ask for a
 what happened in `browser/native-ui.json` (and in `data.nativeUi` of the command that caused
 it).
 
+**Scope: the tabs you actually touch.** Watching means patching the page's own `window`
+from its main JS world, which any site can detect, so OpenSider only does it for tabs you
+have already worked with while the side panel is open. Dialogs a page popped *before* your
+first command on it were not recorded — do not treat an empty `events` list as proof that
+nothing was shown earlier. When the panel closes, the tab is put back the way it was (the
+patches and the injected globals are removed); working with it again installs them anew.
+
 **Default: observe.** The real dialog still opens and the user answers it; you only get the
 event, including the answer they gave (`answer: true|false`, or the text they typed). That is
 usually enough to know why your click did not do what you expected.
@@ -119,6 +126,11 @@ While the side panel is open, OpenSider keeps the tab you are working with armed
 that: it reads `visible`, `document.hidden` is `false`, `document.hasFocus()` is `true`, the
 page never receives `visibilitychange` / `blur` / `pagehide` / `freeze`, and waiting on a
 frame still resolves. Closing the panel hands the tab back to the browser.
+
+The arming starts at the moment you first work with a tab (the panel's own tab, or whichever
+tab a command touches), not when the page loads, so listeners the page registered earlier in
+its life still fire normally. Panels and pages you never touch are left completely alone,
+and closing the panel puts the touched tabs back the way they were.
 
 What that means in practice:
 

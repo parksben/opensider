@@ -71,10 +71,15 @@ import {
     if (typeof original !== "function") return;
     try {
       holder![key] = wrap(original as AnyFn);
+      restores.push({ holder: holder!, key, original });
     } catch {
       // frozen holder — leave the native function alone
     }
   }
+
+  type Restore = { holder: Record<string, unknown>; key: string; original: unknown };
+  /** Everything we wrapped, so `release` can put it back the way we found it. */
+  const restores: Restore[] = [];
 
   type AnyFn = (...args: never[]) => unknown;
   const run = (original: AnyFn, self: unknown, args: unknown[]): unknown =>
@@ -158,7 +163,9 @@ import {
   }
 
   Object.defineProperty(host, NATIVE_UI_HOOK_KEY, {
-    configurable: false,
+    // Configurable so `release` can take the hook back out: a tab nobody is working with
+    // must look stock again (see `releasePageHooks` in background.ts).
+    configurable: true,
     writable: false,
     value: {
       // Both entry points take the caller token first — the service worker calls
@@ -183,6 +190,26 @@ import {
         snapshot.events = events;
         if (drain) events = [];
         return snapshot;
+      },
+      /** Unwrap every entry point, forget the buffered events and drop the global. Never
+       * learns a token, so only a caller that already proved itself can do it. */
+      release(caller: unknown): boolean {
+        if (!token || caller !== token) return false;
+        for (const entry of restores.splice(0)) {
+          try {
+            entry.holder[entry.key] = entry.original;
+          } catch {
+            // ignore
+          }
+        }
+        events = [];
+        policy = defaultDialogPolicy();
+        try {
+          delete host[NATIVE_UI_HOOK_KEY];
+        } catch {
+          // ignore
+        }
+        return true;
       },
     },
   });
