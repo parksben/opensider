@@ -42,7 +42,7 @@ func Ensure() {
 		// Quiet defaults + tab control (see agents.md «Tab control»): static description only.
 		"tabControl": map[string]any{
 			"quietByDefault": true,
-			"note": "openTab opens in the background next to your working tab and becomes yours; no command changes the user's active tab or window focus, except switchTab (show) and screenshots (a brief flip that is restored).",
+			"note":           "openTab opens in the background next to your working tab and becomes yours; no command changes the user's active tab or window focus, except switchTab (show) and screenshots (a brief flip that is restored).",
 		},
 		"methods": protocol.ToolCatalog,
 	}

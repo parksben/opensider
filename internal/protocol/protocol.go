@@ -80,13 +80,13 @@ type AgentProgress struct {
 }
 
 type CurrentPage struct {
-	TabID       int         `json:"tabId"`
-	URL         string      `json:"url"`
-	Title       string      `json:"title"`
-	UpdatedAt   string      `json:"updatedAt"`
-	Readable    string      `json:"readable,omitempty"`
-	Interactive string      `json:"interactive,omitempty"`
-	FavIconURL  string      `json:"favIconUrl,omitempty"`
+	TabID       int    `json:"tabId"`
+	URL         string `json:"url"`
+	Title       string `json:"title"`
+	UpdatedAt   string `json:"updatedAt"`
+	Readable    string `json:"readable,omitempty"`
+	Interactive string `json:"interactive,omitempty"`
+	FavIconURL  string `json:"favIconUrl,omitempty"`
 	// Target is the tab the Agent's browser commands route to right now; it can differ
 	// from the tab above (the one the user is looking at). See agents.md «Tab control».
 	Target *PageTarget `json:"target,omitempty"`
