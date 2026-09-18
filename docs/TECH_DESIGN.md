@@ -186,7 +186,9 @@ Host 是一份 Go 二进制（`cmd/opensider` + `internal/`）。`browser/tools.
 
 解压后的扩展**不在** `~/.opensider` 下：它的位置由用户在安装时选定（skill 先问，建议 `~/OpenSider`，`paths.DefaultExtensionDir()` 只在没读过记录时兜底），并记在 `~/.opensider/extension-path`（`opensider extension-dir` 读写）。不默认放下载目录：那是「清理下载」和清理工具的常客，删了扩展就一直失效到重新加载。点目录在系统文件选择器里默认不可见，而「加载已解压的扩展程序」是用户手动的一步，放在看得见的地方才做得下去。
 
-侧栏状态（语言、会话目录、消息、选中项、权限模式、模型、抽屉）写两份：`chrome.storage.local` key `opensider/state` 是热缓存；权威副本是 `~/.opensider/ui-state.json`（不进 workspace，免得和 Agent 文件混在一起）。Host `hello` 之后发 `{ type: "ui.state", state }`（没有文件则 `state: null`）。侧栏 `ui.state.set` 把同一份 JSON 交给 Host 落盘，带 `savedAt`。扩展存储为空或 `savedAt` 更旧时用 Host 灌回；**空会话表不得覆盖已有镜像**（避免重装后首帧空态把历史写丢）。Native Messaging 单帧约 1MB，工具输出仍先截到 8KB 再写入。Host 只另记 ACP `sessionId` 到 `session.json`，方便 `session/load`。
+侧栏状态（语言、会话目录、消息、选中项、权限模式、模型、抽屉）写两份：`chrome.storage.local` key `opensider/state` 是热缓存；权威副本是 `~/.opensider/ui-state.json`（不进 workspace，免得和 Agent 文件混在一起）。Host `hello` 之后发 `{ type: "ui.state", state }`（没有文件则 `state: null`）。侧栏 `ui.state.set` 把同一份 JSON 交给 Host 落盘，带 `savedAt`。扩展存储为空或 `savedAt` 更旧时用 Host 灌回；**空会话表不得覆盖已有镜像**（避免重装后首帧空态把历史写丢）。Host 只另记 ACP `sessionId` 到 `session.json`，方便 `session/load`。
+
+状态随历史膨胀（工具输出虽先截到 8KB 再写入，很多条消息加起来仍会远超 1MB），而 Native Messaging 单帧上限 1MB——所以两个方向都做了分片：镜像 JSON 超过单帧阈值（700KB）时不再发整条 `ui.state` / `ui.state.set`，改发同类型消息的切片形态 `{ index, total, data }`（每片原始文本 256KB，按 UTF-8 / 代理对边界切；wire 上经 JSON 转义后仍远低于 1MB）。**阈值与片大小一律按 UTF-8 字节计**：扩展侧 `utf8Length` 自己数字节（JS 的 `length` 是 UTF-16 码元数，中文按字符数估会低估到三分之一）；Go 侧发送改用 `native.Marshal`（不转义 HTML——默认 `json.Marshal` 把 `<` 撑成 `\u003c`，事故当天 1,048,513B 的状态正是这样被顶到 1,099,121B 越过上限）。Host→扩展的分片由 SW（`background.ts` + `state-transfer.ts`）重组，重组完成才 `broadcast` 并写入 `lastUiState` 回放缓存；扩展→Host 的分片由 Host（`internal/host/uistate_wire.go`）重组后走同一个 `uistate.Save` 守卫。小状态保持单帧原样（两种形态字段互斥：带 `total` 即切片）。配套三处加固：(1) `internal/native` 读取循环遇到超限帧时**按声明长度跳过**而不是清空缓冲——清空会让后续字节按错位的长度前缀解析、流永久错乱（2026-09-18 事故：镜像从此静默停更），跳过则下一帧自动对齐；超过 64MB 的荒谬帧头直接断开连接让 SW 重连。(2) 读取侧单帧上限放宽到 16MB（浏览器→Host 方向 Chrome 没有 1MB 限制，旧版扩展还在发 >1MB 的单帧状态，先收下、由空态守卫兜底）。(3) 扩展本地热缓存写失败（配额等）只打警告，不阻断向 Host 的镜像写入——`chrome.storage.local` 只是缓存；同时给扩展加 `unlimitedStorage` 权限，大历史本来就不是缓存该被截断的理由。
 
 `current.json` 示例：
 
@@ -678,8 +680,8 @@ Release 资产名（skill 与文档都按这些名字取）：
 | Cursor `WritableIterable is closed` | 成功轮次按 `end_turn`，剥掉该关流字；空轮仍报错。改不了 Cursor CLI 本身 |
 | `session/load` 不支持或失败 | 新建 ACP 会话，界面历史保留，下一条消息带前文 |
 | `session/fork` 不可用或不支持指定消息 | 新会话 + 首条 prompt 前缀截断记录 |
-| chrome.storage 变大 | 工具输出超长时截断再写入 |
-| 卸载/重装扩展清空 chrome.storage | 权威副本在 `~/.opensider/ui-state.json`；空态不得覆盖已有镜像 |
+| chrome.storage 变大 | 工具输出超长时截断再写入；镜像走分片，不受 Native Messaging 1MB 单帧限制（`unlimitedStorage` 解本地配额） |
+| 卸载/重装扩展清空 chrome.storage | 权威副本在 `~/.opensider/ui-state.json`；空态不得覆盖已有镜像；收发都分片，历史超 1MB 也能灌回 |
 | 内容脚本无法注入 | `current.json` 只写 url/title，命令返回明确错误；Host 超时仍落 `results/<id>.json` |
 | 扩展重载 / CRXJS 异步 loader 后旧标签没有接收端 | 页面命令与快照走同一套 `ensureContent` + 主框 `__opensiderPage` 调用，不用 `tabs.sendMessage` |
 | Chrome 杀 Service Worker | 重连 Native Host；ACP 子进程随 Host 退出，重连后 load/new |

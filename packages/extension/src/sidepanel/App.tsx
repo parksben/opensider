@@ -60,6 +60,7 @@ import {
   isPlaceholderTitle,
   nextSessionTitle,
   titleFromMessages,
+  toPersistedState,
   wrapUserPrompt,
   wrapForkContext,
   textOf,
@@ -81,6 +82,10 @@ export function App() {
   const [hydrated, setHydrated] = useState(false);
   const [hostMirrorReady, setHostMirrorReady] = useState(false);
   const loadedRef = useRef<LoadedState | null>(null);
+  // 本地热缓存读完之前收到的宿主镜像先存这里：等两边都到齐再按 preferHostState 定胜负，
+  // 否则「本地是空、宿主有历史」的恢复场景会被晚到的本地空态盖掉（重装后第一帧就怕这个）。
+  const pendingHostStateRef = useRef<Record<string, unknown> | null | undefined>(undefined);
+  const hydratedRef = useRef(false);
   const [locale, setLocale] = useState<Locale>(() => readCachedLocale() ?? detectBrowserLocale());
   const [theme, setTheme] = useState<ThemePreference>(() => readCachedTheme() ?? detectBrowserTheme());
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -494,6 +499,16 @@ export function App() {
       return;
     }
     if (msg.type === "ui.state") {
+      if (!("state" in msg)) {
+        // 分片形态由 SW 重组后才转发（background.ts）；真漏过来的碎片直接忽略。
+        return;
+      }
+      if (!hydratedRef.current) {
+        // 本地缓存还没读完：先把镜像存着，由加载完成统一裁决（见下面的加载 effect）。
+        pendingHostStateRef.current = msg.state;
+        setHostMirrorReady(true);
+        return;
+      }
       const host = parseHostState(msg.state);
       const local = loadedRef.current;
       if (host && (!local || preferHostState(local, host))) {
@@ -831,7 +846,15 @@ export function App() {
 
   useEffect(() => {
     void loadState().then((state) => {
-      applyLoaded(state);
+      hydratedRef.current = true;
+      const pendingHost = pendingHostStateRef.current;
+      pendingHostStateRef.current = undefined;
+      if (pendingHost !== undefined) {
+        const host = parseHostState(pendingHost);
+        applyLoaded(host && preferHostState(state, host) ? host : state);
+      } else {
+        applyLoaded(state);
+      }
       setHydrated(true);
     });
   }, []);
@@ -842,7 +865,9 @@ export function App() {
 
   useEffect(() => {
     if (!hydrated) return;
-    void saveState({
+    // 先把整份状态序列化成 payload：本地热缓存写失败（配额等）只打警告，
+    // 绝不能连 Host 镜像一起停掉——重装后的恢复靠的就是它。
+    const payload = toPersistedState({
       locale,
       theme,
       selectedId,
@@ -854,7 +879,8 @@ export function App() {
       sessionsOpen,
       sessionDrawerWidth: drawerWidth,
       sessions,
-    }).then((payload) => {
+    });
+    void saveState(payload).then(() => {
       if (!hostMirrorReady) return;
       sendRef.current({ type: "ui.state.set", state: payload as Record<string, unknown> });
     });

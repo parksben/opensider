@@ -37,6 +37,7 @@ import {
   type PageApiMethod,
 } from "./page-pick";
 import { captureViewport } from "./screenshot";
+import { splitStateText, StateChunkSink } from "./state-transfer";
 import {
   isClosedCurrentTab,
   resolveActiveTab,
@@ -53,6 +54,9 @@ let lastAgents: HostToExt | undefined;
 let lastProgress: HostToExt | undefined;
 let lastUiState: HostToExt | undefined;
 let lastRelease: HostToExt | undefined;
+// 宿主镜像超过 Native Messaging 单帧上限时会分片发来（见 state-transfer.ts）；
+// 拼成完整一条才 broadcast / 进回放缓存，侧栏那边完全无感。
+const uiStateSink = new StateChunkSink();
 let ignoreNextDisconnect = false;
 let missingRetryTimer = 0;
 let startingWatchdog = 0;
@@ -231,6 +235,17 @@ function connectNative(force = false): void {
 
   nativePort.onMessage.addListener((msg: HostToExt) => {
     clearMissingRetry();
+    if (msg.type === "ui.state" && "total" in msg) {
+      const joined = uiStateSink.push(msg.index, msg.total, msg.data);
+      if (joined !== undefined) {
+        try {
+          broadcast({ type: "ui.state", state: JSON.parse(joined) as Record<string, unknown> });
+        } catch (error) {
+          console.warn("opensider: chunked ui.state is not json", error);
+        }
+      }
+      return;
+    }
     if (msg.type === "browser.command") {
       void dispatchCommand(msg.command, msg.sessionId);
     }
@@ -297,6 +312,17 @@ function sendNative(msg: ExtToHost): void {
     return;
   }
   try {
+    // 镜像状态超过单帧上限时按片发（Host 侧重组后再落盘，见 internal/host/uistate_wire.go）。
+    if (msg.type === "ui.state.set" && "state" in msg) {
+      const parts = splitStateText(JSON.stringify(msg.state));
+      if (parts.length > 1) {
+        const port = nativePort;
+        parts.forEach((data, index) => {
+          port.postMessage({ type: "ui.state.set", index, total: parts.length, data } satisfies ExtToHost);
+        });
+        return;
+      }
+    }
     nativePort.postMessage(msg);
   } catch (error) {
     broadcast({ type: "status", state: "error", error: String(error) });

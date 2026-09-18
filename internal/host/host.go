@@ -61,6 +61,9 @@ type Host struct {
 	hostState          string
 	pageCommandTimers  map[string]*time.Timer
 	pageCommandSettled map[string]bool
+	// stateUpload 是扩展正在分片上传的镜像状态（超过 Native Messaging 单帧上限时走
+	// 分片，见 uistate_wire.go）；单帧形态不经过它。由 h.mu 保护。
+	stateUpload *uiStateUpload
 }
 
 func Run() {
@@ -291,11 +294,18 @@ func (h *Host) sendRelease(info release.Info) {
 }
 
 func (h *Host) sendUIState() {
-	if state, ok := uistate.LoadMap(); ok {
-		h.send(map[string]any{"type": "ui.state", "state": state})
+	state, ok := uistate.LoadMap()
+	if !ok {
+		h.send(map[string]any{"type": "ui.state", "state": nil})
 		return
 	}
-	h.send(map[string]any{"type": "ui.state", "state": nil})
+	messages := uiStateMessages(state)
+	if len(messages) > 1 {
+		log.Log(fmt.Sprintf("ui.state chunked transfer chunks=%d", len(messages)))
+	}
+	for _, msg := range messages {
+		h.send(msg)
+	}
 }
 
 func (h *Host) scanAgents() error {
@@ -869,13 +879,7 @@ func (h *Host) handleExt(msg map[string]any) {
 func (h *Host) dispatch(typ string, msg map[string]any) error {
 	switch typ {
 	case "ui.state.set":
-		var state map[string]any
-		if raw, err := json.Marshal(msg["state"]); err == nil {
-			_ = json.Unmarshal(raw, &state)
-		}
-		if err := uistate.Save(state); err != nil {
-			log.Log("ui.state.set: " + err.Error())
-		}
+		h.acceptStateSet(msg)
 		return nil
 	case "hello":
 		h.sendHello()

@@ -44,7 +44,7 @@ export default defineManifest({
     // fixed names by `scripts/build-page-hooks.mjs` — a hook has to be re-runnable, and an ESM
     // loader would be evaluated once per document.
   ],
-  permissions: ["sidePanel", "nativeMessaging", "tabs", "windows", "storage", "scripting", "favicon"],
+  permissions: ["sidePanel", "nativeMessaging", "tabs", "windows", "storage", "unlimitedStorage", "scripting", "favicon"],
   host_permissions: ["http://*/*", "https://*/*"],
   content_security_policy: {
     extension_pages: "script-src 'self'; object-src 'self'; img-src 'self' data: blob: file: https:;",

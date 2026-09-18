@@ -341,7 +341,8 @@ export type ExtToHost =
       outcome: { outcome: "selected"; optionId: string } | { outcome: "cancelled" };
     }
   | { type: "cursor.reply"; id: number; result: unknown }
-  | { type: "ui.state.set"; state: Record<string, unknown> };
+  | { type: "ui.state.set"; state: Record<string, unknown> }
+  | { type: "ui.state.set"; index: number; total: number; data: string };
 
 export type HostStatusState = "starting" | "idle" | "connecting" | "ready" | "error" | "missing";
 
@@ -350,6 +351,8 @@ export type FsPickMode = "mixed" | "files" | "folders";
 export type HostToExt =
   | { type: "hello"; workspace: string; agentPath: string; providerId?: string; version?: string }
   | { type: "ui.state"; state: Record<string, unknown> | null }
+  // 镜像超过 Native Messaging 单帧上限时的切片形态（见 internal/host/uistate_wire.go）
+  | { type: "ui.state"; index: number; total: number; data: string }
   | { type: "status"; state: HostStatusState; error?: string }
   | { type: "agents"; agents: AgentInfo[]; selectedId?: string }
   | { type: "agent.progress"; progress: AgentProgress }

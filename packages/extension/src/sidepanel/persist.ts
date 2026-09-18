@@ -498,10 +498,14 @@ export async function loadState(): Promise<LoadedState> {
   return fromPersisted(raw[STATE_KEY] as PersistedState | undefined);
 }
 
-export async function saveState(state: Parameters<typeof toPersistedState>[0]): Promise<PersistedState> {
-  const payload = toPersistedState(state);
-  await chrome.storage.local.set({ [STATE_KEY]: payload });
-  return payload;
+export async function saveState(payload: PersistedState): Promise<void> {
+  try {
+    await chrome.storage.local.set({ [STATE_KEY]: payload });
+  } catch (error) {
+    // chrome.storage.local 只是热缓存：写失败（配额等）不能连 Host 镜像一起停掉——
+    // 权威副本在 ~/.opensider/ui-state.json，重装后还要靠它灌回。
+    console.warn("opensider: local state write failed", error);
+  }
 }
 
 export function wrapAttachments(text: string, items: AttachmentItem[]): string {
