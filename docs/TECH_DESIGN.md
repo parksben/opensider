@@ -482,15 +482,15 @@ Host 是通用 ACP Client + 数据驱动 `AgentProfile`（启动命令、鉴权�
 
 让「Agent 在干活」与「用户在用浏览器」互不打扰：命令路由与用户焦点**解耦**；进入用户标签要过闸；状态处处可见、随时可收回。
 
-**状态（SW，`chrome.storage.session`）**：`entries[]`（tabId → `{ sessionId, startedAt, lastUsedAt }`，一张标签同时只属一个会话）、`anchors{}`（sessionId → 锚点 tabId）、`blocked{}`（`sessionId:tabId` → 时间戳，10 分钟冷却）、`pending`（借用请求，同时最多一条）。`sessionId` 用 Host 打在 `browser.command` 上的 ACP 会话标注；锚点由侧栏在 `sendPrompt` 时通过 `control.anchor` 上报（新会话还没有 acpId 时先记「最近锚点」，命令到达时兜底认领）。TTL 30 分钟，惰性清理（下次命令 / 广播 / 面板连接时判）。没有 `sessionId` 的命令（verify 脚本、`__opensiderDispatch` 测试通道）不启用闸门，行为同今天。
+**状态（SW，`chrome.storage.session`）**：`entries[]`（tabId → `{ sessionId, startedAt, lastUsedAt }`，一张标签同时只属一个会话）、`anchors{}`（sessionId → 锚点 tabId）、`targets{}`（sessionId → 无 `tabId` 命令的路由目标：新消息时指回锚点，之后跟随写命令）、`blocked{}`（`sessionId:tabId` → 时间戳，10 分钟冷却）、`pending`（借用请求，同时最多一条）。`sessionId` 用 Host 打在 `browser.command` 上的 ACP 会话标注；锚点由侧栏在 `sendPrompt` 时通过 `control.anchor` 上报（新会话还没有 acpId 时先记「最近锚点」，命令到达时兜底认领）。TTL 30 分钟，惰性清理（下次命令 / 广播 / 面板连接时判）。没有 `sessionId` 的命令（verify 脚本、`__opensiderDispatch` 测试通道）不启用闸门，行为同今天。
 
-**路由（`dispatchCommand` 前置闸门）**：目标解析顺序 = `args.tabId` → 本会话接管的主目标（最近使用的 entry）→ 会话锚点 → 焦点活动标签。写类（act / 导航）落点若是锚点或主目标 → **自动接管**（`autoDiscardable:false`、推标题徽标、广播 control）；若是未接管的其它用户标签 → 未阻塞则建借用请求（`control.request`，侧栏弹卡）并返回 `reason=borrow_required` + `hint`，阻塞 / 冷却中则 `borrow_denied` 静默拒绝，被别的会话持有则 `borrow_held`。读类在锚点 / 主目标 / 自建 / 已接管上直通，其它标签同样过闸。
+**路由（`dispatchCommand` 前置闸门）**：目标解析顺序 = `args.tabId` → 本会话路由目标（`targets`）→ 焦点活动标签。写类（act / 导航）落点若是路由目标或锚点 → **自动接管**（`autoDiscardable:false`、推标题徽标、广播 control），接管前先过 `blocked` 冷却；若是未接管的其它用户标签 → 未阻塞则建借用请求（`control.request`，侧栏弹卡）并返回 `reason=borrow_required` + `hint`，冷却中则 `borrow_denied` 静默拒绝，被别的会话持有则 `borrow_held`。读类在锚点 / 路由目标 / 自建 / 已接管上直通，其它标签同样过闸。每次写命令成功后把该会话的 `targets` 指向该标签——Agent 去哪干活，之后的省略式命令就跟到哪；新消息再把它拉回锚点。
 
-**收回（`control.release`）**：释放该会话全部接管，并对每个标签写 `blocked`（防止立即重接管）；广播状态、撤徽标。侧栏在会话删除时也发这条。进行中的等待（`waitFor` 轮询）随内容脚本的取消通道收尾；已派发的动作不回滚，结果里带 `revoked` 语义。
+**收回（`control.release`）**：释放该会话全部接管（连同锚点与路由目标），并对每个标签写 `blocked`（防止立即重接管）；广播状态、撤徽标。侧栏在会话删除时也发这条。已派发的动作不回滚；冷却期内后续命令得到 `borrow_denied`。
 
 **窗口方法**：`openTab` 改为 `active:false` + 不聚焦窗口 + 开在目标标签旁（拿不到目标则焦点窗口），成功后自动接管（自建）；`switchTab` 保留原语义，只当展示动作（`agents.md` 写明不要用它选工作对象）；`closeTab` 目标是未接管的用户标签 → `borrow_required`（未保存拦截照旧）。
 
-**截图**：`runCapture` 前守卫式激活——目标窗口最小化 → `needs_visible`；目标已是活动标签 → 直接拍；否则 `tabs.update({active:true})`（不碰窗口焦点）→ 拍 → 仅在活动标签仍是它时还原原活动标签。`captureVisibleTab` 抓的是**窗口的活动标签**，不做这层会拍到用户正看的页。
+**截图**：`runCapture` 前守卫式激活——目标窗口最小化 → `needs_visible`；目标已是活动标签 → 直接拍；否则 `tabs.update({active:true})`（不碰窗口焦点）→ 拍 → 仅在活动标签仍是它时还原原活动标签。`captureVisibleTab` 抓的是**窗口的活动标签**，不做这层会拍到用户正看的页；它只认 `<all_urls>` 或 activeTab 授权，所以 `host_permissions` 用 `<all_urls>`（页面能力仍只对 http(s) 下发，代码把关）。
 
 **标题徽标（隔离世界）**：内容脚本 `control-badge.ts` 维护 `document.title` 的「● 」前缀——SPA 改写标题时用 MutationObserver 维持，释放时只剥离自己加的那一个；经 `callPageApi("setControlBadge")` 推送，接管 / 释放时各推一次，`tabs.onUpdated`（接管中的标签）再推一次兜住导航重建。
 

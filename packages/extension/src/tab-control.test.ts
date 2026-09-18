@@ -1,0 +1,149 @@
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
+import {
+  BLOCK_MS,
+  CONTROL_TTL_MS,
+  PENDING_TTL_MS,
+  anchorFor,
+  blockPair,
+  clearBlock,
+  clearPending,
+  emptyControl,
+  entryForTab,
+  isBlocked,
+  parseControl,
+  primaryTabFor,
+  pruneControl,
+  releaseSession,
+  releaseTab,
+  setAnchor,
+  setPending,
+  setTarget,
+  takeover,
+  tabsForSession,
+  targetFor,
+  touch,
+} from "./tab-control.ts";
+
+describe("tab-control store", () => {
+  it("hands a tab to one session at a time", () => {
+    const state = emptyControl();
+    takeover(state, "s1", 10, 1_000);
+    assert.equal(entryForTab(state, 10)?.sessionId, "s1");
+
+    takeover(state, "s2", 10, 2_000);
+    assert.equal(entryForTab(state, 10)?.sessionId, "s2");
+    assert.equal(state.entries.length, 1);
+  });
+
+  it("lists a session's tabs most recently used first", () => {
+    const state = emptyControl();
+    takeover(state, "s1", 10, 1_000);
+    takeover(state, "s1", 11, 2_000);
+    touch(state, 10, 3_000);
+    assert.equal(primaryTabFor(state, "s1"), 10);
+    assert.deepEqual(
+      tabsForSession(state, "s1").map((entry) => entry.tabId),
+      [10, 11],
+    );
+  });
+
+  it("releases a tab or a whole session and forgets the session anchor", () => {
+    const state = emptyControl();
+    takeover(state, "s1", 10, 1_000);
+    takeover(state, "s1", 11, 1_000);
+    takeover(state, "s2", 12, 1_000);
+    setAnchor(state, "s1", 10);
+    setTarget(state, "s1", 11);
+    assert.equal(releaseTab(state, 10), "s1");
+    assert.equal(entryForTab(state, 10), undefined);
+    assert.deepEqual(releaseSession(state, "s1").sort(), [11]);
+    assert.equal(anchorFor(state, "s1"), undefined);
+    assert.equal(targetFor(state, "s1"), undefined);
+    assert.equal(entryForTab(state, 12)?.sessionId, "s2");
+  });
+
+  it("follows the target tab and forgets it when the tab goes away", () => {
+    const state = emptyControl();
+    takeover(state, "s1", 10, 1_000);
+    setTarget(state, "s1", 10);
+    assert.equal(targetFor(state, "s1"), 10);
+    releaseTab(state, 10);
+    assert.equal(targetFor(state, "s1"), undefined);
+  });
+
+  it("keeps a taken-back pair blocked for the cooldown only", () => {
+    const state = emptyControl();
+    blockPair(state, "s1", 10, 1_000);
+    assert.equal(isBlocked(state, "s1", 10, 1_000 + BLOCK_MS - 1), true);
+    assert.equal(isBlocked(state, "s1", 10, 1_000 + BLOCK_MS), false);
+    assert.equal(isBlocked(state, "s2", 10, 1_000), false);
+    clearBlock(state, "s1", 10);
+    assert.equal(isBlocked(state, "s1", 10, 1_000), false);
+  });
+
+  it("prunes expired entries, blocks and requests", () => {
+    const state = emptyControl();
+    takeover(state, "s1", 10, 0);
+    takeover(state, "s1", 11, CONTROL_TTL_MS);
+    blockPair(state, "s1", 12, 0);
+    setPending(state, { requestId: "r1", sessionId: "s1", tabId: 12, at: 0 });
+
+    const result = pruneControl(state, CONTROL_TTL_MS + 10);
+    assert.equal(result.changed, true);
+    assert.deepEqual(result.released, [10]);
+    assert.equal(entryForTab(state, 10), undefined);
+    assert.equal(entryForTab(state, 11)?.sessionId, "s1");
+    assert.equal(isBlocked(state, "s1", 12, CONTROL_TTL_MS + 10), false);
+    assert.equal(state.pending, null);
+
+    // A second pass with nothing stale left must not report changes.
+    assert.equal(pruneControl(state, CONTROL_TTL_MS + 20).changed, false);
+  });
+
+  it("expires pending requests on their own clock", () => {
+    const state = emptyControl();
+    setPending(state, { requestId: "r1", sessionId: "s1", tabId: 10, at: 0 });
+    assert.equal(pruneControl(state, PENDING_TTL_MS - 1).changed, false);
+    assert.equal(pruneControl(state, PENDING_TTL_MS).changed, true);
+    assert.equal(state.pending, null);
+  });
+
+  it("clears pending only for the matching request", () => {
+    const state = emptyControl();
+    setPending(state, { requestId: "r1", sessionId: "s1", tabId: 10, at: 0 });
+    assert.equal(clearPending(state, "other"), null);
+    assert.equal(state.pending?.requestId, "r1");
+    assert.equal(clearPending(state, "r1")?.requestId, "r1");
+    assert.equal(state.pending, null);
+  });
+
+  it("parses a snapshot tolerantly", () => {
+    assert.deepEqual(parseControl(undefined), emptyControl());
+    assert.deepEqual(parseControl("junk"), emptyControl());
+    assert.deepEqual(parseControl({ entries: "junk" }), emptyControl());
+
+    const state = parseControl({
+      entries: [
+        { sessionId: "s1", tabId: 10, startedAt: 1, lastUsedAt: 2 },
+        { sessionId: "s1" },
+        null,
+      ],
+      anchors: { s1: 10, s2: "junk" },
+      targets: { s1: 11, s2: "junk" },
+      blocked: { "s1:12": 5, "s1:13": "junk" },
+      pending: { requestId: "r1", sessionId: "s1", tabId: 12 },
+    });
+    assert.deepEqual(
+      state.entries.map((entry) => entry.tabId),
+      [10],
+    );
+    assert.equal(state.anchors.s1, 10);
+    assert.equal("s2" in state.anchors, false);
+    assert.equal(state.targets.s1, 11);
+    assert.equal("s2" in state.targets, false);
+    assert.equal(state.blocked["s1:12"], 5);
+    assert.equal("s1:13" in state.blocked, false);
+    assert.equal(state.pending?.requestId, "r1");
+  });
+});

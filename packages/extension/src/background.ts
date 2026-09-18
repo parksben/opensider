@@ -47,6 +47,7 @@ import {
   blockPair,
   clearBlock,
   clearPending,
+  clearTarget,
   emptyControl,
   entryForTab,
   isBlocked,
@@ -57,7 +58,9 @@ import {
   releaseTab,
   setAnchor,
   setPending,
+  setTarget,
   takeover,
+  targetFor,
   touch,
 } from "./tab-control";
 import {
@@ -91,10 +94,22 @@ const INSTALL_HINT = "Send the prompt shown in the side panel to your local AI A
 // Reachable only from extension contexts (a page cannot call into the service worker), and it
 // exposes nothing the host could not already ask for. Declared up here so it exists as soon
 // as the module starts evaluating.
-(globalThis as unknown as Record<string, unknown>)["__opensiderDispatch"] = (command: BrowserCommand) =>
+(globalThis as unknown as Record<string, unknown>)["__opensiderDispatch"] = (
+  command: BrowserCommand,
+  sessionId?: string,
+) =>
   new Promise<BrowserResult | undefined>((resolve) => {
-    void dispatchCommand(command, undefined, resolve);
+    void dispatchCommand(command, sessionId, resolve);
   });
+
+// Test seams for `scripts/verify-tab-control.mjs`: the same handlers the side-panel port
+// uses for control messages, plus a read-only view of the control store.
+(globalThis as unknown as Record<string, unknown>)["__opensiderControl"] = (msg: ExtToHost) =>
+  handleControlMessage(msg);
+(globalThis as unknown as Record<string, unknown>)["__opensiderControlState"] = async () => {
+  await loadControlState();
+  return { entries: controlState.entries, pending: controlState.pending, blocked: controlState.blocked };
+};
 
 function isHostMissingError(message: string): boolean {
   const text = message.toLowerCase();
@@ -551,6 +566,9 @@ async function remapControlEntry(addedTabId: number, removedTabId: number): Prom
   const entry = entryForTab(controlState, removedTabId);
   if (!entry) return;
   entry.tabId = addedTabId;
+  for (const [sessionId, target] of Object.entries(controlState.targets)) {
+    if (target === removedTabId) controlState.targets[sessionId] = addedTabId;
+  }
   persistControl();
   void pushControlBadge(addedTabId, true);
   void publishControl();
@@ -634,7 +652,14 @@ async function resolveCommandTab(command: BrowserCommand, sessionId?: string): P
   }
 
   if (sessionId) {
-    const targetId = primaryTabFor(controlState, sessionId) ?? effectiveAnchor(sessionId, now);
+    let targetId = targetFor(controlState, sessionId);
+    if (targetId == null) {
+      targetId = effectiveAnchor(sessionId, now);
+      if (targetId != null) {
+        setTarget(controlState, sessionId, targetId);
+        persistControl();
+      }
+    }
     if (targetId != null) {
       let tab: chrome.tabs.Tab | undefined;
       try {
@@ -642,7 +667,11 @@ async function resolveCommandTab(command: BrowserCommand, sessionId?: string): P
       } catch {
         tab = undefined;
       }
-      if (tab?.id != null) {
+      if (tab?.id == null) {
+        // The route is stale: forget it and fall back to the user's current tab.
+        clearTarget(controlState, sessionId);
+        persistControl();
+      } else {
         const entry = entryForTab(controlState, tab.id);
         if (entry?.sessionId === sessionId) {
           touch(controlState, tab.id, now);
@@ -658,7 +687,18 @@ async function resolveCommandTab(command: BrowserCommand, sessionId?: string): P
             },
           };
         }
-        if (isControlWrite(command.method)) await adoptTab(sessionId, tab.id, now);
+        if (isControlWrite(command.method)) {
+          if (isBlocked(controlState, sessionId, tab.id, now)) {
+            return {
+              fail: {
+                error: "The user took this tab's control back (or declined) recently, so it is still off limits.",
+                reason: "borrow_denied",
+                hint: "Do not retry on your own; ask the user with cursor/ask_question if the task still needs it.",
+              },
+            };
+          }
+          await adoptTab(sessionId, tab.id, now);
+        }
         return { tab };
       }
     }
@@ -700,6 +740,9 @@ async function recordAnchor(sessionId: string | undefined, tabId: number | undef
   pendingAnchor = { tabId: id, at: Date.now() };
   if (sessionId) {
     setAnchor(controlState, sessionId, id);
+    // A new user message re-points the session: unqualified commands go back to the tab
+    // the user was on, even if the Agent had wandered to a tab of its own.
+    setTarget(controlState, sessionId, id);
     persistControl();
   }
 }
@@ -1689,6 +1732,11 @@ async function dispatchCommand(
     return;
   }
   if (sessionId) rememberControlSession(sessionId);
+  // A write is the Agent choosing where it works — an unqualified next command follows it.
+  if (sessionId && isControlWrite(command.method) && tab.id != null) {
+    setTarget(controlState, sessionId, tab.id);
+    persistControl();
+  }
   void armActivity(tab.id);
   const watched = Boolean(sessionId && entryForTab(controlState, tab.id));
   if (watched) void setActing(tab.id, 1);
@@ -1968,11 +2016,30 @@ function pickedItems(selector?: string): AttachmentItem[] {
   return [{ path: selector, name: selector, kind: "element" }];
 }
 
+/** The control messages the side panel can send (also reachable from the verify seams). */
+function handleControlMessage(msg: ExtToHost): boolean {
+  if (msg.type === "control.anchor") {
+    void recordAnchor(msg.sessionId, msg.tabId);
+    return true;
+  }
+  if (msg.type === "control.release") {
+    void releaseControlFor(msg.sessionId);
+    return true;
+  }
+  if (msg.type === "control.grant") {
+    void resolveBorrow(msg.requestId, msg.allow);
+    return true;
+  }
+  return false;
+}
+
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== "sidebar") return;
   sidebars.add(port);
   replay(port);
   connectNative();
+  // A panel just opened: its tab-control banner should be current, not a stale replay.
+  void publishControl();
   // A panel just opened: the tab it will work with has to start reading as visible even
   // if the Agent does not touch it until later.
   void armCurrentTab();
@@ -1985,18 +2052,7 @@ chrome.runtime.onConnect.addListener((port) => {
       void cancelPagePick();
       return;
     }
-    if (msg.type === "control.anchor") {
-      void recordAnchor(msg.sessionId, msg.tabId);
-      return;
-    }
-    if (msg.type === "control.release") {
-      void releaseControlFor(msg.sessionId);
-      return;
-    }
-    if (msg.type === "control.grant") {
-      void resolveBorrow(msg.requestId, msg.allow);
-      return;
-    }
+    if (handleControlMessage(msg)) return;
     sendNative(msg);
   });
   port.onDisconnect.addListener(() => {

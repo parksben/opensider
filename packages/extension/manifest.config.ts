@@ -45,7 +45,10 @@ export default defineManifest({
     // loader would be evaluated once per document.
   ],
   permissions: ["sidePanel", "nativeMessaging", "tabs", "windows", "storage", "unlimitedStorage", "scripting", "favicon"],
-  host_permissions: ["http://*/*", "https://*/*"],
+  // `<all_urls>` (not the http/https pair) is what `tabs.captureVisibleTab` accepts without an
+  // activeTab grant — screenshots must work on the Agent's pinned tab while the user looks
+  // elsewhere. Page abilities stay gated in code: only http(s) tabs are ever touched.
+  host_permissions: ["<all_urls>"],
   content_security_policy: {
     extension_pages: "script-src 'self'; object-src 'self'; img-src 'self' data: blob: file: https:;",
   },

@@ -32,6 +32,8 @@ export type ControlSnapshot = {
   entries: ControlEntry[];
   /** sessionId -> tabId the user was on when the session's message was sent. */
   anchors: Record<string, number>;
+  /** sessionId -> tabId commands with no `tabId` route to (anchor on a new prompt, then follows writes). */
+  targets: Record<string, number>;
   /** `sessionId:tabId` -> blockedAt (take-back / explicit deny). */
   blocked: Record<string, number>;
   pending: PendingBorrow | null;
@@ -42,7 +44,7 @@ export const BLOCK_MS = 10 * 60_000;
 export const PENDING_TTL_MS = 120_000;
 
 export function emptyControl(): ControlSnapshot {
-  return { entries: [], anchors: {}, blocked: {}, pending: null };
+  return { entries: [], anchors: {}, targets: {}, blocked: {}, pending: null };
 }
 
 function asNumber(value: unknown): number | undefined {
@@ -73,6 +75,12 @@ export function parseControl(raw: unknown): ControlSnapshot {
     for (const [sessionId, tabId] of Object.entries(data.anchors as Record<string, unknown>)) {
       const id = asNumber(tabId);
       if (id != null) state.anchors[sessionId] = id;
+    }
+  }
+  if (data.targets && typeof data.targets === "object") {
+    for (const [sessionId, tabId] of Object.entries(data.targets as Record<string, unknown>)) {
+      const id = asNumber(tabId);
+      if (id != null) state.targets[sessionId] = id;
     }
   }
   if (data.blocked && typeof data.blocked === "object") {
@@ -179,6 +187,9 @@ export function touch(state: ControlSnapshot, tabId: number, now: number): void 
 /** Returns the session that used to own the tab, if any. */
 export function releaseTab(state: ControlSnapshot, tabId: number): string | undefined {
   const entry = entryForTab(state, tabId);
+  for (const [sessionId, target] of Object.entries(state.targets)) {
+    if (target === tabId) delete state.targets[sessionId];
+  }
   if (!entry) return undefined;
   state.entries = state.entries.filter((item) => item.tabId !== tabId);
   if (state.pending?.tabId === tabId) state.pending = null;
@@ -190,6 +201,7 @@ export function releaseSession(state: ControlSnapshot, sessionId: string): numbe
   const mine = state.entries.filter((entry) => entry.sessionId === sessionId).map((entry) => entry.tabId);
   state.entries = state.entries.filter((entry) => entry.sessionId !== sessionId);
   delete state.anchors[sessionId];
+  delete state.targets[sessionId];
   if (state.pending?.sessionId === sessionId) state.pending = null;
   return mine;
 }
@@ -200,6 +212,18 @@ export function setAnchor(state: ControlSnapshot, sessionId: string, tabId: numb
 
 export function anchorFor(state: ControlSnapshot, sessionId: string): number | undefined {
   return state.anchors[sessionId];
+}
+
+export function setTarget(state: ControlSnapshot, sessionId: string, tabId: number): void {
+  state.targets[sessionId] = tabId;
+}
+
+export function targetFor(state: ControlSnapshot, sessionId: string): number | undefined {
+  return state.targets[sessionId];
+}
+
+export function clearTarget(state: ControlSnapshot, sessionId: string): void {
+  delete state.targets[sessionId];
 }
 
 export function setPending(state: ControlSnapshot, pending: PendingBorrow): void {

@@ -67,6 +67,7 @@ describe("page tools after late content-script inject", () => {
       "viewport",
       "measure",
       "runCommand",
+      "setControlBadge",
     ]);
   });
 
