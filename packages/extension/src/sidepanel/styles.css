@@ -529,3 +529,27 @@ mark.cs-at-match {
   margin: 0 auto;
   font-family: inherit;
 }
+
+/* Tab-control banner: state dot; pulses while a command is actually running. */
+.cs-control-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  background: var(--brass);
+}
+
+.cs-control-dot.is-acting {
+  animation: cs-control-pulse 1.1s ease-in-out infinite;
+}
+
+@keyframes cs-control-pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in oklab, var(--brass) 55%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 6px transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}

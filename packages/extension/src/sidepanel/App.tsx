@@ -10,6 +10,7 @@ import type {
   HostToExt,
   HostStatusState,
   FsPickMode,
+  TabControlState,
 } from "@shared";
 import { MousePointer2 } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -22,6 +23,7 @@ import type { ChatMessage, PermissionRequest, PlanPrompt, QuestionPrompt, TodoIt
 import { AgentSetup } from "./components/AgentSetup";
 import { BridgeSetup } from "./components/BridgeSetup";
 import { ChatPane } from "./components/ChatPane";
+import { ControlBanner, type BorrowRequest } from "./components/ControlBanner";
 import { Header } from "./components/Header";
 import { COMPACT_MAIN_PX } from "./layout";
 import { PermissionBar } from "./components/PermissionBar";
@@ -125,6 +127,10 @@ export function App() {
   const [questions, setQuestions] = useState<Record<string, QuestionPrompt>>({});
   const [plans, setPlans] = useState<Record<string, PlanPrompt>>({});
   const [pickingElement, setPickingElement] = useState(false);
+  /** Tab-control state from the service worker: who holds which tabs, per session. */
+  const [controlSessions, setControlSessions] = useState<TabControlState[]>([]);
+  /** A pending borrow request (entering a user tab), shown as a card in the banner. */
+  const [borrowRequest, setBorrowRequest] = useState<BorrowRequest>();
 
   const sendRef = useRef<(msg: ExtToHost) => void>(() => undefined);
   const reconnectRef = useRef<() => void>(() => undefined);
@@ -234,6 +240,13 @@ export function App() {
   const sendPrompt = (localId: string, sessionId: string, text: string, interrupt = false) => {
     const requestId = crypto.randomUUID();
     bindRegistry.current.add(requestId, localId, "prompt");
+    // Anchor the turn to the tab the user is on: the Agent's first write takes that tab
+    // over, and a later tab switch by the user will not drag the work somewhere else.
+    sendRef.current({
+      type: "control.anchor",
+      sessionId: sessionId || undefined,
+      tabId: pageRef.current?.tabId,
+    });
     sendRef.current({
       type: "prompt",
       text,
@@ -584,6 +597,27 @@ export function App() {
     }
     if (msg.type === "page") {
       setPage(msg.page);
+      return;
+    }
+
+    if (msg.type === "control") {
+      setControlSessions(msg.sessions);
+      return;
+    }
+
+    if (msg.type === "control.request") {
+      setBorrowRequest({
+        requestId: msg.requestId,
+        tabId: msg.tabId,
+        title: msg.title,
+        url: msg.url,
+        sessionId: msg.sessionId,
+      });
+      return;
+    }
+
+    if (msg.type === "control.request.done") {
+      setBorrowRequest((current) => (current?.requestId === msg.requestId ? undefined : current));
       return;
     }
 
@@ -1319,6 +1353,11 @@ export function App() {
       finishTurn(id);
     }
     clearHitl(id);
+    // Drop any tab the Agent was holding for this conversation.
+    const releasedAcpId = doomed
+      ? boundAcpId(doomed, selectedProviderRef.current) ?? doomed.acpSessionId
+      : undefined;
+    if (releasedAcpId) sendRef.current({ type: "control.release", sessionId: releasedAcpId });
     if (queuesRef.current[id]) setSessionQueue(id, []);
     if (editingQueueRef.current?.sessionId === id) editingQueueRef.current = null;
     bindRegistry.current.dropLocal(id);
@@ -1472,6 +1511,15 @@ export function App() {
 
   // 版本信息只算一次：顶栏更新图标、更新模态窗、抽屉设置 tab 都用它。
   // 三行同口径：不带 tag 的 v 前缀（version.ts 的 displayVersion）。
+  // Tab control for the selected conversation: the SW keys holders by ACP session id.
+  const selectedAcpId = selected ? boundAcpId(selected, selectedProviderId) : undefined;
+  const myControlTabs = selectedAcpId
+    ? controlSessions.find((item) => item.sessionId === selectedAcpId)?.tabs ?? []
+    : [];
+  // A borrow request is about a tab, not about a chat: show it whichever conversation
+  // is on screen, so an ask from another session cannot sit unseen.
+  const visibleBorrowRequest = borrowRequest;
+
   const versionInfo = {
     extension: displayVersion(EXTENSION_VERSION) ?? EXTENSION_VERSION,
     bridge: bridgeVersion ?? displayVersion(release?.version),
@@ -1509,6 +1557,18 @@ export function App() {
             setAgents([]);
             setError(t(locale, "reconnecting"));
             reconnectRef.current();
+          }}
+        />
+        <ControlBanner
+          locale={locale}
+          tabs={myControlTabs}
+          request={visibleBorrowRequest}
+          onRelease={() => {
+            if (selectedAcpId) sendRef.current({ type: "control.release", sessionId: selectedAcpId });
+          }}
+          onGrant={(requestId, allow) => {
+            sendRef.current({ type: "control.grant", requestId, allow });
+            setBorrowRequest(undefined);
           }}
         />
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
