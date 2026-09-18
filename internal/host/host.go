@@ -264,33 +264,38 @@ func (h *Host) sendHello() {
 // 拿它和本地版本比，决定要不要提示用户去更新（更新动作由用户自己的 AI Agent 按
 // 仓库里的 skill 执行，见 docs/TECH_DESIGN.md）。`release.check` 会强制重查一次。
 //
-// 失败只记日志：版本检查不该打扰用户，也不该挡住任何功能；有旧缓存就退回缓存。
+// 失败降级顺序：新鲜缓存 → 在线查询（API，退网页重定向）→ 陈旧缓存（标 stale，让
+// 面板手点检查如实报失败）。失败只记日志：版本检查不该打扰用户，也不该挡住任何功能。
 func (h *Host) checkRelease(force bool) {
 	if !force {
 		if info, ok := release.Cached(); ok {
-			h.sendRelease(info)
+			h.sendRelease(info, false)
 			return
 		}
 	}
 	info, err := release.Latest(6 * time.Second)
 	if err != nil {
 		log.Log("release check failed: " + err.Error())
-		if cached, ok := release.Cached(); ok {
-			h.sendRelease(cached)
+		if cached, ok := release.CachedAny(); ok {
+			h.sendRelease(cached, true)
 		}
 		return
 	}
 	log.Log("release latest=" + info.Tag)
-	h.sendRelease(info)
+	h.sendRelease(info, false)
 }
 
-func (h *Host) sendRelease(info release.Info) {
-	h.send(map[string]any{
+func (h *Host) sendRelease(info release.Info, stale bool) {
+	msg := map[string]any{
 		"type":      "release",
 		"version":   version.Display(),
 		"latest":    info.Tag,
 		"checkedAt": info.CheckedAt,
-	})
+	}
+	if stale {
+		msg["stale"] = true
+	}
+	h.send(msg)
 }
 
 func (h *Host) sendUIState() {

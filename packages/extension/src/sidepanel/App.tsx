@@ -109,6 +109,9 @@ export function App() {
   // 在对话区里看得见（status=ready 时 error 只当 tooltip，用户等于什么都没看到）。
   const [notice, setNotice] = useState<string>();
   const [release, setRelease] = useState<{ version: string; latest: string }>();
+  // 桥接版本从 `hello` 拿：它每次连上必发，而 `release` 消息在版本检查失败时可能
+  // 根本不来（之前就因此一直显示「未知」）。
+  const [bridgeVersion, setBridgeVersion] = useState<string>();
   const [updateOpen, setUpdateOpen] = useState(false);
   const [uninstallOpen, setUninstallOpen] = useState(false);
   const [checkState, setCheckState] = useState<ReleaseCheckState>("idle");
@@ -488,6 +491,7 @@ export function App() {
     }
     if (msg.type === "hello") {
       if (msg.providerId) connectedProviderRef.current = msg.providerId;
+      setBridgeVersion(displayVersion(msg.version));
       const host = displayVersion(msg.version);
       const extension = displayVersion(EXTENSION_VERSION);
       // Only compare real versions: a dev build reports something unparseable, and nagging
@@ -594,6 +598,11 @@ export function App() {
       if (checkPendingRef.current) {
         checkPendingRef.current = false;
         window.clearTimeout(checkWatchdogRef.current);
+        if (msg.stale) {
+          // 在线检查失败、这只是旧缓存：如实报失败，不要假装「已是最新」。
+          flashCheckState("failed");
+          return;
+        }
         if (isNewer(next.latest, EXTENSION_VERSION) || isNewer(next.latest, next.version)) {
           setCheckState("idle");
           setUpdateOpen(true);
@@ -1465,7 +1474,7 @@ export function App() {
   // 三行同口径：不带 tag 的 v 前缀（version.ts 的 displayVersion）。
   const versionInfo = {
     extension: displayVersion(EXTENSION_VERSION) ?? EXTENSION_VERSION,
-    bridge: displayVersion(release?.version),
+    bridge: bridgeVersion ?? displayVersion(release?.version),
     latest: displayVersion(release?.latest),
   };
   const updateAvailable =

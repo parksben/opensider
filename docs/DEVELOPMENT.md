@@ -54,7 +54,7 @@ pnpm --filter @opensider/extension build   # vite build + page-hooks
 pnpm pack-extension                        # dist-release/extension.zip
 
 # 3. 六个平台二进制（版本号用 ldflags 注进去，手编不带就是 dev）
-tag=v0.2.12
+tag=v0.3.0
 ldflags="-X github.com/parksben/opensider/internal/version.Version=$tag"
 CGO_ENABLED=1 go build -ldflags "$ldflags" -o dist-release/opensider-darwin-arm64 ./cmd/opensider
 CGO_ENABLED=1 GOARCH=amd64 CC="clang -arch x86_64" \
@@ -83,7 +83,7 @@ gh release create $tag --title $tag --notes-file dist-release/NOTES.md \
 gh workflow enable release.yml         # 恢复仓库状态
 ```
 
-发完自查：`dist-release/opensider-darwin-arm64 version` 应是 `0.2.12`（`internal/version.Display()` 剥掉 `v`）；`node -p "require('./packages/extension/dist/manifest.json').version"` 要和 tag 一致；`gh release view $tag --json assets` 应当正好 8 个（六个二进制 + `extension.zip` + `SHA256SUMS`）；`https://api.github.com/repos/parksben/opensider/releases/latest` 刷新到新 tag（侧栏的更新提示就看它，缓存 TTL 一小时）。
+发完自查：`dist-release/opensider-darwin-arm64 version` 应是 `0.3.0`（`internal/version.Display()` 剥掉 `v`）；`node -p "require('./packages/extension/dist/manifest.json').version"` 要和 tag 一致；`gh release view $tag --json assets` 应当正好 8 个（六个二进制 + `extension.zip` + `SHA256SUMS`）；`https://api.github.com/repos/parksben/opensider/releases/latest` 刷新到新 tag（侧栏的更新提示就看它，缓存 TTL 一小时）。
 
 踩过的坑：资产已经存在时上传会被拒，补传用 `gh release upload $tag <file> --clobber`；`dist-release/` 不入库（只提交 manifest 版本号和文档）；darwin 开 cgo 是为了 `internal/pick` 的 AppKit，x86_64 那条靠 `CC="clang -arch x86_64"`，SDK 不支持时宁可少了 amd64 也不能发个不能跑的；本地开发想要同样的版本号，`pnpm install-host` 会自动取最近一个 `v*` tag 注进二进制（没有 tag 就是 `dev`）。
 

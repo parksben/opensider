@@ -398,7 +398,7 @@ export type HostToExt =
       error?: string;
     }
   | { type: "artifacts"; items: AttachmentItem[]; sessionId?: string }
-  | { type: "release"; version: string; latest: string; checkedAt?: string }
+  | { type: "release"; version: string; latest: string; checkedAt?: string; stale?: boolean }
   | {
       type: "page.picked";
       requestId: string;
