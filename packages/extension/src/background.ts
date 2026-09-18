@@ -110,6 +110,12 @@ const INSTALL_HINT = "Send the prompt shown in the side panel to your local AI A
   await loadControlState();
   return { entries: controlState.entries, pending: controlState.pending, blocked: controlState.blocked };
 };
+// What the workspace files will say: the tab snapshot with `control` flags and the route
+// `current.json` carries (read-only; used by the same verify script).
+(globalThis as unknown as Record<string, unknown>)["__opensiderSnapshot"] = async () => {
+  await loadControlState();
+  return { snapshot: await collectTabsSnapshot(), target: await currentControlTarget() };
+};
 
 function isHostMissingError(message: string): boolean {
   const text = message.toLowerCase();

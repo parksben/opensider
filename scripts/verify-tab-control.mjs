@@ -3,15 +3,19 @@
 //
 //   openTab             -> opens in the background, never takes the user's view
 //   first write         -> takes the anchor tab over (badge on, state recorded)
-//   user switches tabs  -> the session keeps working in its pinned target
+//   new message         -> re-points the route; reads never move it, writes do
+//   navigation          -> the title mark survives it and is applied exactly once
 //   background capture  -> flips the view only for the shot and gives it back
-//   another user tab    -> borrow_required + a pending request, then granted on allow
+//   minimized window    -> capture fails with `needs_visible`, no hang
+//   openTab placement   -> lands in the session's window, not the user's focused one
+//   another user tab    -> borrow_required -> allow / deny / borrow_pending / borrow_held
 //   self-opened tab     -> writable without a gate
+//   workspace files     -> tabs.json `control` and current.json `target` track the hold
 //   take-back           -> releases everything, clears badges, blocks re-entry
 //
 // Everything is driven through the extension's own seams on the service worker
-// (`__opensiderDispatch` / `__opensiderControl` / `__opensiderControlState`), the same
-// handlers the side-panel port uses.
+// (`__opensiderDispatch` / `__opensiderControl` / `__opensiderControlState` /
+// `__opensiderSnapshot`), the same handlers the side-panel port uses.
 //
 //   node scripts/verify-tab-control.mjs             # expects packages/extension/dist
 //
@@ -77,7 +81,7 @@ function check(name, ok, detail = "") {
 }
 
 const server = createServer((req, res) => {
-  const name = (req.url ?? "/").replace(/^\//, "") || "a";
+  const name = ((req.url ?? "/").split("?")[0] ?? "").replace(/^\//, "") || "a";
   res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
   res.end(page(name));
 });
@@ -149,10 +153,26 @@ try {
   await fixtureA.goto(`http://127.0.0.1:${port}/a`);
   const fixtureB = await context.newPage();
   await fixtureB.goto(`http://127.0.0.1:${port}/b`);
+  const fixtureD = await context.newPage();
+  await fixtureD.goto(`http://127.0.0.1:${port}/d`);
+  const fixtureG = await context.newPage();
+  await fixtureG.goto(`http://127.0.0.1:${port}/g`);
+  const fixtureH = await context.newPage();
+  await fixtureH.goto(`http://127.0.0.1:${port}/h`);
 
   const tabOf = async (urlPart) =>
     panel.evaluate(
-      (part) => chrome.tabs.query({}).then((tabs) => tabs.find((tab) => (tab.url ?? "").includes(part))?.id ?? null),
+      (part) =>
+        chrome.tabs.query({}).then(
+          (tabs) =>
+            tabs.find((tab) => {
+              try {
+                return new URL(tab.url ?? "").pathname === part;
+              } catch {
+                return false;
+              }
+            })?.id ?? null,
+        ),
       urlPart,
     );
   const activeTab = async () =>
@@ -177,7 +197,14 @@ try {
 
   const tabA = await tabOf("/a");
   const tabB = await tabOf("/b");
-  check("found both fixture tabs", tabA != null && tabB != null, `A=${tabA} B=${tabB}`);
+  const tabD = await tabOf("/d");
+  const tabG = await tabOf("/g");
+  const tabH = await tabOf("/h");
+  check(
+    "found the fixture tabs",
+    [tabA, tabB, tabD, tabG, tabH].every((id) => id != null),
+    `A=${tabA} B=${tabB} D=${tabD} G=${tabG} H=${tabH}`,
+  );
 
   // 1. openTab goes to the background and never takes the user's view.
   await activate(tabA);
@@ -213,6 +240,16 @@ try {
   );
   check("the side panel shows the control banner", bannerUp.ok);
 
+  // 2b. The title mark survives navigation and is applied exactly once.
+  const navigated = await dispatch(
+    { id: `nav-${Date.now()}`, method: "navigate", args: { url: `http://127.0.0.1:${port}/a?step=2` } },
+    "verify-s1",
+  );
+  check("a held tab can navigate", navigated?.ok === true, navigated?.error);
+  const badgeAfterNav = await waitFor(async () => (await titleOf(tabA)).startsWith("● "), true);
+  check("the title mark survives navigation", badgeAfterNav.ok, `title=${badgeAfterNav.last}`);
+  check("the title mark is applied exactly once", (((await titleOf(tabA)).match(/● /g) ?? []).length === 1));
+
   // 3. The user switches tabs; commands keep going to the pinned target.
   await activate(tabB);
   const meta = await dispatch({ id: `meta-${Date.now()}`, method: "getMeta", args: {} }, "verify-s1");
@@ -222,22 +259,103 @@ try {
     `url=${meta?.data?.url}`,
   );
 
+  // 3b. A new user message re-points the session even while an old tab is still held.
+  await control({ type: "control.anchor", sessionId: "verify-s1", tabId: tabB });
+  const reanchored = await dispatch({ id: `re-${Date.now()}`, method: "click", args: { selector: "#btn" } }, "verify-s1");
+  check("a write after a new message follows the new anchor", reanchored?.ok === true, reanchored?.error);
+  const heldB = (await controlState()).entries.find((entry) => entry.tabId === tabB);
+  check("the new anchor tab is taken over", heldB?.sessionId === "verify-s1", JSON.stringify(heldB));
+  const afterRe = await dispatch({ id: `meta2-${Date.now()}`, method: "getMeta", args: {} }, "verify-s1");
+  check(
+    "unqualified commands follow the new anchor",
+    String(afterRe?.data?.url ?? "").includes("/b"),
+    `url=${afterRe?.data?.url}`,
+  );
+
+  // 3c. Reads do not move the route; the next write does.
+  const readA = await dispatch({ id: `readA-${Date.now()}`, method: "getMeta", args: { tabId: tabA } }, "verify-s1");
+  const stillB = await dispatch({ id: `meta3-${Date.now()}`, method: "getMeta", args: {} }, "verify-s1");
+  check(
+    "an explicit read does not move the route",
+    readA?.ok === true && String(stillB?.data?.url ?? "").includes("/b"),
+    `url=${stillB?.data?.url}`,
+  );
+  const writeA = await dispatch(
+    { id: `writeA-${Date.now()}`, method: "click", args: { selector: "#btn", tabId: tabA } },
+    "verify-s1",
+  );
+  const nowA = await dispatch({ id: `meta4-${Date.now()}`, method: "getMeta", args: {} }, "verify-s1");
+  check(
+    "an explicit write moves the route",
+    writeA?.ok === true && String(nowA?.data?.url ?? "").includes("/a"),
+    `url=${nowA?.data?.url}`,
+  );
+
   // 4. Capturing the background target flips the view only for the shot.
   const shot = await dispatch({ id: `shot-${Date.now()}`, method: "screenshot", args: {} }, "verify-s1");
   check("a background tab can be captured", shot?.ok === true, shot?.error);
   const restored = await waitFor(activeTab, tabB);
   check("the capture gives the user's view back", restored.ok, `active=${restored.last}`);
 
+  // 4b. A minimized window refuses capture with a clear reason instead of hanging.
+  const windowOfA = await panel.evaluate((id) => chrome.tabs.get(id).then((tab) => tab.windowId), tabA);
+  await panel.evaluate((windowId) => chrome.windows.update(windowId, { state: "minimized" }), windowOfA);
+  const minimizedShot = await dispatch(
+    { id: `shot-min-${Date.now()}`, method: "screenshot", args: { tabId: tabA } },
+    "verify-s1",
+  );
+  check(
+    "a minimized window refuses capture with a reason",
+    minimizedShot?.ok === false && minimizedShot?.reason === "needs_visible",
+    `reason=${minimizedShot?.reason}`,
+  );
+  await panel.evaluate((windowId) => chrome.windows.update(windowId, { state: "normal" }), windowOfA);
+
+  // 4c. openTab lands in the session's window, not the user's focused one.
+  const otherWindow = await panel.evaluate(
+    (url) => chrome.windows.create({ url, focused: true }).then((win) => win.id),
+    `http://127.0.0.1:${port}/f`,
+  );
+  await panel.evaluate((id) => chrome.windows.update(id, { focused: true }), otherWindow);
+  const userView = () =>
+    panel.evaluate(() =>
+      chrome.windows.getLastFocused({ populate: true }).then((win) => ({
+        windowId: win.id,
+        activeTab: win.tabs?.find((tab) => tab.active)?.id ?? null,
+      })),
+    );
+  const focusBefore = await userView();
+  const openedQuiet = await dispatch(
+    { id: `open2-${Date.now()}`, method: "openTab", args: { url: `http://127.0.0.1:${port}/w` } },
+    "verify-s1",
+  );
+  const placed = await panel.evaluate(
+    ([createdId, expectedWindow]) => chrome.tabs.get(createdId).then((tab) => tab.windowId === expectedWindow),
+    [openedQuiet?.data?.tabId, windowOfA],
+  );
+  check(
+    "openTab lands in the session's window",
+    openedQuiet?.ok === true && placed,
+    JSON.stringify(openedQuiet?.data ?? openedQuiet?.error),
+  );
+  const focusAfter = await userView();
+  check(
+    "openTab leaves the user's view alone",
+    focusAfter.windowId === focusBefore.windowId && focusAfter.activeTab === focusBefore.activeTab,
+    `${JSON.stringify(focusBefore)} -> ${JSON.stringify(focusAfter)}`,
+  );
+  await panel.evaluate((windowId) => chrome.windows.remove(windowId), otherWindow);
+
   // 5. Another user tab needs a grant.
   const gated = await dispatch(
-    { id: `gated-${Date.now()}`, method: "click", args: { selector: "#btn", tabId: tabB } },
+    { id: `gated-${Date.now()}`, method: "click", args: { selector: "#btn", tabId: tabH } },
     "verify-s1",
   );
   check("an un-held user tab asks first", gated?.ok === false && gated?.reason === "borrow_required", `reason=${gated?.reason}`);
   const pending = (await controlState()).pending;
-  check("a borrow request is pending", Boolean(pending) && pending.tabId === tabB);
-  const noBadgeB = !(await titleOf(tabB)).startsWith("● ");
-  check("the un-held tab carries no mark yet", noBadgeB);
+  check("a borrow request is pending", Boolean(pending) && pending.tabId === tabH);
+  const noBadgeH = !(await titleOf(tabH)).startsWith("● ");
+  check("the un-held tab carries no mark yet", noBadgeH);
   const cardUp = await waitFor(
     async () => /asks to work in|想操作/.test(await panel.evaluate(() => document.body.innerText)),
     true,
@@ -247,12 +365,41 @@ try {
   // 6. Allowing grants it.
   await control({ type: "control.grant", requestId: pending?.requestId ?? "", allow: true });
   const allowed = await dispatch(
-    { id: `allowed-${Date.now()}`, method: "click", args: { selector: "#btn", tabId: tabB } },
+    { id: `allowed-${Date.now()}`, method: "click", args: { selector: "#btn", tabId: tabH } },
     "verify-s1",
   );
   check("after allowing, the same command works", allowed?.ok === true, allowed?.error);
-  const badgeB = await waitFor(async () => (await titleOf(tabB)).startsWith("● "), true);
-  check("the granted tab carries the title mark", badgeB.ok, `title=${badgeB.last}`);
+  const badgeH = await waitFor(async () => (await titleOf(tabH)).startsWith("● "), true);
+  check("the granted tab carries the title mark", badgeH.ok, `title=${badgeH.last}`);
+
+  // 6b. Reads on an un-held tab go through the same gate.
+  const readD = await dispatch({ id: `readD-${Date.now()}`, method: "getMeta", args: { tabId: tabD } }, "verify-s1");
+  check("reading an un-held tab asks first", readD?.ok === false && readD?.reason === "borrow_required", `reason=${readD?.reason}`);
+  const pendingD = (await controlState()).pending;
+  check("the read request is pending", pendingD?.tabId === tabD);
+
+  // 6c. Only one request at a time: a second session waits its turn.
+  const busy = await dispatch(
+    { id: `busy-${Date.now()}`, method: "click", args: { selector: "#btn", tabId: tabG } },
+    "verify-s2",
+  );
+  check("a second request answers borrow_pending", busy?.ok === false && busy?.reason === "borrow_pending", `reason=${busy?.reason}`);
+
+  // 6d. Denying keeps the tab off limits without re-asking.
+  await control({ type: "control.grant", requestId: pendingD?.requestId ?? "", allow: false });
+  const deniedAgain = await dispatch(
+    { id: `deny2-${Date.now()}`, method: "click", args: { selector: "#btn", tabId: tabD } },
+    "verify-s1",
+  );
+  check("a denied tab is off limits", deniedAgain?.ok === false && deniedAgain?.reason === "borrow_denied", `reason=${deniedAgain?.reason}`);
+  check("a denied tab does not re-ask while cooling down", (await controlState()).pending === null);
+
+  // 6e. Another conversation cannot take a held tab.
+  const foreign = await dispatch(
+    { id: `foreign-${Date.now()}`, method: "click", args: { selector: "#btn", tabId: tabA } },
+    "verify-s2",
+  );
+  check("another session answers borrow_held", foreign?.ok === false && foreign?.reason === "borrow_held", `reason=${foreign?.reason}`);
 
   // 7. A self-opened tab needs no gate.
   await dispatch({ id: `wait-${Date.now()}`, method: "waitFor", args: { selector: "#btn", timeoutMs: 5000, tabId: created } }, "verify-s1");
@@ -261,6 +408,23 @@ try {
     "verify-s1",
   );
   check("a self-opened tab works without a gate", ownTab?.ok === true, ownTab?.error);
+
+  // 7b. The agent-facing snapshot marks holders and the route.
+  const view = await sw.evaluate(() => globalThis.__opensiderSnapshot());
+  const controlOf = (tabId) =>
+    view.snapshot.windows.flatMap((win) => win.tabs).find((tab) => tab.tabId === tabId)?.control;
+  check(
+    "tabs.json marks every held tab",
+    [tabA, tabB, created, tabH].every((id) => controlOf(id) === "agent") &&
+      controlOf(tabD) === "user" &&
+      controlOf(tabG) === "user",
+    JSON.stringify({ a: controlOf(tabA), b: controlOf(tabB), c: controlOf(created), d: controlOf(tabD), g: controlOf(tabG), h: controlOf(tabH) }),
+  );
+  check(
+    "current.json routes to the last tab the Agent worked in",
+    view.target?.tabId === created,
+    `target=${JSON.stringify(view.target)}`,
+  );
 
   // 8. Take-back releases everything, clears marks and blocks re-entry for a while.
   await control({ type: "control.release", sessionId: "verify-s1" });
@@ -272,7 +436,7 @@ try {
   );
   const marksGone = await waitFor(
     async () => {
-      const titles = await Promise.all([titleOf(tabA), titleOf(tabB), titleOf(created)]);
+      const titles = await Promise.all([titleOf(tabA), titleOf(tabB), titleOf(created), titleOf(tabH)]);
       return titles.every((title) => !title.startsWith("● "));
     },
     true,
@@ -283,6 +447,13 @@ try {
     true,
   );
   check("take-back takes the banner down", bannerDown.ok);
+
+  // 8b. The workspace files follow the release too.
+  const viewAfter = await sw.evaluate(() => globalThis.__opensiderSnapshot());
+  const anyAgent = viewAfter.snapshot.windows.flatMap((win) => win.tabs).some((tab) => tab.control === "agent");
+  check("take-back clears control in tabs.json", !anyAgent);
+  check("take-back clears the route in current.json", viewAfter.target === undefined, JSON.stringify(viewAfter.target));
+
   const blockedWrite = await dispatch({ id: `blocked-${Date.now()}`, method: "click", args: { selector: "#btn" } }, "verify-s1");
   check(
     "a taken-back tab is off limits (no silent re-take)",
