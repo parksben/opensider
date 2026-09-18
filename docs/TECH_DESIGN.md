@@ -59,7 +59,7 @@ Cursor Agent 在 ACP 模式下仍然自己执行本地工具（读文件、写�
 - `starting` 有看门狗：连上后约 10s 还没离开 starting，广播 `error`（附 `~/.opensider/host.log`），避免点 Connection 空转。若已经收到非空 `agents`，看门狗直接当 detect 完成（回放名单并视为 idle），不要再报 starting。侧栏「没有找到 CLI」只在收到过 `agents` 且为空时出现。
 - 往 Native / 侧栏端口发消息一律 try/catch，断开时清掉引用并写出 `chrome.runtime.lastError`
 - 缓存最近一次 `status` / `session` / `page` / `models`，侧栏 `onConnect` 或 `ping` 时立即回放，避免 Host 已 ready 但面板因 React StrictMode 重挂而一直显示离线。连接中的空 `models` 不写入缓存（那是还在加载，不是确认空名单）。Host 在 `hello` 且已 `ready` 时再推一次 catalog。
-- 在 Side Panel、Content Script、Host 之间转发消息；`page.pick` 只走内容脚本，不进 Native Host。内容脚本 `run_at: document_start`，避免 YouTube `/watch` 迟迟不到 `document_idle`。先在活动主框探测 `__opensiderPage` API，失败则 `executeScript` 补注入（`injectImmediately`，先 `allFrames` 再退回主框），并轮询等到 CRXJS loader 的 `import()` 挂上 API。**页面命令、快照、量测、未保存探测与拾取走同一通道**：就绪后在**当前活动文档的主框**里直接调用 `runCommand` / `snapshot` / `measure` / `viewport` / `startPick`。不用 `tabs.sendMessage` 做页面 RPC：扩展重载后旧标签内容脚本已成孤儿、CRXJS loader 尚未 `import`、YouTube 预渲染文档都会变成 `Receiving end does not exist`。`dispatchCommand` 的目标标签与 `current.json` 相同——焦点普通窗口的活动标签，不用 Service Worker 的 `currentWindow`。YouTube / youtu.be 是普通 http(s)，不当系统页。系统页不注入，命令回明确 restricted 错误；http(s) 注入失败则 `ok: false` 并写清原因。`requestPage` 同样先 ensure 再 snapshot，避免 `snapshot.md` / `interactive.md` 只剩 url/title。
+- 在 Side Panel、Content Script、Host 之间转发消息；`page.pick` 只走内容脚本，不进 Native Host。内容脚本 `run_at: document_start`，避免 YouTube `/watch` 迟迟不到 `document_idle`。先在活动主框探测 `__opensiderPage` API，失败则 `executeScript` 补注入（`injectImmediately`，先 `allFrames` 再退回主框），并轮询等到 CRXJS loader 的 `import()` 挂上 API。**页面命令、快照、量测、未保存探测与拾取走同一通道**：就绪后在**当前活动文档的主框**里直接调用 `runCommand` / `snapshot` / `measure` / `viewport` / `startPick`。不用 `tabs.sendMessage` 做页面 RPC：扩展重载后旧标签内容脚本已成孤儿、CRXJS loader 尚未 `import`、YouTube 预渲染文档都会变成 `Receiving end does not exist`。`dispatchCommand` 的目标标签默认是焦点普通窗口的活动标签（不用 Service Worker 的 `currentWindow`）；存在接管 / 锚点 / 显式 `tabId` 时按「Agent 标签接管」一节的路由规则解析。YouTube / youtu.be 是普通 http(s)，不当系统页。系统页不注入，命令回明确 restricted 错误；http(s) 注入失败则 `ok: false` 并写清原因。`requestPage` 同样先 ensure 再 snapshot，避免 `snapshot.md` / `interactive.md` 只剩 url/title。
 - 监听 `tabs.onActivated` / `onUpdated` / `onRemoved` / `onReplaced` / `onCreated` / `onMoved` / `onAttached` / `onDetached` 以及 `windows.onFocusChanged` / `onRemoved`。活动标签可能变化时，解析焦点普通窗口里当前 `active` 的标签（不要用刚关掉的 tabId），立刻并在 250ms 防抖后再推 `page.update`，同时防抖写 `tabs.update`。Chrome 关掉活动标签后不一定再发 `onActivated`，所以 `onRemoved` 必须自己跟上替换标签，禁止 `current.json` 停在已关闭 tabId
 - 点击工具栏图标打开 Side Panel（`setPanelBehavior({ openPanelOnActionClick: true })`）。manifest **没有** `default_popup`：工具栏点击不会弹出独立 action 窗，侧栏画在当前浏览器窗口里。录演示时禁止把 Side Panel 拖出窗口。
 - Go Host 一启动就往 `~/.opensider/host.log` 打一行，便于判断 Chrome 有没有真正拉起 Host（该文件按大小与日期轮转，见下）
@@ -167,8 +167,8 @@ Host 是一份 Go 二进制（`cmd/opensider` + `internal/`）。`browser/tools.
     outputs/                 # 用户会打开的任务产物；Ensure() 每次 0755 创建
     browser/
       tools.json             # 机器可读方法目录，Host 启动时写入（含 outputsDir）
-      current.json           # 当前标签：tabId, url, title, updatedAt
-      tabs.json              # 全部普通窗口/标签：tabId, windowId, title, url, active, pinned, restricted
+      current.json           # 当前标签：tabId, url, title, updatedAt, target（Agent 的命令路由目标）
+      tabs.json              # 全部普通窗口/标签：tabId, windowId, title, url, active, pinned, restricted, control
       snapshot.md            # 交互控件列表 + 可读正文
       interactive.md         # 仅编号交互控件，填表/点击先读这份
       commands/<id>.json     # Agent 写入的页面命令
@@ -476,7 +476,29 @@ Host 是通用 ACP Client + 数据驱动 `AgentProfile`（启动命令、鉴权�
 8. 若有文件附件，再追加 `[Attachments]` 绝对路径；若有拾取的元素，再追加 `[Picked page elements]` 和 CSS selector，并写明用页面工具的 `args.selector` 去查看或操作。正文里的 `@` 芯片先展开成 `@标题`，再按种类追加 `[Mentioned tabs]` / `[Mentioned attachments]`（UI 气泡里只显示用户正文和芯片，不显示这些块）
 9. 同时防抖写 `browser/tabs.json`。若当前 tabId 已不在打开集合里，立刻清掉 `current.json` 里的旧 tabId（空 url/title），不得停在已关闭标签。Agent `switchTab` / `moveTabsToWindow` 成功后再抓当前页快照
 
-不在切换时往会话里塞一条用户消息，以免污染对话。Agent 需要更多页面内容时，按 `AGENTS.md` 读 snapshot 或写命令文件。跨标签先读 `tabs.json`（或 `listTabs`）拿 `tabId`，再 `switchTab`，然后用原来的页面方法操作新的当前页。同域链接点击规则不变（见聊天正文链接）：这套同步管的是标签身份 / 当前页，不是页内链接点击。
+不在切换时往会话里塞一条用户消息，以免污染对话。Agent 需要更多页面内容时，按 `AGENTS.md` 读 snapshot 或写命令文件。跨标签先读 `tabs.json`（或 `listTabs`）拿 `tabId`，然后在命令里带 `tabId` 直接操作（`switchTab` 只用于把标签展示给用户，不再作为选工作对象的手段；规则见「Agent 标签接管」）。同域链接点击规则不变（见聊天正文链接）：这套同步管的是标签身份 / 当前页，不是页内链接点击。
+
+## Agent 标签接管（借用 / 收回）
+
+让「Agent 在干活」与「用户在用浏览器」互不打扰：命令路由与用户焦点**解耦**；进入用户标签要过闸；状态处处可见、随时可收回。
+
+**状态（SW，`chrome.storage.session`）**：`entries[]`（tabId → `{ sessionId, startedAt, lastUsedAt }`，一张标签同时只属一个会话）、`anchors{}`（sessionId → 锚点 tabId）、`blocked{}`（`sessionId:tabId` → 时间戳，10 分钟冷却）、`pending`（借用请求，同时最多一条）。`sessionId` 用 Host 打在 `browser.command` 上的 ACP 会话标注；锚点由侧栏在 `sendPrompt` 时通过 `control.anchor` 上报（新会话还没有 acpId 时先记「最近锚点」，命令到达时兜底认领）。TTL 30 分钟，惰性清理（下次命令 / 广播 / 面板连接时判）。没有 `sessionId` 的命令（verify 脚本、`__opensiderDispatch` 测试通道）不启用闸门，行为同今天。
+
+**路由（`dispatchCommand` 前置闸门）**：目标解析顺序 = `args.tabId` → 本会话接管的主目标（最近使用的 entry）→ 会话锚点 → 焦点活动标签。写类（act / 导航）落点若是锚点或主目标 → **自动接管**（`autoDiscardable:false`、推标题徽标、广播 control）；若是未接管的其它用户标签 → 未阻塞则建借用请求（`control.request`，侧栏弹卡）并返回 `reason=borrow_required` + `hint`，阻塞 / 冷却中则 `borrow_denied` 静默拒绝，被别的会话持有则 `borrow_held`。读类在锚点 / 主目标 / 自建 / 已接管上直通，其它标签同样过闸。
+
+**收回（`control.release`）**：释放该会话全部接管，并对每个标签写 `blocked`（防止立即重接管）；广播状态、撤徽标。侧栏在会话删除时也发这条。进行中的等待（`waitFor` 轮询）随内容脚本的取消通道收尾；已派发的动作不回滚，结果里带 `revoked` 语义。
+
+**窗口方法**：`openTab` 改为 `active:false` + 不聚焦窗口 + 开在目标标签旁（拿不到目标则焦点窗口），成功后自动接管（自建）；`switchTab` 保留原语义，只当展示动作（`agents.md` 写明不要用它选工作对象）；`closeTab` 目标是未接管的用户标签 → `borrow_required`（未保存拦截照旧）。
+
+**截图**：`runCapture` 前守卫式激活——目标窗口最小化 → `needs_visible`；目标已是活动标签 → 直接拍；否则 `tabs.update({active:true})`（不碰窗口焦点）→ 拍 → 仅在活动标签仍是它时还原原活动标签。`captureVisibleTab` 抓的是**窗口的活动标签**，不做这层会拍到用户正看的页。
+
+**标题徽标（隔离世界）**：内容脚本 `control-badge.ts` 维护 `document.title` 的「● 」前缀——SPA 改写标题时用 MutationObserver 维持，释放时只剥离自己加的那一个；经 `callPageApi("setControlBadge")` 推送，接管 / 释放时各推一次，`tabs.onUpdated`（接管中的标签）再推一次兜住导航重建。
+
+**互不影响的前置修复**：`agent-cursor` 的逐帧动画在后台标签会**永久挂起**——activity shim 是主世界补丁，盖不到隔离世界。做法：`document.visibilityState === "hidden"` 时走瞬移（与 `REDUCED` 同路径），并给 `moveTo` 加兜底计时器（动画中途被隐藏也能 resolve）。命令 in-flight 置 `acting` 标记，供 banner 区分「正在操作」与「已接管」。
+
+**工作区文件**：`current.json`（`CurrentPage`）新增 `target`（当前命令路由目标，可能不同于用户视点）；`tabs.json`（`TabRecord`）新增 `control: "user" | "agent"`；`BrowserResult` 新增 `reason` / `hint`（Host 原样透传进结果文件）。`tools.json` version 11 → 12；`agents.md` 写清路由规则、`borrow_required` 后的做法（提醒用户看侧栏卡片、允许后重试一次、被拒绝就停）与 `switchTab` / `openTab` 新语义。
+
+**侧栏**：`ControlBanner`（Header 之下）从 SW 广播 `control` 取状态（按选中会话的 acpId 匹配），带「收回」；借用请求卡在同一区域渲染（`control.request` → 允许 / 拒绝 → `control.grant`）。`sendPrompt` 时上报锚点；会话删除时发 `control.release`。
 
 ## ACP 映射
 
