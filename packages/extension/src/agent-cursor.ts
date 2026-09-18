@@ -7,6 +7,25 @@ const MOVE_MS = 450;
 const HIDE_MS = 1600;
 const REDUCED = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
+/**
+ * Hidden tabs stop delivering animation frames, and this cursor runs in the isolated world —
+ * the MAIN-world activity shim cannot patch its `requestAnimationFrame`. Everything that
+ * waits for the cursor therefore has to degrade gracefully: snap into place when the tab is
+ * hidden (a background command would otherwise hang forever), and keep a wall-clock fallback
+ * in case the tab is hidden mid-move.
+ */
+function hiddenNow(): boolean {
+  try {
+    return document.visibilityState === "hidden";
+  } catch {
+    return false;
+  }
+}
+
+function instant(): boolean {
+  return REDUCED || hiddenNow();
+}
+
 type Point = { x: number; y: number };
 
 let host: HTMLElement | undefined;
@@ -17,6 +36,7 @@ let ringEl: HTMLElement | undefined;
 let current: Point | undefined;
 let target: Point = { x: 0, y: 0 };
 let raf = 0;
+let moveTimer = 0;
 let hideTimer = 0;
 
 const STYLE = `
@@ -115,20 +135,28 @@ function scheduleHide(): void {
   }, HIDE_MS);
 }
 
+function settle(resolve: () => void): void {
+  if (moveTimer) {
+    window.clearTimeout(moveTimer);
+    moveTimer = 0;
+  }
+  resolve();
+}
+
 function tick(resolve: () => void, started: number): void {
+  raf = 0;
   if (!current) {
-    resolve();
+    settle(resolve);
     return;
   }
   const nx = current.x + (target.x - current.x) * LERP;
   const ny = current.y + (target.y - current.y) * LERP;
   const done =
-    Math.hypot(target.x - nx, target.y - ny) < SNAP || Date.now() - started >= MOVE_MS || REDUCED;
+    Math.hypot(target.x - nx, target.y - ny) < SNAP || Date.now() - started >= MOVE_MS;
   current = done ? { ...target } : { x: nx, y: ny };
   placeCursor(current);
   if (done) {
-    raf = 0;
-    resolve();
+    settle(resolve);
     return;
   }
   raf = requestAnimationFrame(() => tick(resolve, started));
@@ -138,17 +166,30 @@ function moveTo(point: Point): Promise<void> {
   ensure();
   if (host) host.style.opacity = "1";
   if (!current) {
-    current = REDUCED ? { ...point } : { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+    current = instant() ? { ...point } : { x: window.innerWidth / 2, y: window.innerHeight / 2 };
     placeCursor(current);
   }
   target = point;
-  if (REDUCED) {
+  if (instant()) {
     current = { ...point };
     placeCursor(current);
     return Promise.resolve();
   }
   if (raf) cancelAnimationFrame(raf);
+  if (moveTimer) window.clearTimeout(moveTimer);
   return new Promise((resolve) => {
+    // The frame loop drives the animation; this timer settles the move if frames stop
+    // arriving (the tab went hidden mid-move) so the command behind it never hangs.
+    moveTimer = window.setTimeout(() => {
+      moveTimer = 0;
+      if (raf) {
+        cancelAnimationFrame(raf);
+        raf = 0;
+      }
+      current = { ...target };
+      placeCursor(current);
+      resolve();
+    }, MOVE_MS + 120);
     raf = requestAnimationFrame(() => tick(resolve, Date.now()));
   });
 }
@@ -171,7 +212,7 @@ export async function pointAt(el: HTMLElement, click = false): Promise<Point> {
   await moveTo(point);
   if (click) {
     flashClick();
-    await new Promise((resolve) => setTimeout(resolve, REDUCED ? 40 : 140));
+    await new Promise((resolve) => setTimeout(resolve, instant() ? 40 : 140));
   }
   scheduleHide();
   return point;

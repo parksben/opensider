@@ -9,6 +9,7 @@ export const PAGE_API_METHODS = [
   "viewport",
   "measure",
   "runCommand",
+  "setControlBadge",
 ] as const;
 
 export type PageApiMethod = (typeof PAGE_API_METHODS)[number];

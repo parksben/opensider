@@ -169,6 +169,8 @@ export type TabRecord = {
   active: boolean;
   pinned: boolean;
   restricted: boolean;
+  /** Who may work in this tab right now: the user, or an OpenSider session. */
+  control?: "user" | "agent";
 };
 
 export type WindowRecord = {
@@ -208,6 +210,11 @@ export type CurrentPage = {
   readable?: string;
   interactive?: string;
   favIconUrl?: string;
+  /**
+   * The tab the Agent's browser commands route to right now (see tab-control in the SW).
+   * May differ from the tab above, which is what the *user* is looking at.
+   */
+  target?: { tabId: number; url: string; title: string };
 };
 
 export type BrowserCommand = {
@@ -222,12 +229,31 @@ export type BrowserResult = {
   method: PageMethod;
   data?: unknown;
   error?: string;
+  /** Machine-readable cause for control gates: borrow_required / borrow_denied / borrow_held / needs_focus / needs_visible / revoked. */
+  reason?: string;
+  /** One line the Agent can act on (e.g. what to do after a borrow request). */
+  hint?: string;
 };
 
 export type TodoItem = {
   id: string;
   content: string;
   status: "pending" | "in_progress" | "completed" | "cancelled";
+};
+
+/** One tab a session may work in (borrowed anchor or self-created). */
+export type ControlTab = {
+  tabId: number;
+  title: string;
+  url: string;
+  /** A command is executing in this tab right now. */
+  acting: boolean;
+};
+
+/** Tab control state for one session, as shown in the side panel banner. */
+export type TabControlState = {
+  sessionId: string;
+  tabs: ControlTab[];
 };
 
 export type PermissionOption = {
@@ -328,6 +354,9 @@ export type ExtToHost =
   | { type: "fs.preview"; requestId: string; path: string }
   | { type: "page.pick"; requestId: string; hint?: string }
   | { type: "page.pick.cancel"; requestId?: string }
+  | { type: "control.anchor"; sessionId?: string; tabId?: number }
+  | { type: "control.release"; sessionId?: string }
+  | { type: "control.grant"; requestId: string; allow: boolean }
   | { type: "release.check" }
   | { type: "model.set"; modelId: string; sessionId?: string }
   | { type: "page.update"; page: CurrentPage }
@@ -362,6 +391,16 @@ export type HostToExt =
   | { type: "cursor"; id?: number; method: string; params: Record<string, unknown>; sessionId?: string }
   | { type: "turn.end"; stopReason: string; sessionId?: string; error?: string; interrupted?: boolean }
   | { type: "page"; page: CurrentPage }
+  | { type: "control"; sessions: TabControlState[] }
+  | {
+      type: "control.request";
+      requestId: string;
+      tabId: number;
+      title: string;
+      url: string;
+      sessionId?: string;
+    }
+  | { type: "control.request.done"; requestId: string; allow: boolean }
   | { type: "browser.command"; command: BrowserCommand; sessionId?: string }
   | { type: "browser.result"; result: BrowserResult; sessionId?: string }
   | {

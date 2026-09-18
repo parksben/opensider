@@ -11,6 +11,8 @@ import type {
   NativeUiSnapshot,
   OverlaySnapshot,
   PageActivityState,
+  PageMethod,
+  TabControlState,
   TabRecord,
   TabsSnapshot,
 } from "@shared";
@@ -38,6 +40,26 @@ import {
 } from "./page-pick";
 import { captureViewport } from "./screenshot";
 import { splitStateText, StateChunkSink } from "./state-transfer";
+import {
+  type ControlSnapshot,
+  anchorFor,
+  blockKey,
+  blockPair,
+  clearBlock,
+  clearPending,
+  emptyControl,
+  entryForTab,
+  isBlocked,
+  parseControl,
+  primaryTabFor,
+  pruneControl,
+  releaseSession,
+  releaseTab,
+  setAnchor,
+  setPending,
+  takeover,
+  touch,
+} from "./tab-control";
 import {
   isClosedCurrentTab,
   resolveActiveTab,
@@ -185,6 +207,7 @@ function replay(port: chrome.runtime.Port): void {
     if (lastModels) port.postMessage(lastModels);
     if (lastRelease) port.postMessage(lastRelease);
     if (lastUiState) port.postMessage(lastUiState);
+    if (lastControl) port.postMessage(lastControl);
   } catch {
     sidebars.delete(port);
   }
@@ -334,12 +357,406 @@ function fail(command: BrowserCommand, error: string, data?: unknown): BrowserRe
   return { id: command.id, ok: false, method: command.method, error, data };
 }
 
+/** A failed result with the machine-readable control gate fields attached. */
+function failWith(
+  command: BrowserCommand,
+  failure: { error: string; reason?: string; hint?: string },
+): BrowserResult {
+  return {
+    id: command.id,
+    ok: false,
+    method: command.method,
+    error: failure.error,
+    reason: failure.reason,
+    hint: failure.hint,
+  };
+}
+
 type UnsavedProbe = {
   dirty: boolean;
   reasons: string[];
   fields?: Array<{ label?: string; name?: string; reason: string }>;
   beforeunload?: boolean;
 };
+
+// --- Agent tab control (borrow / take-back) --------------------------------------------
+//
+// Routing is decoupled from the user's focus (see docs/TECH_DESIGN.md «Agent 标签接管»):
+// a session works in the tabs it holds — its anchor, taken over on the first write, or the
+// tabs it opened itself. Any other user tab needs an explicit grant from the side panel.
+
+const CONTROL_KEY = "opensiderTabControl";
+const ANCHOR_FRESH_MS = 5 * 60_000;
+
+type ControlGate = {
+  tab?: chrome.tabs.Tab;
+  fail?: { error: string; reason: string; hint?: string };
+};
+
+let controlState: ControlSnapshot = emptyControl();
+let controlLoaded = false;
+let lastControl: HostToExt | undefined;
+let lastControlSessionId: string | undefined;
+/** Anchor reported for a session the SW does not know yet (brand-new chat, first prompt). */
+let pendingAnchor: { tabId: number; at: number } | null = null;
+/** tabId -> commands in flight; drives the banner's "working" state. */
+const actingTabs = new Map<number, number>();
+
+async function loadControlState(): Promise<void> {
+  if (controlLoaded) return;
+  controlLoaded = true;
+  try {
+    const raw = (await chrome.storage.session.get(CONTROL_KEY))?.[CONTROL_KEY];
+    controlState = parseControl(raw);
+  } catch {
+    controlState = emptyControl();
+  }
+}
+
+function persistControl(): void {
+  try {
+    void chrome.storage.session.set({ [CONTROL_KEY]: controlState });
+  } catch {
+    // best effort; the TTL prunes anything that lingers
+  }
+}
+
+async function buildControlStates(): Promise<TabControlState[]> {
+  const sessions = new Map<string, TabControlState>();
+  for (const entry of controlState.entries) {
+    let tab: chrome.tabs.Tab;
+    try {
+      tab = await chrome.tabs.get(entry.tabId);
+    } catch {
+      continue;
+    }
+    if (tab.id == null) continue;
+    let state = sessions.get(entry.sessionId);
+    if (!state) {
+      state = { sessionId: entry.sessionId, tabs: [] };
+      sessions.set(entry.sessionId, state);
+    }
+    state.tabs.push({
+      tabId: tab.id,
+      title: tab.title ?? "",
+      url: tab.url ?? "",
+      acting: actingTabs.has(tab.id),
+    });
+  }
+  return [...sessions.values()];
+}
+
+async function publishControl(): Promise<void> {
+  await loadControlState();
+  lastControl = { type: "control", sessions: await buildControlStates() };
+  broadcast(lastControl);
+}
+
+/** Paint (or clear) the "●" the page shows in its own tab title. Best effort. */
+async function pushControlBadge(tabId: number, on: boolean): Promise<void> {
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    if (!pageToolsAllowed(tab.url).ok) return;
+    await ensureContent(tabId);
+    await callPageApi(tabId, "setControlBadge", [on]);
+  } catch {
+    // not injected yet, or the tab is gone — a later command / navigation re-pushes it
+  }
+}
+
+/** Navigation drops the content script; a controlled tab gets its badge back. */
+async function reassertControlBadge(tabId: number): Promise<void> {
+  await loadControlState();
+  if (!entryForTab(controlState, tabId)) return;
+  void pushControlBadge(tabId, true);
+}
+
+async function setActing(tabId: number, delta: 1 | -1): Promise<void> {
+  const count = (actingTabs.get(tabId) ?? 0) + delta;
+  if (count <= 0) actingTabs.delete(tabId);
+  else actingTabs.set(tabId, count);
+  void publishControl();
+}
+
+function rememberControlSession(sessionId: string): void {
+  lastControlSessionId = sessionId;
+}
+
+/** Methods that count as "working in" a tab: a write there takes the anchor over. */
+function isControlWrite(method: PageMethod): boolean {
+  return isActionMethod(method) && method !== "getNativeUi";
+}
+
+function freshPendingAnchor(now = Date.now()): number | undefined {
+  if (pendingAnchor && now - pendingAnchor.at < ANCHOR_FRESH_MS) return pendingAnchor.tabId;
+  return undefined;
+}
+
+function effectiveAnchor(sessionId: string, now: number): number | undefined {
+  const existing = anchorFor(controlState, sessionId);
+  if (existing != null) return existing;
+  const fallback = freshPendingAnchor(now);
+  if (fallback != null) {
+    setAnchor(controlState, sessionId, fallback);
+    persistControl();
+  }
+  return fallback;
+}
+
+async function sessionTargetTab(sessionId: string): Promise<chrome.tabs.Tab | undefined> {
+  const tabId = primaryTabFor(controlState, sessionId) ?? effectiveAnchor(sessionId, Date.now());
+  if (tabId == null) return undefined;
+  try {
+    return await chrome.tabs.get(tabId);
+  } catch {
+    return undefined;
+  }
+}
+
+async function adoptTab(sessionId: string, tabId: number, now = Date.now()): Promise<void> {
+  await loadControlState();
+  takeover(controlState, sessionId, tabId, now);
+  persistControl();
+  try {
+    await chrome.tabs.update(tabId, { autoDiscardable: false });
+  } catch {
+    // the tab may already be gone
+  }
+  void pushControlBadge(tabId, true);
+  void publishControl();
+}
+
+/** Drop expired entries / requests and undo their side effects. */
+async function pruneControlState(): Promise<void> {
+  await loadControlState();
+  const { changed, released } = pruneControl(controlState, Date.now());
+  if (!changed) return;
+  persistControl();
+  for (const tabId of released) {
+    void chrome.tabs.update(tabId, { autoDiscardable: true }).catch(() => undefined);
+    void pushControlBadge(tabId, false);
+  }
+  void publishControl();
+}
+
+async function handleTabGone(tabId: number): Promise<void> {
+  await loadControlState();
+  if (releaseTab(controlState, tabId) == null) return;
+  persistControl();
+  void publishControl();
+}
+
+async function remapControlEntry(addedTabId: number, removedTabId: number): Promise<void> {
+  await loadControlState();
+  const entry = entryForTab(controlState, removedTabId);
+  if (!entry) return;
+  entry.tabId = addedTabId;
+  persistControl();
+  void pushControlBadge(addedTabId, true);
+  void publishControl();
+}
+
+/** No grant yet: ask the side panel, or answer from the cooldown / existing request. */
+async function requestBorrow(sessionId: string, tab: chrome.tabs.Tab): Promise<ControlGate> {
+  const tabId = tab.id as number;
+  const title = tab.title ?? "";
+  const now = Date.now();
+  if (isBlocked(controlState, sessionId, tabId, now)) {
+    return {
+      fail: {
+        error: `The user took this tab's control back (or declined) recently, so it is still off limits: 「${title}」.`,
+        reason: "borrow_denied",
+        hint: "Do not retry on your own; ask the user with cursor/ask_question if the task still needs it.",
+      },
+    };
+  }
+  const pending = controlState.pending;
+  if (pending && !(pending.sessionId === sessionId && pending.tabId === tabId)) {
+    return {
+      fail: {
+        error: "Another tab-control request is already waiting for the user in the side panel.",
+        reason: "borrow_pending",
+        hint: "Wait for the user to answer the pending card, then retry this command once.",
+      },
+    };
+  }
+  if (!pending) {
+    const requestId = crypto.randomUUID();
+    setPending(controlState, { requestId, sessionId, tabId, at: now });
+    persistControl();
+    broadcast({ type: "control.request", requestId, tabId, title, url: tab.url ?? "", sessionId });
+    void publishControl();
+  }
+  return {
+    fail: {
+      error: `This tab is not under the Agent's control yet: 「${title}」. A borrow request is waiting in the side panel.`,
+      reason: "borrow_required",
+      hint: "Tell the user about the side-panel card; after they allow it, retry this command once.",
+    },
+  };
+}
+
+async function resolveCommandTab(command: BrowserCommand, sessionId?: string): Promise<ControlGate> {
+  await loadControlState();
+  await pruneControlState();
+  const now = Date.now();
+  const explicit = command.args?.tabId;
+
+  if (typeof explicit === "number") {
+    let tab: chrome.tabs.Tab;
+    try {
+      tab = await chrome.tabs.get(explicit);
+    } catch {
+      return { fail: { error: `tab ${explicit} is gone`, reason: "no_target" } };
+    }
+    if (tab.id == null) return { fail: { error: `tab ${explicit} is gone`, reason: "no_target" } };
+    if (!sessionId || !pageToolsAllowed(tab.url).ok) return { tab };
+    const entry = entryForTab(controlState, tab.id);
+    if (entry?.sessionId === sessionId) {
+      touch(controlState, tab.id, now);
+      persistControl();
+      return { tab };
+    }
+    if (entry) {
+      return {
+        fail: {
+          error: "Another OpenSider conversation is controlling this tab right now.",
+          reason: "borrow_held",
+          hint: "Leave it alone unless the user asks; do not work around it from another session.",
+        },
+      };
+    }
+    if (effectiveAnchor(sessionId, now) === tab.id) {
+      if (isControlWrite(command.method)) await adoptTab(sessionId, tab.id, now);
+      return { tab };
+    }
+    return requestBorrow(sessionId, tab);
+  }
+
+  if (sessionId) {
+    const targetId = primaryTabFor(controlState, sessionId) ?? effectiveAnchor(sessionId, now);
+    if (targetId != null) {
+      let tab: chrome.tabs.Tab | undefined;
+      try {
+        tab = await chrome.tabs.get(targetId);
+      } catch {
+        tab = undefined;
+      }
+      if (tab?.id != null) {
+        const entry = entryForTab(controlState, tab.id);
+        if (entry?.sessionId === sessionId) {
+          touch(controlState, tab.id, now);
+          persistControl();
+          return { tab };
+        }
+        if (entry) {
+          return {
+            fail: {
+              error: "Another OpenSider conversation is controlling this tab right now.",
+              reason: "borrow_held",
+              hint: "Leave it alone unless the user asks; do not work around it from another session.",
+            },
+          };
+        }
+        if (isControlWrite(command.method)) await adoptTab(sessionId, tab.id, now);
+        return { tab };
+      }
+    }
+  }
+
+  const tab = await resolveFocusedActiveChromeTab();
+  if (!tab?.id) return { fail: { error: "No active tab", reason: "no_target" } };
+  if (sessionId && isControlWrite(command.method) && pageToolsAllowed(tab.url).ok) {
+    const entry = entryForTab(controlState, tab.id);
+    if (entry && entry.sessionId !== sessionId) {
+      return {
+        fail: {
+          error: "Another OpenSider conversation is controlling this tab right now.",
+          reason: "borrow_held",
+          hint: "Leave it alone unless the user asks; do not work around it from another session.",
+        },
+      };
+    }
+    if (!entry) {
+      if (isBlocked(controlState, sessionId, tab.id, now)) {
+        return {
+          fail: {
+            error: "The user took this tab's control back (or declined) recently, so it is still off limits.",
+            reason: "borrow_denied",
+            hint: "Do not retry on your own; ask the user with cursor/ask_question if the task still needs it.",
+          },
+        };
+      }
+      await adoptTab(sessionId, tab.id, now);
+    }
+  }
+  return { tab };
+}
+
+async function recordAnchor(sessionId: string | undefined, tabId: number | undefined): Promise<void> {
+  await loadControlState();
+  const id = tabId ?? (await resolveFocusedActiveChromeTab())?.id;
+  if (id == null) return;
+  pendingAnchor = { tabId: id, at: Date.now() };
+  if (sessionId) {
+    setAnchor(controlState, sessionId, id);
+    persistControl();
+  }
+}
+
+/** User take-back from the side panel: release now, and keep the tabs off limits for a while. */
+async function releaseControlFor(sessionId: string | undefined): Promise<void> {
+  if (!sessionId) return;
+  await loadControlState();
+  const now = Date.now();
+  const tabIds = releaseSession(controlState, sessionId);
+  for (const tabId of tabIds) blockPair(controlState, sessionId, tabId, now);
+  persistControl();
+  for (const tabId of tabIds) {
+    void chrome.tabs.update(tabId, { autoDiscardable: true }).catch(() => undefined);
+    void pushControlBadge(tabId, false);
+  }
+  void publishControl();
+}
+
+/** The user answered a borrow card. */
+async function resolveBorrow(requestId: string, allow: boolean): Promise<void> {
+  await loadControlState();
+  const pending = controlState.pending;
+  if (!pending || pending.requestId !== requestId) return;
+  const now = Date.now();
+  clearPending(controlState);
+  if (allow) {
+    clearBlock(controlState, pending.sessionId, pending.tabId);
+    takeover(controlState, pending.sessionId, pending.tabId, now);
+    persistControl();
+    try {
+      await chrome.tabs.update(pending.tabId, { autoDiscardable: false });
+    } catch {
+      // tab gone
+    }
+    void pushControlBadge(pending.tabId, true);
+  } else {
+    blockPair(controlState, pending.sessionId, pending.tabId, now);
+    persistControl();
+  }
+  broadcast({ type: "control.request.done", requestId, allow });
+  void publishControl();
+}
+
+/** The route target of the session that last commanded — what `current.json` calls `target`. */
+async function currentControlTarget(): Promise<CurrentPage["target"] | undefined> {
+  const sessionId = lastControlSessionId;
+  if (!sessionId) return undefined;
+  const tabId = primaryTabFor(controlState, sessionId);
+  if (tabId == null) return undefined;
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    return { tabId, url: tab.url ?? "", title: tab.title ?? "" };
+  } catch {
+    return undefined;
+  }
+}
 
 async function probeUnsaved(tabId: number): Promise<UnsavedProbe | null> {
   try {
@@ -484,40 +901,83 @@ async function runScriptMethod(tabId: number, command: BrowserCommand): Promise<
   }
 }
 
-async function runCapture(tab: { id?: number; windowId?: number }, command: BrowserCommand): Promise<BrowserResult> {
-  if (tab.id == null || tab.windowId == null) return fail(command, "tab is not capturable");
+/**
+ * Screenshots go through the window's *active* tab (`captureVisibleTab`), so a background
+ * target needs a guarded flip: activate it, capture, then give the view back — but only if
+ * it is still ours (the user may have switched mid-capture; then we leave it alone).
+ * Activating a tab in a window the user is not looking at is invisible to them.
+ */
+async function prepareCapture(
+  tabId: number,
+  windowId: number,
+): Promise<{ restore: () => Promise<void> } | { fail: { error: string; reason: string; hint?: string } }> {
+  let win: chrome.windows.Window;
   try {
-    await ensureContent(tab.id);
-  } catch (error) {
-    return fail(command, pageCommandError(error));
+    win = await chrome.windows.get(windowId);
+  } catch {
+    return { fail: { error: "The tab's window is gone.", reason: "no_target" } };
   }
-  let clip: ClipRect | undefined;
-  if (command.method === "screenshotElement") {
-    const measured = await callPageApi<ClipRect>(tab.id, "measure", [command.args ?? {}]);
-    if (!measured.ok || !measured.value) return fail(command, measured.error ?? "measure failed");
-    clip = measured.value;
-    await new Promise((resolve) => setTimeout(resolve, 120));
-  } else if (
-    command.args &&
-    [command.args.x, command.args.y, command.args.width, command.args.height].some((value) => value != null)
-  ) {
-    const view = await callPageApi<ClipRect>(tab.id, "viewport");
-    if (!view.ok || !view.value) return fail(command, view.error ?? "viewport measure failed");
-    clip = {
-      x: command.args.x ?? 0,
-      y: command.args.y ?? 0,
-      width: command.args.width ?? view.value.viewportWidth,
-      height: command.args.height ?? view.value.viewportHeight,
-      dpr: view.value.dpr,
-      viewportWidth: view.value.viewportWidth,
-      viewportHeight: view.value.viewportHeight,
+  if (win.state === "minimized") {
+    return {
+      fail: {
+        error: "A screenshot needs a visible window and this one is minimized.",
+        reason: "needs_visible",
+        hint: "Ask the user to restore the window, or use DOM reads (snapshot/getInteractive) instead.",
+      },
     };
   }
-  const payload = await captureViewport(tab.windowId, clip);
-  return { id: command.id, ok: true, method: command.method, data: payload };
+  const [active] = await chrome.tabs.query({ active: true, windowId });
+  if (active?.id === tabId) return { restore: async () => undefined };
+  await chrome.tabs.update(tabId, { active: true });
+  return {
+    restore: async () => {
+      const [now] = await chrome.tabs.query({ active: true, windowId });
+      if (now?.id !== tabId) return;
+      if (active?.id != null) await chrome.tabs.update(active.id, { active: true }).catch(() => undefined);
+    },
+  };
 }
 
-function toTabRecord(tab: chrome.tabs.Tab): TabRecord | undefined {
+async function runCapture(tab: { id?: number; windowId?: number }, command: BrowserCommand): Promise<BrowserResult> {
+  if (tab.id == null || tab.windowId == null) return fail(command, "tab is not capturable");
+  const prepared = await prepareCapture(tab.id, tab.windowId);
+  if ("fail" in prepared) return failWith(command, prepared.fail);
+  try {
+    try {
+      await ensureContent(tab.id);
+    } catch (error) {
+      return fail(command, pageCommandError(error));
+    }
+    let clip: ClipRect | undefined;
+    if (command.method === "screenshotElement") {
+      const measured = await callPageApi<ClipRect>(tab.id, "measure", [command.args ?? {}]);
+      if (!measured.ok || !measured.value) return fail(command, measured.error ?? "measure failed");
+      clip = measured.value;
+      await new Promise((resolve) => setTimeout(resolve, 120));
+    } else if (
+      command.args &&
+      [command.args.x, command.args.y, command.args.width, command.args.height].some((value) => value != null)
+    ) {
+      const view = await callPageApi<ClipRect>(tab.id, "viewport");
+      if (!view.ok || !view.value) return fail(command, view.error ?? "viewport measure failed");
+      clip = {
+        x: command.args.x ?? 0,
+        y: command.args.y ?? 0,
+        width: command.args.width ?? view.value.viewportWidth,
+        height: command.args.height ?? view.value.viewportHeight,
+        dpr: view.value.dpr,
+        viewportWidth: view.value.viewportWidth,
+        viewportHeight: view.value.viewportHeight,
+      };
+    }
+    const payload = await captureViewport(tab.windowId, clip);
+    return { id: command.id, ok: true, method: command.method, data: payload };
+  } finally {
+    await prepared.restore();
+  }
+}
+
+function toTabRecord(tab: chrome.tabs.Tab, controlled?: Set<number>): TabRecord | undefined {
   if (tab.id == null || tab.windowId == null) return undefined;
   return {
     tabId: tab.id,
@@ -528,10 +988,13 @@ function toTabRecord(tab: chrome.tabs.Tab): TabRecord | undefined {
     active: Boolean(tab.active),
     pinned: Boolean(tab.pinned),
     restricted: isRestrictedUrl(tab.url),
+    control: controlled?.has(tab.id) ? "agent" : "user",
   };
 }
 
 async function collectTabsSnapshot(): Promise<TabsSnapshot> {
+  await loadControlState();
+  const controlled = new Set(controlState.entries.map((entry) => entry.tabId));
   const windows = await chrome.windows.getAll({ populate: true, windowTypes: ["normal"] });
   return {
     updatedAt: new Date().toISOString(),
@@ -541,7 +1004,9 @@ async function collectTabsSnapshot(): Promise<TabsSnapshot> {
         windowId: win.id as number,
         focused: Boolean(win.focused),
         state: win.state,
-        tabs: (win.tabs ?? []).map(toTabRecord).filter((tab): tab is TabRecord => tab != null),
+        tabs: (win.tabs ?? [])
+          .map((tab) => toTabRecord(tab, controlled))
+          .filter((tab): tab is TabRecord => tab != null),
       })),
   };
 }
@@ -639,7 +1104,7 @@ function httpUrl(raw: string | undefined, base?: string): URL | undefined {
   }
 }
 
-async function runWindowMethod(command: BrowserCommand): Promise<BrowserResult> {
+async function runWindowMethod(command: BrowserCommand, sessionId?: string): Promise<BrowserResult> {
   if (command.method === "listTabs") {
     return { id: command.id, ok: true, method: command.method, data: await collectTabsSnapshot() };
   }
@@ -660,19 +1125,30 @@ async function runWindowMethod(command: BrowserCommand): Promise<BrowserResult> 
   if (command.method === "openTab") {
     const parsed = httpUrl(command.args?.url);
     if (!parsed) return fail(command, "openTab requires args.url as http(s)");
+    await loadControlState();
+    // Quiet by default: open next to the tab the session works in (or the focused window),
+    // in the background, and adopt it — opening a page must not take the user's view away.
+    const anchorTab = sessionId ? await sessionTargetTab(sessionId) : undefined;
     const created = await chrome.tabs.create({
       url: parsed.toString(),
-      windowId: command.args?.windowId,
-      active: true,
+      windowId: command.args?.windowId ?? anchorTab?.windowId,
+      index: anchorTab ? anchorTab.index + 1 : undefined,
+      active: false,
     });
     if (created.id == null) return fail(command, "could not open tab");
-    if (created.windowId != null) await chrome.windows.update(created.windowId, { focused: true });
+    if (sessionId) await adoptTab(sessionId, created.id);
     await waitTabComplete(created.id, Math.min(command.args?.timeoutMs ?? 15_000, 20_000)).catch(() => undefined);
     return {
       id: command.id,
       ok: true,
       method: command.method,
-      data: { tabId: created.id, windowId: created.windowId, url: parsed.toString(), ...(await collectTabsSnapshot()) },
+      data: {
+        tabId: created.id,
+        windowId: created.windowId,
+        url: parsed.toString(),
+        background: true,
+        ...(await collectTabsSnapshot()),
+      },
     };
   }
 
@@ -683,6 +1159,24 @@ async function runWindowMethod(command: BrowserCommand): Promise<BrowserResult> 
       tabId = active?.id;
     }
     if (tabId == null || !Number.isInteger(tabId)) return fail(command, "closeTab requires args.tabId or an active tab");
+    if (sessionId) {
+      await loadControlState();
+      const entry = entryForTab(controlState, tabId);
+      if (entry && entry.sessionId !== sessionId) {
+        return failWith(command, {
+          error: "Another OpenSider conversation is controlling this tab right now.",
+          reason: "borrow_held",
+          hint: "Leave it alone unless the user asks; do not work around it from another session.",
+        });
+      }
+      if (!entry && anchorFor(controlState, sessionId) !== tabId) {
+        return failWith(command, {
+          error: "That tab was not handed to the Agent, so it may not be closed from here.",
+          reason: "borrow_required",
+          hint: "Ask the user with cursor/ask_question first; they can close it themselves too.",
+        });
+      }
+    }
     const blocked = await guardUnsaved(command, tabId);
     if (blocked) return blocked;
     await chrome.tabs.remove(tabId);
@@ -1175,7 +1669,7 @@ async function dispatchCommand(
   if (isWindowMethod(command.method)) {
     let result: BrowserResult;
     try {
-      result = await runWindowMethod(command);
+      result = await runWindowMethod(command, sessionId);
     } catch (error) {
       result = fail(command, String(error));
     }
@@ -1188,63 +1682,72 @@ async function dispatchCommand(
     return;
   }
 
-  const tab = await resolveFocusedActiveChromeTab();
+  const gate = await resolveCommandTab(command, sessionId);
+  const tab = gate.tab;
   if (!tab?.id) {
-    publish(fail(command, "No active tab"));
+    publish(gate.fail ? failWith(command, gate.fail) : fail(command, "No active tab"));
     return;
   }
+  if (sessionId) rememberControlSession(sessionId);
   void armActivity(tab.id);
+  const watched = Boolean(sessionId && entryForTab(controlState, tab.id));
+  if (watched) void setActing(tab.id, 1);
 
-  if (isNativeUiMethod(command.method)) {
-    const result = await runNativeUiMethod(tab.id, command);
-    publish(result);
-    return;
-  }
-
-  const allowed = pageToolsAllowed(tab.url);
-  if (!allowed.ok && !isTabMethod(command.method)) {
-    publish(fail(command, allowed.error));
-    return;
-  }
-
-  let result: BrowserResult;
   try {
-    result = isCaptureMethod(command.method)
-      ? await runCapture(tab, command)
-      : isTabMethod(command.method)
-        ? await runTabMethod(tab.id, command)
-        : isScriptMethod(command.method)
-          ? await runScriptMethod(tab.id, command)
-          : await runContentMethod(tab.id, command);
-  } catch (error) {
-    result = fail(command, pageCommandError(error));
-  }
+    if (isNativeUiMethod(command.method)) {
+      const result = await runNativeUiMethod(tab.id, command);
+      publish(result);
+      return;
+    }
 
-  // Anything the page popped up while this command ran belongs in its result: that is how the
-  // Agent learns "the click I just sent opened a confirm()" without a second round trip.
-  const popped = await drainNativeUi(tab.id);
-  if (popped.length > 0) {
-    result = { ...result, data: { ...(result.data ?? {}), nativeUi: popped } };
-    reportNativeUi(tab.id, tab.url ?? "", popped);
-  }
+    const allowed = pageToolsAllowed(tab.url);
+    if (!allowed.ok && !isTabMethod(command.method)) {
+      publish(fail(command, allowed.error));
+      return;
+    }
 
-  // The page's own layers too (modal / drawer / overlay): an action that "did nothing" has
-  // often just opened one of these. Only reported when the set appears or changes, so a
-  // command that leaves the page as it was stays quiet.
-  if (isActionMethod(command.method)) {
-    const overlays = await readOverlays(tab.id);
-    if (overlays) result = { ...result, data: { ...(result.data ?? {}), overlays } };
-  }
+    let result: BrowserResult;
+    try {
+      result = isCaptureMethod(command.method)
+        ? await runCapture(tab, command)
+        : isTabMethod(command.method)
+          ? await runTabMethod(tab.id, command)
+          : isScriptMethod(command.method)
+            ? await runScriptMethod(tab.id, command)
+            : await runContentMethod(tab.id, command);
+    } catch (error) {
+      result = fail(command, pageCommandError(error));
+    }
 
-  publish(result);
-  if (result.ok && (isActionMethod(command.method) || command.method === "getInteractive" || command.method === "waitFor")) {
-    void requestPage(tab.id);
-    void publishTabs();
+    // Anything the page popped up while this command ran belongs in its result: that is how the
+    // Agent learns "the click I just sent opened a confirm()" without a second round trip.
+    const popped = await drainNativeUi(tab.id);
+    if (popped.length > 0) {
+      result = { ...result, data: { ...(result.data ?? {}), nativeUi: popped } };
+      reportNativeUi(tab.id, tab.url ?? "", popped);
+    }
+
+    // The page's own layers too (modal / drawer / overlay): an action that "did nothing" has
+    // often just opened one of these. Only reported when the set appears or changes, so a
+    // command that leaves the page as it was stays quiet.
+    if (isActionMethod(command.method)) {
+      const overlays = await readOverlays(tab.id);
+      if (overlays) result = { ...result, data: { ...(result.data ?? {}), overlays } };
+    }
+
+    publish(result);
+    if (result.ok && (isActionMethod(command.method) || command.method === "getInteractive" || command.method === "waitFor")) {
+      void requestPage(tab.id);
+      void publishTabs();
+    }
+  } finally {
+    if (watched) void setActing(tab.id, -1);
   }
 }
 
 async function requestPage(tabId: number, writeGen?: number): Promise<void> {
   const gen = writeGen ?? ++pageSyncGen;
+  await loadControlState();
   let tab: chrome.tabs.Tab;
   try {
     tab = await chrome.tabs.get(tabId);
@@ -1275,7 +1778,8 @@ async function requestPage(tabId: number, writeGen?: number): Promise<void> {
       void armActivity(tabId);
       const snap = await callPageApi<CurrentPage>(tabId, "snapshot", [tabId]);
       if (!snap.ok || !snap.value) throw new Error(snap.error ?? "snapshot failed");
-      const page = { ...snap.value, favIconUrl };
+      const target = await currentControlTarget();
+      const page = { ...snap.value, favIconUrl, ...(target ? { target } : {}) };
       if (gen !== pageSyncGen) return;
       rememberCurrentTab(tabId);
       sendNative({ type: "page.update", page });
@@ -1287,7 +1791,8 @@ async function requestPage(tabId: number, writeGen?: number): Promise<void> {
   }
   if (gen !== pageSyncGen) return;
   rememberCurrentTab(tabId);
-  const page = fallback();
+  const target = await currentControlTarget();
+  const page = { ...fallback(), ...(target ? { target } : {}) };
   sendNative({ type: "page.update", page });
   broadcast({ type: "page", page });
 }
@@ -1480,6 +1985,18 @@ chrome.runtime.onConnect.addListener((port) => {
       void cancelPagePick();
       return;
     }
+    if (msg.type === "control.anchor") {
+      void recordAnchor(msg.sessionId, msg.tabId);
+      return;
+    }
+    if (msg.type === "control.release") {
+      void releaseControlFor(msg.sessionId);
+      return;
+    }
+    if (msg.type === "control.grant") {
+      void resolveBorrow(msg.requestId, msg.allow);
+      return;
+    }
     sendNative(msg);
   });
   port.onDisconnect.addListener(() => {
@@ -1522,6 +2039,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
 void chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => undefined);
 connectNative();
+void publishControl();
 
 chrome.tabs.onActivated.addListener((info) => {
   onActiveTabMaybeChanged(info.windowId);
@@ -1533,6 +2051,9 @@ chrome.tabs.onUpdated.addListener((tabId, change, tab) => {
   }
   if (change.status || change.title || change.url || change.favIconUrl || change.pinned) {
     scheduleTabsPublish();
+  }
+  if (change.status === "complete") {
+    void reassertControlBadge(tabId);
   }
 });
 
@@ -1546,6 +2067,7 @@ chrome.tabs.onRemoved.addListener((tabId, info) => {
     rememberCurrentTab(undefined);
   }
   onActiveTabMaybeChanged(info.isWindowClosing ? undefined : info.windowId);
+  void handleTabGone(tabId);
 });
 
 chrome.tabs.onReplaced.addListener((addedTabId, removedTabId) => {
@@ -1553,6 +2075,7 @@ chrome.tabs.onReplaced.addListener((addedTabId, removedTabId) => {
     rememberCurrentTab(addedTabId);
   }
   onActiveTabMaybeChanged();
+  void remapControlEntry(addedTabId, removedTabId);
 });
 
 chrome.tabs.onMoved.addListener((_tabId, info) => {

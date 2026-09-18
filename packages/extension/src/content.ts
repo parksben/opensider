@@ -1,7 +1,10 @@
 import type { BrowserCommand, BrowserCommandArgs } from "@shared";
+import { createControlMark } from "./control-badge";
 import { extractSnapshot, measureTarget, measureViewport, runPageMethod } from "./page-api";
 import { PAGE_PICK_API } from "./page-pick";
 import { startPick, stopPick } from "./picker";
+
+const controlMark = createControlMark(document);
 
 const pageApi = {
   ping: () => true,
@@ -15,6 +18,7 @@ const pageApi = {
   viewport: () => measureViewport(),
   measure: (args: unknown) => measureTarget((args ?? {}) as BrowserCommandArgs),
   runCommand: (command: unknown) => runPageMethod(command as BrowserCommand),
+  setControlBadge: (on: unknown) => controlMark.set(Boolean(on)),
 };
 
 (globalThis as unknown as Record<string, typeof pageApi>)[PAGE_PICK_API] = pageApi;
