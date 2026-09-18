@@ -105,6 +105,7 @@ scripts/dev-host.mjs  开发用：编二进制 + 拷扩展 + 注册桥接（= pn
 scripts/pack-extension.mjs  扩展 zip 打包
 scripts/verify-native-ui.mjs  原生 UI shim 的端到端验证（真 Chromium + 已构建扩展）
 scripts/verify-page-activity.mjs  页面活动态（面板开着强制可见 / 关掉还原）的端到端验证
+scripts/verify-tab-control.mjs  标签接管（借用 / 收回 / 后台操作 / quiet openTab）的端到端验证
 scripts/verify-page-tamper.mjs  主世界钩子「不留痕」的端到端验证（未触碰页面必须与干净 Chromium 一致）
 scripts/verify-queue-send-now.mjs  消息队列「立即发送」的端到端验证
 scripts/verify-file-drop.mjs  拖文件到侧栏 → 变附件的端到端验证

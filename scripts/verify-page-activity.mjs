@@ -34,8 +34,23 @@ function loadPlaywright() {
   try {
     return createRequire(import.meta.url)("playwright");
   } catch {
-    const globalRoot = execFileSync("npm", ["root", "-g"], { encoding: "utf8" }).trim();
-    return createRequire(pathToFileURL(join(globalRoot, "playwright", "index.js")))("playwright");
+    // A global install, or whatever `npx playwright` left in its cache.
+    const candidates = [];
+    try {
+      const globalRoot = execFileSync("npm", ["root", "-g"], { encoding: "utf8" }).trim();
+      candidates.push(join(globalRoot, "playwright"));
+    } catch {
+      // npm unavailable — keep probing the cache
+    }
+    const npxRoot = join(homedir(), ".npm", "_npx");
+    if (existsSync(npxRoot)) {
+      for (const dir of readdirSync(npxRoot)) candidates.push(join(npxRoot, dir, "node_modules", "playwright"));
+    }
+    for (const candidate of candidates) {
+      const entry = join(candidate, "index.js");
+      if (existsSync(entry)) return createRequire(pathToFileURL(entry))("playwright");
+    }
+    throw new Error("playwright not found: install it globally, or run `npx playwright --version` once");
   }
 }
 
