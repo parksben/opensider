@@ -672,7 +672,7 @@ ACP 适配器仍只在 Go 里实现：`install` 里一个 `acpAdapterSpec`（本
 
 **发布在本机做，不走 Actions**（账号被账单锁着，跑起来也只会失败）：`.github/workflows/release.yml` 保留为参考实现与备用路径，触发条件是 `push: tags: v*`，所以本地发版时要先 `gh workflow disable release.yml`，推完 tag、建完 release 再 enable 回来（否则推 tag 就会真的拉起一次注定失败的 run）。逐步命令写在 `docs/DEVELOPMENT.md`「发 Release（本地构建，不走 Actions）」。
 
-本地流程必须在**产物集合上与 workflow 等价**（skill 和文档都按这些名字取）：macOS 上 `CGO_ENABLED=1` 编 `opensider-darwin-arm64`，再用 `CC="clang -arch x86_64"` 编 `opensider-darwin-amd64`（cgo 是 `internal/pick` 的 AppKit 需要；SDK 编不动宁可少 amd64，也不能发个不能跑的）；linux / windows 四份 `CGO_ENABLED=0` 交叉编译；扩展只编一次（`pnpm --filter @opensider/extension build` + `pnpm pack-extension`，不发 CRX）；`shasum -a 256` 按固定顺序写 `SHA256SUMS`；`scripts/release-notes.sh` 打 commit 列表当正文。
+本地流程必须在**产物集合上与 workflow 等价**（skill 和文档都按这些名字取）：macOS 上 `CGO_ENABLED=1` 编 `opensider-darwin-arm64`，再用 `CC="clang -arch x86_64"` 编 `opensider-darwin-amd64`（cgo 是 `internal/pick` 的 AppKit 需要；SDK 编不动宁可少 amd64，也不能发个不能跑的）；linux / windows 四份 `CGO_ENABLED=0` 交叉编译；扩展只编一次（`pnpm --filter @opensider/extension build` + `pnpm pack-extension`，不发 CRX）；`shasum -a 256` 按固定顺序写 `SHA256SUMS`；正文由**发版时手写**的 2–3 行英文摘要充当（`scripts/changes-since-tag.sh` 只用来回顾这一版改了什么）。
 
 workflow 里的动作与理由（下文）仍然成立，只是执行的机器从 runner 换成开发机；两条路径唯一不能省的约束是**扩展 manifest 的 `version` 必须等于 tag**——侧栏拿它和 `releases/latest` 比，对不上就会一直提示更新。
 
@@ -680,7 +680,7 @@ workflow 里的动作与理由（下文）仍然成立，只是执行的机器�
 |---|---|---|
 | `build-darwin` | `macos-latest` | Go 1.22+，`CGO_ENABLED=1`，产出 `opensider-darwin-arm64`；在同一台机器上再试 `GOARCH=amd64`（`CC=clang`），编得出来才上传 |
 | `build-cross` | `ubuntu-latest` | `CGO_ENABLED=0`，`GOOS=linux/windows` × `GOARCH=amd64/arm64`（Windows 带 `.exe`） |
-| `release` | `ubuntu-latest`（等前两个） | `pnpm install` + `pnpm --filter @opensider/extension build` **一次**，再跑 `pnpm pack-extension` 产出 `extension.zip`（不发 CRX）；下载二进制工件；写 `SHA256SUMS`；`scripts/release-notes.sh` 打最近 3 个 commit；`gh release create` |
+| `release` | `ubuntu-latest`（等前两个） | `pnpm install` + `pnpm --filter @opensider/extension build` **一次**，再跑 `pnpm pack-extension` 产出 `extension.zip`（不发 CRX）；下载二进制工件；写 `SHA256SUMS`；`gh release create --generate-notes`（备用路径拿不到人写的摘要，只能让 GitHub 自动生成） |
 
 扩展只在 `release` job 编一次，darwin / cross 不再装 Node。darwin 开 cgo 是为了本机 `pick`（AppKit）；linux / windows 交叉编译关 cgo，避免依赖目标系统的 C 工具链。macos-latest 现在是 Apple Silicon，darwin/amd64 属于尽力：SDK 够就编，不够就跳过，不挡发版。
 
@@ -692,7 +692,7 @@ Release 资产名（skill 与文档都按这些名字取）：
 - `extension.zip`
 - `SHA256SUMS`
 
-`scripts/release-notes.sh` 对当前 tag/HEAD 打印 `git log --pretty=format:'- %h %s' -n 3`。Release body 只有最近 3 个 commit，不加产品介绍、不回溯整个 tag 区间。`.github/workflows/release.yml` 的 notes 步骤只跑这个脚本。
+Release 正文是**发版时手写的 2–3 行英文摘要**，讲清这一版最大的变更（"为什么值得升级"）——不列 commit：机器抄出来的列表读起来是碎的，安装 skill 的人也不会从 hash 里获得任何信息。`scripts/changes-since-tag.sh` 只负责把上个 `v*` tag 以来的 commit 标题（不带 hash）列出来当回顾素材，不自己写文件、不进正文；摘要文案先跟用户确认再发。备用路径（Actions）没人写字，所以 `.github/workflows/release.yml` 改用 `gh release create --generate-notes` 交给 GitHub 自动生成，仅作占位。
 
 ## 风险
 

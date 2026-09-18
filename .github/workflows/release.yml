@@ -127,9 +127,8 @@ jobs:
             > SHA256SUMS
           ls -l
 
-      - name: Release notes (last 3 commits)
-        run: bash scripts/release-notes.sh HEAD 3 > dist-release/NOTES.md
-
+      # 正式发版走本地路径（见 docs/DEVELOPMENT.md），正文由人手写 2–3 行摘要。
+      # 这条备用路径没人写字，所以交给 GitHub 自动生成，只当占位。
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -145,5 +144,5 @@ jobs:
           )
           gh release create "${GITHUB_REF_NAME}" \
             --title "${GITHUB_REF_NAME}" \
-            --notes-file dist-release/NOTES.md \
+            --generate-notes \
             "${assets[@]}"

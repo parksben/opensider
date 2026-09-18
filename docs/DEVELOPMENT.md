@@ -54,7 +54,7 @@ pnpm --filter @opensider/extension build   # vite build + page-hooks
 pnpm pack-extension                        # dist-release/extension.zip
 
 # 3. 六个平台二进制（版本号用 ldflags 注进去，手编不带就是 dev）
-tag=v0.3.0
+tag=v0.4.0
 ldflags="-X github.com/parksben/opensider/internal/version.Version=$tag"
 CGO_ENABLED=1 go build -ldflags "$ldflags" -o dist-release/opensider-darwin-arm64 ./cmd/opensider
 CGO_ENABLED=1 GOARCH=amd64 CC="clang -arch x86_64" \
@@ -69,11 +69,16 @@ for arch in amd64 arm64; do
 done
 chmod +x dist-release/opensider-darwin-* dist-release/opensider-linux-*
 
-# 4. 校验和（顺序照抄上一次，skill 按名字取）+ Release 正文
+# 4. 校验和（顺序照抄上一次，skill 按名字取）
 cd dist-release && shasum -a 256 opensider-darwin-* opensider-linux-* opensider-windows-* extension.zip > SHA256SUMS
-cd .. && bash scripts/release-notes.sh HEAD <本 tag 以来的 commit 数> > dist-release/NOTES.md
+cd ..
 
-# 5. 发上去（先禁掉 workflow，免得推 tag 触发它）
+# 5. Release 正文：**手写**一段 2–3 行的英文摘要，说清这一版最大的变更是什么。
+#    先回顾素材（脚本只列上个 v* tag 以来的 commit 标题、不带 hash，是给人看的，不要贴进正文）：
+bash scripts/changes-since-tag.sh
+#    写完存 dist-release/NOTES.md。文案先跟用户确认可行，再发。
+
+# 6. 发上去（先禁掉 workflow，免得推 tag 触发它）
 gh workflow disable release.yml
 git tag -a $tag -m $tag && git push origin $tag
 gh run list --limit 3                 # 应当看不到新 run
@@ -83,9 +88,9 @@ gh release create $tag --title $tag --notes-file dist-release/NOTES.md \
 gh workflow enable release.yml         # 恢复仓库状态
 ```
 
-发完自查：`dist-release/opensider-darwin-arm64 version` 应是 `0.3.0`（`internal/version.Display()` 剥掉 `v`）；`node -p "require('./packages/extension/dist/manifest.json').version"` 要和 tag 一致；`gh release view $tag --json assets` 应当正好 8 个（六个二进制 + `extension.zip` + `SHA256SUMS`）；`https://api.github.com/repos/parksben/opensider/releases/latest` 刷新到新 tag（侧栏的更新提示就看它，缓存 TTL 一小时）。
+发完自查：`dist-release/opensider-darwin-arm64 version` 应是 `0.4.0`（`internal/version.Display()` 剥掉 `v`）；`node -p "require('./packages/extension/dist/manifest.json').version"` 要和 tag 一致；`gh release view $tag --json assets` 应当正好 8 个（六个二进制 + `extension.zip` + `SHA256SUMS`）；`gh release view $tag --json body` 应当是人写的 2–3 行摘要，不是一串 commit；`https://api.github.com/repos/parksben/opensider/releases/latest` 刷新到新 tag（侧栏的更新提示就看它，缓存 TTL 一小时）。
 
-踩过的坑：资产已经存在时上传会被拒，补传用 `gh release upload $tag <file> --clobber`；`dist-release/` 不入库（只提交 manifest 版本号和文档）；darwin 开 cgo 是为了 `internal/pick` 的 AppKit，x86_64 那条靠 `CC="clang -arch x86_64"`，SDK 不支持时宁可少了 amd64 也不能发个不能跑的；本地开发想要同样的版本号，`pnpm install-host` 会自动取最近一个 `v*` tag 注进二进制（没有 tag 就是 `dev`）。
+踩过的坑：资产已经存在时上传会被拒，补传用 `gh release upload $tag <file> --clobber`；正文写废了用 `gh release edit $tag --notes-file dist-release/NOTES.md` 覆盖，不用重建 Release；`dist-release/` 不入库（只提交 manifest 版本号和文档）；darwin 开 cgo 是为了 `internal/pick` 的 AppKit，x86_64 那条靠 `CC="clang -arch x86_64"`，SDK 不支持时宁可少了 amd64 也不能发个不能跑的；本地开发想要同样的版本号，`pnpm install-host` 会自动取最近一个 `v*` tag 注进二进制（没有 tag 就是 `dev`）。
 
 Release 资产名必须和 skill 一致，见 TECH_DESIGN「发布与 skill 安装」。
 
