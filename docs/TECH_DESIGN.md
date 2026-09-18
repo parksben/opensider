@@ -486,7 +486,7 @@ Host 是通用 ACP Client + 数据驱动 `AgentProfile`（启动命令、鉴权�
 
 **路由（`dispatchCommand` 前置闸门）**：目标解析顺序 = `args.tabId` → 本会话路由目标（`targets`）→ 焦点活动标签。写类（act / 导航）落点若是路由目标或锚点 → **自动接管**（`autoDiscardable:false`、推标题徽标、广播 control），接管前先过 `blocked` 冷却；若是未接管的其它用户标签 → 未阻塞则建借用请求（`control.request`，侧栏弹卡）并返回 `reason=borrow_required` + `hint`，冷却中则 `borrow_denied` 静默拒绝，被别的会话持有则 `borrow_held`。读类在锚点 / 路由目标 / 自建 / 已接管上直通，其它标签同样过闸。每次写命令成功后把该会话的 `targets` 指向该标签——Agent 去哪干活，之后的省略式命令就跟到哪；新消息再把它拉回锚点。
 
-**档位放行（借用闸门的策略分支）**：侧栏把当前权限档位存在 `chrome.storage.local[opensider/state].agentMode`；SW 在模块启动时读一次、并用 `chrome.storage.onChanged` 跟住。策略为 `auto` / `unattended` 时，`resolveCommandTab` 不调 `requestBorrow`，而是直接 `adoptTab`（不建 pending、不广播卡片、**不写 `trusted` 记忆**）；`blocked` 冷却与「别的会话持有」仍分别返回 `borrow_denied` / `borrow_held`（显式意图优先于档位）。档位从侧栏读取而不是走消息通道，是为了即使没有消息往来（SW 刚启动、命令先到）也能生效。
+**档位放行（借用闸门的策略分支）**：侧栏把当前权限档位存在 `chrome.storage.local[opensider/state].agentMode`；SW 在模块启动时读一次、并用 `chrome.storage.onChanged` 跟住。策略为 `auto` / `unattended` 时，`resolveCommandTab` 不调 `requestBorrow`，而是直接 `adoptTab`（不建 pending、不广播卡片、**不写 `trusted` 记忆**）；「拒绝」的冷却（`blocked`）与「别的会话持有」仍分别返回 `borrow_denied` / `borrow_held`（显式意图优先于档位）。档位从侧栏读取而不是走消息通道，是为了即使没有消息往来（SW 刚启动、命令先到）也能生效。
 
 **回合结束（`turn.end`）**：SW 在转发 Host 消息的同一路挂勾——park 掉该会话的持有（徽标 / banner 收起、`autoDiscardable` 复位），保留访问记忆与待答卡片；下一次写命令对记忆内标签静默再接管。`openTab` 自建的记入 `origins`，用户批准借用时记入 `trusted`；标签关闭 / `onReplaced` 同步清理。用户收回与会话删除则连访问记忆一起清空。
 
@@ -494,7 +494,7 @@ Host 是通用 ACP Client + 数据驱动 `AgentProfile`（启动命令、鉴权�
 
 **状态 UI（侧栏）**：状态卡与借用卡同为 `ControlBanner` 组件，插在 `ChatPane` 输入区堆叠的顶部（`control` 属性，渲染在 `<TodoList>` 之前），用统一的卡片族样式（`mb-2 rounded-lg border border-[var(--line)] bg-[var(--panel-2)]`），不再占用 header 下方那条横带。被接管标签的状态由 SW 广播，卡片在渲染时读快照里的标题——新开（自建）标签被接管那一刻通常还没加载完、标题为空，所以 `tabs.onUpdated` 对「已持有标签」的 `status/title/url` 变化会防抖重广播（`publishControlIfHeld` → `scheduleControlPublish`，150ms），卡片随页面标题自动更新；实在没有标题时兜底显示域名。
 
-**收回（`control.release`）**：释放该会话全部接管（连同锚点、路由目标与访问记忆），并对每个标签写 `blocked`（防止立即重接管）；广播状态、撤徽标。侧栏在会话删除时也发这条。已派发的动作不回滚；冷却期内后续命令得到 `borrow_denied`。
+**收回（`control.release`）**：释放该会话全部接管（连同锚点、路由目标与访问记忆），广播状态、撤徽标。侧栏在会话删除时也发这条。**收回不写 `blocked`**：下次进入该标签照常走闸门（询问档弹卡、自动档放行）——`blocked` 只由「拒绝」写入（静默拒绝一段时间，防止弹卡骚扰）。已派发的动作不回滚。
 
 **窗口方法**：`openTab` 改为 `active:false` + 不聚焦窗口 + 开在目标标签旁（拿不到目标则焦点窗口），成功后自动接管（自建）；`switchTab` 保留原语义，只当展示动作（`agents.md` 写明不要用它选工作对象）；`closeTab` 目标是未接管的用户标签 → `borrow_required`（未保存拦截照旧）。
 

@@ -874,13 +874,16 @@ async function recordAnchor(sessionId: string | undefined, tabId: number | undef
   }
 }
 
-/** User take-back from the side panel: release now, and keep the tabs off limits for a while. */
+/**
+ * User take-back from the side panel: release the session's holds and memories right away.
+ * No cooldown: the next time the Agent needs that tab it goes through the gate again — a
+ * card in the asking modes, granted on its own in the auto / unattended modes. Only a
+ * declined borrow card leaves the tab blocked for a while (see resolveBorrow).
+ */
 async function releaseControlFor(sessionId: string | undefined): Promise<void> {
   if (!sessionId) return;
   await loadControlState();
-  const now = Date.now();
   const tabIds = releaseSession(controlState, sessionId);
-  for (const tabId of tabIds) blockPair(controlState, sessionId, tabId, now);
   persistControl();
   for (const tabId of tabIds) {
     void chrome.tabs.update(tabId, { autoDiscardable: true }).catch(() => undefined);

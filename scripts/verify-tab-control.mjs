@@ -596,10 +596,16 @@ try {
     "verify-s1",
   );
   check(
-    "a taken-back tab is off limits (no silent re-take)",
-    blockedWrite?.ok === false && blockedWrite?.reason === "borrow_denied",
+    "a taken-back tab asks again instead of being refused (no cooldown)",
+    blockedWrite?.ok === false && blockedWrite?.reason === "borrow_required",
     `reason=${blockedWrite?.reason}`,
   );
+  const rePending = (await controlState()).pending;
+  check("its card is waiting", rePending?.tabId === tabH);
+  // Answer it with a deny: that is the one answer that cools the tab down (for the
+  // permission-mode rails below).
+  await control({ type: "control.grant", requestId: rePending?.requestId ?? "", allow: false });
+  check("denying it cools the tab down", (await controlState()).pending === null);
 
   // 9. Permission modes: `unattended` (and `auto`) answer the gate without a card.
   const askI = await dispatch(
@@ -653,7 +659,7 @@ try {
     "verify-s1",
   );
   check(
-    "'Allow all' never overrides a take-back cooldown",
+    "'Allow all' never overrides a declined request",
     blockedAuto?.ok === false && blockedAuto?.reason === "borrow_denied",
     `reason=${blockedAuto?.reason}`,
   );

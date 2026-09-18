@@ -25,7 +25,7 @@ func Ensure() {
 	_ = os.WriteFile(paths.AgentsMDPath(), []byte(agentsMD), 0o644)
 	_ = os.WriteFile(paths.ClaudeMDPath(), []byte(agentsMD), 0o644)
 	tools := map[string]any{
-		"version":        14,
+		"version":        15,
 		"transport":      "workspace-files",
 		"commandsDir":    "browser/commands",
 		"resultsDir":     "browser/results",

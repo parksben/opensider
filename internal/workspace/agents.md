@@ -74,7 +74,6 @@ entry, `target` is where you work, the top-level entry is what the user sees.
 `[接管中]` / `[Agent]` prefix and the side-panel banner go away). Your next command re-takes
 a tab silently when it is the anchor, a tab you opened yourself, or one the user already
 approved — those never ask twice. Any other user tab asks first.
-
 **Other user tabs need the user's OK.** Reading or writing a tab you do not hold answers
 `ok:false` with `reason:"borrow_required"` and puts a borrow card in the side panel. Say so
 to the user, end your turn, and wait. Answering that card is one click: OpenSider then sends
@@ -82,13 +81,15 @@ you a message of its own, starting with `[OpenSider]` ("The user allowed you to 
 "The user declined your request to work in …"). Treat it as a note from the bridge, not as
 the user's own words. On the allow message retry that one command; on the decline message
 stop retrying and tell the user how you plan to proceed. Do not loop on the gate, and never
-try to work around it. `reason:"borrow_held"` means another conversation holds that tab;
-`reason:"borrow_denied"` means the user declined or took the tab back — stop retrying and
-ask what they want.
+try to work around it. `reason:"borrow_held"` means another conversation holds that tab.
+`reason:"borrow_denied"` means the user declined that request recently — stop retrying and
+ask what they want. A take-back (the user pressed «Take back» in the side panel) is not a
+`borrow_denied`: the tab simply goes back to the user, and the next time you need it the
+card asks again (or it is granted on the spot in the auto modes).
 
 In the `auto` (Auto-run tools) and `unattended` (Allow all) permission modes the card never
-appears: OpenSider grants you the tab on its own and the command simply works. A tab the
-user explicitly took back or declined still answers `borrow_denied` for a while.
+appears: OpenSider grants you the tab on its own and the command simply works. A request the
+user actually declined still answers `borrow_denied` for a while.
 
 Quiet defaults: `openTab` opens in the background next to your working tab (the user's view
 is untouched) and the new tab is yours immediately. Closing a tab you do not hold is
