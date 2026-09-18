@@ -251,6 +251,16 @@ try {
   );
   const badgeCreated = await waitFor(() => marked(created), true);
   check("the opened tab carries the title mark", badgeCreated.ok, `title=${badgeCreated.last}`);
+  // The tab is still loading when it is adopted: the card has to pick the title up later.
+  const cardTitle = await waitFor(async () => {
+    await statusReady();
+    const text = await panel.evaluate(() => {
+      const dot = document.querySelector(".cs-control-dot");
+      return dot?.closest("section")?.innerText ?? "";
+    });
+    return /“c”/.test(text) ? "c" : false;
+  }, "c");
+  check("the control card picks up the title once the tab loads", cardTitle.ok, cardTitle.last);
 
   // 2. The first write in the tab the user is on takes it over.
   await control({ type: "control.anchor", sessionId: "verify-s1", tabId: tabA });

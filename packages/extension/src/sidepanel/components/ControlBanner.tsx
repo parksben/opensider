@@ -85,7 +85,8 @@ export function ControlBanner({
         <span className={`cs-control-dot shrink-0${acting ? " is-acting" : ""}`} aria-hidden="true" />
         <div className="min-w-0 flex-1 truncate text-[12.5px]">
           {acting ? t(locale, "controlWorking") : t(locale, "controlHeld")}{" "}
-          <span className="text-[var(--text)]">“{primary.title}”</span>
+          {/* A tab that is still loading has no title yet: fall back to its host. */}
+          <span className="text-[var(--text)]">“{primary.title || hostOf(primary.url)}”</span>
           {tabs.length > 1 && (
             <span className="ml-1.5 text-[11px] text-[var(--muted)]">
               {t(locale, "controlMore").replace("{count}", String(tabs.length - 1))}

@@ -490,7 +490,7 @@ Host 是通用 ACP Client + 数据驱动 `AgentProfile`（启动命令、鉴权�
 
 **答卡续跑（侧栏侧）**：用户点「允许 / 拒绝」后，侧栏除了回 `control.grant`，还替用户给该请求归属的会话（按 `request.sessionId` 反查本地会话，没带则用当前选中会话）发一条续跑消息（`i18n.controlContinueAllowed` / `controlContinueDenied`，带标签标题）——Agent 不必等用户再打一条。Agent 正在跑（`runningIds`）就扔进该会话的待发队列，回合结束自动发（走 `flushQueue`）。
 
-**状态 UI（侧栏）**：状态卡与借用卡同为 `ControlBanner` 组件，插在 `ChatPane` 输入区堆叠的顶部（`control` 属性，渲染在 `<TodoList>` 之前），用统一的卡片族样式（`mb-2 rounded-lg border border-[var(--line)] bg-[var(--panel-2)]`），不再占用 header 下方那条横带。
+**状态 UI（侧栏）**：状态卡与借用卡同为 `ControlBanner` 组件，插在 `ChatPane` 输入区堆叠的顶部（`control` 属性，渲染在 `<TodoList>` 之前），用统一的卡片族样式（`mb-2 rounded-lg border border-[var(--line)] bg-[var(--panel-2)]`），不再占用 header 下方那条横带。被接管标签的状态由 SW 广播，卡片在渲染时读快照里的标题——新开（自建）标签被接管那一刻通常还没加载完、标题为空，所以 `tabs.onUpdated` 对「已持有标签」的 `status/title/url` 变化会防抖重广播（`publishControlIfHeld` → `scheduleControlPublish`，150ms），卡片随页面标题自动更新；实在没有标题时兜底显示域名。
 
 **收回（`control.release`）**：释放该会话全部接管（连同锚点、路由目标与访问记忆），并对每个标签写 `blocked`（防止立即重接管）；广播状态、撤徽标。侧栏在会话删除时也发这条。已派发的动作不回滚；冷却期内后续命令得到 `borrow_denied`。
 

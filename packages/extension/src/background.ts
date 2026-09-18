@@ -512,6 +512,21 @@ async function publishControl(): Promise<void> {
   broadcast(lastControl);
 }
 
+let controlTimer = 0;
+
+/** A freshly adopted tab keeps loading after we published it (title often arrives later):
+ * re-broadcast so the side-panel card shows the real title instead of an empty one. */
+function scheduleControlPublish(): void {
+  clearTimeout(controlTimer);
+  controlTimer = setTimeout(() => void publishControl(), 150) as unknown as number;
+}
+
+async function publishControlIfHeld(tabId: number): Promise<void> {
+  await loadControlState();
+  if (!entryForTab(controlState, tabId)) return;
+  scheduleControlPublish();
+}
+
 /** Paint (or clear) the control prefix the page shows in its own tab title. Best effort. */
 async function pushControlBadge(tabId: number, on: boolean): Promise<void> {
   try {
@@ -2184,6 +2199,8 @@ chrome.tabs.onUpdated.addListener((tabId, change, tab) => {
   if (change.status === "complete") {
     void reassertControlBadge(tabId);
   }
+  // Held tabs: keep the side-panel card's title / url in step with the tab itself.
+  if (change.status || change.title || change.url) void publishControlIfHeld(tabId);
 });
 
 chrome.tabs.onCreated.addListener((tab) => {
