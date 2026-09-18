@@ -262,6 +262,16 @@ export function isRemembered(state: ControlSnapshot, sessionId: string, tabId: n
   );
 }
 
+/**
+ * Permission modes under which the borrow gate hands a tab over without a card (the user
+ * said "do not ask me"): `auto` (tool calls run straight away) and `unattended` (nothing is
+ * confirmed). Explicit intent still wins — a cooldown or another conversation's hold is
+ * never overridden (see docs/TECH_DESIGN.md «档位放行»).
+ */
+export function policyAutoApproves(policy: string | undefined): boolean {
+  return policy === "auto" || policy === "unattended";
+}
+
 export function setAnchor(state: ControlSnapshot, sessionId: string, tabId: number): void {
   state.anchors[sessionId] = tabId;
 }

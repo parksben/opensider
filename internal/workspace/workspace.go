@@ -25,7 +25,7 @@ func Ensure() {
 	_ = os.WriteFile(paths.AgentsMDPath(), []byte(agentsMD), 0o644)
 	_ = os.WriteFile(paths.ClaudeMDPath(), []byte(agentsMD), 0o644)
 	tools := map[string]any{
-		"version":        13,
+		"version":        14,
 		"transport":      "workspace-files",
 		"commandsDir":    "browser/commands",
 		"resultsDir":     "browser/results",
@@ -42,7 +42,7 @@ func Ensure() {
 		// Quiet defaults + tab control (see agents.md «Tab control»): static description only.
 		"tabControl": map[string]any{
 			"quietByDefault": true,
-			"note":           "openTab opens in the background next to your working tab and becomes yours; no command changes the user's active tab or window focus, except switchTab (show) and screenshots (a brief flip that is restored). Answering the borrow card in the side panel also sends you a message to carry on with.",
+			"note":           "openTab opens in the background next to your working tab and becomes yours; no command changes the user's active tab or window focus, except switchTab (show) and screenshots (a brief flip that is restored). Answering the borrow card in the side panel also sends you a message to carry on with; in the auto/unattended permission modes the gate approves tabs on its own.",
 		},
 		"methods": protocol.ToolCatalog,
 	}

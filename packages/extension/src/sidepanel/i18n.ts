@@ -153,9 +153,9 @@ const copy = {
     controlAllow: "Allow",
     controlDeny: "Deny",
     controlContinueAllowed:
-      "I allowed you to work in “{title}”. Please go on with the task - do not ask again.",
+      "[OpenSider] The user allowed you to work in “{title}”. Continue the task - do not ask again.",
     controlContinueDenied:
-      "I declined your request to work in “{title}”. Do not retry; tell me how you want to proceed.",
+      "[OpenSider] The user declined your request to work in “{title}”. Do not retry; tell the user how you plan to proceed.",
     pickPageFailed: "Open a regular http(s) page, then pick an element.",
     pickInjectFailed: "Could not start the page picker on this tab.",
     fork: "Fork from here",
@@ -324,8 +324,8 @@ const copy = {
     controlTakeBackHint: "收回后 Agent 不能继续操作这些标签",
     controlRequest: "Agent 想操作",
     controlAllow: "允许",
-    controlDeny: "拒绝",    controlContinueAllowed: "我已允许你操作“{title}”，请继续刚才的任务，不用再问我。",
-    controlContinueDenied: "我拒绝了你操作“{title}”的请求，请不要重试；告诉我接下来怎么办。",    pickPageFailed: "请先打开普通的 http(s) 页面，再拾取元素。",
+    controlDeny: "拒绝",    controlContinueAllowed: "[OpenSider] 用户已允许你操作“{title}”，请继续刚才的任务，不要重复询问。",
+    controlContinueDenied: "[OpenSider] 用户拒绝了你操作“{title}”的请求，不要重试；告诉用户你接下来怎么办。",    pickPageFailed: "请先打开普通的 http(s) 页面，再拾取元素。",
     pickInjectFailed: "无法在这个标签页启动元素拾取。",
     fork: "从此处复制新会话",
     regenerate: "重新生成",

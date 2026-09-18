@@ -486,9 +486,11 @@ Host 是通用 ACP Client + 数据驱动 `AgentProfile`（启动命令、鉴权�
 
 **路由（`dispatchCommand` 前置闸门）**：目标解析顺序 = `args.tabId` → 本会话路由目标（`targets`）→ 焦点活动标签。写类（act / 导航）落点若是路由目标或锚点 → **自动接管**（`autoDiscardable:false`、推标题徽标、广播 control），接管前先过 `blocked` 冷却；若是未接管的其它用户标签 → 未阻塞则建借用请求（`control.request`，侧栏弹卡）并返回 `reason=borrow_required` + `hint`，冷却中则 `borrow_denied` 静默拒绝，被别的会话持有则 `borrow_held`。读类在锚点 / 路由目标 / 自建 / 已接管上直通，其它标签同样过闸。每次写命令成功后把该会话的 `targets` 指向该标签——Agent 去哪干活，之后的省略式命令就跟到哪；新消息再把它拉回锚点。
 
+**档位放行（借用闸门的策略分支）**：侧栏把当前权限档位存在 `chrome.storage.local[opensider/state].agentMode`；SW 在模块启动时读一次、并用 `chrome.storage.onChanged` 跟住。策略为 `auto` / `unattended` 时，`resolveCommandTab` 不调 `requestBorrow`，而是直接 `adoptTab`（不建 pending、不广播卡片、**不写 `trusted` 记忆**）；`blocked` 冷却与「别的会话持有」仍分别返回 `borrow_denied` / `borrow_held`（显式意图优先于档位）。档位从侧栏读取而不是走消息通道，是为了即使没有消息往来（SW 刚启动、命令先到）也能生效。
+
 **回合结束（`turn.end`）**：SW 在转发 Host 消息的同一路挂勾——park 掉该会话的持有（徽标 / banner 收起、`autoDiscardable` 复位），保留访问记忆与待答卡片；下一次写命令对记忆内标签静默再接管。`openTab` 自建的记入 `origins`，用户批准借用时记入 `trusted`；标签关闭 / `onReplaced` 同步清理。用户收回与会话删除则连访问记忆一起清空。
 
-**答卡续跑（侧栏侧）**：用户点「允许 / 拒绝」后，侧栏除了回 `control.grant`，还替用户给该请求归属的会话（按 `request.sessionId` 反查本地会话，没带则用当前选中会话）发一条续跑消息（`i18n.controlContinueAllowed` / `controlContinueDenied`，带标签标题）——Agent 不必等用户再打一条。Agent 正在跑（`runningIds`）就扔进该会话的待发队列，回合结束自动发（走 `flushQueue`）。
+**答卡续跑（侧栏侧）**：用户点「允许 / 拒绝」后，侧栏除了回 `control.grant`，还给该请求归属的会话发一条**通道消息**（`i18n.controlContinueAllowed` / `controlContinueDenied`，带 `[OpenSider]` 前缀与标签标题）把 Agent 带回正轨——不等用户再打一条，也不进本地消息记录：`sendPrompt(..., { anchor: false })`，不过 `updateSessionMessages` / `wrapUserPrompt`，重新生成 / Fork 的「上一条用户消息」不被污染（Agent 自己的会话历史里保留这条）。会话正在跑时带 `interrupt: true`：Host 先停旧一轮并等它收尾（`turn.end{interrupted}` 走 `settleSupersededTurn`），新一轮接上——**不再进待发队列**，用户点了卡就是最高优先级。档位切到 `auto` / `unattended` 时若还有未答卡片，侧栏按「允许」走同一条路径，但 `control.grant` 带 `auto:true`，`resolveBorrow` 据此跳过 `rememberTrusted`（策略放行不等于用户批准）。
 
 **状态 UI（侧栏）**：状态卡与借用卡同为 `ControlBanner` 组件，插在 `ChatPane` 输入区堆叠的顶部（`control` 属性，渲染在 `<TodoList>` 之前），用统一的卡片族样式（`mb-2 rounded-lg border border-[var(--line)] bg-[var(--panel-2)]`），不再占用 header 下方那条横带。被接管标签的状态由 SW 广播，卡片在渲染时读快照里的标题——新开（自建）标签被接管那一刻通常还没加载完、标题为空，所以 `tabs.onUpdated` 对「已持有标签」的 `status/title/url` 变化会防抖重广播（`publishControlIfHeld` → `scheduleControlPublish`，150ms），卡片随页面标题自动更新；实在没有标题时兜底显示域名。
 

@@ -14,6 +14,7 @@ import {
   isRemembered,
   parkSession,
   parseControl,
+  policyAutoApproves,
   primaryTabFor,
   pruneControl,
   releaseSession,
@@ -30,6 +31,15 @@ import {
 } from "./tab-control.ts";
 
 describe("tab-control store", () => {
+  it("only the auto / unattended modes hand a tab over without a card", () => {
+    assert.equal(policyAutoApproves("auto"), true);
+    assert.equal(policyAutoApproves("unattended"), true);
+    assert.equal(policyAutoApproves("ask"), false);
+    assert.equal(policyAutoApproves("workspace"), false);
+    assert.equal(policyAutoApproves("something-else"), false);
+    assert.equal(policyAutoApproves(undefined), false);
+  });
+
   it("hands a tab to one session at a time", () => {
     const state = emptyControl();
     takeover(state, "s1", 10, 1_000);

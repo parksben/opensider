@@ -168,6 +168,8 @@ try {
   await fixtureG.goto(`http://127.0.0.1:${port}/g`);
   const fixtureH = await context.newPage();
   await fixtureH.goto(`http://127.0.0.1:${port}/h`);
+  const fixtureI = await context.newPage();
+  await fixtureI.goto(`http://127.0.0.1:${port}/i`);
 
   const tabOf = async (urlPart) =>
     panel.evaluate(
@@ -207,9 +209,26 @@ try {
     );
   const control = async (msg) => sw.evaluate((payload) => globalThis.__opensiderControl(payload), msg);
   const controlState = async () => sw.evaluate(() => globalThis.__opensiderControlState());
+  const policyNow = async () => sw.evaluate(() => globalThis.__opensiderPolicy());
+  // The sidebar persists its permission mode; the SW reads it from storage, so wait for the
+  // switch to land there before asserting the gate's behaviour.
+  const waitForPolicy = async (want) => {
+    const deadline = Date.now() + 8_000;
+    let last;
+    while (Date.now() < deadline) {
+      last = await policyNow();
+      if (last === want) return true;
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    }
+    return false;
+  };
+  const setMode = async (from, to) => {
+    await statusReady();
+    await panel.getByRole("button", { name: from, exact: true }).click({ timeout: 5_000 });
+    await panel.getByRole("button", { name: new RegExp(`^${to}`) }).click({ timeout: 5_000 });
+  };
   const outbound = async () => sw.evaluate(() => globalThis.__opensiderOutbound());
-  const promptsSent = async () => sw.evaluate(() => globalThis.__opensiderPrompts());
-  // No native host is registered in this harness, so the sidebar falls back to the bridge
+  const promptsSent = async () => sw.evaluate(() => globalThis.__opensiderPrompts());  // No native host is registered in this harness, so the sidebar falls back to the bridge
   // setup screen and never renders the chat pane (where the control card lives). Re-seed the
   // status while polling for pane UI.
   const waitForPane = async (test, timeoutMs = 12_000) => {
@@ -228,10 +247,11 @@ try {
   const tabD = await tabOf("/d");
   const tabG = await tabOf("/g");
   const tabH = await tabOf("/h");
+  const tabI = await tabOf("/i");
   check(
     "found the fixture tabs",
-    [tabA, tabB, tabD, tabG, tabH].every((id) => id != null),
-    `A=${tabA} B=${tabB} D=${tabD} G=${tabG} H=${tabH}`,
+    [tabA, tabB, tabD, tabG, tabH, tabI].every((id) => id != null),
+    `A=${tabA} B=${tabB} D=${tabD} G=${tabG} H=${tabH} I=${tabI}`,
   );
 
   // 1. openTab goes to the background and never takes the user's view.
@@ -413,14 +433,18 @@ try {
     "verify-s1",
   );
   check("after allowing, the same command works", allowed?.ok === true, allowed?.error);
-  const allowBubble = await waitForPane((text) => /allowed you to work in/.test(text));
-  check("the allow nudge lands in the transcript", allowBubble);
-  const allowNudge = (await promptsSent()).find((text) => /allowed you to work in/.test(text));
+  const allowNudge = (await promptsSent()).find((entry) => /allowed you to work in/.test(entry.text));
   check(
     "allowing auto-sends a continue prompt",
     Boolean(allowNudge),
     JSON.stringify(allowNudge ?? (await promptsSent()).slice(-3)),
   );
+  // The nudge is a bridge message: the panel must not show it as a user bubble.
+  const cleanTranscript = await waitFor(async () => {
+    await statusReady();
+    return !/allowed you to work in/.test(await panel.evaluate(() => document.body.innerText));
+  }, true);
+  check("the nudge stays out of the transcript", cleanTranscript.ok);
   const badgeH = await waitFor(() => marked(tabH), true);
   check("the granted tab carries the title mark", badgeH.ok, `title=${badgeH.last}`);
 
@@ -437,22 +461,20 @@ try {
   );
   check("a second request answers borrow_pending", busy?.ok === false && busy?.reason === "borrow_pending", `reason=${busy?.reason}`);
 
-  // 6d. Denying keeps the tab off limits without re-asking - and replies to the Agent too.
-  // If the Allow nudge is still "running" (no host answers in this harness), the denial is
-  // queued instead of sent; either way the reply must reach the Agent.
+  // 6d. Denying keeps the tab off limits without re-asking - and answers the running turn
+  // right away: the answer interrupts instead of queueing (the allow nudge above is still
+  // "running" in this harness, no host ever ends it).
   await statusReady();
   await panel.getByRole("button", { name: "Deny", exact: true }).click({ timeout: 5_000 });
-  let denyNudge = "";
+  let denyNudge;
   for (let attempt = 0; attempt < 20 && !denyNudge; attempt += 1) {
-    const sent = (await promptsSent()).find((text) => /declined your request/.test(text));
-    if (sent) denyNudge = "sent";
-    else if (/declined your request/.test(await panel.evaluate(() => document.body.innerText))) denyNudge = "queued";
-    else await new Promise((resolve) => setTimeout(resolve, 250));
+    denyNudge = (await promptsSent()).find((entry) => /declined your request/.test(entry.text));
+    if (!denyNudge) await new Promise((resolve) => setTimeout(resolve, 250));
   }
   check(
-    "denying auto-replies to the Agent",
-    Boolean(denyNudge),
-    denyNudge || JSON.stringify((await promptsSent()).slice(-3)),
+    "denying answers the waiting turn with an interrupt",
+    Boolean(denyNudge) && denyNudge.interrupt === true,
+    JSON.stringify(denyNudge ?? (await promptsSent()).slice(-3)),
   );
   const deniedAgain = await dispatch(
     { id: `deny2-${Date.now()}`, method: "click", args: { selector: "#btn", tabId: tabD } },
@@ -577,6 +599,77 @@ try {
     "a taken-back tab is off limits (no silent re-take)",
     blockedWrite?.ok === false && blockedWrite?.reason === "borrow_denied",
     `reason=${blockedWrite?.reason}`,
+  );
+
+  // 9. Permission modes: `unattended` (and `auto`) answer the gate without a card.
+  const askI = await dispatch(
+    { id: `p9a-${Date.now()}`, method: "click", args: { selector: "#btn", tabId: tabI } },
+    "verify-s1",
+  );
+  check(
+    "a fresh user tab still asks under 'ask'",
+    askI?.ok === false && askI?.reason === "borrow_required",
+    `reason=${askI?.reason}`,
+  );
+  const cardBeforeSwitch = await waitForPane((text) => /asks to work in/.test(text));
+  check("its card is up before the mode switch", cardBeforeSwitch);
+
+  await setMode("Ask every time", "Allow all");
+  const autoAnswered = await waitFor(async () => {
+    const sent = (await promptsSent()).find((entry) => /allowed you to work in/.test(entry.text));
+    return Boolean(sent);
+  }, true);
+  check("switching to 'Allow all' answers the pending card", autoAnswered.ok);
+  const autoHeld = await waitFor(
+    async () => (await controlState()).entries.some((entry) => entry.sessionId === "verify-s1" && entry.tabId === tabI),
+    true,
+  );
+  check("the pending tab is handed over", autoHeld.ok);
+  check("the policy reached the service worker", await waitForPolicy("unattended"));
+
+  const autoWrite = await dispatch(
+    { id: `p9b-${Date.now()}`, method: "click", args: { selector: "#btn", tabId: tabG } },
+    "verify-s1",
+  );
+  check("under 'Allow all' a user tab is taken without a card", autoWrite?.ok === true, autoWrite?.error);
+  check("no card was raised for it", (await controlState()).pending === null);
+  const noCardShown = await waitFor(async () => {
+    await statusReady();
+    return !/asks to work in/.test(await panel.evaluate(() => document.body.innerText));
+  }, true);
+  check("the panel shows no borrow card either", noCardShown.ok);
+
+  const foreignAuto = await dispatch(
+    { id: `p9c-${Date.now()}`, method: "click", args: { selector: "#btn", tabId: tabG } },
+    "verify-s2",
+  );
+  check(
+    "'Allow all' never overrides another session's hold",
+    foreignAuto?.ok === false && foreignAuto?.reason === "borrow_held",
+    `reason=${foreignAuto?.reason}`,
+  );
+  const blockedAuto = await dispatch(
+    { id: `p9d-${Date.now()}`, method: "click", args: { selector: "#btn", tabId: tabH } },
+    "verify-s1",
+  );
+  check(
+    "'Allow all' never overrides a take-back cooldown",
+    blockedAuto?.ok === false && blockedAuto?.reason === "borrow_denied",
+    `reason=${blockedAuto?.reason}`,
+  );
+
+  // A policy grant is not a user approval: with the mode back on `ask`, the tab asks again.
+  await sw.evaluate((sessionId) => globalThis.__opensiderTurnEnd(sessionId), "verify-s1");
+  await setMode("Allow all", "Ask every time");
+  check("the policy was switched back", await waitForPolicy("ask"));
+  const reAsk = await dispatch(
+    { id: `p9e-${Date.now()}`, method: "click", args: { selector: "#btn", tabId: tabG } },
+    "verify-s1",
+  );
+  check(
+    "a policy-granted tab asks again once the mode is back to 'ask'",
+    reAsk?.ok === false && reAsk?.reason === "borrow_required",
+    `reason=${reAsk?.reason}`,
   );
 
   const failed = results.filter((item) => !item.ok);

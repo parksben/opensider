@@ -56,6 +56,7 @@ import {
   isRemembered,
   parkSession,
   parseControl,
+  policyAutoApproves,
   primaryTabFor,
   pruneControl,
   releaseSession,
@@ -116,6 +117,12 @@ const INSTALL_HINT = "Send the prompt shown in the side panel to your local AI A
   await loadControlState();
   return { entries: controlState.entries, pending: controlState.pending, blocked: controlState.blocked };
 };
+// The permission mode the borrow gate is using (read-only; the verify script waits for the
+// sidebar's mode switch to land here before asserting the gate's auto-approve).
+(globalThis as unknown as Record<string, unknown>)["__opensiderPolicy"] = async () => {
+  await loadControlPolicy();
+  return controlPolicy;
+};
 // What the workspace files will say: the tab snapshot with `control` flags and the route
 // `current.json` carries (read-only; used by the same verify script).
 (globalThis as unknown as Record<string, unknown>)["__opensiderSnapshot"] = async () => {
@@ -131,7 +138,7 @@ const outboundLog: ExtToHost[] = [];
 (globalThis as unknown as Record<string, unknown>)["__opensiderOutbound"] = () => outboundLog.slice();
 // Prompt texts the side panel sent, in their own list: the snapshot traffic above can be
 // very chatty and would push them out of `outboundLog` before the verify script reads it.
-const promptLog: string[] = [];
+const promptLog: Array<{ text: string; interrupt: boolean }> = [];
 (globalThis as unknown as Record<string, unknown>)["__opensiderPrompts"] = () => promptLog.slice();
 // Forces a host status (the verify script has no real host, and the composer refuses to
 // send while offline). While forced, missing-host reports stay suppressed so the sidebar
@@ -375,7 +382,7 @@ function sendNative(msg: ExtToHost): void {
   outboundLog.push(msg);
   if (outboundLog.length > 12) outboundLog.shift();
   if (msg.type === "prompt" && typeof msg.text === "string") {
-    promptLog.push(msg.text);
+    promptLog.push({ text: msg.text, interrupt: msg.interrupt === true });
     if (promptLog.length > 10) promptLog.shift();
   }
   connectNative();
@@ -457,6 +464,12 @@ let controlState: ControlSnapshot = emptyControl();
 let controlLoaded = false;
 let lastControl: HostToExt | undefined;
 let lastControlSessionId: string | undefined;
+/** The sidebar's permission mode (`ask` | `workspace` | `auto` | `unattended`). It lives in
+ * the sidebar's persisted state; the SW follows it through storage so the borrow gate can
+ * approve tabs on its own in the auto / unattended modes (see docs/TECH_DESIGN.md). */
+const SIDEBAR_STATE_KEY = "opensider/state";
+let controlPolicy: string | undefined;
+let policyLoaded = false;
 /** Anchor reported for a session the SW does not know yet (brand-new chat, first prompt). */
 let pendingAnchor: { tabId: number; at: number } | null = null;
 /** tabId -> commands in flight; drives the banner's "working" state. */
@@ -473,13 +486,43 @@ async function loadControlState(): Promise<void> {
   }
 }
 
+let lastPendingBroadcast: string | undefined;
+
 function persistControl(): void {
+  // Whenever the store drops a pending request (take-back, tab closed, TTL), take its card
+  // down in the side panel too — otherwise it would linger for a request nobody can answer.
+  const pendingId = controlState.pending?.requestId;
+  if (pendingId !== lastPendingBroadcast) {
+    if (!pendingId && lastPendingBroadcast) {
+      broadcast({ type: "control.request.done", requestId: lastPendingBroadcast });
+    }
+    lastPendingBroadcast = pendingId;
+  }
   try {
     void chrome.storage.session.set({ [CONTROL_KEY]: controlState });
   } catch {
     // best effort; the TTL prunes anything that lingers
   }
 }
+
+async function loadControlPolicy(): Promise<void> {
+  if (policyLoaded) return;
+  policyLoaded = true;
+  try {
+    const raw = (await chrome.storage.local.get(SIDEBAR_STATE_KEY))?.[SIDEBAR_STATE_KEY] as
+      | { agentMode?: unknown }
+      | undefined;
+    controlPolicy = typeof raw?.agentMode === "string" ? raw.agentMode : undefined;
+  } catch {
+    controlPolicy = undefined;
+  }
+}
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== "local" || !changes[SIDEBAR_STATE_KEY]) return;
+  const next = changes[SIDEBAR_STATE_KEY].newValue as { agentMode?: unknown } | undefined;
+  controlPolicy = typeof next?.agentMode === "string" ? next.agentMode : undefined;
+});
 
 async function buildControlStates(): Promise<TabControlState[]> {
   const sessions = new Map<string, TabControlState>();
@@ -716,6 +759,22 @@ async function resolveCommandTab(command: BrowserCommand, sessionId?: string): P
       if (isControlWrite(command.method)) await adoptTab(sessionId, tab.id, now);
       return { tab };
     }
+    // auto / unattended: the user said "do not ask me" - hand the tab over, no card. The
+    // cooldown stays (explicit intent wins) and another session's hold never gets overridden.
+    await loadControlPolicy();
+    if (policyAutoApproves(controlPolicy)) {
+      if (isBlocked(controlState, sessionId, tab.id, now)) {
+        return {
+          fail: {
+            error: "The user took this tab's control back (or declined) recently, so it is still off limits.",
+            reason: "borrow_denied",
+            hint: "Do not retry on your own; ask the user with cursor/ask_question if the task still needs it.",
+          },
+        };
+      }
+      await adoptTab(sessionId, tab.id, now);
+      return { tab };
+    }
     return requestBorrow(sessionId, tab);
   }
 
@@ -848,8 +907,8 @@ async function parkControlFor(sessionId: string | undefined): Promise<void> {
   void publishControl();
 }
 
-/** The user answered a borrow card. */
-async function resolveBorrow(requestId: string, allow: boolean): Promise<void> {
+/** The user answered a borrow card (or the permission mode answered it for them). */
+async function resolveBorrow(requestId: string, allow: boolean, remember = true): Promise<void> {
   await loadControlState();
   const pending = controlState.pending;
   if (!pending || pending.requestId !== requestId) return;
@@ -858,8 +917,9 @@ async function resolveBorrow(requestId: string, allow: boolean): Promise<void> {
   if (allow) {
     clearBlock(controlState, pending.sessionId, pending.tabId);
     takeover(controlState, pending.sessionId, pending.tabId, now);
-    // The user approved this tab for the session: re-entering it later needs no new card.
-    rememberTrusted(controlState, pending.sessionId, pending.tabId);
+    // A click approves this tab for the session: re-entering it later needs no new card.
+    // A policy-driven grant (`auto`) is not a user approval, so it is not remembered.
+    if (remember) rememberTrusted(controlState, pending.sessionId, pending.tabId);
     persistControl();
     try {
       await chrome.tabs.update(pending.tabId, { autoDiscardable: false });
@@ -2115,7 +2175,7 @@ function handleControlMessage(msg: ExtToHost): boolean {
     return true;
   }
   if (msg.type === "control.grant") {
-    void resolveBorrow(msg.requestId, msg.allow);
+    void resolveBorrow(msg.requestId, msg.allow, msg.auto !== true);
     return true;
   }
   return false;

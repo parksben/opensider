@@ -237,16 +237,25 @@ export function App() {
    * 发 prompt 并登记 requestId：Host 若因 `session/load` 失败被迫换新会话，
    * 会带这个 id 回一条 `session` 回执，让本地绑定跟上新会话。
    */
-  const sendPrompt = (localId: string, sessionId: string, text: string, interrupt = false) => {
+  const sendPrompt = (
+    localId: string,
+    sessionId: string,
+    text: string,
+    interrupt = false,
+    anchor = true,
+  ) => {
     const requestId = crypto.randomUUID();
     bindRegistry.current.add(requestId, localId, "prompt");
     // Anchor the turn to the tab the user is on: the Agent's first write takes that tab
     // over, and a later tab switch by the user will not drag the work somewhere else.
-    sendRef.current({
-      type: "control.anchor",
-      sessionId: sessionId || undefined,
-      tabId: pageRef.current?.tabId,
-    });
+    // Bridge messages (see `sendNudge`) skip this: they are not a new user message.
+    if (anchor) {
+      sendRef.current({
+        type: "control.anchor",
+        sessionId: sessionId || undefined,
+        tabId: pageRef.current?.tabId,
+      });
+    }
     sendRef.current({
       type: "prompt",
       text,
@@ -1035,8 +1044,24 @@ export function App() {
   };
   sendToSessionRef.current = sendToSession;
 
-  // 用户刚在接管卡片上点了「允许 / 拒绝」：替用户回一句，让 Agent 自己接着往下走，
-  // 而不是用户再手动发一条消息。Agent 若正在跑，就排进队列等本轮结束后自动发。
+  // 用户刚在接管卡片上点了「允许 / 拒绝」（或切到了自动档）：把 Agent 带回正轨。
+  // 这是一条**通道消息**——只发给 Agent，不进本地消息记录（实时与历史都不显示，
+  // 也不污染重新生成 / Fork 的「上一条用户消息」）、不重锚点；会话在跑就打断重来，
+  // 不再排队（用户点了卡就是最高优先级）。
+  const sendNudge = (localId: string, text: string) => {
+    if (statusRef.current !== "ready") {
+      setError(t(localeRef.current, "offlineSend"));
+      setStatus("error");
+      return;
+    }
+    const session = sessionsRef.current.find((item) => item.id === localId);
+    if (!session?.acpSessionId) return;
+    const interrupt = runningIdsRef.current.has(localId);
+    beginTurn(localId);
+    setError(undefined);
+    sendPrompt(localId, session.acpSessionId, text, interrupt, false);
+  };
+
   const continueAfterBorrow = (request: BorrowRequest, allow: boolean) => {
     const text = t(
       localeRef.current,
@@ -1050,12 +1075,7 @@ export function App() {
         )
       : sessionsRef.current.find((item) => item.id === selectedIdRef.current);
     if (!session) return;
-    if (runningIdsRef.current.has(session.id)) {
-      const item: QueuedMessage = { id: crypto.randomUUID(), text, attachments: [] };
-      setSessionQueue(session.id, [...(queuesRef.current[session.id] ?? []), item]);
-      return;
-    }
-    sendToSession(session.id, text);
+    sendNudge(session.id, text);
   };
 
   const flushQueue = (sessionId: string) => {
@@ -1632,6 +1652,14 @@ export function App() {
               onAgentMode={(mode) => {
                 setAgentMode(mode);
                 sendRef.current({ type: "agent.setPolicy", policy: mode });
+                // 切到自动档：若还有未答的卡片，按「允许」处理（授权 + 通知 Agent 继续）。
+                // `auto: true` 告诉 SW 这是策略放行，不写访问记忆（见 resolveBorrow）。
+                if ((mode === "auto" || mode === "unattended") && borrowRequest) {
+                  const pendingCard = borrowRequest;
+                  sendRef.current({ type: "control.grant", requestId: pendingCard.requestId, allow: true, auto: true });
+                  setBorrowRequest(undefined);
+                  continueAfterBorrow(pendingCard, true);
+                }
                 if (mode === "ask") return;
                 setPermissions((current) => {
                   const kept: Record<string, PermissionRequest> = {};
