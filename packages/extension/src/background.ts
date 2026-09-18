@@ -51,11 +51,15 @@ import {
   emptyControl,
   entryForTab,
   isBlocked,
+  isRemembered,
+  parkSession,
   parseControl,
   primaryTabFor,
   pruneControl,
   releaseSession,
   releaseTab,
+  rememberOrigin,
+  rememberTrusted,
   setAnchor,
   setPending,
   setTarget,
@@ -116,6 +120,9 @@ const INSTALL_HINT = "Send the prompt shown in the side panel to your local AI A
   await loadControlState();
   return { snapshot: await collectTabsSnapshot(), target: await currentControlTarget() };
 };
+// Simulates the host's turn.end for `scripts/verify-tab-control.mjs`.
+(globalThis as unknown as Record<string, unknown>)["__opensiderTurnEnd"] = (sessionId?: string) =>
+  parkControlFor(sessionId);
 
 function isHostMissingError(message: string): boolean {
   const text = message.toLowerCase();
@@ -292,6 +299,10 @@ function connectNative(force = false): void {
     }
     if (msg.type === "browser.command") {
       void dispatchCommand(msg.command, msg.sessionId);
+    }
+    if (msg.type === "turn.end" && msg.sessionId) {
+      // The turn is over: hand the tabs back, keep the memories (see parkControlFor).
+      void parkControlFor(msg.sessionId);
     }
     broadcast(msg);
   });
@@ -534,9 +545,10 @@ async function sessionTargetTab(sessionId: string): Promise<chrome.tabs.Tab | un
   }
 }
 
-async function adoptTab(sessionId: string, tabId: number, now = Date.now()): Promise<void> {
+async function adoptTab(sessionId: string, tabId: number, now = Date.now(), origin = false): Promise<void> {
   await loadControlState();
   takeover(controlState, sessionId, tabId, now);
+  if (origin) rememberOrigin(controlState, sessionId, tabId);
   persistControl();
   try {
     await chrome.tabs.update(tabId, { autoDiscardable: false });
@@ -574,6 +586,13 @@ async function remapControlEntry(addedTabId: number, removedTabId: number): Prom
   entry.tabId = addedTabId;
   for (const [sessionId, target] of Object.entries(controlState.targets)) {
     if (target === removedTabId) controlState.targets[sessionId] = addedTabId;
+  }
+  for (const key of ["origins", "trusted"] as const) {
+    for (const [sessionId, ids] of Object.entries(controlState[key])) {
+      if (ids.includes(removedTabId)) {
+        controlState[key][sessionId] = ids.map((id) => (id === removedTabId ? addedTabId : id));
+      }
+    }
   }
   persistControl();
   void pushControlBadge(addedTabId, true);
@@ -650,7 +669,7 @@ async function resolveCommandTab(command: BrowserCommand, sessionId?: string): P
         },
       };
     }
-    if (effectiveAnchor(sessionId, now) === tab.id) {
+    if (effectiveAnchor(sessionId, now) === tab.id || isRemembered(controlState, sessionId, tab.id)) {
       if (isControlWrite(command.method)) await adoptTab(sessionId, tab.id, now);
       return { tab };
     }
@@ -768,6 +787,24 @@ async function releaseControlFor(sessionId: string | undefined): Promise<void> {
   void publishControl();
 }
 
+/**
+ * The turn is over: give the held tabs back (badges off, banner clears) while keeping the
+ * memories — tabs the session opened and tabs the user already approved stay free to
+ * re-enter without a new card.
+ */
+async function parkControlFor(sessionId: string | undefined): Promise<void> {
+  if (!sessionId) return;
+  await loadControlState();
+  const tabIds = parkSession(controlState, sessionId);
+  if (tabIds.length === 0) return;
+  persistControl();
+  for (const tabId of tabIds) {
+    void chrome.tabs.update(tabId, { autoDiscardable: true }).catch(() => undefined);
+    void pushControlBadge(tabId, false);
+  }
+  void publishControl();
+}
+
 /** The user answered a borrow card. */
 async function resolveBorrow(requestId: string, allow: boolean): Promise<void> {
   await loadControlState();
@@ -778,6 +815,8 @@ async function resolveBorrow(requestId: string, allow: boolean): Promise<void> {
   if (allow) {
     clearBlock(controlState, pending.sessionId, pending.tabId);
     takeover(controlState, pending.sessionId, pending.tabId, now);
+    // The user approved this tab for the session: re-entering it later needs no new card.
+    rememberTrusted(controlState, pending.sessionId, pending.tabId);
     persistControl();
     try {
       await chrome.tabs.update(pending.tabId, { autoDiscardable: false });
@@ -1185,7 +1224,7 @@ async function runWindowMethod(command: BrowserCommand, sessionId?: string): Pro
       active: false,
     });
     if (created.id == null) return fail(command, "could not open tab");
-    if (sessionId) await adoptTab(sessionId, created.id);
+    if (sessionId) await adoptTab(sessionId, created.id, Date.now(), true);
     await waitTabComplete(created.id, Math.min(command.args?.timeoutMs ?? 15_000, 20_000)).catch(() => undefined);
     return {
       id: command.id,
@@ -1218,7 +1257,7 @@ async function runWindowMethod(command: BrowserCommand, sessionId?: string): Pro
           hint: "Leave it alone unless the user asks; do not work around it from another session.",
         });
       }
-      if (!entry && anchorFor(controlState, sessionId) !== tabId) {
+      if (!entry && anchorFor(controlState, sessionId) !== tabId && !isRemembered(controlState, sessionId, tabId)) {
         return failWith(command, {
           error: "That tab was not handed to the Agent, so it may not be closed from here.",
           reason: "borrow_required",

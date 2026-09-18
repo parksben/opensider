@@ -37,6 +37,10 @@ export type ControlSnapshot = {
   /** `sessionId:tabId` -> blockedAt (take-back / explicit deny). */
   blocked: Record<string, number>;
   pending: PendingBorrow | null;
+  /** Tabs the session opened itself: free to re-enter after a turn ends. */
+  origins: Record<string, number[]>;
+  /** Tabs the user approved for this session: free to re-enter after a turn ends. */
+  trusted: Record<string, number[]>;
 };
 
 export const CONTROL_TTL_MS = 30 * 60_000;
@@ -44,7 +48,7 @@ export const BLOCK_MS = 10 * 60_000;
 export const PENDING_TTL_MS = 120_000;
 
 export function emptyControl(): ControlSnapshot {
-  return { entries: [], anchors: {}, targets: {}, blocked: {}, pending: null };
+  return { entries: [], anchors: {}, targets: {}, blocked: {}, pending: null, origins: {}, trusted: {} };
 }
 
 function asNumber(value: unknown): number | undefined {
@@ -81,6 +85,15 @@ export function parseControl(raw: unknown): ControlSnapshot {
     for (const [sessionId, tabId] of Object.entries(data.targets as Record<string, unknown>)) {
       const id = asNumber(tabId);
       if (id != null) state.targets[sessionId] = id;
+    }
+  }
+  for (const key of ["origins", "trusted"] as const) {
+    const raw = data[key];
+    if (!raw || typeof raw !== "object") continue;
+    for (const [sessionId, tabIds] of Object.entries(raw as Record<string, unknown>)) {
+      if (!Array.isArray(tabIds)) continue;
+      const ids = tabIds.map(asNumber).filter((id): id is number => id != null);
+      if (ids.length > 0) state[key][sessionId] = [...new Set(ids)];
     }
   }
   if (data.blocked && typeof data.blocked === "object") {
@@ -190,20 +203,63 @@ export function releaseTab(state: ControlSnapshot, tabId: number): string | unde
   for (const [sessionId, target] of Object.entries(state.targets)) {
     if (target === tabId) delete state.targets[sessionId];
   }
+  for (const key of ["origins", "trusted"] as const) {
+    for (const [sessionId, tabIds] of Object.entries(state[key])) {
+      state[key][sessionId] = tabIds.filter((id) => id !== tabId);
+      if (state[key][sessionId].length === 0) delete state[key][sessionId];
+    }
+  }
   if (!entry) return undefined;
   state.entries = state.entries.filter((item) => item.tabId !== tabId);
   if (state.pending?.tabId === tabId) state.pending = null;
   return entry.sessionId;
 }
 
-/** Release everything a session holds; returns the tab ids that were released. */
-export function releaseSession(state: ControlSnapshot, sessionId: string): number[] {
+/**
+ * The turn is over: give the held tabs back but keep the memories — the tabs the session
+ * opened and the ones the user already approved stay free to re-enter. Pending requests
+ * survive too: a card the user is about to answer must not vanish when the turn ends.
+ */
+export function parkSession(state: ControlSnapshot, sessionId: string): number[] {
   const mine = state.entries.filter((entry) => entry.sessionId === sessionId).map((entry) => entry.tabId);
   state.entries = state.entries.filter((entry) => entry.sessionId !== sessionId);
   delete state.anchors[sessionId];
   delete state.targets[sessionId];
+  return mine;
+}
+
+/** Take-back / session delete: a full reset — holds, routing, memories and pending. */
+export function releaseSession(state: ControlSnapshot, sessionId: string): number[] {
+  const mine = parkSession(state, sessionId);
+  delete state.origins[sessionId];
+  delete state.trusted[sessionId];
   if (state.pending?.sessionId === sessionId) state.pending = null;
   return mine;
+}
+
+export function rememberOrigin(state: ControlSnapshot, sessionId: string, tabId: number): void {
+  rememberIn(state, "origins", sessionId, tabId);
+}
+
+export function rememberTrusted(state: ControlSnapshot, sessionId: string, tabId: number): void {
+  rememberIn(state, "trusted", sessionId, tabId);
+}
+
+function rememberIn(
+  state: ControlSnapshot,
+  key: "origins" | "trusted",
+  sessionId: string,
+  tabId: number,
+): void {
+  const list = state[key][sessionId] ?? [];
+  if (!list.includes(tabId)) state[key][sessionId] = [...list, tabId];
+}
+
+/** A tab this session may re-enter without asking again. */
+export function isRemembered(state: ControlSnapshot, sessionId: string, tabId: number): boolean {
+  return (
+    (state.origins[sessionId] ?? []).includes(tabId) || (state.trusted[sessionId] ?? []).includes(tabId)
+  );
 }
 
 export function setAnchor(state: ControlSnapshot, sessionId: string, tabId: number): void {

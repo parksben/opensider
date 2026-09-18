@@ -70,6 +70,11 @@ tabs or windows. `browser/tabs.json` marks your tabs with `"control": "agent"`, 
 `browser/current.json` carries a `target` block; when the two disagree with the top-level
 entry, `target` is where you work, the top-level entry is what the user sees.
 
+**Your hold lasts one turn.** When your turn ends OpenSider hands the tabs back (the "●"
+and the side-panel banner go away). Your next command re-takes a tab silently when it is the
+anchor, a tab you opened yourself, or one the user already approved — those never ask twice.
+Any other user tab asks first.
+
 **Other user tabs need the user's OK.** Reading or writing a tab you do not hold answers
 `ok:false` with `reason:"borrow_required"` and puts a borrow card in the side panel. Say so
 to the user, wait for them, then retry the same command **once**. Do not loop, and never try

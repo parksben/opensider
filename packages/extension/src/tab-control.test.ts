@@ -11,11 +11,15 @@ import {
   emptyControl,
   entryForTab,
   isBlocked,
+  isRemembered,
+  parkSession,
   parseControl,
   primaryTabFor,
   pruneControl,
   releaseSession,
   releaseTab,
+  rememberOrigin,
+  rememberTrusted,
   setAnchor,
   setPending,
   setTarget,
@@ -70,6 +74,52 @@ describe("tab-control store", () => {
     assert.equal(targetFor(state, "s1"), 10);
     releaseTab(state, 10);
     assert.equal(targetFor(state, "s1"), undefined);
+  });
+
+  it("parks holds at turn end but keeps memories, blocks and pending requests", () => {
+    const state = emptyControl();
+    takeover(state, "s1", 10, 1_000);
+    takeover(state, "s1", 11, 1_000);
+    setAnchor(state, "s1", 10);
+    setTarget(state, "s1", 11);
+    rememberOrigin(state, "s1", 11);
+    rememberTrusted(state, "s1", 12);
+    blockPair(state, "s1", 13, 1_000);
+    setPending(state, { requestId: "r1", sessionId: "s1", tabId: 14, at: 1_000 });
+
+    assert.deepEqual(parkSession(state, "s1").sort(), [10, 11]);
+    assert.equal(entryForTab(state, 10), undefined);
+    assert.equal(anchorFor(state, "s1"), undefined);
+    assert.equal(targetFor(state, "s1"), undefined);
+    assert.equal(isRemembered(state, "s1", 11), true);
+    assert.equal(isRemembered(state, "s1", 12), true);
+    assert.equal(isBlocked(state, "s1", 13, 1_000), true);
+    assert.equal(state.pending?.requestId, "r1");
+  });
+
+  it("a take-back is a full reset: holds, memories and pending all go", () => {
+    const state = emptyControl();
+    takeover(state, "s1", 10, 1_000);
+    rememberOrigin(state, "s1", 10);
+    rememberTrusted(state, "s1", 11);
+    setPending(state, { requestId: "r1", sessionId: "s1", tabId: 12, at: 1_000 });
+
+    releaseSession(state, "s1");
+    assert.equal(isRemembered(state, "s1", 10), false);
+    assert.equal(isRemembered(state, "s1", 11), false);
+    assert.equal(state.pending, null);
+  });
+
+  it("remembers a tab once, and forgets it when the tab closes", () => {
+    const state = emptyControl();
+    rememberOrigin(state, "s1", 10);
+    rememberOrigin(state, "s1", 10);
+    assert.deepEqual(state.origins.s1, [10]);
+    rememberTrusted(state, "s1", 11);
+    releaseTab(state, 10);
+    assert.equal(isRemembered(state, "s1", 10), false);
+    assert.equal("s1" in state.origins, false);
+    assert.equal(isRemembered(state, "s1", 11), true);
   });
 
   it("keeps a taken-back pair blocked for the cooldown only", () => {
@@ -131,6 +181,8 @@ describe("tab-control store", () => {
       ],
       anchors: { s1: 10, s2: "junk" },
       targets: { s1: 11, s2: "junk" },
+      origins: { s1: [10, "junk"], s2: "junk" },
+      trusted: { s1: [12, 12] },
       blocked: { "s1:12": 5, "s1:13": "junk" },
       pending: { requestId: "r1", sessionId: "s1", tabId: 12 },
     });
@@ -142,6 +194,9 @@ describe("tab-control store", () => {
     assert.equal("s2" in state.anchors, false);
     assert.equal(state.targets.s1, 11);
     assert.equal("s2" in state.targets, false);
+    assert.deepEqual(state.origins.s1, [10]);
+    assert.equal("s2" in state.origins, false);
+    assert.deepEqual(state.trusted.s1, [12]);
     assert.equal(state.blocked["s1:12"], 5);
     assert.equal("s1:13" in state.blocked, false);
     assert.equal(state.pending?.requestId, "r1");
