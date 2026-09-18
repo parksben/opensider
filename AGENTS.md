@@ -6,4 +6,5 @@
 - **commit message 一律英文**：标题与描述都用英文（Conventional Commits 风格，如 `fix(banner): …`）。不要在 commit 里写中文，也不要直接粘贴中文界面文案——用英文描述它（例如写 `the New Chat placeholder`，而不是把中文字符放进去）。历史 commit 也已统一改写为英文。
 - **commit 即 push**：每次 commit 完成后立即 `git push` 到 origin。
 - **UI icon 用 lucide**：禁止 emoji 作为 UI 装饰，不引入其他 icon 库。
+- **文案先确认再落地**：任何涉及文案的修改或生成（界面文案、i18n 词条、出错/提示语、agents.md 与工具说明里写给 Agent 的措辞、README 宣传语等），必须先跟用户确认文案可行，再写进代码/文档；不要自作主张直接改。AI 写出的文案大概率要返工，宁可多问一轮。
 - 文档分工：REQUIREMENTS 记"做什么、为什么"，TECH_DESIGN 记"怎么做、为什么选这个方案"。使用者看 README.md，开发看 docs/DEVELOPMENT.md。
