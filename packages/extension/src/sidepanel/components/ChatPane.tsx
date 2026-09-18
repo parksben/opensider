@@ -83,6 +83,7 @@ export function ChatPane({
   compact,
   page,
   hitl,
+  control,
   todos,
   artifacts,
   onRevealArtifact,
@@ -100,6 +101,8 @@ export function ChatPane({
   modelId: string;
   showModelPicker: boolean;
   hitl?: ReactNode;
+  /** Tab-control banner / borrow-request card, stacked above the todo list. */
+  control?: ReactNode;
   todos?: TodoItem[];
   artifacts?: AttachmentItem[];
   onRevealArtifact?: (path: string) => void;
@@ -519,6 +522,7 @@ export function ChatPane({
               </IconButton>
             </div>
           ) : null}
+        {control}
         <TodoList locale={locale} todos={todos ?? []} />
         {hitl}
         <ArtifactList locale={locale} items={artifacts ?? []} onReveal={(path) => onRevealArtifact?.(path)} />

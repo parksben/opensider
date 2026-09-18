@@ -1035,6 +1035,29 @@ export function App() {
   };
   sendToSessionRef.current = sendToSession;
 
+  // 用户刚在接管卡片上点了「允许 / 拒绝」：替用户回一句，让 Agent 自己接着往下走，
+  // 而不是用户再手动发一条消息。Agent 若正在跑，就排进队列等本轮结束后自动发。
+  const continueAfterBorrow = (request: BorrowRequest, allow: boolean) => {
+    const text = t(
+      localeRef.current,
+      allow ? "controlContinueAllowed" : "controlContinueDenied",
+    ).replace("{title}", request.title || request.url);
+    const session = request.sessionId
+      ? sessionsRef.current.find(
+          (item) =>
+            item.acpSessionId === request.sessionId ||
+            Object.values(item.acpByProvider ?? {}).includes(request.sessionId as string),
+        )
+      : sessionsRef.current.find((item) => item.id === selectedIdRef.current);
+    if (!session) return;
+    if (runningIdsRef.current.has(session.id)) {
+      const item: QueuedMessage = { id: crypto.randomUUID(), text, attachments: [] };
+      setSessionQueue(session.id, [...(queuesRef.current[session.id] ?? []), item]);
+      return;
+    }
+    sendToSession(session.id, text);
+  };
+
   const flushQueue = (sessionId: string) => {
     if (!sessionId || runningIdsRef.current.has(sessionId)) return;
     const list = queuesRef.current[sessionId] ?? [];
@@ -1559,18 +1582,6 @@ export function App() {
             reconnectRef.current();
           }}
         />
-        <ControlBanner
-          locale={locale}
-          tabs={myControlTabs}
-          request={visibleBorrowRequest}
-          onRelease={() => {
-            if (selectedAcpId) sendRef.current({ type: "control.release", sessionId: selectedAcpId });
-          }}
-          onGrant={(requestId, allow) => {
-            sendRef.current({ type: "control.grant", requestId, allow });
-            setBorrowRequest(undefined);
-          }}
-        />
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <div className="min-h-0 flex-1">
             {status === "missing" ? (
@@ -1651,6 +1662,22 @@ export function App() {
               notice={notice}
               onDismissNotice={() => setNotice(undefined)}
               queue={queues[selected.id] ?? []}
+              control={
+                <ControlBanner
+                  locale={locale}
+                  tabs={myControlTabs}
+                  request={visibleBorrowRequest}
+                  onRelease={() => {
+                    if (selectedAcpId) sendRef.current({ type: "control.release", sessionId: selectedAcpId });
+                  }}
+                  onGrant={(requestId, allow) => {
+                    const request = visibleBorrowRequest;
+                    sendRef.current({ type: "control.grant", requestId, allow });
+                    setBorrowRequest(undefined);
+                    if (request) continueAfterBorrow(request, allow);
+                  }}
+                />
+              }
               onEnqueue={onEnqueue}
               onUpdateQueued={onUpdateQueued}
               onDeleteQueued={onDeleteQueued}

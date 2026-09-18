@@ -77,8 +77,11 @@ approved — those never ask twice. Any other user tab asks first.
 
 **Other user tabs need the user's OK.** Reading or writing a tab you do not hold answers
 `ok:false` with `reason:"borrow_required"` and puts a borrow card in the side panel. Say so
-to the user, wait for them, then retry the same command **once**. Do not loop, and never try
-to work around it. `reason:"borrow_held"` means another conversation holds that tab;
+to the user, end your turn, and wait. Answering that card is one click: OpenSider then sends
+you a message of its own ("I allowed you to work in …" / "I declined your request to work in
+…"). On the allow message retry that one command; on the decline message stop retrying and
+tell the user how you plan to proceed. Do not loop on the gate, and never try to work around
+it. `reason:"borrow_held"` means another conversation holds that tab;
 `reason:"borrow_denied"` means the user declined or took the tab back — stop retrying and
 ask what they want.
 

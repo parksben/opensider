@@ -9,6 +9,8 @@
 //   minimized window    -> capture fails with `needs_visible`, no hang
 //   openTab placement   -> lands in the session's window, not the user's focused one
 //   another user tab    -> borrow_required -> allow / deny / borrow_pending / borrow_held
+//   answering the card  -> the side panel itself nudges the Agent to carry on
+//   control card        -> renders above the composer, no status prefix in its title
 //   self-opened tab     -> writable without a gate
 //   workspace files     -> tabs.json `control` and current.json `target` track the hold
 //   turn ends           -> holds are parked (marks off), memories keep re-entry silent
@@ -16,7 +18,9 @@
 //
 // Everything is driven through the extension's own seams on the service worker
 // (`__opensiderDispatch` / `__opensiderControl` / `__opensiderControlState` /
-// `__opensiderSnapshot`), the same handlers the side-panel port uses.
+// `__opensiderSnapshot` / `__opensiderOutbound` / `__opensiderPrompts` / `__opensiderStatus`),
+// the same handlers the side-panel port uses. Answering a borrow request is clicked on the
+// real card.
 //
 //   node scripts/verify-tab-control.mjs             # expects packages/extension/dist
 //
@@ -149,6 +153,10 @@ try {
   const panel = await context.newPage();
   await panel.goto(`chrome-extension://${extensionId}/src/sidepanel/index.html`);
   await panel.waitForFunction(() => document.body.innerText.trim().length > 0, undefined, { timeout: 15_000 });
+  // No real host runs in this harness; the card's auto-nudge goes through the composer,
+  // which refuses to send while the sidebar thinks the host is offline.
+  const statusReady = () => sw.evaluate(() => globalThis.__opensiderStatus("ready"));
+  await statusReady();
 
   const fixtureA = await context.newPage();
   await fixtureA.goto(`http://127.0.0.1:${port}/a`);
@@ -199,6 +207,21 @@ try {
     );
   const control = async (msg) => sw.evaluate((payload) => globalThis.__opensiderControl(payload), msg);
   const controlState = async () => sw.evaluate(() => globalThis.__opensiderControlState());
+  const outbound = async () => sw.evaluate(() => globalThis.__opensiderOutbound());
+  const promptsSent = async () => sw.evaluate(() => globalThis.__opensiderPrompts());
+  // No native host is registered in this harness, so the sidebar falls back to the bridge
+  // setup screen and never renders the chat pane (where the control card lives). Re-seed the
+  // status while polling for pane UI.
+  const waitForPane = async (test, timeoutMs = 12_000) => {
+    const deadline = Date.now() + timeoutMs;
+    let ok = false;
+    while (Date.now() < deadline && !ok) {
+      await statusReady();
+      ok = test(await panel.evaluate(() => document.body.innerText));
+      if (!ok) await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    return ok;
+  };
 
   const tabA = await tabOf("/a");
   const tabB = await tabOf("/b");
@@ -238,12 +261,9 @@ try {
   const badgeA = await waitFor(() => marked(tabA), true);
   check("the held tab carries the title mark", badgeA.ok, `title=${badgeA.last}`);
 
-  // The banner is the one surface that must say who is driving (locale-agnostic match).
-  const bannerUp = await waitFor(
-    async () => /Take back|收回/.test(await panel.evaluate(() => document.body.innerText)),
-    true,
-  );
-  check("the side panel shows the control banner", bannerUp.ok);
+  // The card is the one surface that must say who is driving (locale-agnostic match).
+  const bannerUp = await waitForPane((text) => /Take back|收回/.test(text));
+  check("the side panel shows the control card", bannerUp);
   const bannerText = await panel.evaluate(() => document.body.innerText);
   check("the banner shows the title without the status prefix", !/\[(?:接管中|Agent)\] /.test(bannerText));
 
@@ -372,19 +392,25 @@ try {
   check("a borrow request is pending", Boolean(pending) && pending.tabId === tabH);
   const noBadgeH = !(await marked(tabH));
   check("the un-held tab carries no mark yet", noBadgeH);
-  const cardUp = await waitFor(
-    async () => /asks to work in|想操作/.test(await panel.evaluate(() => document.body.innerText)),
-    true,
-  );
-  check("the side panel shows the borrow card", cardUp.ok);
+  const cardUp = await waitForPane((text) => /asks to work in|想操作/.test(text));
+  check("the side panel shows the borrow card", cardUp);
 
-  // 6. Allowing grants it.
-  await control({ type: "control.grant", requestId: pending?.requestId ?? "", allow: true });
+  // 6. Allowing on the real card grants it and nudges the Agent to carry on by itself.
+  await statusReady();
+  await panel.getByRole("button", { name: "Allow", exact: true }).click({ timeout: 5_000 });
   const allowed = await dispatch(
     { id: `allowed-${Date.now()}`, method: "click", args: { selector: "#btn", tabId: tabH } },
     "verify-s1",
   );
   check("after allowing, the same command works", allowed?.ok === true, allowed?.error);
+  const allowBubble = await waitForPane((text) => /allowed you to work in/.test(text));
+  check("the allow nudge lands in the transcript", allowBubble);
+  const allowNudge = (await promptsSent()).find((text) => /allowed you to work in/.test(text));
+  check(
+    "allowing auto-sends a continue prompt",
+    Boolean(allowNudge),
+    JSON.stringify(allowNudge ?? (await promptsSent()).slice(-3)),
+  );
   const badgeH = await waitFor(() => marked(tabH), true);
   check("the granted tab carries the title mark", badgeH.ok, `title=${badgeH.last}`);
 
@@ -401,8 +427,23 @@ try {
   );
   check("a second request answers borrow_pending", busy?.ok === false && busy?.reason === "borrow_pending", `reason=${busy?.reason}`);
 
-  // 6d. Denying keeps the tab off limits without re-asking.
-  await control({ type: "control.grant", requestId: pendingD?.requestId ?? "", allow: false });
+  // 6d. Denying keeps the tab off limits without re-asking - and replies to the Agent too.
+  // If the Allow nudge is still "running" (no host answers in this harness), the denial is
+  // queued instead of sent; either way the reply must reach the Agent.
+  await statusReady();
+  await panel.getByRole("button", { name: "Deny", exact: true }).click({ timeout: 5_000 });
+  let denyNudge = "";
+  for (let attempt = 0; attempt < 20 && !denyNudge; attempt += 1) {
+    const sent = (await promptsSent()).find((text) => /declined your request/.test(text));
+    if (sent) denyNudge = "sent";
+    else if (/declined your request/.test(await panel.evaluate(() => document.body.innerText))) denyNudge = "queued";
+    else await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  check(
+    "denying auto-replies to the Agent",
+    Boolean(denyNudge),
+    denyNudge || JSON.stringify((await promptsSent()).slice(-3)),
+  );
   const deniedAgain = await dispatch(
     { id: `deny2-${Date.now()}`, method: "click", args: { selector: "#btn", tabId: tabD } },
     "verify-s1",

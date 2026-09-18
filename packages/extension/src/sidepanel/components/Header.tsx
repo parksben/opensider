@@ -73,9 +73,15 @@ export function Header({
     const right = rightRef.current;
     if (!bar || !left || !right) return;
     const measure = () => {
+      // 标题层直接以左右 cluster 的占位为 inset，两侧各留 TITLE_GAP。
+      // 面板太窄、放不下两个安全间距时，按可分配空间对半压缩（绝不覆盖两侧控件），
+      // 标题自身照常 truncate。
+      const room = bar.offsetWidth;
+      const rest = room - left.offsetWidth - right.offsetWidth;
+      const gap = Math.max(0, Math.min(TITLE_GAP, rest / 2));
       setSidePad({
-        left: left.offsetWidth + TITLE_GAP,
-        right: right.offsetWidth + TITLE_GAP,
+        left: left.offsetWidth + gap,
+        right: right.offsetWidth + gap,
       });
     };
     measure();
@@ -90,11 +96,8 @@ export function Header({
     <div
       title={title}
       className={`min-w-0 truncate whitespace-nowrap text-[14px] font-medium tracking-tight text-[var(--text)] ${
-        align === "left" ? "w-full text-left" : "text-center"
+        align === "left" ? "w-full text-left" : "w-full text-center"
       }`}
-      style={
-        align === "center" ? { width: `calc(100% - ${sidePad.left + sidePad.right}px)` } : undefined
-      }
     >
       {title}
     </div>
@@ -181,7 +184,10 @@ export function Header({
             )}
             {retryButton}
           </div>
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+          <div
+            className="pointer-events-none absolute bottom-0 top-0 flex items-center justify-center"
+            style={{ left: sidePad.left, right: sidePad.right }}
+          >
             <div className="flex w-full min-w-0 items-center justify-center">{titleCluster("center")}</div>
           </div>
           <div ref={rightRef} className="flex shrink-0 items-center justify-end gap-1.5">

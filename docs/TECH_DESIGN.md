@@ -488,6 +488,10 @@ Host 是通用 ACP Client + 数据驱动 `AgentProfile`（启动命令、鉴权�
 
 **回合结束（`turn.end`）**：SW 在转发 Host 消息的同一路挂勾——park 掉该会话的持有（徽标 / banner 收起、`autoDiscardable` 复位），保留访问记忆与待答卡片；下一次写命令对记忆内标签静默再接管。`openTab` 自建的记入 `origins`，用户批准借用时记入 `trusted`；标签关闭 / `onReplaced` 同步清理。用户收回与会话删除则连访问记忆一起清空。
 
+**答卡续跑（侧栏侧）**：用户点「允许 / 拒绝」后，侧栏除了回 `control.grant`，还替用户给该请求归属的会话（按 `request.sessionId` 反查本地会话，没带则用当前选中会话）发一条续跑消息（`i18n.controlContinueAllowed` / `controlContinueDenied`，带标签标题）——Agent 不必等用户再打一条。Agent 正在跑（`runningIds`）就扔进该会话的待发队列，回合结束自动发（走 `flushQueue`）。
+
+**状态 UI（侧栏）**：状态卡与借用卡同为 `ControlBanner` 组件，插在 `ChatPane` 输入区堆叠的顶部（`control` 属性，渲染在 `<TodoList>` 之前），用统一的卡片族样式（`mb-2 rounded-lg border border-[var(--line)] bg-[var(--panel-2)]`），不再占用 header 下方那条横带。
+
 **收回（`control.release`）**：释放该会话全部接管（连同锚点、路由目标与访问记忆），并对每个标签写 `blocked`（防止立即重接管）；广播状态、撤徽标。侧栏在会话删除时也发这条。已派发的动作不回滚；冷却期内后续命令得到 `borrow_denied`。
 
 **窗口方法**：`openTab` 改为 `active:false` + 不聚焦窗口 + 开在目标标签旁（拿不到目标则焦点窗口），成功后自动接管（自建）；`switchTab` 保留原语义，只当展示动作（`agents.md` 写明不要用它选工作对象）；`closeTab` 目标是未接管的用户标签 → `borrow_required`（未保存拦截照旧）。

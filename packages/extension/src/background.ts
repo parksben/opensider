@@ -6,6 +6,7 @@ import type {
   CurrentPage,
   DialogPolicy,
   ExtToHost,
+  HostStatusState,
   HostToExt,
   NativeUiEvent,
   NativeUiSnapshot,
@@ -124,6 +125,23 @@ const INSTALL_HINT = "Send the prompt shown in the side panel to your local AI A
 // Simulates the host's turn.end for `scripts/verify-tab-control.mjs`.
 (globalThis as unknown as Record<string, unknown>)["__opensiderTurnEnd"] = (sessionId?: string) =>
   parkControlFor(sessionId);
+// The last outbound host messages. `scripts/verify-tab-control.mjs` reads them to check that
+// answering a borrow request really nudged the Agent, without a real host in the loop.
+const outboundLog: ExtToHost[] = [];
+(globalThis as unknown as Record<string, unknown>)["__opensiderOutbound"] = () => outboundLog.slice();
+// Prompt texts the side panel sent, in their own list: the snapshot traffic above can be
+// very chatty and would push them out of `outboundLog` before the verify script reads it.
+const promptLog: string[] = [];
+(globalThis as unknown as Record<string, unknown>)["__opensiderPrompts"] = () => promptLog.slice();
+// Forces a host status (the verify script has no real host, and the composer refuses to
+// send while offline). While forced, missing-host reports stay suppressed so the sidebar
+// keeps rendering its chat pane instead of falling back to the bridge setup screen.
+let statusForced = false;
+(globalThis as unknown as Record<string, unknown>)["__opensiderStatus"] = (state: HostStatusState) => {
+  statusForced = true;
+  clearMissingRetry();
+  broadcast({ type: "status", state });
+};
 
 function isHostMissingError(message: string): boolean {
   const text = message.toLowerCase();
@@ -176,6 +194,7 @@ function scheduleMissingRetry(): void {
 }
 
 function reportMissing(detail: string): void {
+  if (statusForced) return;
   broadcast({
     type: "status",
     state: "missing",
@@ -277,6 +296,7 @@ function connectNative(force = false): void {
       reportMissing(`Native host is not installed. ${detail}`);
       return;
     }
+    if (statusForced) return;
     broadcast({
       type: "status",
       state: "error",
@@ -352,8 +372,15 @@ function connectNative(force = false): void {
 }
 
 function sendNative(msg: ExtToHost): void {
+  outboundLog.push(msg);
+  if (outboundLog.length > 12) outboundLog.shift();
+  if (msg.type === "prompt" && typeof msg.text === "string") {
+    promptLog.push(msg.text);
+    if (promptLog.length > 10) promptLog.shift();
+  }
   connectNative();
   if (!nativePort) {
+    if (statusForced) return;
     const missing = lastStatus.type === "status" && lastStatus.state === "missing";
     if (missing) {
       reportMissing("Native host is not connected.");
