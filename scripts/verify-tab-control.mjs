@@ -11,6 +11,7 @@
 //   another user tab    -> borrow_required -> allow / deny / borrow_pending / borrow_held
 //   self-opened tab     -> writable without a gate
 //   workspace files     -> tabs.json `control` and current.json `target` track the hold
+//   turn ends           -> holds are parked (marks off), memories keep re-entry silent
 //   take-back           -> releases everything, clears badges, blocks re-entry
 //
 // Everything is driven through the extension's own seams on the service worker
@@ -426,6 +427,54 @@ try {
     `target=${JSON.stringify(view.target)}`,
   );
 
+  // 7c. The turn ends: holds are parked, marks go off, memories survive.
+  await sw.evaluate((sessionId) => globalThis.__opensiderTurnEnd(sessionId), "verify-s1");
+  const parked = await controlState();
+  check(
+    "turn end parks every hold",
+    !parked.entries.some((entry) => entry.sessionId === "verify-s1"),
+    JSON.stringify(parked.entries),
+  );
+  const parkedMarks = await waitFor(
+    async () => {
+      const titles = await Promise.all([titleOf(tabA), titleOf(tabB), titleOf(created), titleOf(tabH)]);
+      return titles.every((title) => !title.startsWith("● "));
+    },
+    true,
+  );
+  check("turn end clears the title marks", parkedMarks.ok, `titles=${parkedMarks.last}`);
+  const parkedBanner = await waitFor(
+    async () => !/Take back|收回/.test(await panel.evaluate(() => document.body.innerText)),
+    true,
+  );
+  check("turn end takes the banner down", parkedBanner.ok);
+
+  // 7d. Memory: a self-opened tab and a granted tab come back without a card.
+  const reOwn = await dispatch(
+    { id: `reown-${Date.now()}`, method: "click", args: { selector: "#btn", tabId: created } },
+    "verify-s1",
+  );
+  check("a parked self-opened tab re-enters silently", reOwn?.ok === true, reOwn?.error);
+  check("no card was raised for it", (await controlState()).pending === null);
+  const reTrusted = await dispatch(
+    { id: `retrust-${Date.now()}`, method: "click", args: { selector: "#btn", tabId: tabH } },
+    "verify-s1",
+  );
+  check("a granted tab re-enters silently", reTrusted?.ok === true, reTrusted?.error);
+  check("no card was raised for it either", (await controlState()).pending === null);
+
+  // 7e. A user tab that was never approved still asks.
+  const askAgain = await dispatch(
+    { id: `ask-${Date.now()}`, method: "click", args: { selector: "#btn", tabId: tabG } },
+    "verify-s1",
+  );
+  check(
+    "an un-approved user tab still asks",
+    askAgain?.ok === false && askAgain?.reason === "borrow_required",
+    `reason=${askAgain?.reason}`,
+  );
+  check("and the mark stays off it", !(await titleOf(tabG)).startsWith("● "));
+
   // 8. Take-back releases everything, clears marks and blocks re-entry for a while.
   await control({ type: "control.release", sessionId: "verify-s1" });
   const released = await controlState();
@@ -454,7 +503,10 @@ try {
   check("take-back clears control in tabs.json", !anyAgent);
   check("take-back clears the route in current.json", viewAfter.target === undefined, JSON.stringify(viewAfter.target));
 
-  const blockedWrite = await dispatch({ id: `blocked-${Date.now()}`, method: "click", args: { selector: "#btn" } }, "verify-s1");
+  const blockedWrite = await dispatch(
+    { id: `blocked-${Date.now()}`, method: "click", args: { selector: "#btn", tabId: tabH } },
+    "verify-s1",
+  );
   check(
     "a taken-back tab is off limits (no silent re-take)",
     blockedWrite?.ok === false && blockedWrite?.reason === "borrow_denied",
