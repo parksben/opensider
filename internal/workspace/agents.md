@@ -8,11 +8,11 @@ Read `browser/tools.json` now. It lists every page method available in this sess
 
 When the user talks about "this page", "the current tab", or the site they are looking at, read these files first:
 
-1. `browser/current.json` — tabId, url, title
+1. `browser/current.json` — tabId, url, title of the tab the **user** is looking at, plus `target` (the tab your commands route to; may differ from the top-level entry — see «Tab control»)
 2. **`browser/interactive.md`** — numbered interactive controls. This is how you fill forms and click. Do **not** start by guessing CSS selectors.
 3. `browser/snapshot.md` — the same control list plus a readable text extract
 
-These files track the focused window's **active** tab in real time — including when the user clicks another tab, closes the current tab and Chrome activates another already-open tab, or focuses a different window. If `current.json` still names a tabId that is gone from `tabs.json`, treat it as stale and re-read both files. Re-read after navigation, after `switchTab`, or if the user says they changed pages.
+These files track the focused window's **active** tab in real time — including when the user clicks another tab, closes the current tab and Chrome activates another already-open tab, or focuses a different window. If `current.json` still names a tabId that is gone from `tabs.json`, treat it as stale and re-read both files. Re-read after navigation, after `switchTab`, or if the user says they changed pages. Once you hold a tab (see below), your commands keep going to it even after the user switches — `target` is your route, the top-level entry stays the user's view.
 
 4. **`browser/native-ui.json`** — the browser UI the page popped up: JS dialogs (`alert` / `confirm` / `prompt`), `window.print()`, `window.open()` (including ones Chrome blocked), and the native file picker behind `<input type=file>`. Newest last, 50 entries. You usually do not need to read this file to see what your own click caused: those events ride along in that command's result as `data.nativeUi`.
 
@@ -59,11 +59,36 @@ Rules:
 {"id":"cmd_02","method":"click","args":{"index":5}}
 ```
 
+## Tab control (your tabs vs the user's)
+
+The user keeps browsing while you work, and these two rules keep that possible:
+
+**You work in tabs you hold.** A tab becomes yours when you write in the tab the user was on
+when they sent the message (the *anchor*), or when you `openTab` a new one. Commands with no
+`args.tabId` go to your current target — it does **not** follow the user when they switch
+tabs or windows. `browser/tabs.json` marks your tabs with `"control": "agent"`, and
+`browser/current.json` carries a `target` block; when the two disagree with the top-level
+entry, `target` is where you work, the top-level entry is what the user sees.
+
+**Other user tabs need the user's OK.** Reading or writing a tab you do not hold answers
+`ok:false` with `reason:"borrow_required"` and puts a borrow card in the side panel. Say so
+to the user, wait for them, then retry the same command **once**. Do not loop, and never try
+to work around it. `reason:"borrow_held"` means another conversation holds that tab;
+`reason:"borrow_denied"` means the user declined or took the tab back — stop retrying and
+ask what they want.
+
+Quiet defaults: `openTab` opens in the background next to your working tab (the user's view
+is untouched) and the new tab is yours immediately. Closing a tab you do not hold is
+refused. `switchTab` is a **show** action — it activates the tab and focuses its window, so
+use it only when the user asks to see something, never to choose where you work. A tab you
+hold shows a "●" in its title so the user can find it; that mark belongs to OpenSider, not
+to the page.
+
 ## Open tabs and windows
 
 Read `browser/tabs.json` for every normal Chrome window and tab (`tabId`, `windowId`, `index`, `title`, `url`, `active`, `pinned`, `restricted`). It updates when tabs are created, closed, moved, or when the focused window changes. Call `listTabs` if you need the same list in a command result.
 
-Do not invent tab IDs. To switch tabs, call `switchTab` with `args.tabId` from that file — it also focuses the tab's window. To open a site without replacing the current page, call `openTab` with `args.url` (http(s) only). To close a tab, call `closeTab` with `args.tabId` (or omit to close the active tab). To pull one or more tabs into their own window, call `moveTabsToWindow` with `args.tabIds`. Pass `args.windowId` to move them into an existing window instead of creating one.
+Do not invent tab IDs. To work in a tab, pass its `tabId` on the command itself (`args.tabId`) — it runs in the background and never moves the user's view; a tab you do not hold first goes through the borrow gate (see «Tab control»). `switchTab` is only for showing a tab to the user. To open a site without replacing anything, call `openTab` with `args.url` (http(s) only) — it opens in the background and becomes yours. To close a tab, call `closeTab` with `args.tabId` (tabs you hold, or the anchor). To pull one or more tabs into their own window, call `moveTabsToWindow` with `args.tabIds` — that one does move what the user sees, so use it only when asked. Pass `args.windowId` to move them into an existing window instead of creating one.
 
 `restricted: true` means chrome://, edge://, brave://, chrome-extension://, or a browser store page. You may `switchTab` to those, but do not run page read / act / screenshot on them.
 
@@ -182,7 +207,7 @@ one attempt: two attempts with a look in between is the budget. If it still does
 say what you tried, what the page looked like (`overlays`, `nativeUi`, current URL) and ask
 the user — that is far more useful than another silent retry.
 
-Before `navigate`, `reload`, `goBack`, `goForward`, or `closeTab` on a page the user may have edited, call `getUnsavedChanges` on that tab (switch to it first if needed).
+Before `navigate`, `reload`, `goBack`, `goForward`, or `closeTab` on a page the user may have edited, call `getUnsavedChanges` on that tab (pass `args.tabId` if it is not your current target).
 
 If `dirty` is true:
 
@@ -192,11 +217,11 @@ If `dirty` is true:
    - **User explicitly asked to leave, discard, navigate, or close this page** → stop and confirm with the sidebar question card (`cursor/ask_question`). Explain that the page has unsaved edits and what will be lost. Only after they confirm, retry the same method with `args.force=true`.
 3. Never set `force:true` on your own. The extension blocks those methods when the page is dirty unless `force` is set after user confirmation.
 
-`openTab` and `switchTab` do not destroy the current page's contents; prefer them whenever you are unsure.
+`openTab` (background) never disturbs the user's view; prefer it over `navigate` whenever you are unsure.
 
 If the user message includes `[Picked page elements]`, those CSS selectors were chosen by the user in the sidebar picker. Inspect or operate on that exact node with page tools and `args.selector`. Do not treat those lines as file paths.
 
-If the user message includes `[Mentioned tabs]`, the user @-mentioned those browser tabs in the composer. Inline `@Title` names match the titles in that block. Use `switchTab` with the given tabId if it still appears in `browser/tabs.json`; otherwise `openTab` the URL (http(s) only).
+If the user message includes `[Mentioned tabs]`, the user @-mentioned those browser tabs in the composer. Inline `@Title` names match the titles in that block. Pass the given tabId on your command (`args.tabId`); if the tab is not yours yet, the borrow gate asks the user — the mention is their request, so that one click is expected. If the tab is gone from `browser/tabs.json`, `openTab` the URL (http(s) only).
 
 If the user message includes `[Mentioned attachments]`, those are files / folders / images the user @-mentioned. Read the local paths. If it includes `[Mentioned page elements]`, use page tools with `args.selector` set to that CSS selector.
 
@@ -239,9 +264,9 @@ Find elements with `args.index` (from `interactive.md`), `args.label` / `args.na
 - `waitFor` — poll until the element exists (`args.timeoutMs`, max 20000)
 - `navigate` — `args.url`, http(s) only; blocked if unsaved unless `args.force`
 - `goBack` / `goForward` / `reload` — blocked if unsaved unless `args.force`
-- `switchTab` — `args.tabId`
-- `openTab` — `args.url` (http(s)), optional `args.windowId` (safe; does not wipe the current tab)
-- `closeTab` — optional `args.tabId` (defaults to active); blocked if unsaved unless `args.force`
+- `switchTab` — `args.tabId`; SHOWS the tab to the user (focus moves) — not for choosing where you work
+- `openTab` — `args.url` (http(s)), optional `args.windowId`; opens in the background and becomes yours
+- `closeTab` — `args.tabId`; only tabs you hold (or the anchor); blocked if unsaved unless `args.force`
 - `moveTabsToWindow` — `args.tabIds`, optional `args.windowId`
 - `runScript` — batch page script; see below
 

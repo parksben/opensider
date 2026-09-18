@@ -25,7 +25,7 @@ func Ensure() {
 	_ = os.WriteFile(paths.AgentsMDPath(), []byte(agentsMD), 0o644)
 	_ = os.WriteFile(paths.ClaudeMDPath(), []byte(agentsMD), 0o644)
 	tools := map[string]any{
-		"version":        11,
+		"version":        12,
 		"transport":      "workspace-files",
 		"commandsDir":    "browser/commands",
 		"resultsDir":     "browser/results",
@@ -38,6 +38,11 @@ func Ensure() {
 			"forcedWhilePanelOpen": true,
 			"stealsWindowFocus":    false,
 			"note":                 "The tab you operate reads document.visibilityState === \"visible\" and hasFocus() === true, and does not receive visibilitychange/blur/pagehide/freeze, while the side panel is open.",
+		},
+		// Quiet defaults + tab control (see agents.md «Tab control»): static description only.
+		"tabControl": map[string]any{
+			"quietByDefault": true,
+			"note": "openTab opens in the background next to your working tab and becomes yours; no command changes the user's active tab or window focus, except switchTab (show) and screenshots (a brief flip that is restored).",
 		},
 		"methods": protocol.ToolCatalog,
 	}
@@ -52,6 +57,9 @@ func WriteCurrentPage(page protocol.CurrentPage) {
 		"url":       page.URL,
 		"title":     page.Title,
 		"updatedAt": page.UpdatedAt,
+	}
+	if page.Target != nil {
+		compact["target"] = page.Target
 	}
 	raw, _ := json.MarshalIndent(compact, "", "  ")
 	_ = os.WriteFile(paths.CurrentPagePath(), append(raw, '\n'), 0o644)

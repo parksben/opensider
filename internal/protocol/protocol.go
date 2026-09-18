@@ -80,13 +80,23 @@ type AgentProgress struct {
 }
 
 type CurrentPage struct {
-	TabID       int    `json:"tabId"`
-	URL         string `json:"url"`
-	Title       string `json:"title"`
-	UpdatedAt   string `json:"updatedAt"`
-	Readable    string `json:"readable,omitempty"`
-	Interactive string `json:"interactive,omitempty"`
-	FavIconURL  string `json:"favIconUrl,omitempty"`
+	TabID       int         `json:"tabId"`
+	URL         string      `json:"url"`
+	Title       string      `json:"title"`
+	UpdatedAt   string      `json:"updatedAt"`
+	Readable    string      `json:"readable,omitempty"`
+	Interactive string      `json:"interactive,omitempty"`
+	FavIconURL  string      `json:"favIconUrl,omitempty"`
+	// Target is the tab the Agent's browser commands route to right now; it can differ
+	// from the tab above (the one the user is looking at). See agents.md «Tab control».
+	Target *PageTarget `json:"target,omitempty"`
+}
+
+// PageTarget names a tab by identity, without the readable/interactive payload of CurrentPage.
+type PageTarget struct {
+	TabID int    `json:"tabId"`
+	URL   string `json:"url"`
+	Title string `json:"title"`
 }
 
 type TabRecord struct {
@@ -98,6 +108,8 @@ type TabRecord struct {
 	Active     bool   `json:"active"`
 	Pinned     bool   `json:"pinned"`
 	Restricted bool   `json:"restricted"`
+	// Control is "user" or "agent": whether an OpenSider session currently holds this tab.
+	Control string `json:"control,omitempty"`
 }
 
 type WindowRecord struct {
@@ -124,6 +136,11 @@ type BrowserResult struct {
 	Method string `json:"method"`
 	Data   any    `json:"data,omitempty"`
 	Error  string `json:"error,omitempty"`
+	// Reason is the machine-readable cause for control gates: borrow_required /
+	// borrow_denied / borrow_held / borrow_pending / needs_focus / needs_visible.
+	Reason string `json:"reason,omitempty"`
+	// Hint is one line the Agent can act on (what to do after a borrow request, etc.).
+	Hint string `json:"hint,omitempty"`
 }
 
 type ScreenshotPayload struct {
@@ -184,10 +201,10 @@ var ToolCatalog = []ToolEntry{
 	{Name: "runScript", Kind: "act", Args: "code, world?, timeoutMs?", Summary: "run async page script for batch DOM work; world=ISOLATED|MAIN"},
 	{Name: "screenshot", Kind: "vision", Args: "x?,y?,width?,height?", Summary: "JPEG of the visible viewport or a region"},
 	{Name: "screenshotElement", Kind: "vision", Args: "index|selector|label|text, nth?", Summary: "JPEG of one element; Read the file at data.path"},
-	{Name: "listTabs", Kind: "read", Args: "", Summary: "all normal windows and tabs; same shape as browser/tabs.json"},
-	{Name: "switchTab", Kind: "act", Args: "tabId", Summary: "activate a tab and focus its window"},
-	{Name: "openTab", Kind: "act", Args: "url, windowId?", Summary: "open http(s) in a new tab without touching the current page"},
-	{Name: "closeTab", Kind: "act", Args: "tabId?, force?", Summary: "close a tab; blocked if unsaved unless force"},
+	{Name: "listTabs", Kind: "read", Args: "", Summary: "all normal windows and tabs; same shape as browser/tabs.json (control=agent marks the tabs you hold)"},
+	{Name: "switchTab", Kind: "act", Args: "tabId", Summary: "SHOW a tab to the user (activates it and focuses its window); do not use it to choose where you work — pass tabId on the command instead"},
+	{Name: "openTab", Kind: "act", Args: "url, windowId?", Summary: "open http(s) in a new background tab next to your working tab; the new tab is yours right away and the user's view is untouched"},
+	{Name: "closeTab", Kind: "act", Args: "tabId?, force?", Summary: "close a tab you hold (or the anchor); refused for other user tabs; blocked if unsaved unless force"},
 	{Name: "moveTabsToWindow", Kind: "act", Args: "tabIds, windowId?", Summary: "pull tabs into a new window, or into windowId"},
 	{Name: "setDialogPolicy", Kind: "act", Args: "policy{mode,confirm,promptText,alert,expiresAt}", Summary: "mode=answer returns those values to the page instead of showing JS dialogs (default observe only records them)"},
 	{Name: "reportArtifacts", Kind: "workspace", Args: "files[{path, name?}] | paths[] | path", Summary: "replace the sidebar artifact list with these local files after you finish writing outputs; prefer outputs/... paths"},
