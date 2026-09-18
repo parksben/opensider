@@ -494,7 +494,7 @@ Host 是通用 ACP Client + 数据驱动 `AgentProfile`（启动命令、鉴权�
 
 **截图**：`runCapture` 前守卫式激活——目标窗口最小化 → `needs_visible`；目标已是活动标签 → 直接拍；否则 `tabs.update({active:true})`（不碰窗口焦点）→ 拍 → 仅在活动标签仍是它时还原原活动标签。`captureVisibleTab` 抓的是**窗口的活动标签**，不做这层会拍到用户正看的页；它只认 `<all_urls>` 或 activeTab 授权，所以 `host_permissions` 用 `<all_urls>`（页面能力仍只对 http(s) 下发，代码把关）。
 
-**标题徽标（隔离世界）**：内容脚本 `control-badge.ts` 维护 `document.title` 的「● 」前缀——SPA 改写标题时用 MutationObserver 维持，释放时只剥离自己加的那一个；经 `callPageApi("setControlBadge")` 推送，接管 / 释放时各推一次，`tabs.onUpdated`（接管中的标签）再推一次兜住导航重建。
+**标题徽标（隔离世界）**：内容脚本 `control-badge.ts` 维护 `document.title` 的状态前缀（中文界面 `[接管中] `、英文界面 `[Agent] `，按浏览器 UI 语言；不用符号）——SPA 改写标题时用 MutationObserver 维持，释放时只剥离自己加的那一个；经 `callPageApi("setControlBadge")` 推送，接管 / 释放时各推一次，`tabs.onUpdated`（接管中的标签）再推一次兜住导航重建。**前缀只存在浏览器标签上**：所有我们自己的消费面经 `stripControlMark` 去掉它——SW 的 control payload / 借用卡 / `current.json.target` / `tabs.json`、内容脚本的 `getMeta` / `snapshot`、侧栏 @ 提及菜单（`composer-history.ts`）。
 
 **互不影响的前置修复**：`agent-cursor` 的逐帧动画在后台标签会**永久挂起**——activity shim 是主世界补丁，盖不到隔离世界。做法：`document.visibilityState === "hidden"` 时走瞬移（与 `REDUCED` 同路径），并给 `moveTo` 加兜底计时器（动画中途被隐藏也能 resolve）。命令 in-flight 置 `acting` 标记，供 banner 区分「正在操作」与「已接管」。
 

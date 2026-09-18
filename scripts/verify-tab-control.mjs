@@ -188,6 +188,10 @@ try {
         tabId,
       )
       .catch(() => "");
+  // The title status is a text prefix; either locale counts (the browser's UI language
+  // decides which one the extension picks).
+  const MARK = /^\[(?:接管中|Agent)\] /;
+  const marked = async (tabId) => MARK.test(await titleOf(tabId));
   const dispatch = async (command, sessionId) =>
     sw.evaluate(
       ([cmd, sid]) => globalThis.__opensiderDispatch(cmd, sid ?? undefined),
@@ -222,7 +226,7 @@ try {
     "the opened tab becomes the session's",
     adoptedState.entries.some((entry) => entry.tabId === created && entry.sessionId === "verify-s1"),
   );
-  const badgeCreated = await waitFor(async () => (await titleOf(created)).startsWith("● "), true);
+  const badgeCreated = await waitFor(() => marked(created), true);
   check("the opened tab carries the title mark", badgeCreated.ok, `title=${badgeCreated.last}`);
 
   // 2. The first write in the tab the user is on takes it over.
@@ -231,7 +235,7 @@ try {
   check("writing the anchor tab works", clicked?.ok === true, clicked?.error);
   const pinned = (await controlState()).entries.find((entry) => entry.tabId === tabA);
   check("the anchor tab is now held", pinned?.sessionId === "verify-s1", JSON.stringify(pinned));
-  const badgeA = await waitFor(async () => (await titleOf(tabA)).startsWith("● "), true);
+  const badgeA = await waitFor(() => marked(tabA), true);
   check("the held tab carries the title mark", badgeA.ok, `title=${badgeA.last}`);
 
   // The banner is the one surface that must say who is driving (locale-agnostic match).
@@ -240,6 +244,8 @@ try {
     true,
   );
   check("the side panel shows the control banner", bannerUp.ok);
+  const bannerText = await panel.evaluate(() => document.body.innerText);
+  check("the banner shows the title without the status prefix", !/\[(?:接管中|Agent)\] /.test(bannerText));
 
   // 2b. The title mark survives navigation and is applied exactly once.
   const navigated = await dispatch(
@@ -247,9 +253,9 @@ try {
     "verify-s1",
   );
   check("a held tab can navigate", navigated?.ok === true, navigated?.error);
-  const badgeAfterNav = await waitFor(async () => (await titleOf(tabA)).startsWith("● "), true);
+  const badgeAfterNav = await waitFor(() => marked(tabA), true);
   check("the title mark survives navigation", badgeAfterNav.ok, `title=${badgeAfterNav.last}`);
-  check("the title mark is applied exactly once", (((await titleOf(tabA)).match(/● /g) ?? []).length === 1));
+  check("the title mark is applied exactly once", (((await titleOf(tabA)).match(/\[(?:接管中|Agent)\] /g) ?? []).length === 1));
 
   // 3. The user switches tabs; commands keep going to the pinned target.
   await activate(tabB);
@@ -301,6 +307,11 @@ try {
   // 4b. A minimized window refuses capture with a clear reason instead of hanging.
   const windowOfA = await panel.evaluate((id) => chrome.tabs.get(id).then((tab) => tab.windowId), tabA);
   await panel.evaluate((windowId) => chrome.windows.update(windowId, { state: "minimized" }), windowOfA);
+  const isMinimized = await waitFor(
+    () => panel.evaluate((windowId) => chrome.windows.get(windowId).then((win) => win.state === "minimized"), windowOfA),
+    true,
+  );
+  check("the test window really minimized", isMinimized.ok, `state polled=${isMinimized.last}`);
   const minimizedShot = await dispatch(
     { id: `shot-min-${Date.now()}`, method: "screenshot", args: { tabId: tabA } },
     "verify-s1",
@@ -311,6 +322,10 @@ try {
     `reason=${minimizedShot?.reason}`,
   );
   await panel.evaluate((windowId) => chrome.windows.update(windowId, { state: "normal" }), windowOfA);
+  await waitFor(
+    () => panel.evaluate((windowId) => chrome.windows.get(windowId).then((win) => win.state === "normal"), windowOfA),
+    true,
+  );
 
   // 4c. openTab lands in the session's window, not the user's focused one.
   const otherWindow = await panel.evaluate(
@@ -355,7 +370,7 @@ try {
   check("an un-held user tab asks first", gated?.ok === false && gated?.reason === "borrow_required", `reason=${gated?.reason}`);
   const pending = (await controlState()).pending;
   check("a borrow request is pending", Boolean(pending) && pending.tabId === tabH);
-  const noBadgeH = !(await titleOf(tabH)).startsWith("● ");
+  const noBadgeH = !(await marked(tabH));
   check("the un-held tab carries no mark yet", noBadgeH);
   const cardUp = await waitFor(
     async () => /asks to work in|想操作/.test(await panel.evaluate(() => document.body.innerText)),
@@ -370,7 +385,7 @@ try {
     "verify-s1",
   );
   check("after allowing, the same command works", allowed?.ok === true, allowed?.error);
-  const badgeH = await waitFor(async () => (await titleOf(tabH)).startsWith("● "), true);
+  const badgeH = await waitFor(() => marked(tabH), true);
   check("the granted tab carries the title mark", badgeH.ok, `title=${badgeH.last}`);
 
   // 6b. Reads on an un-held tab go through the same gate.
@@ -423,7 +438,7 @@ try {
   );
   check(
     "current.json routes to the last tab the Agent worked in",
-    view.target?.tabId === created,
+    view.target?.tabId === created && view.target?.title === "c",
     `target=${JSON.stringify(view.target)}`,
   );
 
@@ -438,7 +453,7 @@ try {
   const parkedMarks = await waitFor(
     async () => {
       const titles = await Promise.all([titleOf(tabA), titleOf(tabB), titleOf(created), titleOf(tabH)]);
-      return titles.every((title) => !title.startsWith("● "));
+      return titles.every((title) => !MARK.test(title));
     },
     true,
   );
@@ -473,7 +488,7 @@ try {
     askAgain?.ok === false && askAgain?.reason === "borrow_required",
     `reason=${askAgain?.reason}`,
   );
-  check("and the mark stays off it", !(await titleOf(tabG)).startsWith("● "));
+  check("and the mark stays off it", !(await marked(tabG)));
 
   // 8. Take-back releases everything, clears marks and blocks re-entry for a while.
   await control({ type: "control.release", sessionId: "verify-s1" });
@@ -486,7 +501,7 @@ try {
   const marksGone = await waitFor(
     async () => {
       const titles = await Promise.all([titleOf(tabA), titleOf(tabB), titleOf(created), titleOf(tabH)]);
-      return titles.every((title) => !title.startsWith("● "));
+      return titles.every((title) => !MARK.test(title));
     },
     true,
   );

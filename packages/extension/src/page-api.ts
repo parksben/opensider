@@ -1,5 +1,6 @@
 import type { BrowserCommand, BrowserCommandArgs, BrowserResult, ClipRect, CurrentPage, FormFieldArg, PageMethod } from "@shared";
 import { pointAt } from "./agent-cursor";
+import { stripControlMark } from "./control-badge";
 import {
   cleanText,
   collectOptions,
@@ -34,7 +35,8 @@ export function getMeta(): Record<string, string> {
   const canonical = document.querySelector('link[rel="canonical"]')?.getAttribute("href") ?? "";
   return {
     url: location.href,
-    title: document.title,
+    // Our own tab-status prefix belongs to the browser chrome, not to what we report.
+    title: stripControlMark(document.title),
     description,
     canonical,
   };

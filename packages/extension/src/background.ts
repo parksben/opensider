@@ -29,6 +29,7 @@ import {
   normalizeDialogPolicy,
   overlaySignature,
 } from "@shared";
+import { stripControlMark } from "./control-badge";
 import {
   isPickablePageUrl,
   isRestrictedUrl,
@@ -470,7 +471,7 @@ async function buildControlStates(): Promise<TabControlState[]> {
     }
     state.tabs.push({
       tabId: tab.id,
-      title: tab.title ?? "",
+      title: stripControlMark(tab.title ?? ""),
       url: tab.url ?? "",
       acting: actingTabs.has(tab.id),
     });
@@ -484,7 +485,7 @@ async function publishControl(): Promise<void> {
   broadcast(lastControl);
 }
 
-/** Paint (or clear) the "●" the page shows in its own tab title. Best effort. */
+/** Paint (or clear) the control prefix the page shows in its own tab title. Best effort. */
 async function pushControlBadge(tabId: number, on: boolean): Promise<void> {
   try {
     const tab = await chrome.tabs.get(tabId);
@@ -602,7 +603,7 @@ async function remapControlEntry(addedTabId: number, removedTabId: number): Prom
 /** No grant yet: ask the side panel, or answer from the cooldown / existing request. */
 async function requestBorrow(sessionId: string, tab: chrome.tabs.Tab): Promise<ControlGate> {
   const tabId = tab.id as number;
-  const title = tab.title ?? "";
+  const title = stripControlMark(tab.title ?? "");
   const now = Date.now();
   if (isBlocked(controlState, sessionId, tabId, now)) {
     return {
@@ -840,7 +841,7 @@ async function currentControlTarget(): Promise<CurrentPage["target"] | undefined
   if (tabId == null) return undefined;
   try {
     const tab = await chrome.tabs.get(tabId);
-    return { tabId, url: tab.url ?? "", title: tab.title ?? "" };
+    return { tabId, url: tab.url ?? "", title: stripControlMark(tab.title ?? "") };
   } catch {
     return undefined;
   }
@@ -1071,7 +1072,7 @@ function toTabRecord(tab: chrome.tabs.Tab, controlled?: Set<number>): TabRecord 
     tabId: tab.id,
     windowId: tab.windowId,
     index: tab.index,
-    title: tab.title ?? "",
+    title: stripControlMark(tab.title ?? ""),
     url: tab.url ?? "",
     active: Boolean(tab.active),
     pinned: Boolean(tab.pinned),

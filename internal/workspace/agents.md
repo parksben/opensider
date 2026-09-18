@@ -70,10 +70,10 @@ tabs or windows. `browser/tabs.json` marks your tabs with `"control": "agent"`, 
 `browser/current.json` carries a `target` block; when the two disagree with the top-level
 entry, `target` is where you work, the top-level entry is what the user sees.
 
-**Your hold lasts one turn.** When your turn ends OpenSider hands the tabs back (the "●"
-and the side-panel banner go away). Your next command re-takes a tab silently when it is the
-anchor, a tab you opened yourself, or one the user already approved — those never ask twice.
-Any other user tab asks first.
+**Your hold lasts one turn.** When your turn ends OpenSider hands the tabs back (the
+`[接管中]` / `[Agent]` prefix and the side-panel banner go away). Your next command re-takes
+a tab silently when it is the anchor, a tab you opened yourself, or one the user already
+approved — those never ask twice. Any other user tab asks first.
 
 **Other user tabs need the user's OK.** Reading or writing a tab you do not hold answers
 `ok:false` with `reason:"borrow_required"` and puts a borrow card in the side panel. Say so
@@ -86,8 +86,8 @@ Quiet defaults: `openTab` opens in the background next to your working tab (the 
 is untouched) and the new tab is yours immediately. Closing a tab you do not hold is
 refused. `switchTab` is a **show** action — it activates the tab and focuses its window, so
 use it only when the user asks to see something, never to choose where you work. A tab you
-hold shows a "●" in its title so the user can find it; that mark belongs to OpenSider, not
-to the page.
+hold shows `[接管中]` / `[Agent]` in its title so the user can find it; that prefix is
+OpenSider's, and every title OpenSider reports to you (files, `getMeta`, `snapshot`) strips it.
 
 ## Open tabs and windows
 

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { stripControlMark } from "../control-badge";
 
 const STALE_HISTORY_KEYS = [
   "opensider/tab-history",
@@ -21,7 +22,7 @@ function historyTabFromChrome(tab: chrome.tabs.Tab): HistoryTab | undefined {
   if (!url) return undefined;
   return {
     tabId: tab.id,
-    title: tab.title || url,
+    title: stripControlMark(tab.title ?? "") || url,
     url,
     favIconUrl: tab.favIconUrl,
     seenAt: new Date().toISOString(),
