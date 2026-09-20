@@ -26,6 +26,15 @@
 //                              On the next prompt, push a `current_mode_update` moving
 //                              `currentModeId` to <id> (the "Agent switched its own mode"
 //                              path). Only fires once per prompt that carries text.
+//
+// Session config options beyond mode/model (used by scripts/verify-agent-modes.mjs):
+//   FAKE_OPTIONS=claude        `effort [thought_level]` select (default/low/medium/high/max)
+//                              + `fast [model_config]` boolean — Claude 0.73.0's shape.
+//   FAKE_OPTIONS=cursor        `fast [model_config]` select (false=Off / true=Fast) —
+//                              Cursor's shape; no thought_level at all.
+//   FAKE_OPTIONS=unknown       a category we do not render (`mystery`) — proves the host
+//                              still forwards it and the panel quietly ignores it.
+//   FAKE_OPTIONS=none | unset  Advertise nothing (Copilot / OpenCode today).
 import { appendFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 
@@ -36,6 +45,7 @@ const tracePath = process.env.FAKE_ACP_TRACE ?? "";
 const modesShape = process.env.FAKE_MODES ?? "none";
 const modeUrlIds = process.env.FAKE_MODE_URL_IDS === "1";
 const modeSwitchOnPrompt = process.env.FAKE_MODE_SWITCH_ON_PROMPT ?? "";
+const optionsShape = process.env.FAKE_OPTIONS ?? "none";
 
 // The bridge also runs the CLI once as `<cli> models` before opening a session (see
 // internal/models). Answering that here matters: without it the bridge waits out its own
@@ -136,10 +146,96 @@ function modeConfigOption() {
 // 组装一次 session/new|load|fork 的返回：按形态决定广告什么。
 function sessionResult(sid) {
   const result = { sessionId: sid, models: null };
-  const option = modeConfigOption();
-  result.configOptions = option ? [option] : [];
+  result.configOptions = configOptions();
   if (legacyModes) result.modes = legacyModes;
   return result;
+}
+
+// ------------------------------------------------------------------ config options
+// mode / model 之外的会话配置项。初值取自真机 probe：Claude 的 effort 是 xhigh、fast 是
+// false；Cursor 的 fast 是字符串 "false"（select，不是 boolean）。断言这些初值能让测试
+// 发现「广告被吞掉了」这类问题。
+let thoughtLevel = "xhigh";
+let fastBoolean = false;
+let fastSelect = "false";
+let mysteryValue = "a";
+
+// extraConfigOptions 只说真话：形态决定了这家广告什么，别家没有的项一律不出现。
+function extraConfigOptions() {
+  if (optionsShape === "claude") {
+    return [
+      {
+        id: "effort",
+        name: "Effort",
+        category: "thought_level",
+        type: "select",
+        currentValue: thoughtLevel,
+        options: [
+          { value: "default", name: "Default" },
+          { value: "low", name: "Low" },
+          { value: "medium", name: "Medium" },
+          { value: "high", name: "High" },
+          { value: "xhigh", name: "Xhigh" },
+          { value: "max", name: "Max" },
+        ],
+      },
+      {
+        id: "fast",
+        name: "Fast mode",
+        category: "model_config",
+        type: "boolean",
+        currentValue: fastBoolean,
+      },
+    ];
+  }
+  if (optionsShape === "cursor") {
+    return [
+      {
+        id: "fast",
+        name: "Fast",
+        category: "model_config",
+        type: "select",
+        currentValue: fastSelect,
+        options: [
+          { value: "false", name: "Off" },
+          { value: "true", name: "Fast" },
+        ],
+      },
+    ];
+  }
+  if (optionsShape === "unknown") {
+    return [
+      {
+        id: "mystery",
+        name: "Mystery",
+        category: "mystery",
+        type: "select",
+        currentValue: mysteryValue,
+        options: [
+          { value: "a", name: "A" },
+          { value: "b", name: "B" },
+        ],
+      },
+    ];
+  }
+  return [];
+}
+
+// 规范说设置成功后要回**完整**的 configOptions，这里照做（Host 就以它为准）。
+function configOptions() {
+  const option = modeConfigOption();
+  return [...(option ? [option] : []), ...extraConfigOptions()];
+}
+
+// 设置必须真的改状态，否则「设了没生效」这种问题在测试里看不出来。
+function setExtraOption(configId, value, type) {
+  if (optionsShape === "claude" && configId === "effort") thoughtLevel = String(value);
+  else if (optionsShape === "claude" && configId === "fast") fastBoolean = value === true || value === "true";
+  else if (optionsShape === "cursor" && configId === "fast") fastSelect = String(value);
+  else if (optionsShape === "unknown" && configId === "mystery") mysteryValue = String(value);
+  else if (!extraConfigOptions().some((item) => item.id === configId)) return false;
+  trace({ event: "set_extra_option", configId, value, type: type ?? "" });
+  return true;
 }
 
 // current_mode_update 必须把两边（legacy currentModeId + config currentValue）一起改，
@@ -210,9 +306,15 @@ async function handle(msg) {
     if (params?.configId === modeConfigId && typeof params?.value === "string") {
       setCurrentMode(params.value);
     }
-    const option = modeConfigOption();
-    trace({ event: "set_config_option", configId: params?.configId, value: params?.value });
-    reply(id, { configOptions: option ? [option] : [] });
+    setExtraOption(params?.configId, params?.value, params?.type);
+    // type 也 trace：布尔项必须带 "boolean"，那是规范要求、也是这条链上最容易漏的一环。
+    trace({
+      event: "set_config_option",
+      configId: params?.configId,
+      value: params?.value,
+      type: params?.type ?? "",
+    });
+    reply(id, { configOptions: configOptions() });
     return;
   }
   if (method === "session/set_mode") {

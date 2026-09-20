@@ -7,8 +7,13 @@
 // read a `statusRef` that is only written during render), so the control only appeared
 // after the first message created the session. This script is the guard for that.
 //
+// It also covers the session config options that ride next to the model picker: the
+// reasoning-effort pill (engine's own name/value names, 48px cap below 396px) and the
+// model_config switch inside the model menu. Set FAKE_OPTIONS=none to skip them.
+//
 //   node scripts/verify-agent-modes-ui.mjs
 //   SWITCH_TO=opencode SWITCH_LABEL=OpenCode node scripts/verify-agent-modes-ui.mjs
+//   FAKE_OPTIONS=cursor node scripts/verify-agent-modes-ui.mjs   # model_config select only
 //
 // Two rules, both learned the hard way:
 //   1. Never poke `__opensiderStatus` — that seam re-broadcasts "ready" and cures the very
@@ -30,19 +35,39 @@ const { chromium } = loadPlaywright();
 const seedProvider = process.env.SEED_PROVIDER ?? "copilot";
 const switchTo = process.env.SWITCH_TO ?? "";
 const switchLabel = process.env.SWITCH_LABEL ?? "OpenCode";
+// 默认让假引擎广告 Claude 那一套（effort + fast），这样配置项那条链也一起被验到。
+const optionShape = process.env.FAKE_OPTIONS ?? "claude";
 
 const sandbox = createSandbox({ root, prefix: "opensider-modes-ui-", dist });
 const context = await chromium.launchPersistentContext(sandbox.profile, {
   headless: process.env.HEADLESS !== "0",
   executablePath: cachedChromium(),
   args: [`--disable-extensions-except=${dist}`, `--load-extension=${dist}`],
-  env: { ...process.env, HOME: sandbox.home, FAKE_MODES: process.env.FAKE_MODES ?? "both" },
+  env: {
+    ...process.env,
+    HOME: sandbox.home,
+    FAKE_MODES: process.env.FAKE_MODES ?? "both",
+    FAKE_OPTIONS: optionShape,
+  },
 });
 
 const results = [];
 const check = (name, ok, detail = "") => {
   results.push(ok);
   console.log(`${ok ? "ok  " : "FAIL"}  ${name}${detail ? ` — ${detail}` : ""}`);
+};
+
+/** Poll an async getter until it returns the wanted value (or the deadline passes). */
+const waitFor = async (getter, timeoutMs, wanted) => {
+  const started = Date.now();
+  let last = null;
+  while (Date.now() - started < timeoutMs) {
+    last = await getter().catch(() => null);
+    if (last === wanted) return last;
+    if (wanted === null && last) return last;
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  return last;
 };
 
 try {
@@ -136,6 +161,101 @@ try {
     );
   } else {
     console.log("skip  the switch-agent case (set SWITCH_TO=<provider> SWITCH_LABEL=<name>)");
+  }
+
+  // -------------------------------------------------- 推理档位 pill 与模型菜单里的开关
+  const effortPill = () => panel.locator('button[title^="Effort"]').first();
+  const waitForEffort = async (predicate, timeoutMs = 30_000) => {
+    const started = Date.now();
+    while (Date.now() - started < timeoutMs) {
+      const title = await effortPill().getAttribute("title").catch(() => null);
+      if (predicate(title ?? "")) return title;
+      await new Promise((r) => setTimeout(r, 300));
+    }
+    return null;
+  };
+
+  if (optionShape === "claude") {
+    const title = await waitForEffort((value) => value.length > 0);
+    check(
+      "the reasoning-effort pill shows the engine's own name and value name",
+      title === "Effort — Xhigh",
+      `title=${title ?? "none"}`,
+    );
+
+    const geometry = await panel.evaluate(() => {
+      const model = [...document.querySelectorAll("button")].find((b) => b.getAttribute("aria-label") === "Model");
+      const effort = document.querySelector('button[title^="Effort"]');
+      if (!model || !effort) return null;
+      const m = model.getBoundingClientRect();
+      const e = effort.getBoundingClientRect();
+      return { modelRight: Number(m.right.toFixed(1)), effortLeft: Number(e.left.toFixed(1)), width: Number(e.width.toFixed(1)) };
+    });
+    check(
+      "it sits immediately right of the model picker",
+      Boolean(geometry) && geometry.effortLeft >= geometry.modelRight - 1,
+      geometry ? `model.right=${geometry.modelRight} effort.left=${geometry.effortLeft}` : "not found",
+    );
+
+    // 点一下最宽的那一档：引擎真的接受了，推回来的当前值才会变。
+    await effortPill().click({ timeout: 10_000 });
+    await panel.getByRole("button", { name: /^Max$/ }).first().click({ timeout: 10_000 });
+    const raised = await waitForEffort((value) => value === "Effort — Max");
+    check("picking a level moves the session", Boolean(raised), `title=${raised ?? "unchanged"}`);
+
+    // 模型菜单底部的 model_config：布尔项画成开关（引擎没给值名，开关正好不需要文案）。
+    await panel.locator('button[aria-label="Model"]').first().click({ timeout: 10_000 });
+    const toggle = panel.locator('button[aria-pressed]').filter({ hasText: "Fast mode" }).first();
+    const before = await toggle.getAttribute("aria-pressed").catch(() => null);
+    check("the model menu carries the model_config switch", before !== null, `aria-pressed=${before}`);
+    if (before !== null && before !== "true") {
+      await toggle.click({ timeout: 10_000 });
+      const after = await waitFor(() => toggle.getAttribute("aria-pressed"), 10_000, "true");
+      check("the model_config switch flips on", after === "true", `aria-pressed=${after ?? "unchanged"}`);
+    }
+    await panel.keyboard.press("Escape");
+
+    // ≤396px：推理档位钮收到 48px，单行省略、**不许换行**（换行会把输入栏撑成两行）。
+    await panel.setViewportSize({ width: 390, height: 620 });
+    await new Promise((r) => setTimeout(r, 600));
+    const narrow = await panel.evaluate(() => {
+      const effort = document.querySelector('button[title^="Effort"]');
+      if (!effort) return null;
+      const rect = effort.getBoundingClientRect();
+      const style = getComputedStyle(effort);
+      // 省略发生在内层 span 上（它才是 truncate 的那一层），所以要量它。
+      const label = effort.querySelector("span");
+      return {
+        width: Number(rect.width.toFixed(1)),
+        height: Number(rect.height.toFixed(1)),
+        whiteSpace: style.whiteSpace,
+        overflow: style.overflow,
+        clipped: label ? label.scrollWidth > label.clientWidth : false,
+        text: (effort.textContent || "").trim(),
+      };
+    });
+    // 与模式 / 权限两个下拉不同：这一档不藏文案（档位名就是用户要看的信息），
+    // 而是把宽度收到 48px 后省略。
+    check(
+      "below 396px the label stays and is truncated at 48px on one line",
+      Boolean(narrow) && narrow.width <= 48.5 && narrow.height <= 30
+        && narrow.whiteSpace === "nowrap" && narrow.text.length > 0 && narrow.clipped,
+      narrow
+        ? `width=${narrow.width} height=${narrow.height} white-space=${narrow.whiteSpace} clipped=${narrow.clipped} text=${JSON.stringify(narrow.text)}`
+        : "not found",
+    );
+    await panel.setViewportSize({ width: 900, height: 620 });
+  } else if (optionShape === "cursor") {
+    await panel.locator('button[aria-label="Model"]').first().click({ timeout: 10_000 });
+    const row = panel.locator('button').filter({ hasText: /^Off$|^Fast$/ }).first();
+    check("cursor's model_config select is listed inside the model menu", Boolean(await row.count().catch(() => 0)));
+    await panel.keyboard.press("Escape");
+  } else {
+    check(
+      "no thought_level advertised -> no effort pill",
+      (await panel.locator('button[title^="Effort"]').count()) === 0,
+      optionShape,
+    );
   }
 } catch (error) {
   check("the verification ran to completion", false, String(error?.message ?? error).slice(0, 160));
