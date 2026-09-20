@@ -206,6 +206,9 @@ export function ChatPane({
   const onEditingQueuedRef = useRef(onEditingQueued);
   const [preview, setPreview] = useState<{ name: string; path: string }>();
   const [awayFromBottom, setAwayFromBottom] = useState(false);
+  /** 连接未就绪时按下的那次发送：草稿按住，等 hostReady 再补跑一次 submit。 */
+  const heldSubmitRef = useRef(false);
+  const submitRef = useRef<() => void>(() => {});
   const startEditRef = useRef<(message: ChatMessage) => void>(() => {});
   const onStartEdit = useCallback((message: ChatMessage) => {
     startEditRef.current(message);
@@ -334,6 +337,12 @@ export function ChatPane({
     if (fromEnter && shouldBlockSubmit()) return;
     if (!canSend || savingPaste) return;
     if (editingId && isRunning) return;
+    if (!hostReady) {
+      // 还没就绪：先把草稿按住（不清空、不上屏），就绪后由下面的 effect 补跑一次。上屏再
+      // 等连接的话，那条消息没有会话可发，等 Host 连上也不会补发——看起来就是被吞了。
+      heldSubmitRef.current = true;
+      return;
+    }
     const text = draft.trim();
     const files = attachments;
     const reviseId = editingId;
@@ -350,6 +359,15 @@ export function ChatPane({
     else onSend(text, files);
     requestAnimationFrame(() => stickToBottom(listRef.current));
   };
+
+  submitRef.current = submit;
+  // 按住的那次发送：Host 一报就绪补发。`submitRef` 比把 submit 写进依赖可靠——它是每次
+  // 渲染新建的闭包，直接当依赖会出现「旧闭包把新草稿发出去」这类错位。
+  useEffect(() => {
+    if (!hostReady || !heldSubmitRef.current) return;
+    heldSubmitRef.current = false;
+    submitRef.current();
+  }, [hostReady]);
 
   const restoreStash = () => {
     setDraft(stash?.draft ?? "");
