@@ -645,13 +645,14 @@ Host 是通用 ACP Client + 数据驱动 `AgentProfile`（启动命令、鉴权�
 - host `<div>` + `attachShadow({mode:"open"})` + `all:initial; display:block; position:fixed; width:max-content` + `popover="manual"`，挂到 `document.fullscreenElement ?? documentElement`（shadow 用 **open**：工具条要能被无障碍工具和自动化测试按名字点到，样式隔离靠 shadow 边界照样成立——「不给页面留痕」那条硬约束针对的是主世界注入，内容脚本的 DOM 不在其列）；
 - **样式必须用构造式样式表**（`new CSSStyleSheet()` + `shadow.adoptedStyleSheets`），不要往 shadow 里塞 `<style>` 元素：注入到页面文档里的 `<style>` 归**页面自己的 CSP** 管，`style-src` 只放行自己 nonce 的站点（YouTube 那类）会把它整份拦掉——现象就是「工具条出现在选区旁边，但完全没样式：图标按原图大小、三个按钮竖着排」。CSSOM 构造出来的样式表不受 CSP 约束，这正是它存在的意义；旧内核没有 `adoptedStyleSheets` 时再退回 `<style>`；
 - **层级走顶层**（`popover="manual"` + `showPopover()`，`picker.ts` 同款），不要跟页面拼 z-index：Google 翻译那类气泡常用到 z-index 上限（2147483647），拼不过。拿不到顶层（旧内核 / 全屏）时才退回 `z-index: 2147483647`。顶层内部也有先后（后 showPopover 的在上），所以结果层每次展开都会重新抬一次（hide + show），保证用户正在看的结果在气泡之上；
+- **DOM 结构：三个按钮挂在 `.bar` 里**，不许挂到 shadow root 上（出过事故：按钮成了 host 的直接子节点 → 跑到整条工具条的上方、三行排开，没有条的内边距与圆角，也拿不到条上的调色板）。调色板（`--panel` / `--muted` …）挂在 **`:host`** 而不是 `.root` 上：自定义属性照常往 shadow 树里继承，整棵树（包括以后可能漏在 `.root` 外的节点）都拿得到。`color: var(--muted)` 一旦解不出来就回落到 `initial`，而深色系统下那是 canvastext 的**白**——浅色页面上就是白字白底，看着像没渲染（同一事故的另一半）；
 - `MutationObserver` 盯 host 的父节点：被站点清掉或 SPA 换页（含 YouTube 的 `yt-navigate-*`）就重挂；`fullscreenchange` 同样处理；
 - 品牌标记用 `chrome.runtime.getURL("icons/icon32.png")`，因此 manifest 要加一条 `web_accessible_resources`（只放这一个图标与结果层页面），不要为了省一次声明把品牌 path 复制进 TS。
 
 ### 位置与「跟着消失」
 
 - 锚点 = `selection.getRangeAt(0)` 的所有 `clientRect` 并集（多行选区不会只贴最后一行）；
-- 默认在锚点下方 8px，下方放不下翻到上方；左右按 **8px 安全边距**夹进视口（`clamp`），保证四边都不越界；
+- 默认在锚点下方 8px，下方放不下翻到上方；左右按 **8px 安全边距**夹进视口（`clamp`），保证四边都不越界。量的是 **host** 的实测尺寸而不是 `.bar`（host 才是「必须留在视口里」的那个盒子：结果层可能更宽，也有过节点漏在条外面的情况），条高由 `host 高 - 结果层高` 反推；
 - `scroll`（capture，内层滚动容器也收）/`resize`/`orientationchange`/`fullscreenchange` 都重算；
 - **锚点矩形与视口的交集为空 → 隐藏**（这是「选区移出视口就连工具条一起消失」的实现）；部分可见则继续夹紧显示；
 - 关闭：Esc、`selectionchange` 变成空选区（点空白处）、选区文本变化、门控转关、页面导航、`visibilitychange` 到 hidden 之外的场景不需要（页面被隐藏时浏览器本来就不会让用户划词）。
@@ -712,7 +713,7 @@ Host 是通用 ACP Client + 数据驱动 `AgentProfile`（启动命令、鉴权�
 ### 验证
 
 - 宿主级（`scripts/verify-selection.mjs`）：隐藏通道真的不进侧栏（整轮里没有任何 `update` / `turn.end` 发给扩展）、结果文本正确、取消生效、`utility` runtime 不被聊天复用、它拿不到标签页控制；
-- 页面级（`scripts/verify-selection-ui.mjs`，真 Chromium + 本地 fixture 页）：门控关掉时不出现、选中 200 字以内出现、超过 200 字不出现、四边安全边距（把选区放到视口四角各试一次）、选区滚出视口即隐藏、翻译与搜索的结果层（Markdown 要真渲染成 `h2/ul/a`，不是贴纯文本）、引用后输入框里出现引文芯片；
+- 页面级（`scripts/verify-selection-ui.mjs`，真 Chromium + 本地 fixture 页）：门控关掉时不出现、选中 200 字以内出现、超过 200 字不出现、**结构**（三个按钮都在 `.bar` 里、排成一行、shadow 里没有漏在条外面的节点、host 高度就是条的高度、按钮上解析得出工具条自己的调色板）、四边安全边距（把选区放到视口四角各试一次）、选区滚出视口即隐藏、翻译与搜索的结果层（Markdown 要真渲染成 `h2/ul/a`，不是贴纯文本）、引用后输入框里出现引文芯片；
 - 同一条脚本里还有两个**针对上面两条教训的回归**：fixture 用 `Content-Security-Policy: style-src 'self'` 提供一份严格 CSP 页面（样式仍要生效），并在页面上盖一层 `position:fixed; z-index:2147483647` 的全屏浮层（`elementFromPoint` 打到的必须还是我们的 host，即我们真的在顶层）；
 - Go 单测：`internal/selection` 的提示词拼装与语言映射表。
 

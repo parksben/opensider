@@ -195,6 +195,56 @@ try {
       return Boolean(img && img.src.includes("icons/icon32.png"));
     });
     ok("品牌标记用的是扩展图标", hasBrand);
+
+    // 结构：三个按钮必须长在条里，而且 shadow 树里不能再有漏在条外面的节点。
+    // （出过的事故：按钮挂成了 shadow root 的直接子节点 → 跑到条的上方、拿不到条的
+    //  内边距，也拿不到挂在 .root 上的调色板，`color: var(--muted)` 回落成 initial，
+    //  深色系统里那是白字 → 白底白字看不见。）
+    const structure = await fixture.evaluate(() => {
+      const host = document.getElementById("opensider-selection");
+      const root = host?.shadowRoot;
+      const bar = root?.querySelector(".bar");
+      if (!host || !root || !bar) return null;
+      const box = host.getBoundingClientRect();
+      const barBox = bar.getBoundingClientRect();
+      const buttons = [...root.querySelectorAll("button")];
+      return {
+        directChildren: root.children.length,
+        allInBar: buttons.length === 3 && buttons.every((b) => b.parentElement === bar),
+        rows: new Set(buttons.map((b) => Math.round(b.getBoundingClientRect().top))).size,
+        insideBar: buttons.every((b) => {
+          const r = b.getBoundingClientRect();
+          return (
+            r.top >= barBox.top - 1 &&
+            r.bottom <= barBox.bottom + 1 &&
+            r.left >= barBox.left - 1 &&
+            r.right <= barBox.right + 1
+          );
+        }),
+        mutedResolved: buttons.every((b) => getComputedStyle(b).getPropertyValue("--muted").trim() !== ""),
+        hostHeight: Math.round(box.height),
+        barHeight: Math.round(barBox.height),
+        barOffset: Math.round(barBox.top - box.top),
+      };
+    });
+    ok(
+      "三个按钮都在条里，排成一行",
+      Boolean(structure) && structure.allInBar && structure.rows === 1 && structure.insideBar,
+      JSON.stringify(structure ?? {}),
+    );
+    ok(
+      "条里条外没有多余节点（host 的高度就是条的高度）",
+      Boolean(structure) &&
+        structure.directChildren === 1 &&
+        structure.barOffset === 0 &&
+        Math.abs(structure.hostHeight - structure.barHeight) <= 1,
+      structure ? `children=${structure.directChildren} offset=${structure.barOffset} host=${structure.hostHeight} bar=${structure.barHeight}` : "没有工具条",
+    );
+    ok(
+      "按钮拿得到工具条自己的调色板（不会回落成白字）",
+      Boolean(structure) && structure.mutedResolved,
+      structure ? `mutedResolved=${structure.mutedResolved}` : "没有工具条",
+    );
   }
 
   // 位置：选区贴右边时，工具条仍要完整落在视口内（左右各留 8px）。
@@ -234,11 +284,13 @@ try {
         const root = host.shadowRoot;
         const brand = root?.querySelector("img");
         const bar = root?.querySelector(".bar");
+        const buttons = [...(root?.querySelectorAll("button") ?? [])];
         const box = host.getBoundingClientRect();
         const top = box.width > 0 ? document.elementFromPoint(box.left + box.width / 2, box.top + 6) : null;
         return {
           brandWidth: brand ? getComputedStyle(brand).width : "none",
           barDisplay: bar ? `${getComputedStyle(bar).display}/${getComputedStyle(bar).flexDirection}` : "none",
+          buttonsInBar: buttons.length === 3 && buttons.every((b) => b.parentElement === bar),
           popover: host.matches(":popover-open"),
           zIndex: getComputedStyle(host).zIndex,
           topIsOurs: top === host,
@@ -248,7 +300,7 @@ try {
   }
   ok(
     "页面严格 CSP 下工具条的样式照常生效",
-    cspInfo?.brandWidth === "16px" && cspInfo?.barDisplay === "flex/row",
+    cspInfo?.brandWidth === "16px" && cspInfo?.barDisplay === "flex/row" && cspInfo?.buttonsInBar === true,
     JSON.stringify(cspInfo ?? {}),
   );
   ok(

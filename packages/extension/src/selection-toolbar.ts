@@ -106,9 +106,12 @@ function place(): void {
   const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
   // 用 host 的实测尺寸（它才是「必须留在视口里」的那个盒子），不是 bar 的：结果层可能比 bar
   // 宽，两者差几像素就会让工具条压线出界。
-  const barWidth = host.getBoundingClientRect().width || bar.offsetWidth;
-  const barHeight = bar.offsetHeight;
+  const hostRect = host.getBoundingClientRect();
+  const barWidth = hostRect.width || bar.offsetWidth;
   const panelHeight = frameWrap && frameWrap.style.display !== "none" ? resultHeight + GAP : 0;
+  // 条的高度从 host 反推（host = 条 + 结果层），不去量 bar：只要有任何东西漏在 bar 外面
+  // （历史上漏过一次，按钮成了 host 的直接子节点），只量 bar 就会把高度算少、贴边计算失准。
+  const barHeight = Math.max(0, hostRect.height - panelHeight);
   const totalHeight = barHeight + panelHeight;
 
   let top: number;
@@ -135,19 +138,28 @@ function place(): void {
 
 function styleText(): string {
   return `
-    :host { all: initial; }
-    .root {
-      display: flex; flex-direction: column; align-items: flex-start; gap: ${GAP}px;
-      font: 12px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
-        "Microsoft YaHei", sans-serif; color: var(--text);
+    /*
+     * 调色板挂在 **:host** 上，不挂在 .root 上。自定义属性会照常往 shadow 树里继承，
+     * 所以放在最外层，整棵树里的节点都拿得到——包括以后可能被漏在 .root 外面的节点。
+     * 这一条是有过事故的：按钮挂在 shadow root 上（不在 .root 里）时，color: var(--muted)
+     * 解析失败，颜色回落到 initial，深色系统里那就是 canvastext 的白 → 白字白底看不见。
+     * （自定义属性不受 all 简写影响，所以下面那条 all: initial 不会把它们清掉。）
+     */
+    :host {
+      all: initial;
       --panel: #ffffff; --panel-2: #f6f6f4; --line: rgba(0,0,0,.14);
       --text: #1d1d1b; --muted: #6b6b66; --hover: rgba(0,0,0,.06); --brass: #b07d2b;
     }
     @media (prefers-color-scheme: dark) {
-      .root {
+      :host {
         --panel: #1b1d18; --panel-2: #23261f; --line: rgba(255,255,255,.16);
         --text: #ece7d8; --muted: #a3a396; --hover: rgba(255,255,255,.08); --brass: #d4a054;
       }
+    }
+    .root {
+      display: flex; flex-direction: column; align-items: flex-start; gap: ${GAP}px;
+      font: 12px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+        "Microsoft YaHei", sans-serif; color: var(--text);
     }
     .bar {
       display: flex; align-items: center; gap: 2px; padding: 4px;
@@ -173,7 +185,7 @@ function styleText(): string {
 }
 
 function actionButton(
-  shadow: ShadowRoot,
+  parent: HTMLElement,
   key: SelectionMode | "quote",
   label: string,
   aria: string,
@@ -195,7 +207,9 @@ function actionButton(
   });
   // 按下工具条不能把页面选区清掉：阻止默认的聚焦行为即可。
   button.addEventListener("mousedown", (event) => event.preventDefault());
-  shadow.append(button);
+  // 挂进 bar（那才是「一条」工具条），别挂到 shadow root 上：挂错地方按钮就跑到条外面
+  // 去了，既没有条的内边距和圆角，也拿不到 .root 上的调色板。
+  parent.append(button);
   buttons[key] = button;
 }
 
@@ -237,11 +251,11 @@ function mount(): void {
   bar.append(brand);
 
   const words = selectionCopy(locale);
-  actionButton(shadow, "translate", words.translate, words.translateAria, ICON_TRANSLATE, () =>
+  actionButton(bar, "translate", words.translate, words.translateAria, ICON_TRANSLATE, () =>
     void startRequest("translate"),
   );
-  actionButton(shadow, "search", words.search, words.searchAria, ICON_SEARCH, () => void startRequest("search"));
-  actionButton(shadow, "quote", words.quote, words.quoteAria, ICON_QUOTE, () => quoteSelection());
+  actionButton(bar, "search", words.search, words.searchAria, ICON_SEARCH, () => void startRequest("search"));
+  actionButton(bar, "quote", words.quote, words.quoteAria, ICON_QUOTE, () => quoteSelection());
 
   frameWrap = document.createElement("div");
   frameWrap.className = "result";
