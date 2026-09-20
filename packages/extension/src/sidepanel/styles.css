@@ -556,13 +556,15 @@ mark.cs-at-match {
 
 /* 划词工具条的结果层（跑在 iframe 里的 src/selection 页面）。高度由父层按上报值夹紧
    （见 selection-toolbar.ts 的 maxResultHeight），这里不再设自己的上限——它一旦设了，
-   父层想让结果层长高也没用（出过：这里卡 52vh / 26rem，框一直很小）。内容超出 iframe
-   的高度时由文档自己滚动，见 src/selection/result.css。 */
+   父层想让结果层长高也没用（出过：这里卡 52vh / 26rem，框一直很小）。
+   布局：卡片占满 iframe，标题栏固定在上面，**正文区自己滚**——这样标题栏不需要背景色
+   （背景色是上一版用 sticky 时的遮罩，用户看着难看），正文也不会从标题下面透出来。 */
 .cs-selection-result {
   display: flex;
   flex-direction: column;
   gap: 6px;
   padding: 10px 12px 12px;
+  height: 100%;
   color: var(--text);
 }
 
@@ -571,13 +573,8 @@ mark.cs-at-match {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  /* 吸顶：结果层内容滚动时标题栏（含复制钮）留在卡片顶部。滚动容器就是结果层自己那个
-     文档（见 src/selection/result.css），所以 sticky 直接生效；背景必须给，不然正文会
-     从下面透出来。 */
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  background: var(--panel);
+  /* 固定在卡片顶部（不跟着正文滚），但不参与伸缩。 */
+  flex: none;
 }
 
 .cs-selection-title {
@@ -605,6 +602,10 @@ mark.cs-at-match {
 }
 
 .cs-selection-body {
+  /* 正文区才是滚动容器：min-height 必须是 0，否则 flex 子项不肯缩，滚不出滚动条。 */
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
   font-size: 12.5px;
   line-height: 1.55;
 }

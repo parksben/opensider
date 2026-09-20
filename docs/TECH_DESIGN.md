@@ -685,7 +685,7 @@ Host 是通用 ACP Client + 数据驱动 `AgentProfile`（启动命令、鉴权�
 三条文案（英文原文，已定稿）写在 `internal/selection/prompt.go` 里，纯函数、可直接单测：
 
 - 翻译：`Translate the text below into {target}. Output only the translation — no preamble, no notes, no quotes. If it is already in {target}, return it unchanged.`
-- 搜索：`Search the web for the query below and answer in Markdown only — only the final answer: no preamble, no notes about what you are about to do, no step-by-step narration. Run every search you need in one batch — parallel tool calls instead of one query at a time — and only start writing once they are all back, so the user waits once instead of once per search. Prefer encyclopedic sources (Wikipedia, Britannica, official sites) and list the links you actually used under "Sources". Keep it short: a summary, then the key facts. If you cannot search the web with your tools, say so in one line instead of guessing — then give what you know from training data and label it as such.`
+- 搜索：`Search the web for the query below and answer in Markdown only — only the final answer: no preamble, no notes about what you are about to do, no step-by-step narration. Speed matters most: run every search you need in one batch (parallel tool calls — not one query at a time), start writing as soon as the first results that come back give you enough, and skip follow-up searches and opening individual pages unless what you got is useless. Prefer encyclopedic sources (Wikipedia, Britannica, official sites) and list the links you actually used under "Sources". Keep it short: a summary, then the key facts. If you cannot search the web with your tools, say so in one line instead of guessing — then give what you know from training data and label it as such.`
 - 引用展开（发消息时把芯片 token 换成这个）：`> {原文}`
 
 `{target}` 由 BCP-47 标签映射成英文语言名（常见标签走一张小表：`zh-CN` → Simplified Chinese、`zh-TW` → Traditional Chinese、`ja` → Japanese…），表里没有的标签就把标签本身交给模型。**目标语言取浏览器语言**（内容脚本读 `navigator.language`），与扩展界面语言无关。
@@ -696,8 +696,8 @@ Host 是通用 ACP Client + 数据驱动 `AgentProfile`（启动命令、鉴权�
 
 - 新增扩展页 `src/selection/index.html`：**除了**挂进 `web_accessible_resources`，还要在 `vite.config.ts` 的 `build.rollupOptions.input` 里显式登记——crxjs 只自动处理 manifest 里登记的页面（侧栏那种），漏登记的话构建产物里留下的是没打包的 `./main.tsx`，iframe 一加载就 404（踩过），它只做一件事：接收 `{kind:"translate"|"search", state, markdown|text}` 的 postMessage，用与侧栏同一套 `Markdown` 组件渲染，在末尾放「复制 / 已复制」；
 - 工具条在 shadow DOM 里用 `<iframe src=chrome-extension://…/src/selection/index.html>` 装它：两个方向都隔离样式，主题跟随（页面 `dark`/`light` 由 postMessage 告知，默认跟随浏览器）；
-- 结果层顶部的标题栏**吸顶**（`.cs-selection-head`：`position: sticky; top: 0` + `background: var(--panel)`），内容再长也不会把标题与复制钮滚走；滚动容器就是结果层自己那个文档（见 `src/selection/result.css`），所以 sticky 直接生效。
-- 高度：**按文字行数**，不按视口比例——正文最少 10 行、最多 20 行（行高对齐 `.cs-selection-body` 的 12.5px × 1.55，再加标题行与上下 padding；常量在 `selection-toolbar.ts`）；内容不足 10 行由内容撑高（只有加载中用 10 行占位，免得先一条小窄条、结果一到又跳成一大块），超过 20 行交给结果层自滚。iframe 内容用 `ResizeObserver` 量高后 postMessage 给父层，父层只封顶不拉高。结果层页面**不要再设自己的高度上限**：设了父层想让框长高也长不动（踩过：那里卡着 `min(52vh, 26rem)`，于是「框永远很小」）；超出部分由结果层**文档自己滚动**（`src/selection/result.css` 把共享样式里 `html/body/#root` 的 `overflow: hidden` 打开，结果层是独立文档，不会污染侧栏）。
+- 结果层顶部的标题栏**固定**：布局是「卡片撑满 iframe + 标题栏在滚动容器之外 + 正文区（`.cs-selection-body`，`flex: 1 1 auto; min-height: 0; overflow-y: auto`）自己滚」。**不要用 `position: sticky` + 背景色**：吸顶会把卡片顶部那 10px 内边距一起滚走，标题栏跟着跳一截（用户报过「padding 消失、布局变了」），而且必须拿背景色去盖正文（那条色带同样难看）。现在标题栏与四周内边距都不随滚动变化，也不需要背景色。
+- 高度：**按文字行数**，不按视口比例——正文最少 10 行、最多 20 行（行高对齐 `.cs-selection-body` 的 12.5px × 1.55，再加标题行与上下 padding；常量在 `selection-toolbar.ts`）；内容不足 10 行由内容撑高（只有加载中用 10 行占位，免得先一条小窄条、结果一到又跳成一大块），超过 20 行交给结果层自滚。iframe 内容用 `ResizeObserver` 量高后 postMessage 给父层（量的是「上/下 padding + gap + 标题栏高 + 正文内容高」，**不能**量 `root.scrollHeight`——卡片占满 100%，那个值恒等于 iframe 高度，父层就再也长不高也缩不回去），父层只封顶不拉高。结果层页面**不要再设自己的高度上限**：设了父层想让框长高也长不动（踩过：那里卡着 `min(52vh, 26rem)`，于是「框永远很小」）；超出部分由结果层**文档自己滚动**（`src/selection/result.css` 把共享样式里 `html/body/#root` 的 `overflow: hidden` 打开，结果层是独立文档，不会污染侧栏）。
 
 ### 引用芯片
 
@@ -714,7 +714,7 @@ Host 是通用 ACP Client + 数据驱动 `AgentProfile`（启动命令、鉴权�
 ### 验证
 
 - 宿主级（`scripts/verify-selection.mjs`）：隐藏通道真的不进侧栏（整轮里没有任何 `update` / `turn.end` 发给扩展）、结果文本正确、取消生效、`utility` runtime 不被聊天复用、它拿不到标签页控制；
-- 页面级（`scripts/verify-selection-ui.mjs`，真 Chromium + 本地 fixture 页）：门控关掉时不出现、选中 200 字以内出现、超过 200 字不出现、**结构**（三个按钮都在 `.bar` 里、排成一行、shadow 里没有漏在条外面的节点、host 高度就是条的高度、按钮上解析得出工具条自己的调色板）、四边安全边距（把选区放到视口四角各试一次）、选区滚出视口即隐藏、翻译与搜索的结果层（Markdown 要真渲染成 `h2/ul/a`，不是贴纯文本）、**结果层里没有过程叙述**（假引擎照真实形态先演一遍「过程叙述 → 工具调用 → 结论」）、**长结果把框撑到 10 行以上且封顶 20 行、再高也顶不掉工具条、超出部分自己滚动**、**选区贴着视口底部时工具条翻到上方且完整可见**、**选区滚出视口时工具条跟着滚出去而不是消失、滚回来还在原位**、**结果层标题栏吸顶**、**复制钮是图标 + 文案**、引用后输入框里出现引文芯片；
+- 页面级（`scripts/verify-selection-ui.mjs`，真 Chromium + 本地 fixture 页）：门控关掉时不出现、选中 200 字以内出现、超过 200 字不出现、**结构**（三个按钮都在 `.bar` 里、排成一行、shadow 里没有漏在条外面的节点、host 高度就是条的高度、按钮上解析得出工具条自己的调色板）、四边安全边距（把选区放到视口四角各试一次）、选区滚出视口即隐藏、翻译与搜索的结果层（Markdown 要真渲染成 `h2/ul/a`，不是贴纯文本）、**结果层里没有过程叙述**（假引擎照真实形态先演一遍「过程叙述 → 工具调用 → 结论」）、**长结果把框撑到 10 行以上且封顶 20 行、再高也顶不掉工具条、超出部分自己滚动**、**选区贴着视口底部时工具条翻到上方且完整可见**、**选区滚出视口时工具条跟着滚出去而不是消失、滚回来还在原位**、**结果层标题栏固定且无背景色、正文滚动时标题位置不变**、**复制钮是图标 + 文案**、引用后输入框里出现引文芯片；
 - 同一条脚本里还有两个**针对上面两条教训的回归**：fixture 用 `Content-Security-Policy: style-src 'self'` 提供一份严格 CSP 页面（样式仍要生效），并在页面上盖一层 `position:fixed; z-index:2147483647` 的全屏浮层（`elementFromPoint` 打到的必须还是我们的 host，即我们真的在顶层）；
 - Go 单测：`internal/selection` 的提示词拼装与语言映射表。
 

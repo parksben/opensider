@@ -118,6 +118,8 @@ func TestSearchPromptAsksForMarkdownSourcesAndHonesty(t *testing.T) {
 		"Prefer encyclopedic sources",
 		"in one batch",
 		"parallel tool calls",
+		"start writing as soon as the first results",
+		"skip follow-up searches",
 		"under \"Sources\"",
 		"If you cannot search the web",
 		"instead of guessing",

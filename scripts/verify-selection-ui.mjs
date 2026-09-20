@@ -444,10 +444,11 @@ try {
       const body = await resultFrame?.evaluate(() => document.body.innerText).catch(() => "");
       if (!body || !body.includes("第 15 节")) continue;
       const scroll = await resultFrame
-        .evaluate(() => ({
-          scrollHeight: document.documentElement.scrollHeight,
-          clientHeight: document.documentElement.clientHeight,
-        }))
+        .evaluate(() => {
+          // 滚动容器是正文区（`.cs-selection-body`），结果层文档本身不滚。
+          const body = document.querySelector(".cs-selection-body");
+          return body ? { scrollHeight: body.scrollHeight, clientHeight: body.clientHeight } : null;
+        })
         .catch(() => null);
       const geometry = await fixture
         .evaluate(() => {
@@ -495,30 +496,34 @@ try {
         `bar=${tall.barTop}..${tall.barBottom} vh=${tall.viewport} hostBottom=${tall.hostBottom}`,
       );
       ok("超出部分在结果层内部滚动", tall.scrollable, `scrollable=${tall.scrollable}`);
-      // 标题栏吸顶：把结果层自己那个文档滚一段，标题栏必须还在卡片顶部。
+      // 标题栏固定在卡片顶部（正文区自己滚），而且**没有背景色**（那条色带用户看着难看）。
       const stickyFrame = resultFrame(fixture);
       let stuck = null;
       if (stickyFrame) {
-        await stickyFrame.evaluate(() => {
-          document.scrollingElement.scrollTop = 240;
-        });
-        await sleep(200);
         stuck = await stickyFrame
-          .evaluate(() => {
+          .evaluate(async () => {
             const head = document.querySelector(".cs-selection-head");
-            const title = document.querySelector(".cs-selection-title");
-            if (!head || !title) return null;
+            const body = document.querySelector(".cs-selection-body");
+            if (!head || !body) return null;
+            const before = Math.round(head.getBoundingClientRect().top);
+            body.scrollTop = 240;
+            await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
             return {
-              headTop: Math.round(head.getBoundingClientRect().top),
-              scrolled: Math.round(document.scrollingElement.scrollTop),
-              titleVisible: title.getBoundingClientRect().top >= -1,
+              before,
+              after: Math.round(head.getBoundingClientRect().top),
+              scrolled: Math.round(body.scrollTop),
+              background: getComputedStyle(head).backgroundColor,
+              transparent: getComputedStyle(head).backgroundColor === "rgba(0, 0, 0, 0)",
             };
           })
           .catch(() => null);
       }
       ok(
-        "搜索结果的标题栏吸顶（内容滚动时不跟着走）",
-        Boolean(stuck) && stuck.scrolled > 100 && Math.abs(stuck.headTop) <= 1 && stuck.titleVisible,
+        "搜索结果的标题栏固定（正文滚动时不跟着走）且无背景色",
+        Boolean(stuck) &&
+          stuck.scrolled > 100 &&
+          stuck.after === stuck.before &&
+          stuck.transparent,
         JSON.stringify(stuck ?? {}),
       );
     }

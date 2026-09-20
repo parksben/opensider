@@ -51,19 +51,22 @@ func TranslatePrompt(text, target string) string {
 // 来源，而且要允许它说「我搜不了」——宁可它承认没有检索能力，也不要它编一份看起来很像的
 // 搜索结果。
 //
-// 两条要写死的：
+// 三条要写死的：
 //   - 「只要结论」：结果层是个小浮层，过程叙述（"我先去搜一下…"）既拖时间又会被最终正文
 //     刷掉；Host 那边另外按工具调用切了一刀做兼底。
-//   - 「一次并发搜完再汇总」：一条一条搜会让用户等 N 个来回，而模型本来就支持一个回里
-//     多个工具调用（CLI 会并发执行）。
+//   - 「一次并发搜完」：一条一条搜会让用户等 N 个来回，而模型本来就支持一个回里多个
+//     工具调用（CLI 会并发执行）。
+//   - 「够了就停」：并发发出之后不必等齐、不必补搜、也不要逐页去读——结果层要的是快，
+//     不是穷尽。
 func SearchPrompt(text string) string {
 	return "Search the web for the query below and answer in Markdown only — only the final " +
 		"answer: no preamble, no notes about what you are about to do, no step-by-step " +
-		"narration. Run every search you need in one batch — parallel tool calls instead of " +
-		"one query at a time — and only start writing once they are all back, so the user waits " +
-		"once instead of once per search. Prefer encyclopedic sources (Wikipedia, Britannica, " +
-		"official sites) and list the links you actually used under \"Sources\". Keep it short: " +
-		"a summary, then the key facts. If you cannot search the web with your tools, say so in " +
+		"narration. Speed matters most: run every search you need in one batch (parallel tool " +
+		"calls — not one query at a time), start writing as soon as the first results that come " +
+		"back give you enough, and skip follow-up searches and opening individual pages unless " +
+		"what you got is useless. Prefer encyclopedic sources (Wikipedia, Britannica, official " +
+		"sites) and list the links you actually used under \"Sources\". Keep it short: a " +
+		"summary, then the key facts. If you cannot search the web with your tools, say so in " +
 		"one line instead of guessing — then give what you know from training data and label " +
 		"it as such.\n\nQuery: " + text
 }

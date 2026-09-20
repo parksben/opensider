@@ -1,14 +1,14 @@
 /*
- * 结果层自己的那一条：滚动。
+ * 结果层自己的那一条：正文区滚动。
  *
- * 侧栏那套全局样式把 html / body / #root 都设成 overflow: hidden，对侧栏是对的（它自己
- * 内部滚动），但结果层是 iframe 里的独立文档，得让**文档自己**滚：父层已经把 iframe 的高度
- * 夹在视口内（工具条 + 结果层一起留安全边距），内容再长就往下滚。以前这里靠 body 上一道
- * max-height: 52vh / 26rem 撑滚动，结果是「框只能长到那么高」，父层再怎么调也长不高
- * （用户报过太小）。
+ * 滚动容器是 `.cs-selection-body`，**不是**结果层的文档：侧栏那套全局样式把
+ * html / body / #root 都设成 `height: 100%; overflow: hidden`，对侧栏是对的（它自己内部
+ * 滚），结果层这里也正是要的——卡片撑满父层给的 iframe 高度，标题栏固定在上面，正文区
+ * 自己滚，于是标题栏**不需要背景色**去盖正文（上一版用 sticky + 背景色，那条色带很难看）。
+ *
+ * 高度上报不能用 `root.scrollHeight`：卡片已经占满 100%，那个值恒等于 iframe 高度，父层
+ * 就再也长不高了。改成「上下 padding + gap + 标题栏高 + 正文内容高」，见 SelectionResult.tsx。
  */
-html,
-body,
-#root {
-  overflow: visible;
+.cs-selection-content {
+  display: block;
 }

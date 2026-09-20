@@ -38,6 +38,8 @@ export function SelectionResult() {
   const [locale, setLocale] = useState<Locale>("en");
   const [copied, setCopied] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const headRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
@@ -60,18 +62,29 @@ export function SelectionResult() {
     return () => window.removeEventListener("message", onMessage);
   }, []);
 
-  // 高度上报：父层用它把结果层夹在视口内（超出就内部滚动）。
+  // 高度上报：父层用它把结果层按行数夹紧（超出就由正文区自己滚）。
+  //
+  // **不能**再量 `root.scrollHeight`：卡片现在占满父层给的 100% 高度，那个值恒等于 iframe
+  // 高度，父层就永远长不高/缩不回去。改成逐块相加：上下 padding + gap + 标题栏高 + 正文
+  // 内容高——都与 iframe 当前高度无关，报出来的就是「内容真正需要多高」。
   useLayoutEffect(() => {
     const node = rootRef.current;
-    if (!node) return;
-    const report = () =>
+    const head = headRef.current;
+    const content = contentRef.current;
+    if (!node || !head || !content) return;
+    const report = () => {
+      const style = getComputedStyle(node);
+      const paddings = (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0);
+      const gap = parseFloat(style.rowGap) || 0;
       window.parent.postMessage(
-        { source: "opensider-selection-result", height: node.scrollHeight },
+        { source: "opensider-selection-result", height: paddings + gap + head.offsetHeight + content.offsetHeight },
         "*",
       );
+    };
     report();
     const observer = new ResizeObserver(report);
-    observer.observe(node);
+    observer.observe(head);
+    observer.observe(content);
     return () => observer.disconnect();
   }, []);
 
@@ -81,7 +94,7 @@ export function SelectionResult() {
 
   return (
     <div ref={rootRef} className="cs-selection-result">
-      <div className="cs-selection-head">
+      <div ref={headRef} className="cs-selection-head">
         <span className="cs-selection-title">{title}</span>
         {state === "ready" && text ? (
           <button
@@ -96,19 +109,21 @@ export function SelectionResult() {
         ) : null}
       </div>
       <div className="cs-selection-body">
-        {busy ? (
-          <p className="cs-selection-muted">
-            {kind === "search" ? t(locale, "selectionSearching") : t(locale, "selectionTranslating")}
-          </p>
-        ) : failed ? (
-          <p className="cs-selection-error">
-            {kind === "search" ? t(locale, "selectionSearchFailed") : t(locale, "selectionTranslateFailed")}
-          </p>
-        ) : kind === "search" ? (
-          <Markdown text={text} />
-        ) : (
-          <p className="cs-selection-text">{text}</p>
-        )}
+        <div ref={contentRef} className="cs-selection-content">
+          {busy ? (
+            <p className="cs-selection-muted">
+              {kind === "search" ? t(locale, "selectionSearching") : t(locale, "selectionTranslating")}
+            </p>
+          ) : failed ? (
+            <p className="cs-selection-error">
+              {kind === "search" ? t(locale, "selectionSearchFailed") : t(locale, "selectionTranslateFailed")}
+            </p>
+          ) : kind === "search" ? (
+            <Markdown text={text} />
+          ) : (
+            <p className="cs-selection-text">{text}</p>
+          )}
+        </div>
       </div>
     </div>
   );
