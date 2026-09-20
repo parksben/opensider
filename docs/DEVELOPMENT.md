@@ -118,7 +118,7 @@ scripts/verify-composer-clipboard.mjs  输入框全选复制/剪切带上附件�
 scripts/verify-page-overlays.mjs  动作后自动上报页面浮层（模态框/抽屉）的端到端验证
 scripts/verify-host-skew.mjs  本机 Host 比扩展旧时的提示（可见 / 可关 / 不影响可用功能）
 scripts/verify-state-mirror.mjs  状态镜像（>1MB 分片推送 / 上传、超限帧不脱帧、空态不覆盖）的帧级验证
-scripts/verify-first-connect.mjs  扩展重载后首次打开面板要自己连上（模型列表与推理档位）的端到端验证
+scripts/verify-first-connect.mjs  首次打开侧栏要自己连上（`SCENARIO=local` 扩展重载 / `SCENARIO=mirror` 卸载重装）的端到端验证
 scripts/verify-selection.mjs  划词隐藏通道（不进侧栏 / 独立会话 / 取消恢复）的帧级验证
 scripts/verify-selection-ui.mjs  划词工具条（门控 / 结构 / 定位 / 层级 / 结果层 / 引文芯片）的端到端验证
 scripts/verify-skill-menu.mjs  `/` skill 探测菜单（列表 / 搜索 / 详情面板 / 芯片落位 / 发出的提示词）的端到端验证

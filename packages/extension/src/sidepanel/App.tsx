@@ -343,8 +343,10 @@ export function App() {
     requestSession("new", session.id);
   };
 
-  const requestConnect = (providerId: string) => {
+  const requestConnect = (providerId: string, via: "user" | "auto" = "user") => {
     if (!providerId) return;
+    // 用户自己发的（点 Agent、点连接）：取消标记到此为止，以后照常自动连。
+    if (via === "user") skipIdleConnectRef.current = false;
     if (connectedProviderRef.current === providerId && statusRef.current === "ready") return;
     if (pendingConnectRef.current === providerId && statusRef.current === "connecting") return;
     // 同一次请求只发一次（见 connectInFlightRef）：同一家的重复请求直接当作已在飞行中。
@@ -393,7 +395,7 @@ export function App() {
    */
   const autoConnectTarget = (list: AgentInfo[] = agentsRef.current): string => {
     if (!onboardingRef.current) return "";
-    // 用户刚点过取消：不要立刻又连回去（标记由 idle 那条分支消费掉）。
+    // 用户刚取消过：不要再自动连（这个标记由用户自己的动作解除，见 requestConnect）。
     if (skipIdleConnectRef.current) return "";
     // 已经有一次连接在飞：不要在同一拍里再发一次（见 connectInFlightRef）。
     if (connectInFlightRef.current) return "";
@@ -595,7 +597,7 @@ export function App() {
       // 扫完了（不管扫没扫到 CLI）：从现在起可以按状态快照自动连。
       hostScannedRef.current = true;
       const target = autoConnectTarget(msg.agents);
-      if (target) requestConnect(target);
+      if (target) requestConnect(target, "auto");
       return;
     }
     if (msg.type === "agent.progress") {
@@ -674,13 +676,9 @@ export function App() {
       if (msg.state === "idle") {
         // idle 只在 Host 扫完 Agent 列表之后才会报出来。
         hostScannedRef.current = true;
-        if (skipIdleConnectRef.current) {
-          skipIdleConnectRef.current = false;
-          setProgress(undefined);
-          return;
-        }
+        setProgress(undefined);
         const target = autoConnectTarget();
-        if (target) requestConnect(target);
+        if (target) requestConnect(target, "auto");
       }
       return;
     }
@@ -1155,14 +1153,19 @@ export function App() {
     if (hydrated) tryBindCurrent();
   }, [hydrated, selectedId]);
 
-  // hydration 完成之后再判一次自动连接：本地缓存读得比 Host 回放慢时（会话多、历史长），
-  // 上面那两条消息分支都会因为 refs 还是空的而跳过判断，没有人补这一次就永远连不上
-  // （见 autoConnectTarget）。
+  // 自动连接：判定会因为「快照里的四种料」变化而重判——hydration 完成、引导状态与记得的
+  // Agent 被 Host 镜像灌进来、Host 报出 agents / 状态变化，都在这些 state 上。
+  //
+  // 不能只在「消息到达那一刻」判一次：卸载重装后扩展本地缓存是空的（onboardingCompleted
+  // false、没有 provider），引导状态只能靠 Host 镜像补，而镜像（1.1MB、分片）往往晚于
+  // hydration 到——那一次判定已经跑完了，之后再没人补判，于是首次打开侧栏一直不连，模型
+  // 列表就空着（用户报过：关掉侧栏再打开就好，因为那时本地缓存里已经有引导状态了）。
+  // 重判是幂等的：在飞标记会挡住重复的 `agent.connect`（见 connectInFlightRef）。
   useEffect(() => {
     if (!hydrated) return;
     const target = autoConnectTarget();
-    if (target) requestConnect(target);
-  }, [hydrated]);
+    if (target) requestConnect(target, "auto");
+  }, [hydrated, onboardingCompleted, selectedProviderId, sawAgents, status, agents]);
 
   const setSessionQueue = (sessionId: string, list: QueuedMessage[]) => {
     const next = { ...queuesRef.current };

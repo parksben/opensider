@@ -2,24 +2,31 @@
 // Guard for the panel's very first open after the extension was reloaded: the model list
 // and the reasoning-effort pill have to load on their own, without touching anything.
 //
-// The panel decides whether to connect the remembered Agent from the host messages it gets
-// (`agents` / `idle`), but its own local cache has to be read first (hydration). Reading a
-// cache full of sessions is slower than the host's cached replay, so the replay used to land
-// while every ref was still empty — the decision was skipped, and nothing ever decided again.
-// The panel then looked fine but had no models and no effort pill until the user switched
-// Agent by hand. This seeds a big local state (that is what makes the race lose) and opens
-// the panel only after the host is up and idle, which is the state right after a reload.
+// The panel decides whether to connect the remembered Agent from a state snapshot, and both
+// halves of that snapshot can arrive late:
+//
+//   SCENARIO=local  (default) after an extension reload: the panel reads a big local cache
+//                   (hydration）while the host's cached replay races it. Open the panel only
+//                   after the host is up and idle — the state right after a reload.
+//   SCENARIO=mirror after an uninstall + reinstall: chrome.storage is empty, so onboarding
+//                   and the remembered Agent can only come from the host mirror, which is
+//                   pushed in chunks and lands well after hydration.
+//
+// Either way the first open has to connect on its own: models, effort pill, one agent.connect.
 //
 //   node scripts/verify-first-connect.mjs
+//   SCENARIO=mirror node scripts/verify-first-connect.mjs
 //
 // Prints one line per check and exits non-zero if any of them fails.
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createSandbox, check, extensionIdFromDist, loadPlaywright, cachedChromium } from "./lib/sandbox.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const dist = join(root, "packages", "extension", "dist");
+// mirror = 卸载重装（本地缓存空、只有 Host 镜像）；local = 扩展重载（本地缓存大）。
+const scenario = process.env.SCENARIO === "mirror" ? "mirror" : "local";
 const { chromium } = loadPlaywright();
 const results = [];
 const ok = (name, passed, detail = "") => check(name, passed, detail, results);
@@ -49,12 +56,16 @@ try {
     if (!sw) await sleep(250);
   }
   if (!sw) throw new Error("extension service worker never started");
-  let storageReady = false;
-  for (let i = 0; i < 40 && !storageReady; i += 1) {
-    storageReady = await sw.evaluate(() => Boolean(globalThis.chrome?.storage?.local)).catch(() => false);
-    if (!storageReady) await sleep(250);
+  if (scenario === "local") {
+    let storageReady = false;
+    for (let i = 0; i < 40 && !storageReady; i += 1) {
+      storageReady = await sw.evaluate(() => Boolean(globalThis.chrome?.storage?.local)).catch(() => false);
+      if (!storageReady) await sleep(250);
+    }
+    ok("the sandboxed extension is up", storageReady);
+  } else {
+    ok("the sandboxed extension is up", true, "fresh install: open the panel at once");
   }
-  ok("the sandboxed extension is up", storageReady);
 
   // 真机上这个 key 里躺着几十个会话、上千条消息，fromPersisted 的解析量不小——正是这份
   // 慢，让「读缓存」跑不过 Host 回放。
@@ -82,33 +93,47 @@ try {
       artifacts: [],
     });
   }
-  await sw.evaluate(
-    (payload) => chrome.storage.local.set({ "opensider/state": payload }),
-    {
-      version: 1,
-      savedAt: now,
-      locale: "en",
-      theme: "dark",
-      selectedId: "m1",
-      selectedModelId: "",
-      selectedModelByProvider: {},
-      agentMode: "ask",
-      selectedProviderId: "copilot",
-      onboardingCompleted: true,
-      sessionsOpen: false,
-      sessionDrawerWidth: 248,
-      sessions,
-    },
-  );
+  const seeded = {
+    version: 1,
+    savedAt: now,
+    locale: "en",
+    theme: "dark",
+    selectedId: "m1",
+    selectedModelId: "",
+    selectedModelByProvider: {},
+    agentMode: "ask",
+    selectedProviderId: "copilot",
+    onboardingCompleted: true,
+    sessionsOpen: false,
+    sessionDrawerWidth: 248,
+    sessions,
+  };
 
-  // 扩展重载之后的常态：Host 已经起来并且报过 idle，SW 的回放里有 idle + agents。
-  let hostIdle = false;
-  for (let i = 0; i < 120 && !hostIdle; i += 1) {
-    hostIdle = existsSync(hostLog) && /idle agents=/.test(readFileSync(hostLog, "utf8"));
-    if (!hostIdle) await sleep(250);
+  // 两种场景是「引导状态从哪来」的两种极端：本地缓存，或者只能靠 Host 镜像。
+  if (scenario === "mirror") {
+    // 卸载重装：扩展本地缓存是空的，Host 那边的镜像还在（1MB 上下，分片推）。
+    // 关键是**不等 Host**：镜像要等 Host 起来才推过来，而空缓存的 hydration 几乎是瞬间完成，
+    // 所以镜像必然晚于 hydration——这正是真机上「装完立刻打开侧栏」的时序。
+    writeFileSync(join(sandbox.home, ".opensider", "ui-state.json"), JSON.stringify(seeded));
+    // 让 Host 晚一点起来：镜像必须**晚于** hydration 才做得到确定性复现（否则它会赶在
+    // hydration 之前到，走的是另一条路——pendingHostState，那样旧代码也能连上）。
+    const launcher = join(sandbox.dir, "launch-host.sh");
+    writeFileSync(launcher, readFileSync(launcher, "utf8").replace("exec ", "sleep ${HOST_DELAY:-3}\nexec "));
+    ok("the local cache is left empty (fresh install)", true, "no chrome.storage.local");
+    await sleep(150);
+  } else {
+    await sw.evaluate((payload) => chrome.storage.local.set({ "opensider/state": payload }), seeded);
+    // 真机上镜像与本地缓存内容一致；这里也写一份，时序才和真机一样。
+    writeFileSync(join(sandbox.home, ".opensider", "ui-state.json"), JSON.stringify(seeded));
+    // 扩展重载之后的常态：Host 已经起来并且报过 idle，SW 的回放里有 idle + agents。
+    let hostIdle = false;
+    for (let i = 0; i < 120 && !hostIdle; i += 1) {
+      hostIdle = existsSync(hostLog) && /idle agents=/.test(readFileSync(hostLog, "utf8"));
+      if (!hostIdle) await sleep(250);
+    }
+    ok("the host is up and idle before the panel opens", hostIdle);
+    await sleep(600);
   }
-  ok("the host is up and idle before the panel opens", hostIdle);
-  await sleep(600);
 
   const panel = await context.newPage();
   panel.on("pageerror", (error) => console.log(`    panel pageerror: ${String(error).slice(0, 200)}`));
@@ -151,6 +176,10 @@ try {
     effort ? `${effort.value} after ${effort.seconds}s` : "nothing after 30s",
   );
 
+  // 这里刻意只断言「最终连上了、而且只发了一次」，不去卡秒表：SW 会在 starting 上挂一个
+  // 10s 看门狗、端口断了还会重连并另起一次 Host，这些都会把慢路径兜起来（真机上你看到的
+  // 那 8 秒就是某次迟到广播救的场），于是「快不快」在沙箱里量不准。要查判定时序，看
+  // `[acl] effect` 这类临时日志，或者在真机 host.log 上对时间。
   // 面板到底有没有真的让 Host 连上引擎：这条能区分「只是控件没画出来」和「压根没连」。
   const logged = existsSync(hostLog) ? readFileSync(hostLog, "utf8") : "";
   ok(

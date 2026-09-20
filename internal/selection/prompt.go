@@ -51,15 +51,21 @@ func TranslatePrompt(text, target string) string {
 // 来源，而且要允许它说「我搜不了」——宁可它承认没有检索能力，也不要它编一份看起来很像的
 // 搜索结果。
 //
-// 「只要结论」这条要写死：结果层是个小浮层，过程叙述（"我先去搜一下…"）既拖时间又会被最终
-// 正文刷掉；Host 那边另外按工具调用切了一刀做兼底。
+// 两条要写死的：
+//   - 「只要结论」：结果层是个小浮层，过程叙述（"我先去搜一下…"）既拖时间又会被最终正文
+//     刷掉；Host 那边另外按工具调用切了一刀做兼底。
+//   - 「一次并发搜完再汇总」：一条一条搜会让用户等 N 个来回，而模型本来就支持一个回里
+//     多个工具调用（CLI 会并发执行）。
 func SearchPrompt(text string) string {
 	return "Search the web for the query below and answer in Markdown only — only the final " +
 		"answer: no preamble, no notes about what you are about to do, no step-by-step " +
-		"narration. Prefer encyclopedic sources (Wikipedia, Britannica, official sites) and " +
-		"list the links you actually used under \"Sources\". Keep it short: a summary, then the " +
-		"key facts. If you cannot search the web with your tools, say so in one line instead of " +
-		"guessing — then give what you know from training data and label it as such.\n\nQuery: " + text
+		"narration. Run every search you need in one batch — parallel tool calls instead of " +
+		"one query at a time — and only start writing once they are all back, so the user waits " +
+		"once instead of once per search. Prefer encyclopedic sources (Wikipedia, Britannica, " +
+		"official sites) and list the links you actually used under \"Sources\". Keep it short: " +
+		"a summary, then the key facts. If you cannot search the web with your tools, say so in " +
+		"one line instead of guessing — then give what you know from training data and label " +
+		"it as such.\n\nQuery: " + text
 }
 
 // PromptFor 按模式拼提示词。target 只在翻译时用到。
