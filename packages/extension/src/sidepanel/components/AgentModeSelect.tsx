@@ -12,6 +12,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import type { Locale } from "../i18n";
 import { t } from "../i18n";
+import { COMPOSER_ICON_PX } from "../layout";
 import { RippleButton } from "./RippleButton";
 import { useRipple } from "../useRipple";
 
@@ -37,23 +38,6 @@ const ICONS: Record<AgentModeKind, typeof Workflow> = {
   full_access: Unlock,
   unknown: Workflow,
 };
-
-/**
- * 部分图标需要一档**光学缩小**才能跟同行的图标看起来一样大。
- *
- * 依据是实测的墨迹范围（`svg.getBBox()`，同一 24 单位空间里）：同行那些细线图标大约
- * 18–20 宽，而 `Bot` 的机器头是**实心块**且墨迹顶满 20 宽，同尺寸下明显更重、看起来更大。
- * 只降 1px，不换图标、不改语义。
- */
-const OPTICAL_SIZE: Partial<Record<AgentModeKind, number>> = {
-  agent: 13,
-};
-
-const ICON_SIZE = 14;
-
-export function agentModeIconSize(kind: AgentModeKind) {
-  return OPTICAL_SIZE[kind] ?? ICON_SIZE;
-}
 
 export function agentModeIcon(kind: AgentModeKind) {
   return ICONS[kind] ?? ICONS.unknown;
@@ -116,7 +100,6 @@ export function AgentModeSelect({
 
   const current = options.find((option) => option.id === currentId) ?? options[0];
   const CurrentIcon = agentModeIcon(current.kind);
-  const currentSize = agentModeIconSize(current.kind);
   const tip = tooltipOf(locale, current);
 
   return (
@@ -133,7 +116,7 @@ export function AgentModeSelect({
         // 内边距对称 px-2，与权限钮一致；w-fit 让它贴合内容（不设最小宽度，否则会多出空白）。
         className="relative flex h-7 w-fit max-w-full min-w-0 items-center gap-1 overflow-hidden whitespace-nowrap rounded-full px-2 text-[11px] text-[var(--muted)] hover:bg-[var(--hover)]"
       >
-        <CurrentIcon size={currentSize} className="shrink-0" />
+        <CurrentIcon size={COMPOSER_ICON_PX} className="shrink-0" />
         {iconOnly ? null : <span className="min-w-0 truncate">{displayName(current)}</span>}
         {ripples.map((ripple) => (
           <span
@@ -148,7 +131,6 @@ export function AgentModeSelect({
         <div className="absolute bottom-full left-0 z-[80] mb-1.5 w-64 rounded-lg border border-[var(--line)] bg-[var(--panel)] py-1 shadow-xl">
           {options.map((option) => {
             const Icon = agentModeIcon(option.kind);
-            const size = agentModeIconSize(option.kind);
             const active = option.id === currentId;
             return (
               <RippleButton
@@ -166,7 +148,7 @@ export function AgentModeSelect({
                     active ? "text-[var(--text)]" : "text-[var(--muted)]"
                   }`}
                 >
-                  <Icon size={size} />
+                  <Icon size={COMPOSER_ICON_PX} />
                   {displayName(option)}
                 </span>
                 {option.desc ? (

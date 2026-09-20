@@ -4,6 +4,7 @@ import logoUrl from "../../../assets/icon.svg?url";
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from "react";
 import type { ChatMessage, ChatPart, TodoItem } from "../chat-types";
 import { useComposerHistory } from "../composer-history";
+import { COMPOSER_ICON_PX } from "../layout";
 import type { Locale } from "../i18n";
 import { t } from "../i18n";
 import { closeAtMenuLock, installAtMenuGuard, openAtMenuLock, shouldBlockSubmit } from "../at-menu-lock";
@@ -85,6 +86,7 @@ export function ChatPane({
   agentModeId,
   onAgentModeId,
   iconOnly,
+  narrowModel,
   page,
   hitl,
   control,
@@ -139,6 +141,8 @@ export function ChatPane({
   onAgentModeId?: (modeId: string) => void;
   /** ≤448px：两个下拉收成纯图标（隐藏文案，tooltip 里给全）。 */
   iconOnly?: boolean;
+  /** ≤396px：模型下拉的最大宽度收到常值的 1/3。 */
+  narrowModel?: boolean;
   page?: CurrentPage;
 }) {
   const [draft, setDraft] = useState("");
@@ -625,9 +629,9 @@ export function ChatPane({
                     }`}
                   >
                     {pickingFiles || savingPaste ? (
-                      <LoaderCircle size={14} className="animate-spin" />
+                      <LoaderCircle size={COMPOSER_ICON_PX} className="animate-spin" />
                     ) : (
-                      <Paperclip size={14} />
+                      <Paperclip size={COMPOSER_ICON_PX} />
                     )}
                   </IconButton>
                 </span>
@@ -648,7 +652,7 @@ export function ChatPane({
                     pickingElement ? "bg-[var(--hover)] text-[var(--brass)]" : "text-[var(--text)]"
                   }`}
                 >
-                  <MousePointer2 size={14} />
+                  <MousePointer2 size={COMPOSER_ICON_PX} />
                 </IconButton>
                 <span ref={atButtonRef}>
                   <IconButton
@@ -667,7 +671,7 @@ export function ChatPane({
                       atOpen ? "bg-[var(--hover)] text-[var(--brass)]" : "text-[var(--text)]"
                     }`}
                   >
-                    <AtSign size={14} />
+                    <AtSign size={COMPOSER_ICON_PX} />
                   </IconButton>
                 </span>
               </div>
@@ -704,7 +708,7 @@ export function ChatPane({
             </div>
             <div className="flex min-w-0 shrink items-center justify-end gap-1.5">
               {showModelPicker ? (
-                <ModelSelect locale={locale} models={models} modelId={modelId} onModel={onModel} />
+                <ModelSelect locale={locale} models={models} modelId={modelId} narrow={narrowModel} onModel={onModel} />
               ) : null}
               {isRunning ? (
                 <IconButton
@@ -713,7 +717,7 @@ export function ChatPane({
                   onClick={onCancel}
                   className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[var(--text)] hover:bg-[var(--hover)]"
                 >
-                  <Square size={14} />
+                  <Square size={COMPOSER_ICON_PX} />
                 </IconButton>
               ) : null}
               <IconButton
@@ -723,7 +727,7 @@ export function ChatPane({
                 disabled={!canSend || savingPaste || Boolean(editingId && isRunning)}
                 className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[var(--text)] hover:bg-[var(--hover)] disabled:opacity-30 disabled:hover:bg-transparent"
               >
-                <Send size={14} />
+                <Send size={COMPOSER_ICON_PX} />
               </IconButton>
             </div>
           </div>
@@ -964,7 +968,7 @@ function ModeSelect({
           mode === "ask" ? "text-[var(--muted)]" : "text-[var(--brass)]"
         }`}
       >
-        <CurrentIcon size={14} className="shrink-0" />
+        <CurrentIcon size={COMPOSER_ICON_PX} className="shrink-0" />
         {iconOnly ? null : <span className="min-w-0 truncate">{current.name}</span>}
         {ripples.map((ripple) => (
           <span
@@ -992,7 +996,7 @@ function ModeSelect({
                 }`}
               >
                 <span className={`flex items-center gap-1.5 text-[12px] ${active ? "text-[var(--text)]" : "text-[var(--muted)]"}`}>
-                  <Icon size={14} />
+                  <Icon size={COMPOSER_ICON_PX} />
                   {option.name}
                 </span>
                 <span className="pl-[22px] text-[11px] leading-snug text-[var(--muted)]">{option.hint}</span>
@@ -1016,17 +1020,22 @@ function ModelSelect({
   models,
   modelId,
   disabled,
+  narrow,
   onModel,
 }: {
   locale: Locale;
   models: AgentModel[];
   modelId: string;
   disabled?: boolean;
+  /** ≤MODEL_NARROW_MAIN_PX：最大宽度收到常值的 1/3。 */
+  narrow?: boolean;
   onModel: (modelId: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [highlightId, setHighlightId] = useState(modelId);
+  // 这一行到 396px 时已经挤了五个控件，模型名是唯一能让位的：最大宽度收到 1/3。
+  const shellMax = narrow ? "max-w-[calc(9.5rem/3)]" : "max-w-[9.5rem]";
   const rootRef = useRef<HTMLDivElement>(null);
   const filterRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -1102,7 +1111,7 @@ function ModelSelect({
   }, [open, highlightId]);
 
   return (
-    <div ref={rootRef} className="relative min-w-0 max-w-[9.5rem]">
+    <div ref={rootRef} className={`relative min-w-0 ${shellMax}`}>
       <button
         type="button"
         title={label}
@@ -1113,10 +1122,10 @@ function ModelSelect({
         onPointerDown={(event) => {
           if (!disabled) spawn(event);
         }}
-        className="relative flex h-7 w-full min-w-0 max-w-[9.5rem] items-center gap-1 overflow-hidden whitespace-nowrap rounded-full border border-[var(--line)] bg-[var(--panel-2)] px-2 text-[11px] text-[var(--muted)] hover:text-[var(--text)] disabled:opacity-40"
+        className={`relative flex h-7 w-full min-w-0 ${shellMax} items-center gap-1 overflow-hidden whitespace-nowrap rounded-full border border-[var(--line)] bg-[var(--panel-2)] px-2 text-[11px] text-[var(--muted)] hover:text-[var(--text)] disabled:opacity-40`}
       >
         <span className="min-w-0 truncate">{label}</span>
-        <ChevronDown size={12} className={`shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
+        <ChevronDown size={COMPOSER_ICON_PX} className={`shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
         {ripples.map((ripple) => (
           <span
             key={ripple.id}

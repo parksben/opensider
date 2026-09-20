@@ -26,7 +26,7 @@ import { BridgeSetup } from "./components/BridgeSetup";
 import { ChatPane } from "./components/ChatPane";
 import { ControlBanner, type BorrowRequest } from "./components/ControlBanner";
 import { Header } from "./components/Header";
-import { COMPACT_MAIN_PX, ICON_ONLY_MAIN_PX } from "./layout";
+import { COMPACT_MAIN_PX, ICON_ONLY_MAIN_PX, MODEL_NARROW_MAIN_PX } from "./layout";
 import { PermissionBar } from "./components/PermissionBar";
 import { SessionDrawer } from "./components/SessionDrawer";
 import { UpdateDialog } from "./components/UpdateDialog";
@@ -112,6 +112,8 @@ export function App() {
   const [compact, setCompact] = useState(false);
   // 两个下拉（模式 / 权限）是否已收成纯图标。与 compact 分开：下拉该早收，其余布局不必跟着早改版。
   const [iconOnly, setIconOnly] = useState(false);
+  // ≤MODEL_NARROW_MAIN_PX：模型下拉的最大宽度收到 1/3。
+  const [modelNarrow, setModelNarrow] = useState(false);
   const mainColumnRef = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState<HostStatusState>("starting");
   const [error, setError] = useState<string>();
@@ -1011,6 +1013,7 @@ export function App() {
     const update = () => {
       setCompact(node.clientWidth < COMPACT_MAIN_PX);
       setIconOnly(node.clientWidth <= ICON_ONLY_MAIN_PX);
+      setModelNarrow(node.clientWidth <= MODEL_NARROW_MAIN_PX);
     };
     update();
     const observer = new ResizeObserver(update);
@@ -1713,6 +1716,7 @@ export function App() {
               agentModeId={agentModeId}
               onAgentModeId={onAgentModeId}
               iconOnly={iconOnly}
+              narrowModel={modelNarrow}
               onAgentMode={(mode) => {
                 setAgentMode(mode);
                 sendRef.current({ type: "agent.setPolicy", policy: mode });
