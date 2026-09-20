@@ -4,7 +4,7 @@
 //
 //   门控        -> 侧栏没开时划词什么都不出现；侧栏打开且 Agent 就绪后出现
 //   触发与位置  -> 120ms 内出现；选区贴边时工具条仍完整留在视口内（四边 8px 安全边距）
-//   上限        -> 超过 500 字的选区不出现（两三百字的段落得能用）
+//   额度        -> 中日韩按字符 500、其它语言按单词 200，超了不出现
 //   跟随        -> 选区滚出视口，工具条跟着消失
 //   翻译        -> 结果层（iframe）出现并显示 Agent 的回复，带「复制」
 //   引用        -> 侧栏输入框里出现引文芯片（图标 + 排版引号 + 原文）
@@ -30,8 +30,11 @@ const results = [];
 const ok = (name, value, detail) => check(name, value, detail, results);
 
 const LONG = "长".repeat(520);
-// 刚好在阈值以内：用户截图里那种两行英文说明（约 220 字符）就属于这一类，必须能用。
+// 刚好在额度以内：用户截图里那种两行英文说明（约 220 字符 / 34 个单词）就属于这一类。
 const NEAR = "划".repeat(480);
+// 英文按**单词**算额度（200），所以同样「看起来很短」的英文段落要看词数。
+const WORDS_OK = Array.from({ length: 190 }, () => "word").join(" ");
+const WORDS_OVER = Array.from({ length: 210 }, () => "word").join(" ");
 const PAGE = `<!doctype html>
 <html lang="zh"><head><meta charset="utf-8"><title>selection fixture</title>
 <style>
@@ -46,6 +49,8 @@ const PAGE = `<!doctype html>
     <p id="edge">贴右边</p>
     <p id="tall">长内容</p>
     <p id="near">${NEAR}</p>
+    <p id="words-ok">${WORDS_OK}</p>
+    <p id="words-over">${WORDS_OVER}</p>
     <p id="long">${LONG}</p>
   </div>
   <div id="tail"><p id="down">滚到很下面的一段文字。</p></div>
@@ -324,18 +329,32 @@ try {
   );
   await cspPage.close();
 
-  // 上限：500 字以内能用，超过就不支持。
+  // 额度：中日韩按字符 500，其它语言按单词 200。
   await selectText(fixture, "near");
   await sleep(500);
   ok(
-    "480 字的选区仍然出现工具条",
+    "480 个汉字的选区仍然出现工具条",
     (await toolbar(fixture).count()) === 1,
     `${await toolbar(fixture).count()} 个 host`,
   );
   await selectText(fixture, "long");
   await sleep(500);
   ok(
-    "超过 500 字的选区不出现工具条",
+    "超过 500 个汉字的选区不出现工具条",
+    (await toolbar(fixture).count()) === 0,
+    `${await toolbar(fixture).count()} 个 host`,
+  );
+  await selectText(fixture, "words-ok");
+  await sleep(500);
+  ok(
+    "190 个英文单词的选区仍然出现工具条",
+    (await toolbar(fixture).count()) === 1,
+    `${await toolbar(fixture).count()} 个 host`,
+  );
+  await selectText(fixture, "words-over");
+  await sleep(500);
+  ok(
+    "超过 200 个英文单词的选区不出现工具条",
     (await toolbar(fixture).count()) === 0,
     `${await toolbar(fixture).count()} 个 host`,
   );

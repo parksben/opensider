@@ -36,6 +36,8 @@ type selectionRun struct {
 	tabID     int
 	mode      string
 	text      string
+	// uiLocale 是扩展界面语言（BCP-47）：搜索结果按它输出（翻译不看它，翻译跟浏览器语言）。
+	uiLocale string
 
 	mu       sync.Mutex
 	runtime  *acpRuntime
@@ -150,14 +152,15 @@ func (h *Host) runSelection(msg map[string]any) {
 	}
 	if selection.TooLong(text) {
 		// 扩展侧先拦了一道，这里再拦一道：Host 不该相信任何一条消息。
-		fail(fmt.Sprintf("selection is longer than %d characters", selection.MaxRunes))
+		fail(fmt.Sprintf("selection is too long: at most %d CJK characters or %d words",
+			selection.MaxCJKChars, selection.MaxWords))
 		return
 	}
 
 	// 单飞：一次只可能有一个结果层，新请求先取消旧的。
 	h.cancelSelection("")
 
-	run := &selectionRun{requestID: requestID, tabID: tabID, mode: mode, text: text}
+	run := &selectionRun{requestID: requestID, tabID: tabID, mode: mode, text: text, uiLocale: str(msg["uiLocale"])}
 	h.mu.Lock()
 	ready := h.currentAgent != nil && len(h.runtimes) > 0
 	h.selection = run
@@ -214,7 +217,7 @@ func (h *Host) runSelectionTurn(run *selectionRun, target string) {
 		log.Log("selection timed out")
 		run.cancelTurn()
 	})
-	stop, err := runtime.client.Prompt(selection.PromptFor(run.mode, run.text, selection.LanguageName(target)))
+	stop, err := runtime.client.Prompt(selection.PromptFor(run.mode, run.text, selection.LanguageName(target), run.uiLocale))
 	timeout.Stop()
 
 	runtime.selection = nil

@@ -5,20 +5,59 @@ import (
 	"testing"
 )
 
-func TestTooLongCountsRunesNotBytes(t *testing.T) {
-	// MaxRunes 个汉字是三倍字节数但只有 MaxRunes 个字符——按码点算才对，中文用户
-	// 不该被提前拒绕。
-	chinese := strings.Repeat("汉", MaxRunes)
+func TestTooLongCountsCharactersForCJKAndWordsForLatin(t *testing.T) {
+	// 一个汉字 ≈ 一个英文单词：中文按字符 500，英文按单词 200。
+	chinese := strings.Repeat("汉", MaxCJKChars)
 	if TooLong(chinese) {
-		t.Fatal("exactly MaxRunes characters must still be allowed")
+		t.Fatal("exactly MaxCJKChars characters must still be allowed")
 	}
 	if !TooLong(chinese + "字") {
-		t.Fatal("one character over the limit must be rejected")
+		t.Fatal("one character over the CJK budget must be rejected")
 	}
-	// emoji 在 JS 里是 2 个 UTF-16 单元、在 Go 里是 1 个 rune；两边都按「字符」算。
-	emoji := strings.Repeat("🙂", MaxRunes)
+
+	english := func(count int) string {
+		parts := make([]string, count)
+		for index := range parts {
+			parts[index] = "word"
+		}
+		return strings.Join(parts, " ")
+	}
+	if TooLong(english(MaxWords)) {
+		t.Fatal("exactly MaxWords words must still be allowed")
+	}
+	if !TooLong(english(MaxWords + 1)) {
+		t.Fatal("one word over the budget must be rejected")
+	}
+	// 短英文段落：按字符算只看长度的话很宽，按单词算才是真实长度。
+	if TooLong("OpenSider is a browser extension that drives local agents from your browser.") {
+		t.Fatal("a short English sentence must pass")
+	}
+}
+
+func TestTooLongSharesTheBudgetWhenMixed(t *testing.T) {
+	chinese := func(count int) string { return strings.Repeat("字", count) }
+	english := func(count int) string {
+		parts := make([]string, count)
+		for index := range parts {
+			parts[index] = "word"
+		}
+		return strings.Join(parts, " ")
+	}
+	// 一半中文额度 + 一半英文额度：刚好放行；中文用满再夹一个英文词就超了。
+	if TooLong(chinese(MaxCJKChars/2) + " " + english(MaxWords/2)) {
+		t.Fatal("half of each budget must still be allowed")
+	}
+	if !TooLong(chinese(MaxCJKChars) + " " + english(1)) {
+		t.Fatal("an exhausted CJK budget leaves no room for words")
+	}
+}
+
+func TestTooLongCountsRunesNotBytes(t *testing.T) {
+	// 同样长度的文本，字节数与字符数差很多（汉字 3 字节、emoji 4 字节）——两边都按「字符」
+	// 算才对，不该被字节数提前拒绕。
+	emoji := strings.Repeat("🙂", MaxCJKChars)
 	if TooLong(emoji) {
-		t.Fatal("emoji must be counted as characters, not UTF-16 units")
+		t.Fatal("emoji are not CJK and carry no words: a long run of them must pass")
 	}
 	if TooLong("  短文本  ") {
 		t.Fatal("short text must pass")
@@ -26,9 +65,13 @@ func TestTooLongCountsRunesNotBytes(t *testing.T) {
 }
 
 func TestTooLongIgnoresSurroundingWhitespace(t *testing.T) {
-	padded := strings.Repeat(" ", 50) + strings.Repeat("a", MaxRunes) + strings.Repeat("\n", 50)
+	words := make([]string, MaxWords)
+	for index := range words {
+		words[index] = "a"
+	}
+	padded := strings.Repeat(" ", 50) + strings.Join(words, " ") + strings.Repeat("\n", 50)
 	if TooLong(padded) {
-		t.Fatal("surrounding whitespace must not count towards the limit")
+		t.Fatal("surrounding whitespace must not count towards the budget")
 	}
 }
 
@@ -111,9 +154,10 @@ func TestTranslatePromptDefaultsToEnglish(t *testing.T) {
 }
 
 func TestSearchPromptAsksForMarkdownSourcesAndHonesty(t *testing.T) {
-	prompt := SearchPrompt("opensider")
+	prompt := SearchPrompt("opensider", "Simplified Chinese")
 	for _, want := range []string{
 		"Markdown only",
+		"written in Simplified Chinese",
 		"only the final answer",
 		"no step-by-step narration",
 		"Prefer encyclopedic sources",
@@ -135,11 +179,31 @@ func TestSearchPromptAsksForMarkdownSourcesAndHonesty(t *testing.T) {
 	}
 }
 
-func TestPromptForDispatchesOnMode(t *testing.T) {
-	if got := PromptFor(ModeSearch, "query", "Japanese"); strings.Contains(got, "Japanese") {
-		t.Fatal("search must not carry a target language")
+func TestSearchPromptLanguageIsOptional(t *testing.T) {
+	// 没有界面语言（旧扩展不带这个字段）就不加那句，保持原行为、不强行指定英语。
+	prompt := SearchPrompt("opensider", "")
+	if strings.Contains(prompt, "written in") {
+		t.Fatalf("an unknown UI locale must not force a language: %s", prompt)
 	}
-	if got := PromptFor(ModeTranslate, "query", "Japanese"); !strings.Contains(got, "Japanese") {
-		t.Fatal("translate must carry the target language")
+	if !strings.Contains(prompt, "answer in Markdown only") {
+		t.Fatalf("the rest of the prompt must survive: %s", prompt)
+	}
+}
+
+func TestPromptForDispatchesOnMode(t *testing.T) {
+	// 搜索：答案语言取**界面语言**，不带翻译那种目标语言。
+	search := PromptFor(ModeSearch, "query", "Japanese", "zh")
+	if !strings.Contains(search, "written in Simplified Chinese") {
+		t.Fatalf("search must answer in the UI language: %s", search)
+	}
+	if strings.Contains(search, "Japanese") {
+		t.Fatal("search must not carry the browser's language")
+	}
+	// 界面语言换了，搜索的答案语言跟着换；翻译反过来跟目标语言（浏览器语言）。
+	if got := PromptFor(ModeSearch, "query", "Japanese", "en"); !strings.Contains(got, "written in English") {
+		t.Fatalf("search must follow the UI locale: %s", got)
+	}
+	if got := PromptFor(ModeTranslate, "query", "Japanese", "zh"); !strings.Contains(got, "Japanese") {
+		t.Fatalf("translate must carry the target language: %s", got)
 	}
 }

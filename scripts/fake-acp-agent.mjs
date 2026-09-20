@@ -353,7 +353,15 @@ async function runPrompt(id, text) {
 	  const kind = selectionKind(text);
 	  if (kind) {
 	  	// 隐藏通道：记一笔它在哪个会话上跑（这条正是「不进当前会话」的判据）。
-	  	trace({ event: "selection_prompt", kind, sessionId, text: selectionInput(text).slice(0, 120) });
+	  	// 隐藏通道：记一笔它在哪个会话上跑（这条正是「不进当前会话」的判据）。
+	// text 是提取出来的查询尾段；prompt 是提示词开头——答案语言那句写在前面。
+	trace({
+		event: "selection_prompt",
+		kind,
+		sessionId,
+		text: selectionInput(text).slice(0, 120),
+		prompt: text.slice(0, 200),
+	});
 	  	await streamSelectionReply(id, kind, selectionInput(text));
 	  	return;
 	  }

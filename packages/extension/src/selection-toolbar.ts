@@ -1,4 +1,5 @@
 import type { SelectionMode } from "@shared";
+import { overSelectionLimit } from "./selection-limit";
 import { selectionCopy } from "./selection-copy";
 import type { Locale } from "./sidepanel/i18n";
 
@@ -10,13 +11,13 @@ import type { Locale } from "./sidepanel/i18n";
  * 几条硬规矩：
  *  - **隔离世界 + shadow DOM**：页面看不见我们，也夺不走我们的样式；页面自己的 CSS 也进不来。
  *  - **只处理顶层文档**的选区（`all_frames` 没开，跨域 iframe 里的划词看不到）。
- *  - **超长选区直接不支持**：超过 MAX_CHARS 个字符（按码点算）就什么都不显示，不提示、不降级。
+ *  - **超长选区直接不支持**：超出额度（中日韩文字按字符算 500，其它语言按单词算 200）
+ *    就什么都不显示，不提示、不降级。
  *  - **选区移出视口就连工具条一起消失**；工具条四边永远留 SAFE_MARGIN，绝不越出视口。
  *  - 结果层是**侧栏那套渲染**（iframe 装的扩展页），不是自研 markdown 渲染器。
  */
 
 const HOST_ID = "opensider-selection";
-const MAX_CHARS = 500; // 与 internal/selection 的 MaxRunes 对齐
 const SAFE_MARGIN = 8;
 const GAP = 8;
 const SHOW_DELAY_MS = 120;
@@ -92,8 +93,9 @@ function readSelection(): { text: string; rect: DOMRect } | undefined {
   if (!selection || selection.isCollapsed || selection.rangeCount === 0) return undefined;
   const text = selection.toString().replace(/\s+/g, " ").trim();
   if (!text) return undefined;
-  // 按码点算：中文按字数、emoji 不按两个 UTF-16 单元算，和 Host 那边的口径一致。
-  if ([...text].length > MAX_CHARS) return undefined;
+  // 超出额度（中文按字符 500、英文按单词 200，混排按额度分摊）就整条不出现。口径与
+  // internal/selection 一致，见 selection-limit.ts。
+  if (overSelectionLimit(text)) return undefined;
   const range = selection.getRangeAt(0);
   if (host && host.contains(range.commonAncestorContainer)) return undefined;
   if (isEditable(range.commonAncestorContainer)) return undefined;
@@ -453,7 +455,9 @@ function startRequest(mode: SelectionMode): void {
       requestId: activeRequest,
       mode,
       text: selectedText,
+      // 翻译跟浏览器语言走；搜索按**界面语言**出结果（见 internal/selection 的说明）。
       targetLang: navigator.language,
+      uiLocale: locale,
       title: document.title,
       url: location.href,
     })

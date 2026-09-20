@@ -685,10 +685,10 @@ Host 是通用 ACP Client + 数据驱动 `AgentProfile`（启动命令、鉴权�
 三条文案（英文原文，已定稿）写在 `internal/selection/prompt.go` 里，纯函数、可直接单测：
 
 - 翻译：`Translate the text below into {target}. Output only the translation — no preamble, no notes, no quotes. If it is already in {target}, return it unchanged.`
-- 搜索：`Search the web for the query below and answer in Markdown only — only the final answer: no preamble, no notes about what you are about to do, no step-by-step narration. Speed matters most: run every search you need in one batch (parallel tool calls — not one query at a time), start writing as soon as the first results that come back give you enough, and skip follow-up searches and opening individual pages unless what you got is useless. Prefer encyclopedic sources (Wikipedia, Britannica, official sites) and list the links you actually used under "Sources". Keep it short: a summary, then the key facts. If you cannot search the web with your tools, say so in one line instead of guessing — then give what you know from training data and label it as such.`
+- 搜索：`Search the web for the query below and answer in Markdown only, written in {答案语言} — only the final answer: no preamble, no notes about what you are about to do, no step-by-step narration. Speed matters most: run every search you need in one batch (parallel tool calls — not one query at a time), start writing as soon as the first results that come back give you enough, and skip follow-up searches and opening individual pages unless what you got is useless. Prefer encyclopedic sources (Wikipedia, Britannica, official sites) and list the links you actually used under "Sources". Keep it short: a summary, then the key facts. If you cannot search the web with your tools, say so in one line instead of guessing — then give what you know from training data and label it as such.`
 - 引用展开（发消息时把芯片 token 换成这个）：`> {原文}`
 
-`{target}` 由 BCP-47 标签映射成英文语言名（常见标签走一张小表：`zh-CN` → Simplified Chinese、`zh-TW` → Traditional Chinese、`ja` → Japanese…），表里没有的标签就把标签本身交给模型。**目标语言取浏览器语言**（内容脚本读 `navigator.language`），与扩展界面语言无关。
+`{target}` 由 BCP-47 标签映射成英文语言名（常见标签走一张小表：`zh-CN` → Simplified Chinese、`zh-TW` → Traditional Chinese、`ja` → Japanese…），表里没有的标签就把标签本身交给模型。**两个语言来源不一样，别混**：翻译的目标语言取**浏览器语言**（内容脚本读 `navigator.language`）；搜索的 `{答案语言}` 取**扩展界面语言**（`uiLocale`，界面是中文就不该还给用户一屏英文），它为空（旧扩展不带这个字段）时整句不加、不强行指定英语。
 
 ### 结果层（iframe 复用侧栏渲染）
 
@@ -714,7 +714,7 @@ Host 是通用 ACP Client + 数据驱动 `AgentProfile`（启动命令、鉴权�
 ### 验证
 
 - 宿主级（`scripts/verify-selection.mjs`）：隐藏通道真的不进侧栏（整轮里没有任何 `update` / `turn.end` 发给扩展）、结果文本正确、取消生效、`utility` runtime 不被聊天复用、它拿不到标签页控制；
-- 页面级（`scripts/verify-selection-ui.mjs`，真 Chromium + 本地 fixture 页）：门控关掉时不出现、选中 500 字以内出现、超过 500 字不出现、**结构**（三个按钮都在 `.bar` 里、排成一行、shadow 里没有漏在条外面的节点、host 高度就是条的高度、按钮上解析得出工具条自己的调色板）、四边安全边距（把选区放到视口四角各试一次）、选区滚出视口即隐藏、翻译与搜索的结果层（Markdown 要真渲染成 `h2/ul/a`，不是贴纯文本）、**结果层里没有过程叙述**（假引擎照真实形态先演一遍「过程叙述 → 工具调用 → 结论」）、**长结果把框撑到 10 行以上且封顶 20 行、再高也顶不掉工具条、超出部分自己滚动**、**选区贴着视口底部时工具条翻到上方且完整可见**、**选区滚出视口时工具条跟着滚出去而不是消失、滚回来还在原位**、**结果层标题栏固定且无背景色、正文滚动时标题位置不变**、**复制钮是图标 + 文案**、引用后输入框里出现引文芯片；
+- 页面级（`scripts/verify-selection-ui.mjs`，真 Chromium + 本地 fixture 页）：门控关掉时不出现、**额度边界**（480 个汉字出、520 个汉字不出；190 个英文单词出、210 个不出）、**结构**（三个按钮都在 `.bar` 里、排成一行、shadow 里没有漏在条外面的节点、host 高度就是条的高度、按钮上解析得出工具条自己的调色板）、四边安全边距（把选区放到视口四角各试一次）、选区滚出视口即隐藏、翻译与搜索的结果层（Markdown 要真渲染成 `h2/ul/a`，不是贴纯文本）、**结果层里没有过程叙述**（假引擎照真实形态先演一遍「过程叙述 → 工具调用 → 结论」）、**长结果把框撑到 10 行以上且封顶 20 行、再高也顶不掉工具条、超出部分自己滚动**、**选区贴着视口底部时工具条翻到上方且完整可见**、**选区滚出视口时工具条跟着滚出去而不是消失、滚回来还在原位**、**结果层标题栏固定且无背景色、正文滚动时标题位置不变**、**复制钮是图标 + 文案**、引用后输入框里出现引文芯片；
 - 同一条脚本里还有两个**针对上面两条教训的回归**：fixture 用 `Content-Security-Policy: style-src 'self'` 提供一份严格 CSP 页面（样式仍要生效），并在页面上盖一层 `position:fixed; z-index:2147483647` 的全屏浮层（`elementFromPoint` 打到的必须还是我们的 host，即我们真的在顶层）；
 - Go 单测：`internal/selection` 的提示词拼装与语言映射表。
 

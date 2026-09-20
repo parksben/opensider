@@ -441,6 +441,9 @@ export type ExtToHost =
   /**
    * 划词工具条：翻译 / 搜索。`tabId` 由 service worker 按发送方标签页填上（Host 只把它
    * 原样带回来，好让结果能回到发起请求的那一页）。
+   *
+   * `targetLang` 是**浏览器语言**（翻译的目标语言，与界面语言无关）；`uiLocale` 是**扩展
+   * 界面语言**（搜索结果要用它输出，中文界面就不该还给用户一屏英文）。
    */
   | {
       type: "selection.run";
@@ -448,6 +451,7 @@ export type ExtToHost =
       mode: SelectionMode;
       text: string;
       targetLang?: string;
+      uiLocale?: string;
       title?: string;
       url?: string;
       tabId?: number;

@@ -99,10 +99,10 @@ const traceEvents = () => {
 const selectionPrompts = () => traceEvents().filter((entry) => entry.event === "selection_prompt");
 
 /** 一次划词请求：发出去，等到终态，把期间扩展收到的东西都交出来。 */
-async function runSelection({ mode, text, targetLang = "zh-CN", action = "wait", cancelAfterMs = 0 }) {
+async function runSelection({ mode, text, targetLang = "zh-CN", uiLocale = "zh", action = "wait", cancelAfterMs = 0 }) {
   const requestId = `sel-${Math.random().toString(36).slice(2, 8)}`;
   const from = received.length;
-  send({ type: "selection.run", requestId, mode, text, targetLang, tabId: 42 });
+  send({ type: "selection.run", requestId, mode, text, targetLang, uiLocale, tabId: 42 });
   if (action === "cancel") {
     await sleep(cancelAfterMs);
     send({ type: "selection.cancel", requestId });
@@ -189,8 +189,9 @@ try {
   const before = selectionPrompts().length;
   const tooLong = await runSelection({ mode: "translate", text: "字".repeat(501) });
   check(
-    "a selection longer than 500 characters is refused",
-    tooLong.terminal?.type === "selection.failed" && /longer than 500/.test(String(tooLong.terminal.error)),
+    "a selection over the CJK budget is refused",
+    tooLong.terminal?.type === "selection.failed" &&
+      /at most 500 CJK characters or 200 words/.test(String(tooLong.terminal.error)),
     String(tooLong.terminal?.error ?? "none"),
   );
   const empty = await runSelection({ mode: "search", text: "   " });
@@ -210,12 +211,27 @@ try {
     selectionPrompts().length === before,
     `prompts=${selectionPrompts().length} before=${before}`,
   );
-  // 阈值本身也是契约：正好 500 字必须放行（扩展侧与 Host 两侧都按同一个数拦）。
+  // 额度本身也是契约：中日韩按字符 500、其它语言按单词 200，正好用满都得放行
+  // （扩展侧与 Host 两侧按同一套口径拦，见 internal/selection 与
+  // packages/extension/src/selection-limit.ts）。
   const atLimit = await runSelection({ mode: "translate", text: "字".repeat(500) });
   check(
-    "a selection of exactly 500 characters is accepted",
+    "a selection of exactly 500 CJK characters is accepted",
     atLimit.terminal?.type === "selection.done",
     String(atLimit.terminal?.type ?? atLimit.terminal?.error ?? "none"),
+  );
+  const english = (count) => Array.from({ length: count }, () => "word").join(" ");
+  const wordsAtLimit = await runSelection({ mode: "translate", text: english(200) });
+  check(
+    "a selection of exactly 200 words is accepted",
+    wordsAtLimit.terminal?.type === "selection.done",
+    String(wordsAtLimit.terminal?.type ?? wordsAtLimit.terminal?.error ?? "none"),
+  );
+  const tooManyWords = await runSelection({ mode: "translate", text: english(201) });
+  check(
+    "one word over the budget is refused",
+    tooManyWords.terminal?.type === "selection.failed",
+    String(tooManyWords.terminal?.type ?? "none"),
   );
 
   // ---------------------------------------------------------------- 搜索
@@ -236,6 +252,19 @@ try {
     "the search prompt carries the selected text",
     searchPrompt?.text === "opensider release",
     searchPrompt?.text ?? "none",
+  );
+  // 答案语言看**界面语言**（界面设成中文，结果就得要中文），跟翻译的目标语言不是一回事。
+  const lastSearchPrompt = () => String(selectionPrompts().findLast((entry) => entry.kind === "search")?.prompt ?? "");
+  check(
+    "the search prompt asks for the UI language",
+    /written in Simplified Chinese/.test(lastSearchPrompt()),
+    lastSearchPrompt().slice(0, 80),
+  );
+  const englishUi = await runSelection({ mode: "search", text: "opensider release", uiLocale: "en" });
+  check(
+    "an English UI asks for an English answer",
+    /written in English/.test(lastSearchPrompt()) && englishUi.terminal?.type === "selection.done",
+    lastSearchPrompt().slice(0, 80),
   );
 
   // ---------------------------------------------------------------- 取消
