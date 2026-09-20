@@ -312,6 +312,35 @@ export type AgentModeOption = {
   kind: AgentModeKind;
 };
 
+/**
+ * One value of a session config option. `name` is the agent's own wording (e.g. Cursor
+ * sends `Off` / `Fast`) — passed through verbatim, never translated.
+ */
+export type AgentOptionValue = {
+  id: string;
+  name: string;
+  desc?: string;
+};
+
+/**
+ * A session config option the agent advertises beyond `mode` / `model` — spec categories
+ * `thought_level` (the engine's own reasoning effort) and `model_config` (per-model
+ * switches such as Claude's `Fast mode` or Cursor's `Fast`). The host pushes the whole
+ * list verbatim; the panel renders only the categories it knows, so a category we have
+ * never seen simply does not show up.
+ *
+ * Boolean options (`type: "boolean"`) have no `values` list; their `current` is the
+ * string `"true"` / `"false"`.
+ */
+export type AgentOption = {
+  id: string;
+  category?: string;
+  name: string;
+  type?: string;
+  current?: string;
+  values?: AgentOptionValue[];
+};
+
 export type AgentMark =
   | "cursor"
   | "opencode"
@@ -351,13 +380,49 @@ export type AgentProgress = {
   label: string;
 };
 
+/**
+ * One globally installed skill: found by scanning the global skill directories and reading
+ * the header of its `SKILL.md` (see internal/skills).
+ *
+ * `name` is the identifier the CLIs know, and the only thing we put in an outgoing prompt;
+ * `alias` is what the probe menu lists (the skill's own `display_name` — e.g. `水产市场` —
+ * falling back to `name`). `description` is the skill's own wording, kept verbatim for the
+ * detail panel and for search.
+ */
+export type SkillItem = {
+  name: string;
+  alias: string;
+  source: SkillSource;
+  /** Absolute path of the skill's SKILL.md. */
+  path: string;
+  description: string;
+};
+
+/** Which global directory a skill came from: the small tag next to its name in the menu. */
+export type SkillSource =
+  | "claude"
+  | "cursor"
+  | "agents"
+  | "codex"
+  | "stepclaw"
+  | "cursor_builtin";
+
 export type ExtToHost =
   | { type: "hello" }
   | { type: "agents.detect" }
-  | { type: "agent.connect"; providerId: string; policy?: AgentPolicy; modeId?: string }
+  | { type: "skills.refresh" }
+  | {
+      type: "agent.connect";
+      providerId: string;
+      policy?: AgentPolicy;
+      modeId?: string;
+      /** The panel's remembered config-option values for this agent (configId → value). */
+      optionValues?: Record<string, string>;
+    }
   | { type: "agent.cancelConnect" }
   | { type: "agent.setPolicy"; policy: AgentPolicy }
   | { type: "agent.setMode"; modeId: string; sessionId?: string }
+  | { type: "agent.setOption"; configId: string; value: string; sessionId?: string }
   | {
       type: "prompt";
       text: string;
@@ -467,6 +532,8 @@ export type HostToExt =
       /** False when there is nothing to switch (fewer than two modes advertised). */
       available: boolean;
     }
+  | { type: "agentOptions"; options: AgentOption[] }
+  | { type: "skills"; items: SkillItem[] }
   | { type: "fs.revealed"; path: string; missing?: boolean; error?: string }
   // An older host replying to a command it does not implement: see internal/host/host.go.
   | { type: "host.unsupported"; requestId: string; command?: string; error?: string }

@@ -71,7 +71,9 @@ type Client struct {
 	modeCurrent string
 	// pinnedMode 是用户显式选过的模式（空串=没选）。选过就不再让权限档覆盖它。
 	pinnedMode string
-	sweepStop  func()
+	// pinnedOptions 是用户显式选过的其它配置项值（configId → value），例如推理档位。
+	pinnedOptions map[string]string
+	sweepStop     func()
 }
 
 func New(launch Launch, handlers Handlers) *Client {
@@ -216,7 +218,7 @@ func (c *Client) CreateSession() (SessionOpen, error) {
 	c.session = sessionID
 	c.mu.Unlock()
 	c.rememberSessionOptions(obj)
-	c.applySessionModes()
+	c.applySessionSettings()
 	return SessionOpen{
 		SessionID:     sessionID,
 		Replay:        false,
@@ -245,7 +247,7 @@ func (c *Client) UseSession(existingID string) (SessionOpen, error) {
 	c.session = existingID
 	c.mu.Unlock()
 	c.rememberSessionOptions(obj)
-	c.applySessionModes()
+	c.applySessionSettings()
 	return SessionOpen{
 		SessionID:     existingID,
 		Replay:        true,
@@ -272,7 +274,7 @@ func (c *Client) ForkSession(existingID string) (SessionOpen, error) {
 	c.session = sessionID
 	c.mu.Unlock()
 	c.rememberSessionOptions(obj)
-	c.applySessionModes()
+	c.applySessionSettings()
 	return SessionOpen{
 		SessionID:     sessionID,
 		Replay:        false,

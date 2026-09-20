@@ -2,10 +2,12 @@ package acp
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/parksben/opensider/internal/log"
 	"github.com/parksben/opensider/internal/modes"
+	"github.com/parksben/opensider/internal/sessioncfg"
 )
 
 // rememberSessionOptions 记住这次会话广告出来的原始字段（configOptions / modes）。
@@ -30,7 +32,7 @@ func (c *Client) SessionModes() (modes.Target, bool) {
 	current := c.modeCurrent
 	agentID := c.launch.Profile.ID
 	c.mu.Unlock()
-	target, ok := modes.Discover(agentID, configOptions, legacy)
+	target, ok := modes.Discover(agentID, sessioncfg.Parse(configOptions), legacy)
 	if !ok {
 		return target, false
 	}
@@ -94,16 +96,28 @@ func (c *Client) SetSessionMode(id string) error {
 func (c *Client) recordMode(id string, result any) {
 	if obj, ok := result.(map[string]any); ok {
 		if configOptions := obj["configOptions"]; configOptions != nil {
-			c.mu.Lock()
-			c.configOptions = configOptions
-			c.modeCurrent = ""
-			c.mu.Unlock()
+			c.absorbConfigResult(result)
 			return
 		}
 	}
 	c.mu.Lock()
 	c.modeCurrent = id
 	c.mu.Unlock()
+}
+
+// SessionOptions 返回当前会话广告出来的配置项（已解析）。会话广告是低频数据，
+// 每次重新解析即可——省一个缓存就少一个失效点。
+func (c *Client) SessionOptions() []sessioncfg.Option {
+	c.mu.Lock()
+	raw := c.configOptions
+	c.mu.Unlock()
+	return sessioncfg.Parse(raw)
+}
+
+// applySessionSettings 会话起来后统一落设置：先模式（用户选的优先），再其它配置项。
+func (c *Client) applySessionSettings() {
+	c.applySessionModes()
+	c.applySessionOptions()
 }
 
 // applySessionModes 是会话刚起来、或权限档变了之后把「该是什么模式」落下去：用户显式
@@ -130,7 +144,7 @@ func (c *Client) applySessionModes() {
 		}
 		return
 	}
-	push := modes.Plan(policy, agentID, target, has, configOptions, pinned)
+	push := modes.Plan(policy, agentID, target, has, sessioncfg.Parse(configOptions), pinned)
 	if push.ModeID != "" && push.ModeID != target.Current {
 		if err := c.SetSessionMode(push.ModeID); err != nil {
 			log.Log("session mode " + push.ModeID + " skipped: " + err.Error())
@@ -141,18 +155,128 @@ func (c *Client) applySessionModes() {
 	}
 }
 
+// setConfigValue 是权限档那条路用的设置（策略驱动，不记用户选择）：没广告过就不发。
 func (c *Client) setConfigValue(configID, value string) {
-	sessionID := c.GetSessionID()
-	if sessionID == "" || configID == "" || value == "" {
+	if configID == "" || value == "" {
 		return
 	}
-	if _, err := c.request("session/set_config_option", map[string]any{
-		"sessionId": sessionID,
-		"configId":  configID,
-		"value":     value,
-	}); err != nil {
+	if err := c.SetConfigOption(configID, value); err != nil {
 		log.Log("session/set_config_option " + configID + "=" + value + " skipped: " + err.Error())
 	}
+}
+
+// SetConfigOption 设置一个会话配置项（mode / model 之外的那些，例如推理档位）。
+// 只发广告过的项与合法值；布尔项按规范带上 `type: "boolean"`，否则引擎会当字符串处理。
+func (c *Client) SetConfigOption(configID, value string) error {
+	sessionID := c.GetSessionID()
+	if sessionID == "" {
+		return fmt.Errorf("no session")
+	}
+	option, ok := sessioncfg.ByID(c.SessionOptions(), configID)
+	if !ok {
+		return fmt.Errorf("config option %q not advertised", configID)
+	}
+	if !option.Accepts(value) {
+		return fmt.Errorf("value %q not accepted by %q", value, configID)
+	}
+	wire, typ := option.WireValue(value)
+	params := map[string]any{"sessionId": sessionID, "configId": option.ID, "value": wire}
+	if typ != "" {
+		params["type"] = typ
+	}
+	result, err := c.request("session/set_config_option", params)
+	if err != nil {
+		return err
+	}
+	c.absorbConfigResult(result)
+	return nil
+}
+
+// SetPinnedOption 记住用户显式选过的配置项值（再次连同一个 Agent 时沿用）。
+// 会话已起来就直接落下去，否则等 applySessionOptions（会话建立后）再发。
+func (c *Client) SetPinnedOption(configID, value string) {
+	if configID == "" {
+		return
+	}
+	c.mu.Lock()
+	if c.pinnedOptions == nil {
+		c.pinnedOptions = map[string]string{}
+	}
+	if value == "" {
+		delete(c.pinnedOptions, configID)
+	} else {
+		c.pinnedOptions[configID] = value
+	}
+	sessionID := c.session
+	c.mu.Unlock()
+	if sessionID == "" || value == "" {
+		return
+	}
+	if err := c.SetConfigOption(configID, value); err != nil {
+		log.Log("session config " + configID + "=" + value + " not applied: " + err.Error())
+	}
+}
+
+// SetPinnedOptions 批量设置记忆值（建立客户端时用；那时通常还没有会话，只记不发）。
+func (c *Client) SetPinnedOptions(values map[string]string) {
+	c.mu.Lock()
+	c.pinnedOptions = map[string]string{}
+	for configID, value := range values {
+		if configID != "" && value != "" {
+			c.pinnedOptions[configID] = value
+		}
+	}
+	c.mu.Unlock()
+}
+
+// applySessionOptions 会话起来后把记忆值落下去：只发「仍被广告」且「值仍合法」且
+// 「和当前值不同」的项——引擎换了版本、换了模型都可能让记忆值不再有效，那就以引擎为准。
+func (c *Client) applySessionOptions() {
+	if c.GetSessionID() == "" {
+		return
+	}
+	c.mu.Lock()
+	pinned := make(map[string]string, len(c.pinnedOptions))
+	for configID, value := range c.pinnedOptions {
+		pinned[configID] = value
+	}
+	c.mu.Unlock()
+	if len(pinned) == 0 {
+		return
+	}
+	ids := make([]string, 0, len(pinned))
+	for configID := range pinned {
+		ids = append(ids, configID)
+	}
+	sort.Strings(ids) // 固定顺序，日志可读、测试可断言
+	options := c.SessionOptions()
+	for _, configID := range ids {
+		value := pinned[configID]
+		option, ok := sessioncfg.ByID(options, configID)
+		if !ok || !option.Accepts(value) || option.Current == value {
+			continue
+		}
+		if err := c.SetConfigOption(configID, value); err != nil {
+			log.Log("session config " + configID + "=" + value + " not applied: " + err.Error())
+		}
+	}
+}
+
+// absortConfigResult — 见下
+func (c *Client) absorbConfigResult(result any) {
+	obj, ok := result.(map[string]any)
+	if !ok {
+		return
+	}
+	configOptions := obj["configOptions"]
+	if configOptions == nil {
+		return
+	}
+	c.mu.Lock()
+	c.configOptions = configOptions
+	// 配置项带着权威的 currentValue，清掉覆盖值让发现重新读。
+	c.modeCurrent = ""
+	c.mu.Unlock()
 }
 
 // noteModeUpdate 把「Agent 自己换模式 / 自己改配置」记下来，好让 SessionModes() 与侧栏

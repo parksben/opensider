@@ -22,6 +22,7 @@ import (
 	"github.com/parksben/opensider/internal/release"
 	"github.com/parksben/opensider/internal/reveal"
 	"github.com/parksben/opensider/internal/sessioncfg"
+	"github.com/parksben/opensider/internal/skills"
 	"github.com/parksben/opensider/internal/uistate"
 	"github.com/parksben/opensider/internal/version"
 	"github.com/parksben/opensider/internal/watch"
@@ -61,9 +62,13 @@ type Host struct {
 	pendingModelID string
 	// agentModes / hasAgentModes 是当前会话可切换的模式（Agent 自己的 plan / build…）；
 	// pinnedMode 是用户在侧栏显式选过的那个（空串=没选，权限档可以说话）。
-	agentModes         modes.Target
-	hasAgentModes      bool
-	pinnedMode         string
+	agentModes    modes.Target
+	hasAgentModes bool
+	pinnedMode    string
+	// agentOptions 是本会话广告的其它配置项（推理档位、模型开关…），pinnedOptions 是
+	// 用户选过的值（configId → value）。与模式同一套记忆纪律。
+	agentOptions       []sessioncfg.Option
+	pinnedOptions      map[string]string
 	currentAgent       *detect.ResolvedAgent
 	previousAgent      *detect.ResolvedAgent
 	connectingClient   *acp.Client
@@ -76,6 +81,10 @@ type Host struct {
 	// stateUpload 是扩展正在分片上传的镜像状态（超过 Native Messaging 单帧上限时走
 	// 分片，见 uistate_wire.go）；单帧形态不经过它。由 h.mu 保护。
 	stateUpload *uiStateUpload
+	// skills / skillsAt 是本机全局已装 skill 的缓存（见 internal/skills）。这份列表与
+	// 连的是哪个 Agent 无关，所以不随会话变化清空，只按 skillCacheTTL 过期重扫。
+	skills   []skills.Skill
+	skillsAt time.Time
 }
 
 func Run() {
@@ -455,10 +464,10 @@ func (h *Host) connectAgent(providerID string, policy protocol.AgentPolicy) erro
 	h.sendProgress(2, 6, "spawn", "Starting process")
 	h.mu.Lock()
 	h.catalog = models.Catalog{ModelConfigID: "model"}
-	// 模式集合属于上一家引擎，换 Agent 就清掉（跟着 catalog 一起重置）。
-	h.agentModes = modes.Target{}
-	h.hasAgentModes = false
 	h.mu.Unlock()
+	// 模式与配置项集合都属于上一家引擎，换 Agent 就清掉（跟着 catalog 一起重置）。
+	h.resetAgentModes()
+	h.resetAgentOptions()
 	runtime := &acpRuntime{}
 	if err := h.attachClient(runtime); err != nil {
 		return h.abortConnect(seq, runtime, err)
@@ -546,11 +555,9 @@ func (h *Host) absorbSessionOptions(opened acp.SessionOpen) {
 		opts := sessioncfg.Parse(opened.ConfigOptions)
 		var ids []string
 		for _, option := range opts {
-			id := option.ID
-			if id == "" {
-				id = option.ConfigID
+			if option.ID != "" {
+				ids = append(ids, option.ID)
 			}
-			ids = append(ids, id)
 		}
 		joined := strings.Join(ids, ",")
 		if joined == "" {
@@ -663,6 +670,7 @@ func (h *Host) attachClient(runtime *acpRuntime) error {
 	agent := h.currentAgent
 	policy := h.currentPolicy
 	pinned := h.pinnedMode
+	pinnedOptions := h.pinnedOptions
 	h.mu.Unlock()
 	if agent == nil {
 		return errors.New("no agent selected")
@@ -723,8 +731,9 @@ func (h *Host) attachClient(runtime *acpRuntime) error {
 		},
 	})
 	client.SetPolicy(policy)
-	// 用户记住的模式选择要跟着新进程走，否则新会话会回到引擎默认值。
+	// 用户记住的模式 / 配置项选择要跟着新进程走，否则新会话会回到引擎默认值。
 	client.SetPinnedMode(pinned)
+	client.SetPinnedOptions(pinnedOptions)
 	runtime.client = client
 	return nil
 }
@@ -805,6 +814,7 @@ func (h *Host) openAndAnnounce(runtime *acpRuntime, requestID string, wantID str
 	workspace.WriteSessionID(opened.SessionID)
 	h.absorbSessionOptions(opened)
 	h.refreshAgentModes(runtime)
+	h.refreshAgentOptions(runtime)
 	h.mu.Lock()
 	empty := len(h.catalog.Models) == 0
 	h.mu.Unlock()
@@ -928,23 +938,33 @@ func (h *Host) dispatch(typ string, msg map[string]any) error {
 		if state == "ready" {
 			h.sendModels()
 			h.sendAgentModes()
+			h.sendAgentOptions()
+			h.sendSkills()
 		}
 		return nil
 	case "agents.detect":
 		return h.scanAgents()
+	case "skills.refresh":
+		h.handleSkillsRefresh()
+		return nil
 	case "release.check":
 		go h.checkRelease(true)
 		return nil
 	case "agent.connect":
-		// 侧栏把自己记住的模式一起带上来，连接后立刻交给客户端。
+		// 侧栏把自己记住的模式 / 配置项值一起带上来，连接后立刻交给客户端。
 		if modeID := str(msg["modeId"]); modeID != "" {
 			h.mu.Lock()
 			h.pinnedMode = modeID
 			h.mu.Unlock()
 		}
+		if raw, ok := msg["optionValues"]; ok {
+			h.adoptPinnedOptions(optionValuesFromAny(raw))
+		}
 		return h.connectAgent(str(msg["providerId"]), protocol.AgentPolicy(str(msg["policy"])))
 	case "agent.setMode":
 		return h.setAgentMode(str(msg["modeId"]), str(msg["sessionId"]))
+	case "agent.setOption":
+		return h.setAgentOption(str(msg["configId"]), str(msg["value"]), str(msg["sessionId"]))
 	case "agent.cancelConnect":
 		return h.cancelConnect()
 	case "agent.setPolicy":

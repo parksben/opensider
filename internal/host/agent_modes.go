@@ -91,6 +91,7 @@ func (h *Host) absorbSessionUpdate(update map[string]any, runtime *acpRuntime) {
 	case "config_option_update":
 		h.absorbConfigUpdate(update)
 		h.refreshAgentModes(runtime)
+		h.refreshAgentOptions(runtime)
 	case "current_mode_update":
 		h.refreshAgentModes(runtime)
 	}
@@ -114,6 +115,7 @@ func (h *Host) openPrepared(runtime *acpRuntime) {
 	runtime.prepared = &opened
 	h.absorbSessionOptions(opened)
 	h.refreshAgentModes(runtime)
+	h.refreshAgentOptions(runtime)
 	log.Log("prepared session " + opened.SessionID)
 }
 
