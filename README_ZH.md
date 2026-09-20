@@ -108,8 +108,8 @@ Claude、Codex 等桌面应用将运行时封装在自己的界面中，没有�
 
 例如：
 
-- **Claude Code：**安装并登录 [Claude Code CLI](https://docs.claude.com/en/docs/claude-code/setup)，再重新执行 OpenSider 安装提示词。
-- **Codex：**安装并登录 [Codex CLI](https://developers.openai.com/codex/cli)，再重新执行 OpenSider 安装提示词。
+- **Claude Code：** 安装并登录 [Claude Code CLI](https://docs.claude.com/en/docs/claude-code/setup)，再重新执行 OpenSider 安装提示词。
+- **Codex：** 安装并登录 [Codex CLI](https://developers.openai.com/codex/cli)，再重新执行 OpenSider 安装提示词。
 
 如果该产品没有 Agent CLI、ACP 接口或兼容适配器，OpenSider 暂时无法接入。
 
