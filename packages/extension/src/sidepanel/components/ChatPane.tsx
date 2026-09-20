@@ -1,4 +1,4 @@
-import type { AgentModel, AttachmentItem, CurrentPage, FsPickMode } from "@shared";
+import type { AgentModeOption, AgentModel, AttachmentItem, CurrentPage, FsPickMode } from "@shared";
 import { ArrowDown, AtSign, Check, ChevronDown, Copy, FileDown, FolderPen, GitFork, LoaderCircle, MousePointer2, Paperclip, RefreshCw, Send, Shield, Square, TriangleAlert, Unlock, X, Zap } from "lucide-react";
 import logoUrl from "../../../assets/icon.svg?url";
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from "react";
@@ -29,6 +29,7 @@ import { detectDesktopOs } from "../platform";
 import { useRipple } from "../useRipple";
 import type { QueuedMessage } from "../queued-message";
 import { AttachMenu } from "./AttachMenu";
+import { AgentModeSelect } from "./AgentModeSelect";
 import { AtMenu } from "./AtMenu";
 import { ComposerEditor, type ComposerHandle } from "./ComposerEditor";
 import { IconButton } from "./IconButton";
@@ -80,6 +81,9 @@ export function ChatPane({
   onModel,
   agentMode,
   onAgentMode,
+  agentModes,
+  agentModeId,
+  onAgentModeId,
   compact,
   page,
   hitl,
@@ -129,6 +133,10 @@ export function ChatPane({
   onModel: (modelId: string) => void;
   agentMode: AgentMode;
   onAgentMode: (mode: AgentMode) => void;
+  /** 该 Agent 自己广告的会话模式（plan / build / ask…）；少于两项时控件不出现。 */
+  agentModes?: AgentModeOption[];
+  agentModeId?: string;
+  onAgentModeId?: (modeId: string) => void;
   compact?: boolean;
   page?: CurrentPage;
 }) {
@@ -662,7 +670,16 @@ export function ChatPane({
                   </IconButton>
                 </span>
               </div>
-              {!compact ? <ModeSelect locale={locale} mode={agentMode} onMode={onAgentMode} /> : null}
+              <ModeSelect locale={locale} mode={agentMode} compact={compact === true} onMode={onAgentMode} />
+              {agentModes && agentModes.length > 1 && onAgentModeId ? (
+                <AgentModeSelect
+                  locale={locale}
+                  options={agentModes}
+                  currentId={agentModeId ?? ""}
+                  compact={compact === true}
+                  onMode={onAgentModeId}
+                />
+              ) : null}
               <AtMenu
                 open={atOpen}
                 locale={locale}
@@ -884,10 +901,12 @@ function AttachmentChips({
 function ModeSelect({
   locale,
   mode,
+  compact,
   onMode,
 }: {
   locale: Locale;
   mode: AgentMode;
+  compact: boolean;
   onMode: (mode: AgentMode) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -895,13 +914,15 @@ function ModeSelect({
   const { ripples, spawn, done } = useRipple();
   const current =
     mode === "unattended"
-      ? { icon: Unlock, name: t(locale, "modeUnattended") }
+      ? { icon: Unlock, name: t(locale, "modeUnattended"), hint: t(locale, "modeUnattendedHint") }
       : mode === "auto"
-        ? { icon: Zap, name: t(locale, "modeAuto") }
+        ? { icon: Zap, name: t(locale, "modeAuto"), hint: t(locale, "modeAutoHint") }
         : mode === "workspace"
-          ? { icon: FolderPen, name: t(locale, "modeWorkspace") }
-          : { icon: Shield, name: t(locale, "modeAsk") };
+          ? { icon: FolderPen, name: t(locale, "modeWorkspace"), hint: t(locale, "modeWorkspaceHint") }
+          : { icon: Shield, name: t(locale, "modeAsk"), hint: t(locale, "modeAskHint") };
   const CurrentIcon = current.icon;
+  // 窄宽度只留图标，所以 tooltip 必须自带含义（「名称 — 含义」）。
+  const tip = `${current.name} — ${current.hint}`;
   const options: Array<{ id: AgentMode; icon: typeof Shield; name: string; hint: string }> = [
     { id: "ask", icon: Shield, name: t(locale, "modeAsk"), hint: t(locale, "modeAskHint") },
     { id: "workspace", icon: FolderPen, name: t(locale, "modeWorkspace"), hint: t(locale, "modeWorkspaceHint") },
@@ -926,11 +947,11 @@ function ModeSelect({
   }, [open]);
 
   return (
-    <div ref={rootRef} className="relative min-w-[5rem] max-w-full flex-1">
+    <div ref={rootRef} className={`relative min-w-0 ${compact ? "" : "min-w-[5rem] max-w-full flex-1"}`}>
       <button
         type="button"
-        title={current.name}
-        aria-label={current.name}
+        title={tip}
+        aria-label={tip}
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
         onPointerDown={(event) => spawn(event)}
@@ -939,7 +960,7 @@ function ModeSelect({
         }`}
       >
         <CurrentIcon size={14} className="shrink-0" />
-        <span className="min-w-0 truncate">{current.name}</span>
+        {compact ? null : <span className="min-w-0 truncate">{current.name}</span>}
         {ripples.map((ripple) => (
           <span
             key={ripple.id}

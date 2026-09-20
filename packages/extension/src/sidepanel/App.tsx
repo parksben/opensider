@@ -1,5 +1,6 @@
 import type {
   AgentInfo,
+  AgentModeOption,
   AgentModel,
   AgentProgress,
   AttachmentItem,
@@ -96,6 +97,11 @@ export function App() {
   const [selectedModelId, setSelectedModelId] = useState("");
   const [selectedModelByProvider, setSelectedModelByProvider] = useState<Record<string, string>>({});
   const [agentMode, setAgentMode] = useState<AgentMode>("ask");
+  // Agent 自己广告的模式（plan / build / ask…）与用户选中的那个。它们是**另一个轴**：
+  // agentMode 是我们的权限档位，这两个是引擎自己的工作流模式。
+  const [agentModes, setAgentModes] = useState<AgentModeOption[]>([]);
+  const [agentModeId, setAgentModeId] = useState("");
+  const [agentModeByProvider, setAgentModeByProvider] = useState<Record<string, string>>({});
   const [selectedProviderId, setSelectedProviderId] = useState("");
   const [onboardingCompleted, setOnboardingCompleted] = useState(false);
   const [agents, setAgents] = useState<AgentInfo[]>([]);
@@ -150,6 +156,8 @@ export function App() {
   const selectedModelRef = useRef(selectedModelId);
   const selectedModelByProviderRef = useRef(selectedModelByProvider);
   const agentModeRef = useRef(agentMode);
+  const agentModesRef = useRef<AgentModeOption[]>([]);
+  const agentModeByProviderRef = useRef<Record<string, string>>({});
   const selectedProviderRef = useRef(selectedProviderId);
   const onboardingRef = useRef(onboardingCompleted);
   const pendingConnectRef = useRef("");
@@ -175,6 +183,8 @@ export function App() {
     >(),
   );
   const appliedModelRef = useRef("");
+  // 已经发出去的「用户选中的模式」，避免 Host 推回的旧值把它反复重发。
+  const appliedAgentModeRef = useRef("");
   const elementPickId = useRef("");
   const runningIdsRef = useRef<Set<string>>(new Set());
   const queuesRef = useRef<Record<string, QueuedMessage[]>>({});
@@ -193,6 +203,8 @@ export function App() {
   selectedModelRef.current = selectedModelId;
   selectedModelByProviderRef.current = selectedModelByProvider;
   agentModeRef.current = agentMode;
+  agentModesRef.current = agentModes;
+  agentModeByProviderRef.current = agentModeByProvider;
   selectedProviderRef.current = selectedProviderId;
   onboardingRef.current = onboardingCompleted;
 
@@ -210,6 +222,7 @@ export function App() {
     setSelectedModelId(state.selectedModelId);
     setSelectedModelByProvider(state.selectedModelByProvider);
     setAgentMode(state.agentMode);
+    setAgentModeByProvider(state.agentModeByProvider);
     setSelectedProviderId(state.selectedProviderId);
     setOnboardingCompleted(state.onboardingCompleted);
     setSessionsOpen(state.sessionsOpen);
@@ -307,10 +320,19 @@ export function App() {
     setSelectedProviderId(providerId);
     setSessions((list) => applyProviderBinding(list, providerId));
     setSelectedModelId(selectedModelByProviderRef.current[providerId] || "");
+    // 模式集合是上一家的，先清空；记住的选择留在 storage 里等新家广告回来再认。
+    setAgentModes([]);
+    setAgentModeId("");
+    appliedAgentModeRef.current = "";
     appliedModelRef.current = "";
     setModels([]);
     setProgress(undefined);
-    sendRef.current({ type: "agent.connect", providerId, policy: agentModeRef.current });
+    sendRef.current({
+      type: "agent.connect",
+      providerId,
+      policy: agentModeRef.current,
+      modeId: agentModeByProviderRef.current[providerId] || undefined,
+    });
   };
 
   const cancelConnect = () => {
@@ -655,6 +677,22 @@ export function App() {
       }
       return;
     }
+    if (msg.type === "agentModes") {
+      const options = msg.options ?? [];
+      setAgentModes(options);
+      const providerId = selectedProviderRef.current;
+      const remembered = agentModeByProviderRef.current[providerId] ?? "";
+      const advertised = remembered !== "" && options.some((option) => option.id === remembered);
+      setAgentModeId(advertised ? remembered : msg.currentId || options[0]?.id || "");
+      // 记住的选择还没落到会话上（刚连上、刚开会话、或 Agent 自己换了模式）：补一次。
+      // appliedAgentModeRef 保证同一个值只重试一次，不会与服务端来回拉锯。
+      if (advertised && remembered !== msg.currentId && appliedAgentModeRef.current !== remembered) {
+        appliedAgentModeRef.current = remembered;
+        const session = sessionsRef.current.find((item) => item.id === selectedIdRef.current);
+        sendRef.current({ type: "agent.setMode", modeId: remembered, sessionId: session?.acpSessionId });
+      }
+      return;
+    }
     if (msg.type === "models") {
       const incoming = msg.models.filter((model, index, all) => all.findIndex((item) => item.id === model.id) === index);
       if (incoming.length === 0 && statusRef.current !== "ready") {
@@ -926,6 +964,7 @@ export function App() {
       selectedModelId,
       selectedModelByProvider,
       agentMode,
+      agentModeByProvider,
       selectedProviderId,
       onboardingCompleted,
       sessionsOpen,
@@ -945,6 +984,7 @@ export function App() {
     selectedModelId,
     selectedModelByProvider,
     agentMode,
+    agentModeByProvider,
     selectedProviderId,
     onboardingCompleted,
     sessionsOpen,
@@ -1332,6 +1372,17 @@ export function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [pickingElement]);
 
+  const onAgentModeId = (modeId: string) => {
+    setAgentModeId(modeId);
+    appliedAgentModeRef.current = modeId;
+    const providerId = selectedProviderRef.current;
+    if (providerId) {
+      setAgentModeByProvider((current) => ({ ...current, [providerId]: modeId }));
+    }
+    const session = sessionsRef.current.find((item) => item.id === selectedIdRef.current);
+    sendRef.current({ type: "agent.setMode", modeId, sessionId: session?.acpSessionId });
+  };
+
   const onModel = (modelId: string) => {
     setSelectedModelId(modelId);
     appliedModelRef.current = modelId;
@@ -1648,6 +1699,9 @@ export function App() {
               onPreviewImage={onPreviewImage}
               onModel={onModel}
               agentMode={agentMode}
+              agentModes={agentModes}
+              agentModeId={agentModeId}
+              onAgentModeId={onAgentModeId}
               compact={compact}
               onAgentMode={(mode) => {
                 setAgentMode(mode);

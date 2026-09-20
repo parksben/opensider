@@ -13,6 +13,7 @@ import (
 	"github.com/parksben/opensider/internal/detect"
 	"github.com/parksben/opensider/internal/log"
 	"github.com/parksben/opensider/internal/models"
+	"github.com/parksben/opensider/internal/modes"
 	"github.com/parksben/opensider/internal/native"
 	"github.com/parksben/opensider/internal/paths"
 	"github.com/parksben/opensider/internal/pick"
@@ -45,13 +46,18 @@ const interruptWait = 15 * time.Second
 var errConnectCancelled = errors.New("connect cancelled")
 
 type Host struct {
-	io                 *native.IO
-	mu                 sync.Mutex
-	bindMu             sync.Mutex
-	runtimes           []*acpRuntime
-	rpcClients         map[int]*acp.Client
-	catalog            models.Catalog
-	pendingModelID     string
+	io             *native.IO
+	mu             sync.Mutex
+	bindMu         sync.Mutex
+	runtimes       []*acpRuntime
+	rpcClients     map[int]*acp.Client
+	catalog        models.Catalog
+	pendingModelID string
+	// agentModes / hasAgentModes 是当前会话可切换的模式（Agent 自己的 plan / build…）；
+	// pinnedMode 是用户在侧栏显式选过的那个（空串=没选，权限档可以说话）。
+	agentModes         modes.Target
+	hasAgentModes      bool
+	pinnedMode         string
 	currentAgent       *detect.ResolvedAgent
 	previousAgent      *detect.ResolvedAgent
 	connectingClient   *acp.Client
@@ -443,6 +449,9 @@ func (h *Host) connectAgent(providerID string, policy protocol.AgentPolicy) erro
 	h.sendProgress(2, 6, "spawn", "Starting process")
 	h.mu.Lock()
 	h.catalog = models.Catalog{ModelConfigID: "model"}
+	// 模式集合属于上一家引擎，换 Agent 就清掉（跟着 catalog 一起重置）。
+	h.agentModes = modes.Target{}
+	h.hasAgentModes = false
 	h.mu.Unlock()
 	runtime := &acpRuntime{}
 	if err := h.attachClient(runtime); err != nil {
@@ -644,6 +653,7 @@ func (h *Host) attachClient(runtime *acpRuntime) error {
 	h.mu.Lock()
 	agent := h.currentAgent
 	policy := h.currentPolicy
+	pinned := h.pinnedMode
 	h.mu.Unlock()
 	if agent == nil {
 		return errors.New("no agent selected")
@@ -658,18 +668,14 @@ func (h *Host) attachClient(runtime *acpRuntime) error {
 	}, acp.Handlers{
 		OnUpdate: func(update map[string]any, sessionID string) {
 			if runtime.binding && !runtime.prompting {
-				if str(update["sessionUpdate"]) == "config_option_update" {
-					h.absorbConfigUpdate(update)
-				}
+				h.absorbSessionUpdate(update, runtime)
 				return
 			}
 			sid := sessionID
 			if sid == "" && runtime.client != nil {
 				sid = runtime.client.GetSessionID()
 			}
-			if str(update["sessionUpdate"]) == "config_option_update" {
-				h.absorbConfigUpdate(update)
-			}
+			h.absorbSessionUpdate(update, runtime)
 			h.send(map[string]any{"type": "update", "update": update, "sessionId": sid})
 		},
 		OnPermission: func(id int, params map[string]any, sessionID string) {
@@ -708,6 +714,8 @@ func (h *Host) attachClient(runtime *acpRuntime) error {
 		},
 	})
 	client.SetPolicy(policy)
+	// 用户记住的模式选择要跟着新进程走，否则新会话会回到引擎默认值。
+	client.SetPinnedMode(pinned)
 	runtime.client = client
 	return nil
 }
@@ -778,6 +786,7 @@ func (h *Host) openAndAnnounce(runtime *acpRuntime, requestID string, open func(
 	}
 	workspace.WriteSessionID(opened.SessionID)
 	h.absorbSessionOptions(opened)
+	h.refreshAgentModes(runtime)
 	h.mu.Lock()
 	empty := len(h.catalog.Models) == 0
 	h.mu.Unlock()
@@ -900,6 +909,7 @@ func (h *Host) dispatch(typ string, msg map[string]any) error {
 		}
 		if state == "ready" {
 			h.sendModels()
+			h.sendAgentModes()
 		}
 		return nil
 	case "agents.detect":
@@ -908,7 +918,15 @@ func (h *Host) dispatch(typ string, msg map[string]any) error {
 		go h.checkRelease(true)
 		return nil
 	case "agent.connect":
+		// 侧栏把自己记住的模式一起带上来，连接后立刻交给客户端。
+		if modeID := str(msg["modeId"]); modeID != "" {
+			h.mu.Lock()
+			h.pinnedMode = modeID
+			h.mu.Unlock()
+		}
 		return h.connectAgent(str(msg["providerId"]), protocol.AgentPolicy(str(msg["policy"])))
+	case "agent.setMode":
+		return h.setAgentMode(str(msg["modeId"]), str(msg["sessionId"]))
 	case "agent.cancelConnect":
 		return h.cancelConnect()
 	case "agent.setPolicy":

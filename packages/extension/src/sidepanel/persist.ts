@@ -123,6 +123,8 @@ export type PersistedState = {
   selectedModelId?: string;
   selectedModelByProvider?: Record<string, string>;
   agentMode?: AgentMode;
+  /** 用户显式选过的 Agent 模式，按 provider 分开记：模式集合是每家自己的。 */
+  agentModeByProvider?: Record<string, string>;
   selectedProviderId?: string;
   onboardingCompleted?: boolean;
   sessionsOpen?: boolean;
@@ -391,6 +393,7 @@ export type LoadedState = {
   selectedModelId: string;
   selectedModelByProvider: Record<string, string>;
   agentMode: AgentMode;
+  agentModeByProvider: Record<string, string>;
   selectedProviderId: string;
   onboardingCompleted: boolean;
   sessionsOpen: boolean;
@@ -418,6 +421,7 @@ function emptyLoaded(savedAt?: string): LoadedState {
     selectedModelId: "",
     selectedModelByProvider: {},
     agentMode: "ask",
+    agentModeByProvider: {},
     selectedProviderId: "",
     onboardingCompleted: false,
     sessionsOpen: false,
@@ -440,6 +444,7 @@ export function fromPersisted(data: PersistedState | undefined | null): LoadedSt
     ? data.selectedId
     : (sessions[0]?.id ?? "");
   const selectedModelByProvider = data.selectedModelByProvider ?? {};
+  const agentModeByProvider = data.agentModeByProvider ?? {};
   const selectedModelId =
     (selectedProviderId && selectedModelByProvider[selectedProviderId]) || data.selectedModelId || "";
   return {
@@ -450,6 +455,7 @@ export function fromPersisted(data: PersistedState | undefined | null): LoadedSt
     selectedModelId,
     selectedModelByProvider,
     agentMode: isAgentMode(data.agentMode) ? data.agentMode : "ask",
+    agentModeByProvider,
     selectedProviderId,
     onboardingCompleted,
     sessionsOpen: data.sessionsOpen === true,
@@ -470,6 +476,7 @@ export function toPersistedState(state: {
   selectedModelId: string;
   selectedModelByProvider: Record<string, string>;
   agentMode: AgentMode;
+  agentModeByProvider: Record<string, string>;
   selectedProviderId: string;
   onboardingCompleted: boolean;
   sessionsOpen: boolean;
@@ -485,6 +492,7 @@ export function toPersistedState(state: {
     selectedModelId: state.selectedModelId,
     selectedModelByProvider: state.selectedModelByProvider,
     agentMode: state.agentMode,
+    agentModeByProvider: Object.keys(state.agentModeByProvider).length ? state.agentModeByProvider : undefined,
     selectedProviderId: state.selectedProviderId || undefined,
     onboardingCompleted: state.onboardingCompleted || undefined,
     sessionsOpen: state.sessionsOpen,

@@ -10,8 +10,22 @@
 //   FAKE_ACP_IGNORE_CANCEL_MS  keep running this long after session/cancel (default 0)
 //   FAKE_ACP_TRACE             append a JSON line per prompt/cancel/end to this file
 //
-// Turn N streams "T<N>.<i> " for i = 0..chunks-1 and then ends with stopReason
-// end_turn, or with cancelled when the host asked us to stop.
+// Agent-mode advertising (used by scripts/verify-agent-modes.mjs). These decide what
+// `session/new|load|fork` advertises so one fake agent can stand in for the three real
+// CLI shapes we measured. Field names are copied verbatim from those CLIs — do not rename.
+//   FAKE_MODES=config          OpenCode 1.18.31: no `modes`, only a `configOptions` mode
+//                              select (currentValue "build", options build/plan).
+//   FAKE_MODES=legacy          Cursor: `modes.availableModes` (agent/plan/ask), no mode
+//                              config option.
+//   FAKE_MODES=both            Claude / Copilot: `modes` and the mode `configOptions` item
+//                              are both present and kept in sync.
+//   FAKE_MODES=none | unset    Advertise nothing (the pre-modes behaviour).
+//   FAKE_MODE_URL_IDS=1        With FAKE_MODES=both, use Copilot-style URL ids for the
+//                              modes (e.g. "https://…/mode/plan") to prove URL ids work.
+//   FAKE_MODE_SWITCH_ON_PROMPT=<id>
+//                              On the next prompt, push a `current_mode_update` moving
+//                              `currentModeId` to <id> (the "Agent switched its own mode"
+//                              path). Only fires once per prompt that carries text.
 import { appendFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 
@@ -19,6 +33,9 @@ const chunks = Number(process.env.FAKE_ACP_CHUNKS ?? 20);
 const chunkMs = Number(process.env.FAKE_ACP_CHUNK_MS ?? 300);
 const ignoreCancelMs = Number(process.env.FAKE_ACP_IGNORE_CANCEL_MS ?? 0);
 const tracePath = process.env.FAKE_ACP_TRACE ?? "";
+const modesShape = process.env.FAKE_MODES ?? "none";
+const modeUrlIds = process.env.FAKE_MODE_URL_IDS === "1";
+const modeSwitchOnPrompt = process.env.FAKE_MODE_SWITCH_ON_PROMPT ?? "";
 
 // The bridge also runs the CLI once as `<cli> models` before opening a session (see
 // internal/models). Answering that here matters: without it the bridge waits out its own
@@ -56,11 +73,95 @@ const trace = (entry) => {
   }
 };
 
+// -------------------------------------------------------------------- agent modes
+// modeConfigId 是 mode 配置项的 configId：既真实（OpenCode 用 "mode"），也让
+// session/set_config_option 能按它命中并改状态。
+const modeConfigId = "mode";
+// URL 形式的 id 用来演 Copilot 那种把 mode 命名成一个 URL 的情况；只在 FAKE_MODE_URL_IDS 时用。
+const withUrlId = (id) => (modeUrlIds ? `https://opensider.test/mode/${id}` : id);
+
+// legacy `modes.availableModes`：Cursor 那一路。带 currentModeId + 每项 id/name/description。
+let legacyModes =
+  modesShape === "legacy" || modesShape === "both"
+    ? {
+        currentModeId: modesShape === "both" ? withUrlId("agent") : "agent",
+        availableModes: [
+          { id: withUrlId("agent"), name: "Agent", description: "Full agent, edits and runs freely." },
+          { id: withUrlId("plan"), name: "Plan", description: "Read-only; drafts a plan before acting." },
+          { id: withUrlId("ask"), name: "Ask", description: "Answers questions without touching files." },
+        ],
+      }
+    : null;
+
+// `configOptions` mode select：OpenCode（config）与 Claude/Copilot（both）那一路。
+// currentValue 是当前选中值，options[].value 是可选值 —— Host 的 modeConfigID/advertisedModeIDs
+// 就是读这些字段（见 internal/acp/mode.go），字段名务必逐字对齐。
+function modeConfigOption() {
+  if (modesShape === "config") {
+    return {
+      id: modeConfigId,
+      name: "Mode",
+      category: "mode",
+      type: "select",
+      currentValue: "build",
+      options: [
+        { value: "build", name: "Build", description: "Edits and runs freely." },
+        { value: "plan", name: "Plan", description: "Read-only; drafts a plan first." },
+      ],
+    };
+  }
+  if (modesShape === "both") {
+    // both：configOptions 的可选值必须与 legacy.availableModes 同步。
+    return {
+      id: modeConfigId,
+      name: "Mode",
+      category: "mode",
+      type: "select",
+      currentValue: legacyModes.currentModeId,
+      options: legacyModes.availableModes.map((m) => ({
+        value: m.id,
+        name: m.name,
+        description: m.description,
+      })),
+    };
+  }
+  return null;
+}
+
+// 组装一次 session/new|load|fork 的返回：按形态决定广告什么。
+function sessionResult(sid) {
+  const result = { sessionId: sid, models: null };
+  const option = modeConfigOption();
+  result.configOptions = option ? [option] : [];
+  if (legacyModes) result.modes = legacyModes;
+  return result;
+}
+
+// current_mode_update 需要把两边（legacy currentModeId + config currentValue）一起改，
+// 保证 both 形态下两个来源不会漂移。
+function setCurrentMode(id) {
+  if (legacyModes) legacyModes.currentModeId = id;
+}
+
 async function runPrompt(id, text) {
   turn += 1;
   const label = turn;
   cancelledAt = 0;
   trace({ event: "prompt", turn: label, text: text.slice(0, 200), sessionId });
+  // 「Agent 自己换模式」：收到带文本的 prompt 时主动推一条 current_mode_update。
+  if (modeSwitchOnPrompt && text.trim()) {
+    const target = modeUrlIds ? withUrlId(modeSwitchOnPrompt) : modeSwitchOnPrompt;
+    setCurrentMode(target);
+    write({
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId,
+        update: { sessionUpdate: "current_mode_update", currentModeId: target },
+      },
+    });
+    trace({ event: "current_mode_update", turn: label, currentModeId: target });
+  }
   for (let i = 0; i < chunks; i += 1) {
     if (cancelledAt && Date.now() - cancelledAt >= ignoreCancelMs) {
       trace({ event: "end", turn: label, stopReason: "cancelled" });
@@ -82,12 +183,12 @@ async function handle(msg) {
   }
   if (method === "session/new") {
     sessionId = `fake-${Date.now().toString(36)}`;
-    reply(id, { sessionId, configOptions: [], models: null });
+    reply(id, sessionResult(sessionId));
     return;
   }
   if (method === "session/load" || method === "session/fork") {
     sessionId = params?.sessionId || sessionId || `fake-${Date.now().toString(36)}`;
-    reply(id, { sessionId, configOptions: [], models: null });
+    reply(id, sessionResult(sessionId));
     return;
   }
   if (method === "session/prompt") {
@@ -96,6 +197,23 @@ async function handle(msg) {
       .join("\n");
     // Reply later on purpose: the host must be able to cancel a turn that is in flight.
     void runPrompt(id, text);
+    return;
+  }
+  if (method === "session/set_config_option") {
+    // 真的改状态：configId=mode 时把当前值写进去，再按规范回完整的 configOptions 数组。
+    if (params?.configId === modeConfigId && typeof params?.value === "string") {
+      setCurrentMode(params.value);
+    }
+    const option = modeConfigOption();
+    trace({ event: "set_config_option", configId: params?.configId, value: params?.value });
+    reply(id, { configOptions: option ? [option] : [] });
+    return;
+  }
+  if (method === "session/set_mode") {
+    // 真的改 currentModeId，成功回 {}。
+    if (typeof params?.modeId === "string") setCurrentMode(params.modeId);
+    trace({ event: "set_mode", modeId: params?.modeId });
+    reply(id, {});
     return;
   }
   if (method === "session/cancel") {

@@ -65,7 +65,13 @@ type Client struct {
 	turnHadContent bool
 	configOptions  any
 	sessionModes   any
-	sweepStop      func()
+	// modeCurrent 是 Agent 自己报的当前模式（`current_mode_update`）。它盖在发现
+	// 出来的结果上：opencode 这类把模式放在 configOptions 里的家，光看 currentValue
+	// 会停在会话建立那一刻的值。
+	modeCurrent string
+	// pinnedMode 是用户显式选过的模式（空串=没选）。选过就不再让权限档覆盖它。
+	pinnedMode string
+	sweepStop  func()
 }
 
 func New(launch Launch, handlers Handlers) *Client {
@@ -85,7 +91,7 @@ func (c *Client) SetPolicy(policy protocol.AgentPolicy) {
 	sessionID := c.session
 	c.mu.Unlock()
 	if sessionID != "" {
-		go c.trySetPolicyMode(sessionID)
+		go c.applySessionModes()
 	}
 }
 
@@ -209,8 +215,8 @@ func (c *Client) CreateSession() (SessionOpen, error) {
 	c.mu.Lock()
 	c.session = sessionID
 	c.mu.Unlock()
-	c.rememberSessionModes(obj)
-	c.trySetPolicyMode(sessionID)
+	c.rememberSessionOptions(obj)
+	c.applySessionModes()
 	return SessionOpen{
 		SessionID:     sessionID,
 		Replay:        false,
@@ -238,8 +244,8 @@ func (c *Client) UseSession(existingID string) (SessionOpen, error) {
 	c.mu.Lock()
 	c.session = existingID
 	c.mu.Unlock()
-	c.rememberSessionModes(obj)
-	c.trySetPolicyMode(existingID)
+	c.rememberSessionOptions(obj)
+	c.applySessionModes()
 	return SessionOpen{
 		SessionID:     existingID,
 		Replay:        true,
@@ -265,8 +271,8 @@ func (c *Client) ForkSession(existingID string) (SessionOpen, error) {
 	c.mu.Lock()
 	c.session = sessionID
 	c.mu.Unlock()
-	c.rememberSessionModes(obj)
-	c.trySetPolicyMode(sessionID)
+	c.rememberSessionOptions(obj)
+	c.applySessionModes()
 	return SessionOpen{
 		SessionID:     sessionID,
 		Replay:        false,
@@ -415,6 +421,8 @@ func (c *Client) handleMessage(msg map[string]any) {
 			log.Log("dropped Cursor stream-close update")
 			return
 		}
+		// 先记下 Agent 自己报的模式 / 配置变化，再往外发：侧栏拿到的快照必须是新的。
+		c.noteModeUpdate(update)
 		c.noteTurnUpdate(update)
 		if c.handlers.OnUpdate != nil {
 			c.handlers.OnUpdate(update, sessionID)

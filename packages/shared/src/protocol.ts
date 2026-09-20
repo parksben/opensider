@@ -281,6 +281,37 @@ export type AgentModel = {
 
 export type AgentPolicy = "ask" | "workspace" | "auto" | "unattended";
 
+/**
+ * Where a session's mode comes from: a config option (the spec-preferred shape) or the
+ * legacy `modes` list. The panel renders both the same way; only the set path differs.
+ */
+export type AgentModeSource = "config" | "modes";
+
+/**
+ * Semantic class of a mode. Used **only** to pick an icon — never to decide behavior, so
+ * a misclassification costs nothing but a wrong glyph.
+ */
+export type AgentModeKind =
+  | "plan"
+  | "build"
+  | "ask"
+  | "agent"
+  | "edits"
+  | "auto"
+  | "full_access"
+  | "unknown";
+
+/**
+ * One mode the agent advertises. `name` and `desc` are the agent's own words — passed
+ * through verbatim, never translated, because every CLI names its modes differently.
+ */
+export type AgentModeOption = {
+  id: string;
+  name: string;
+  desc?: string;
+  kind: AgentModeKind;
+};
+
 export type AgentMark =
   | "cursor"
   | "opencode"
@@ -323,9 +354,10 @@ export type AgentProgress = {
 export type ExtToHost =
   | { type: "hello" }
   | { type: "agents.detect" }
-  | { type: "agent.connect"; providerId: string; policy?: AgentPolicy }
+  | { type: "agent.connect"; providerId: string; policy?: AgentPolicy; modeId?: string }
   | { type: "agent.cancelConnect" }
   | { type: "agent.setPolicy"; policy: AgentPolicy }
+  | { type: "agent.setMode"; modeId: string; sessionId?: string }
   | {
       type: "prompt";
       text: string;
@@ -425,6 +457,16 @@ export type HostToExt =
       error?: string;
     }
   | { type: "models"; models: AgentModel[]; currentId: string }
+  | {
+      type: "agentModes";
+      source: AgentModeSource;
+      configId?: string;
+      currentId: string;
+      options: AgentModeOption[];
+      pinned?: string;
+      /** False when there is nothing to switch (fewer than two modes advertised). */
+      available: boolean;
+    }
   | { type: "fs.revealed"; path: string; missing?: boolean; error?: string }
   // An older host replying to a command it does not implement: see internal/host/host.go.
   | { type: "host.unsupported"; requestId: string; command?: string; error?: string }
