@@ -101,8 +101,9 @@ export function AgentModeSelect({
   const tip = tooltipOf(locale, current);
 
   return (
-    // 与权限下拉同规：不撑开、紧挨左侧三个图标钮，多余空间留给右侧。
-    <div ref={rootRef} className={`relative min-w-0 shrink ${compact ? "" : "min-w-[5rem] max-w-full"}`}>
+    // 与权限下拉同规：不撑开、不设最小宽度（内容比 5rem 窄时，最小宽度会在钮内留下
+    // 一段空白，看起来就像两个钮之间还有间距）。
+    <div ref={rootRef} className="relative min-w-0 shrink max-w-full">
       <button
         type="button"
         title={tip}
@@ -110,7 +111,8 @@ export function AgentModeSelect({
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
         onPointerDown={(event) => spawn(event)}
-        className="relative flex h-7 max-w-full min-w-0 items-center gap-1 overflow-hidden whitespace-nowrap rounded-full px-2 text-[11px] text-[var(--muted)] hover:bg-[var(--hover)]"
+        // pr-1：右内侧只留 4px，紧贴右边的权限钮（外侧仍是 px-2 的 8px）。
+        className="relative flex h-7 w-fit max-w-full min-w-0 items-center gap-1 overflow-hidden whitespace-nowrap rounded-full px-2 pr-1 text-[11px] text-[var(--muted)] hover:bg-[var(--hover)]"
       >
         <CurrentIcon size={14} className="shrink-0" />
         {compact ? null : <span className="min-w-0 truncate">{displayName(current)}</span>}
