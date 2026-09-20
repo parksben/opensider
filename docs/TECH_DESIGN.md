@@ -560,9 +560,9 @@ Host → 侧栏 `{type:"agentModes", source:"config"|"modes", configId?, current
 
 **设置**：`session/set_config_option{sessionId, configId, value}`。规范要求布尔值**必须**带 `type: "boolean"`（否则引擎按字符串处理），`internal/acp` 的 `setConfigValue` 按解析出的 `Type` 决定带不带。只发广告集合内的值（`false` / `off` 这类字符串也必须在集合里，不许自己造）。
 
-**以引擎为准**：设置成功后返回的完整 `configOptions`、以及 `config_option_update`（引擎自己换模型后可能重置档位）都是权威状态；Host 吸收后原样重推侧栏，侧栏**不做乐观更新**。
+**以引擎为准**：设置成功后返回的完整 `configOptions`、以及 `config_option_update`（引擎自己换模型后可能重置档位）都是权威状态；Host 吸收后原样重推侧栏。侧栏点选时**就地更新**当前值（与模式钮同一套做法，否则一次往返之内界面像没反应），但引擎推回来的状态随时把它纠正过来。
 
-**记忆**：按 `Agent id × 配置项 id` 记（与模式记忆同一路子，一起镜像进 `ui-state.json`）。只在「下次连同一个 Agent」且「记住的值仍在广告集合内」时下发，否则等引擎给的当前值。
+**记忆**：按 `Agent id × 配置项 id` 记（与模式记忆同一路子，一起镜像进 `ui-state.json`）。只在「下次连同一个 Agent」且「记住的值仍在广告集合内」时下发，否则等引擎给的当前值。侧栏在 `agent.connect` 里把这份记忆一起带上（`optionValues`），Host 建立会话后落下去；侧栏还会在收到广告时补一次「记住了但当前值还不是它」的项——同一个 `configId=value` 只补一次（引擎报回同一个值后再解除），免得和服务端来回拉锯。
 
 **线格式**：Host → 侧栏 `{type:"agentOptions", options:[{id, category, name, type, current, values:[{id,name}]}]}`；侧栏 → Host `{type:"agent.setOption", configId, value}`，都按会话路由（带 `sessionId`）。两类都在这条消息里，侧栏按 `category` 分流渲染；一项都没有就发空数组（等同不显示）。
 
