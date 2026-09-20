@@ -47,13 +47,19 @@ func TranslatePrompt(text, target string) string {
 		target + ", return it unchanged.\n\n" + text
 }
 
-// SearchPrompt 拼搜索提示词。结果要 Markdown（结果层直接渲染），要来源链接，而且要允许
-// 它说「我搜不了」——宁可它承认没有检索能力，也不要它编一份看起来很像的搜索结果。
+// SearchPrompt 拼搜索提示词。结果要 Markdown（结果层直接渲染），要来源链接，要优先百科类
+// 来源，而且要允许它说「我搜不了」——宁可它承认没有检索能力，也不要它编一份看起来很像的
+// 搜索结果。
+//
+// 「只要结论」这条要写死：结果层是个小浮层，过程叙述（"我先去搜一下…"）既拖时间又会被最终
+// 正文刷掉；Host 那边另外按工具调用切了一刀做兼底。
 func SearchPrompt(text string) string {
-	return "Search the web for the query below and answer in Markdown only: a short summary, " +
-		"the key facts, then a \"Sources\" list of the links you actually used. If you cannot " +
-		"search the web with your tools, say so in one line instead of guessing — then give " +
-		"what you know from training data and label it as such.\n\nQuery: " + text
+	return "Search the web for the query below and answer in Markdown only — only the final " +
+		"answer: no preamble, no notes about what you are about to do, no step-by-step " +
+		"narration. Prefer encyclopedic sources (Wikipedia, Britannica, official sites) and " +
+		"list the links you actually used under \"Sources\". Keep it short: a summary, then the " +
+		"key facts. If you cannot search the web with your tools, say so in one line instead of " +
+		"guessing — then give what you know from training data and label it as such.\n\nQuery: " + text
 }
 
 // PromptFor 按模式拼提示词。target 只在翻译时用到。

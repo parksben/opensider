@@ -46,6 +46,7 @@ const PAGE = `<!doctype html>
     <p id="long">${LONG}</p>
   </div>
   <div id="tail"><p id="down">滚到很下面的一段文字。</p></div>
+  <p id="low" style="position: fixed; bottom: 6px; left: 16px;">贴底</p>
 </body></html>`;
 
 /** 在页面上选中某个元素的文本（真实 Selection + 触发 selectionchange）。 */
@@ -431,6 +432,8 @@ try {
           return {
             height: Math.round(frame.getBoundingClientRect().height),
             barHeight: bar.offsetHeight,
+            barTop: Math.round(bar.getBoundingClientRect().top),
+            barBottom: Math.round(bar.getBoundingClientRect().bottom),
             hostBottom: Math.round(host.getBoundingClientRect().bottom),
             viewport: window.innerHeight,
           };
@@ -446,29 +449,61 @@ try {
     if (!tall) {
       ok("长结果层出现并渲染完", false, "30s 内没等到内容");
     } else {
-      const room = tall.viewport - 2 * 8 - tall.barHeight - 8;
-      const cap = Math.max(96, Math.min(Math.round(tall.viewport * 0.8), room));
+      const lineHeight = 12.5 * 1.55;
+      const maxHeight = Math.round(20 * lineHeight + 46);
       ok("长结果层出现并渲染完", true, tall.text);
       ok(
-        "长结果把框撑高（不再卡在 52vh）",
-        tall.height > tall.viewport * 0.6,
-        `height=${tall.height} vh=${tall.viewport} 旧上限=${Math.round(tall.viewport * 0.52)}`,
+        "长结果把框撑高（至少 10 行以上）",
+        tall.height > Math.round(10 * lineHeight),
+        `height=${tall.height} 10行=${Math.round(10 * lineHeight)}`,
       );
       ok(
-        "框高按视口与安全边距夹紧",
-        Math.abs(tall.height - cap) <= 1,
-        `height=${tall.height} cap=${cap} room=${room}`,
+        "框高封顶 20 行（超出交给内部滚动）",
+        tall.height <= maxHeight + 2,
+        `height=${tall.height} 20行上限=${maxHeight}`,
       );
       ok(
-        "整条（工具条 + 结果层）仍在视口内",
-        tall.hostBottom <= tall.viewport - 7,
-        `hostBottom=${tall.hostBottom} vh=${tall.viewport}`,
+        "结果层再高也不把工具条顶出视口",
+        tall.barTop >= 0 && tall.barBottom <= tall.viewport,
+        `bar=${tall.barTop}..${tall.barBottom} vh=${tall.viewport} hostBottom=${tall.hostBottom}`,
       );
       ok("超出部分在结果层内部滚动", tall.scrollable, `scrollable=${tall.scrollable}`);
     }
   } else {
-    ok("长结果把框撑高（不再卡在 52vh）", false, "没有搜索按钮");
+    ok("长结果把框撑高（至少 10 行以上）", false, "没有搜索按钮");
   }
+
+  // 方向：选区贴到视口底部、下方放不下时，工具条翻到选区上方（且完整可见）。
+  await fixture.bringToFront();
+  await selectText(fixture, "low");
+  await sleep(600);
+  const flipped = await fixture
+    .evaluate(() => {
+      const host = document.getElementById("opensider-selection");
+      const shadow = host?.shadowRoot;
+      const bar = shadow?.querySelector(".bar");
+      const root = shadow?.querySelector(".root");
+      const range = document.getSelection()?.rangeCount ? document.getSelection().getRangeAt(0) : null;
+      if (!host || !bar || !root || !range) return null;
+      const barBox = bar.getBoundingClientRect();
+      return {
+        barTop: Math.round(barBox.top),
+        barBottom: Math.round(barBox.bottom),
+        selTop: Math.round(range.getBoundingClientRect().top),
+        viewport: window.innerHeight,
+        direction: getComputedStyle(root).flexDirection,
+      };
+    })
+    .catch(() => null);
+  ok(
+    "选区贴着视口底部时工具条翻到上方且完整可见",
+    Boolean(flipped) &&
+      flipped.barBottom <= flipped.selTop + 1 &&
+      flipped.barTop >= 0 &&
+      flipped.barBottom <= flipped.viewport &&
+      flipped.direction === "column-reverse",
+    JSON.stringify(flipped ?? {}),
+  );
 
   // 引用：芯片进侧栏输入框。
   await fixture.bringToFront();

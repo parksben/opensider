@@ -39,9 +39,6 @@ func TestSelectionRunSnapshotKeepsEverythingWithoutToolCalls(t *testing.T) {
 	run := &selectionRun{mode: selection.ModeSearch}
 	run.append("I cannot search the web with my tools.\n\n張藝謀是中國導演。")
 
-	if run.hasTool() {
-		t.Fatal("hasTool should be false before any tool call")
-	}
 	if got, want := run.snapshot(), "I cannot search the web with my tools.\n\n張藝謀是中國導演。"; got != want {
 		t.Fatalf("snapshot = %q, want %q", got, want)
 	}

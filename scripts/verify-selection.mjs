@@ -222,6 +222,8 @@ try {
   );
   const searchFlow = isolation(search.messages, search.requestId);
   check("search does not leak into the extension either", searchFlow.leaks === "none", `saw ${searchFlow.leaks}`);
+  // 搜索只给最后那一条正文：过程叙述与中间正文都不许流出去（用户报过「先出现、再被刷掉」）。
+  check("search streams no intermediate text", searchFlow.deltas === 0, `${searchFlow.deltas} delta(s)`);
   const searchPrompt = selectionPrompts().findLast((entry) => entry.kind === "search");
   check(
     "the search prompt carries the selected text",

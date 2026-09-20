@@ -41,7 +41,6 @@ type selectionRun struct {
 	runtime  *acpRuntime
 	buffer   strings.Builder
 	previous string
-	toolSeen bool
 	cancel   bool
 	done     bool
 }
@@ -83,19 +82,11 @@ func (r *selectionRun) snapshot() string {
 func (r *selectionRun) startToolCall() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.toolSeen = true
 	if r.buffer.Len() == 0 {
 		return
 	}
 	r.previous = r.buffer.String()
 	r.buffer.Reset()
-}
-
-// hasTool 报告这次请求里 Agent 是否已经动过工具。
-func (r *selectionRun) hasTool() bool {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return r.toolSeen
 }
 
 // cancelTurn 取消这次请求：标记 + 停掉正在跑的那一轮（幂等）。
@@ -276,9 +267,10 @@ func (h *Host) absorbSelectionUpdate(runtime *acpRuntime, update map[string]any)
 	if chunk == "" {
 		return
 	}
-	// 搜索：还没动过工具时说的话全是过程叙述（"我先去搜一下"），一个字都不推给页面——
-	// 结果层这时就该停在「搜索中」，等它真的拿到东西再说。翻译没工具可调，照常逐字推。
-	if run.mode == selection.ModeSearch && !run.hasTool() {
+	// 搜索：整轮都不推增量。过程叙述（"我先去搜一下…"）与两次搜索之间的中间正文都会先出现在
+	// 结果层、再被最终正文刷掉（用户报过），所以干脆只攒着，这一轮结束时一次性给结论——
+	// 那段时间结果层就老实停在「搜索中」。翻译没工具可调、正文也短，照常逐字流。
+	if run.mode == selection.ModeSearch {
 		run.append(chunk)
 		return
 	}

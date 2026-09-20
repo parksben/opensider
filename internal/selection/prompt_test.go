@@ -113,7 +113,10 @@ func TestSearchPromptAsksForMarkdownSourcesAndHonesty(t *testing.T) {
 	prompt := SearchPrompt("opensider")
 	for _, want := range []string{
 		"Markdown only",
-		"\"Sources\" list",
+		"only the final answer",
+		"no step-by-step narration",
+		"Prefer encyclopedic sources",
+		"under \"Sources\"",
 		"If you cannot search the web",
 		"instead of guessing",
 		"Query: opensider",

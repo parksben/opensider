@@ -20,10 +20,16 @@ const MAX_CHARS = 200; // 与 internal/selection 的 MaxRunes 对齐
 const SAFE_MARGIN = 8;
 const GAP = 8;
 const SHOW_DELAY_MS = 120;
-const RESULT_MIN_HEIGHT = 96;
-// 结果层最多占视口高度的这个比例（比过去 0.6 高一些，能多看点内容）。真的放不下就压到
-// 实际可用高度、由结果层自己滚动，见 maxResultHeight。
-const RESULT_MAX_VH = 0.8;
+// 结果层的高度按**文字行数**算，不按视口比例：正文至少 10 行、最多 20 行（行高对齐
+// .cs-selection-body 的 12.5px × 1.55），再加上标题行与上下 padding。内容不足 10 行由内容
+// 撑高（只有加载中用 10 行占位，免得先是一条小窄条、结果一到又跳成一大块），超过 20 行交给
+// 结果层自己滚动——要的是「能多看几行」，不是「铺满视口」。
+const RESULT_LINE_PX = 12.5 * 1.55;
+const RESULT_CHROME_PX = 46;
+const RESULT_MIN_LINES = 10;
+const RESULT_MAX_LINES = 20;
+const RESULT_LOADING_HEIGHT = Math.round(RESULT_MIN_LINES * RESULT_LINE_PX + RESULT_CHROME_PX);
+const RESULT_MAX_HEIGHT = Math.round(RESULT_MAX_LINES * RESULT_LINE_PX + RESULT_CHROME_PX);
 
 type Gate = { enabled: boolean };
 
@@ -35,6 +41,7 @@ let locale: Locale = "en";
 
 let host: HTMLDivElement | undefined;
 let bar: HTMLDivElement | undefined;
+let rootEl: HTMLDivElement | undefined;
 let frameWrap: HTMLDivElement | undefined;
 let frame: HTMLIFrameElement | undefined;
 let brand: HTMLImageElement | undefined;
@@ -46,7 +53,7 @@ let showTimer = 0;
 let observer: MutationObserver | undefined;
 let activeRequest = "";
 let activeMode: SelectionMode | "quote" | "" = "";
-let resultHeight = RESULT_MIN_HEIGHT;
+let resultHeight = RESULT_LOADING_HEIGHT;
 let copiedTimer = 0;
 
 // ------------------------------------------------------------------ 选区的读取与判断
@@ -110,26 +117,28 @@ function place(): void {
   // 宽，两者差几像素就会让工具条压线出界。
   const hostRect = host.getBoundingClientRect();
   const barWidth = hostRect.width || bar.offsetWidth;
+  const barHeight = bar.offsetHeight;
   const panelHeight = frameWrap && frameWrap.style.display !== "none" ? resultHeight + GAP : 0;
-  // 条的高度从 host 反推（host = 条 + 结果层），不去量 bar：只要有任何东西漏在 bar 外面
-  // （历史上漏过一次，按钮成了 host 的直接子节点），只量 bar 就会把高度算少、贴边计算失准。
-  const barHeight = Math.max(0, hostRect.height - panelHeight);
   const totalHeight = barHeight + panelHeight;
 
-  let top: number;
-  const roomBelow = viewportHeight - SAFE_MARGIN - (anchor.bottom + GAP) - panelHeight;
-  const roomAbove = anchor.top - GAP - totalHeight - SAFE_MARGIN;
-  if (roomBelow >= 0 || roomBelow >= roomAbove) {
-    top = anchor.bottom + GAP;
-  } else {
-    top = anchor.top - GAP - totalHeight;
+  const roomBelow = viewportHeight - SAFE_MARGIN - (anchor.bottom + GAP);
+  const roomAbove = anchor.top - GAP - SAFE_MARGIN;
+  // 方向：优先选「整条都放得下」的那一边；两边都放不下就选空间更大的那边，**允许它超出视口**
+  // ——结果层自己会滚、页面也能滚，不必为了塞进视口把工具条挤到看不见的地方。
+  const below = roomBelow >= totalHeight ? true : roomAbove >= totalHeight ? false : roomBelow >= roomAbove;
+  let top = below ? anchor.bottom + GAP : anchor.top - GAP - totalHeight;
+  if (panelHeight === 0) {
+    // 只有工具条时是「首次布局」：无论空间多紧都得让它完整可见，用户要看得见、点得到。
+    top = clamp(top, SAFE_MARGIN, Math.max(SAFE_MARGIN, viewportHeight - SAFE_MARGIN - totalHeight));
   }
-  top = clamp(top, SAFE_MARGIN, Math.max(SAFE_MARGIN, viewportHeight - SAFE_MARGIN - totalHeight));
   const left = clamp(
     anchor.left + anchor.width / 2 - barWidth / 2,
     SAFE_MARGIN,
     Math.max(SAFE_MARGIN, viewportWidth - SAFE_MARGIN - barWidth),
   );
+  // 在上方时把结果层摆到工具条**上面**（column-reverse）：工具条始终紧贴选区那一侧，
+  // 结果层再高也不会把它顶出视口。
+  if (rootEl) rootEl.style.flexDirection = below ? "column" : "column-reverse";
   if (host) {
     host.style.top = `${Math.round(top)}px`;
     host.style.left = `${Math.round(left)}px`;
@@ -242,6 +251,7 @@ function mount(): void {
   const shadow = host.attachShadow({ mode: "open" });
   const root = document.createElement("div");
   root.className = "root";
+  rootEl = root;
 
   bar = document.createElement("div");
   bar.className = "bar";
@@ -371,13 +381,14 @@ function hide(): void {
   host?.remove();
   host = undefined;
   bar = undefined;
+  rootEl = undefined;
   frameWrap = undefined;
   frame = undefined;
   brand = undefined;
   buttons = {};
   anchor = undefined;
   selectedText = "";
-  resultHeight = RESULT_MIN_HEIGHT;
+  resultHeight = RESULT_LOADING_HEIGHT;
 }
 
 function schedule(): void {
@@ -466,6 +477,8 @@ function pushResult(payload: { kind: SelectionMode; state: ResultState; text: st
   if (!frameWrap || !frame) return;
   frameWrap.setAttribute("data-open", "1");
   restackTopLayer();
+  // 加载态先按 10 行占位：先给一条小窄条、结果一到再跳成一大块很难看。
+  if (payload.state === "loading") resultHeight = RESULT_LOADING_HEIGHT;
   const frameWidth = Math.min(380, Math.max(240, window.innerWidth - 2 * SAFE_MARGIN));
   frame.style.width = `${frameWidth}px`;
   frame.style.height = `${resultHeight}px`;
@@ -484,17 +497,11 @@ function pushResult(payload: { kind: SelectionMode; state: ResultState; text: st
 }
 
 /**
- * 结果层的最大高度。
- *
- * 两条夹在一起：视口高度的 RESULT_MAX_VH（多看点内容），以及**实际可用空间**——整条
- * （工具条 + 结果层）必须留在视口里、上下各留 SAFE_MARGIN，所以还要按 bar 高与间距再夹
- * 一次；超出这个高度的内容在结果层内部滚动（父层把 iframe 高度固定在这里）。
+ * 结果层的最大高度：正文 20 行 + 标题与 padding。再长由结果层自己滚（它是独立文档），
+ * 不再按视口比例算——用户要的是「能多看几行」，放不下宁肯溢出视口、滚页面看。
  */
 function maxResultHeight(): number {
-  const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
-  const barHeight = bar?.offsetHeight ?? 36;
-  const room = viewportHeight - 2 * SAFE_MARGIN - barHeight - GAP;
-  return Math.max(RESULT_MIN_HEIGHT, Math.min(Math.round(viewportHeight * RESULT_MAX_VH), room));
+  return RESULT_MAX_HEIGHT;
 }
 
 /** 结果层页面回信：高度同步、复制请求。 */
@@ -503,7 +510,8 @@ function onResultMessage(event: MessageEvent): void {
   const data = event.data as { source?: string; height?: number; action?: string; text?: string } | undefined;
   if (!data || data.source !== "opensider-selection-result") return;
   if (typeof data.height === "number" && Number.isFinite(data.height)) {
-    resultHeight = clamp(Math.round(data.height), RESULT_MIN_HEIGHT, maxResultHeight());
+    // 内容撑高，封顶 20 行（超出内部滚动）。
+    resultHeight = Math.min(Math.round(data.height), maxResultHeight());
     if (frame) frame.style.height = `${resultHeight}px`;
     place();
     return;
