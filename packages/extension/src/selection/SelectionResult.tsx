@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Check, Copy } from "lucide-react";
 import { Markdown } from "../sidepanel/components/Markdown";
 import { applyLocale, t, type Locale } from "../sidepanel/i18n";
 import { applyThemePreference, type ThemePreference } from "../sidepanel/theme";
@@ -88,6 +89,8 @@ export function SelectionResult() {
             className="cs-selection-copy"
             onClick={() => window.parent.postMessage({ source: "opensider-selection-result", action: "copy", text }, "*")}
           >
+            {/* 与侧栏那条回复底部的复制钮同一形态：图标 + 文案。 */}
+            {copied ? <Check size={12} /> : <Copy size={12} />}
             {copied ? t(locale, "copiedReply") : t(locale, "copyReply")}
           </button>
         ) : null}

@@ -571,6 +571,13 @@ mark.cs-at-match {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  /* 吸顶：结果层内容滚动时标题栏（含复制钮）留在卡片顶部。滚动容器就是结果层自己那个
+     文档（见 src/selection/result.css），所以 sticky 直接生效；背景必须给，不然正文会
+     从下面透出来。 */
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--panel);
 }
 
 .cs-selection-title {
@@ -579,6 +586,9 @@ mark.cs-at-match {
 }
 
 .cs-selection-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   border: 1px solid var(--line);
   border-radius: 999px;
   background: var(--panel-2);

@@ -65,6 +65,15 @@ const toolbar = (page) => page.locator("#opensider-selection");
 const actionButton = (page, label) =>
   page.locator(`#opensider-selection button[aria-label="${label}"]`);
 
+/**
+ * 最近那个结果层 iframe 的 Playwright frame 句柄。
+ * 结果层是扩展页 → 对页面来说是跨域 iframe：`contentDocument` 永远是 null，只能走这条。
+ */
+const resultFrame = (page) => {
+  const frames = page.frames().filter((frame) => frame.url().includes("src/selection"));
+  return frames[frames.length - 1];
+};
+
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // 第二条 fixture：模拟 YouTube 那种「页面自己带严格 CSP、还有别的高位浮层（Google 翻译气泡那种）」
@@ -351,6 +360,24 @@ try {
       body.replace(/\s+/g, " ").slice(0, 60) || "空",
     );
     ok("结果层带「复制」按钮", /复制|Copy/.test(body), body.replace(/\s+/g, " ").slice(0, 40) || "空");
+    // 按钮是「图标 + 文案」：光有文案会被当成纯文字链，光有图标又认不出。
+    const copyShape = await frames[0]
+      ?.evaluate(() => {
+        const button = document.querySelector(".cs-selection-copy");
+        if (!button) return null;
+        return {
+          icon: button.querySelectorAll("svg").length,
+          text: (button.textContent || "").trim(),
+          display: getComputedStyle(button).display,
+        };
+      })
+      .catch(() => null);
+    ok(
+      "复制钮是图标 + 文案",
+      // 它是 flex 子项，`inline-flex` 会被 blockify 成 `flex`（浏览器行为，不是写错）。
+      copyShape?.icon === 1 && Boolean(copyShape?.text) && /^(inline-)?flex$/.test(copyShape?.display ?? ""),
+      JSON.stringify(copyShape ?? {}),
+    );
   } else {
     ok("翻译后出现结果层（iframe）", false, "没有翻译按钮");
   }
@@ -468,6 +495,32 @@ try {
         `bar=${tall.barTop}..${tall.barBottom} vh=${tall.viewport} hostBottom=${tall.hostBottom}`,
       );
       ok("超出部分在结果层内部滚动", tall.scrollable, `scrollable=${tall.scrollable}`);
+      // 标题栏吸顶：把结果层自己那个文档滚一段，标题栏必须还在卡片顶部。
+      const stickyFrame = resultFrame(fixture);
+      let stuck = null;
+      if (stickyFrame) {
+        await stickyFrame.evaluate(() => {
+          document.scrollingElement.scrollTop = 240;
+        });
+        await sleep(200);
+        stuck = await stickyFrame
+          .evaluate(() => {
+            const head = document.querySelector(".cs-selection-head");
+            const title = document.querySelector(".cs-selection-title");
+            if (!head || !title) return null;
+            return {
+              headTop: Math.round(head.getBoundingClientRect().top),
+              scrolled: Math.round(document.scrollingElement.scrollTop),
+              titleVisible: title.getBoundingClientRect().top >= -1,
+            };
+          })
+          .catch(() => null);
+      }
+      ok(
+        "搜索结果的标题栏吸顶（内容滚动时不跟着走）",
+        Boolean(stuck) && stuck.scrolled > 100 && Math.abs(stuck.headTop) <= 1 && stuck.titleVisible,
+        JSON.stringify(stuck ?? {}),
+      );
     }
   } else {
     ok("长结果把框撑高（至少 10 行以上）", false, "没有搜索按钮");
@@ -545,18 +598,34 @@ try {
   const composerCount = await panel.locator(".cs-composer").count();
   ok("划词这一串动作之后侧栏输入框还在", composerCount > 0, `${composerCount} 个输入框`);
 
-  // 跟随：选区滚出视口 → 工具条消失。
+  // 跟随：选区滚出视口 → 工具条跟着一起滚出去（但不消失），滚回来还在。
   await fixture.bringToFront();
   await fixture.evaluate(() => window.scrollTo(0, 0));
   await selectText(fixture, "target");
   await sleep(400);
   const beforeScroll = await toolbar(fixture).count();
+  const visibleBefore = await toolbar(fixture).boundingBox();
   await fixture.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
   await sleep(500);
+  const afterOut = await toolbar(fixture).boundingBox();
+  const viewport = fixture.viewportSize();
+  const offscreen =
+    !afterOut || afterOut.y + afterOut.height <= 1 || afterOut.y >= (viewport?.height ?? 0) - 1;
   ok(
-    "选区滚出视口后工具条随之消失",
-    beforeScroll > 0 && (await toolbar(fixture).count()) === 0,
-    `before=${beforeScroll} after=${await toolbar(fixture).count()}`,
+    "选区滚出视口后工具条跟着滚出去（不再消失）",
+    beforeScroll > 0 && (await toolbar(fixture).count()) === 1 && Boolean(visibleBefore) && offscreen,
+    `before=${beforeScroll} after=${await toolbar(fixture).count()} y=${afterOut ? Math.round(afterOut.y) : "n/a"} vh=${viewport?.height}`,
+  );
+  await fixture.evaluate(() => window.scrollTo(0, 0));
+  await sleep(500);
+  const backIn = await toolbar(fixture).boundingBox();
+  ok(
+    "滚回来后工具条还在原位（选区没被取消）",
+    Boolean(backIn) &&
+      Boolean(visibleBefore) &&
+      Math.abs(Math.round(backIn.y) - Math.round(visibleBefore.y)) <= 2 &&
+      (await toolbar(fixture).count()) === 1,
+    backIn ? `y=${Math.round(backIn.y)} 之前=${Math.round(visibleBefore.y)}` : "没有工具条",
   );
 } catch (error) {
   ok("verification ran to completion", false, String(error?.message ?? error).slice(0, 200));

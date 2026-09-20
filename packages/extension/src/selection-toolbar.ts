@@ -123,19 +123,21 @@ function place(): void {
 
   const roomBelow = viewportHeight - SAFE_MARGIN - (anchor.bottom + GAP);
   const roomAbove = anchor.top - GAP - SAFE_MARGIN;
+  // 选区自己滚出视口之后就**不再往视口里夹**：用户要求工具条跟着一起滚出去（只要选区还在，
+  // 滚回来就还得在），夹紧会把它硬拽回视口里、看着像没跟随。
+  const anchorVisible = intersectsViewport(anchor);
   // 方向：优先选「整条都放得下」的那一边；两边都放不下就选空间更大的那边，**允许它超出视口**
   // ——结果层自己会滚、页面也能滚，不必为了塞进视口把工具条挤到看不见的地方。
   const below = roomBelow >= totalHeight ? true : roomAbove >= totalHeight ? false : roomBelow >= roomAbove;
   let top = below ? anchor.bottom + GAP : anchor.top - GAP - totalHeight;
-  if (panelHeight === 0) {
-    // 只有工具条时是「首次布局」：无论空间多紧都得让它完整可见，用户要看得见、点得到。
+  if (panelHeight === 0 && anchorVisible) {
+    // 只有工具条时是「首次布局」：只要选区还在视口里，无论空间多紧都要让它完整可见。
     top = clamp(top, SAFE_MARGIN, Math.max(SAFE_MARGIN, viewportHeight - SAFE_MARGIN - totalHeight));
   }
-  const left = clamp(
-    anchor.left + anchor.width / 2 - barWidth / 2,
-    SAFE_MARGIN,
-    Math.max(SAFE_MARGIN, viewportWidth - SAFE_MARGIN - barWidth),
-  );
+  const centered = anchor.left + anchor.width / 2 - barWidth / 2;
+  const left = anchorVisible
+    ? clamp(centered, SAFE_MARGIN, Math.max(SAFE_MARGIN, viewportWidth - SAFE_MARGIN - barWidth))
+    : Math.round(centered);
   // 在上方时把结果层摆到工具条**上面**（column-reverse）：工具条始终紧贴选区那一侧，
   // 结果层再高也不会把它顶出视口。
   if (rootEl) rootEl.style.flexDirection = below ? "column" : "column-reverse";
@@ -396,7 +398,9 @@ function schedule(): void {
   showTimer = window.setTimeout(() => {
     showTimer = 0;
     const found = readSelection();
-    if (!found || !intersectsViewport(found.rect)) {
+    // 选区被清空就收掉；选区还在但已经滚出视口时什么都不做——那种情况下不新开工具条，
+    // 但已经在跟随滚动的那一条也不会被收掉（见 reposition）。
+    if (!found) {
       hide();
       return;
     }
@@ -422,8 +426,9 @@ function schedule(): void {
 function reposition(): void {
   if (!host || !bar) return;
   const found = readSelection();
-  // 选区内容变了（或被清空）就别留着一个对不上的工具条；选区移出视口也一起收掉。
-  if (!found || found.text !== selectedText || !intersectsViewport(found.rect)) {
+  // 选区内容变了（或被清空）就别留着一个对不上的工具条。**选区移出视口不再收掉**：
+  // 工具条要跟着页面滚出去，用户滚回来时（选区还在）它照旧在那儿。
+  if (!found || found.text !== selectedText) {
     hide();
     return;
   }

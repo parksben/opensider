@@ -649,12 +649,11 @@ Host 是通用 ACP Client + 数据驱动 `AgentProfile`（启动命令、鉴权�
 - `MutationObserver` 盯 host 的父节点：被站点清掉或 SPA 换页（含 YouTube 的 `yt-navigate-*`）就重挂；`fullscreenchange` 同样处理；
 - 品牌标记用 `chrome.runtime.getURL("icons/icon32.png")`，因此 manifest 要加一条 `web_accessible_resources`（只放这一个图标与结果层页面），不要为了省一次声明把品牌 path 复制进 TS。
 
-### 位置与「跟着消失」
+### 位置与跟随滚动
 
 - 锚点 = `selection.getRangeAt(0)` 的所有 `clientRect` 并集（多行选区不会只贴最后一行）；
-- 方向与溢出：优先选「整条（工具条 + 结果层）都放得下」的那一边；上下都放不下就选空间更大的那边，**允许超出视口**——结果层自己会滚、页面也能滚，不值得为了塞进视口把工具条挤到用户看不见的地方。**只有工具条时（首次布局）无论空间多紧都要它完整可见**（它就是用户要点的东西），所以那一次仍按 `SAFE_MARGIN` 夹进视口；结果层一展开就按实际空间重算方向。摆在选区上方时结果层放到工具条**上面**（`.root` 切 `column-reverse`）：工具条始终紧贴选区那一侧，结果层再高也顶不掉它。水平方向仍然夹紧（左右绝不越界）。量的是 **host** 的实测尺寸而不是 `.bar`（host 才是那个盒子：结果层可能更宽，也有过节点漏在条外面的情况）；
-- `scroll`（capture，内层滚动容器也收）/`resize`/`orientationchange`/`fullscreenchange` 都重算；
-- **锚点矩形与视口的交集为空 → 隐藏**（这是「选区移出视口就连工具条一起消失」的实现）；部分可见则继续夹紧显示；
+- 方向与溢出：优先选「整条（工具条 + 结果层）都放得下」的那一边；上下都放不下就选空间更大的那边，**允许超出视口**——结果层自己会滚、页面也能滚，不值得为了塞进视口把工具条挤到用户看不见的地方。**只有工具条时（首次布局）无论空间多紧都要它完整可见**（它就是用户要点的东西），所以那一次仍按 `SAFE_MARGIN` 夹进视口；结果层一展开就按实际空间重算方向。摆在选区上方时结果层放到工具条**上面**（`.root` 切 `column-reverse`）：工具条始终紧贴选区那一侧，结果层再高也顶不掉它。量的是 **host** 的实测尺寸而不是 `.bar`（host 才是那个盒子：结果层可能更宽，也有过节点漏在条外面的情况）；
+- **跟随滚动，不随视口退出而消失**：host 是 `position: fixed`，滚动时按锚点的**最新** client 矩形重算坐标（`scroll` capture，内层滚动容器也收；`resize` / `orientationchange` / `fullscreenchange` 同样重算），所以视觉上就是跟着选区一起滚——包括一起滚出视口。锚点已经不在视口里时**不再往视口里夹**（上下都不夹、也不再居中夹），否则会被硬拽回视口里、看着像没跟随；**「交集为空」不再是关闭条件**：只要用户没取消这段选区，滚回来时工具条与结果层原样还在（结果层内容也不会因滚动丢失）。夹紧只在锚点还在视口里时生效；
 - 关闭：Esc、`selectionchange` 变成空选区（点空白处）、选区文本变化、门控转关、页面导航、`visibilitychange` 到 hidden 之外的场景不需要（页面被隐藏时浏览器本来就不会让用户划词）。
 
 ### 数据通路
@@ -697,6 +696,7 @@ Host 是通用 ACP Client + 数据驱动 `AgentProfile`（启动命令、鉴权�
 
 - 新增扩展页 `src/selection/index.html`：**除了**挂进 `web_accessible_resources`，还要在 `vite.config.ts` 的 `build.rollupOptions.input` 里显式登记——crxjs 只自动处理 manifest 里登记的页面（侧栏那种），漏登记的话构建产物里留下的是没打包的 `./main.tsx`，iframe 一加载就 404（踩过），它只做一件事：接收 `{kind:"translate"|"search", state, markdown|text}` 的 postMessage，用与侧栏同一套 `Markdown` 组件渲染，在末尾放「复制 / 已复制」；
 - 工具条在 shadow DOM 里用 `<iframe src=chrome-extension://…/src/selection/index.html>` 装它：两个方向都隔离样式，主题跟随（页面 `dark`/`light` 由 postMessage 告知，默认跟随浏览器）；
+- 结果层顶部的标题栏**吸顶**（`.cs-selection-head`：`position: sticky; top: 0` + `background: var(--panel)`），内容再长也不会把标题与复制钮滚走；滚动容器就是结果层自己那个文档（见 `src/selection/result.css`），所以 sticky 直接生效。
 - 高度：**按文字行数**，不按视口比例——正文最少 10 行、最多 20 行（行高对齐 `.cs-selection-body` 的 12.5px × 1.55，再加标题行与上下 padding；常量在 `selection-toolbar.ts`）；内容不足 10 行由内容撑高（只有加载中用 10 行占位，免得先一条小窄条、结果一到又跳成一大块），超过 20 行交给结果层自滚。iframe 内容用 `ResizeObserver` 量高后 postMessage 给父层，父层只封顶不拉高。结果层页面**不要再设自己的高度上限**：设了父层想让框长高也长不动（踩过：那里卡着 `min(52vh, 26rem)`，于是「框永远很小」）；超出部分由结果层**文档自己滚动**（`src/selection/result.css` 把共享样式里 `html/body/#root` 的 `overflow: hidden` 打开，结果层是独立文档，不会污染侧栏）。
 
 ### 引用芯片
@@ -714,7 +714,7 @@ Host 是通用 ACP Client + 数据驱动 `AgentProfile`（启动命令、鉴权�
 ### 验证
 
 - 宿主级（`scripts/verify-selection.mjs`）：隐藏通道真的不进侧栏（整轮里没有任何 `update` / `turn.end` 发给扩展）、结果文本正确、取消生效、`utility` runtime 不被聊天复用、它拿不到标签页控制；
-- 页面级（`scripts/verify-selection-ui.mjs`，真 Chromium + 本地 fixture 页）：门控关掉时不出现、选中 200 字以内出现、超过 200 字不出现、**结构**（三个按钮都在 `.bar` 里、排成一行、shadow 里没有漏在条外面的节点、host 高度就是条的高度、按钮上解析得出工具条自己的调色板）、四边安全边距（把选区放到视口四角各试一次）、选区滚出视口即隐藏、翻译与搜索的结果层（Markdown 要真渲染成 `h2/ul/a`，不是贴纯文本）、**结果层里没有过程叙述**（假引擎照真实形态先演一遍「过程叙述 → 工具调用 → 结论」）、**长结果把框撑到 10 行以上且封顶 20 行、再高也顶不掉工具条、超出部分自己滚动**、**选区贴着视口底部时工具条翻到上方且完整可见**、引用后输入框里出现引文芯片；
+- 页面级（`scripts/verify-selection-ui.mjs`，真 Chromium + 本地 fixture 页）：门控关掉时不出现、选中 200 字以内出现、超过 200 字不出现、**结构**（三个按钮都在 `.bar` 里、排成一行、shadow 里没有漏在条外面的节点、host 高度就是条的高度、按钮上解析得出工具条自己的调色板）、四边安全边距（把选区放到视口四角各试一次）、选区滚出视口即隐藏、翻译与搜索的结果层（Markdown 要真渲染成 `h2/ul/a`，不是贴纯文本）、**结果层里没有过程叙述**（假引擎照真实形态先演一遍「过程叙述 → 工具调用 → 结论」）、**长结果把框撑到 10 行以上且封顶 20 行、再高也顶不掉工具条、超出部分自己滚动**、**选区贴着视口底部时工具条翻到上方且完整可见**、**选区滚出视口时工具条跟着滚出去而不是消失、滚回来还在原位**、**结果层标题栏吸顶**、**复制钮是图标 + 文案**、引用后输入框里出现引文芯片；
 - 同一条脚本里还有两个**针对上面两条教训的回归**：fixture 用 `Content-Security-Policy: style-src 'self'` 提供一份严格 CSP 页面（样式仍要生效），并在页面上盖一层 `position:fixed; z-index:2147483647` 的全屏浮层（`elementFromPoint` 打到的必须还是我们的 host，即我们真的在顶层）；
 - Go 单测：`internal/selection` 的提示词拼装与语言映射表。
 
