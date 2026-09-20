@@ -63,18 +63,47 @@ func (c *Client) SetSessionMode(id string) error {
 		return fmt.Errorf("no session")
 	}
 	if target.Source == modes.SourceConfig {
-		_, err := c.request("session/set_config_option", map[string]any{
+		result, err := c.request("session/set_config_option", map[string]any{
 			"sessionId": sessionID,
 			"configId":  target.ConfigID,
 			"value":     id,
 		})
-		return err
+		if err != nil {
+			return err
+		}
+		c.recordMode(id, result)
+		return nil
 	}
-	_, err := c.request("session/set_mode", map[string]any{
+	result, err := c.request("session/set_mode", map[string]any{
 		"sessionId": sessionID,
 		"modeId":    id,
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	c.recordMode(id, result)
+	return nil
+}
+
+// recordMode 把刚设成功的模式记成当前值，否则会话广告里的 currentValue 会一直停在旧值，
+// 推给侧栏的快照就成了「点了没反应」。
+//
+// 规范说 `session/set_config_option` 的返回里带**完整**的 configOptions，那就优先用它
+// （它连带把其它项的联动变化也带回来了，例如换模型后可用思考档位变了）；没带才退回到
+// 只记当前模式。
+func (c *Client) recordMode(id string, result any) {
+	if obj, ok := result.(map[string]any); ok {
+		if configOptions := obj["configOptions"]; configOptions != nil {
+			c.mu.Lock()
+			c.configOptions = configOptions
+			c.modeCurrent = ""
+			c.mu.Unlock()
+			return
+		}
+	}
+	c.mu.Lock()
+	c.modeCurrent = id
+	c.mu.Unlock()
 }
 
 // applySessionModes 是会话刚起来、或权限档变了之后把「该是什么模式」落下去：用户显式

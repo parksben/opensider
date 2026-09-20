@@ -80,11 +80,16 @@ const modeConfigId = "mode";
 // URL 形式的 id 用来演 Copilot 那种把 mode 命名成一个 URL 的情况；只在 FAKE_MODE_URL_IDS 时用。
 const withUrlId = (id) => (modeUrlIds ? `https://opensider.test/mode/${id}` : id);
 
+// 当前模式只有一个来源，两种广告形态都从它取值（both 形态下两边必须同步，否则真实
+// 会话里会出现「configOptions 说 build、modes 说 plan」这种漂移）。
+// config 形态的初值是 build（OpenCode 默认），其余形态是 agent（legacy 的初值）。
+let currentMode = modesShape === "config" ? "build" : "agent";
+
 // legacy `modes.availableModes`：Cursor 那一路。带 currentModeId + 每项 id/name/description。
 let legacyModes =
   modesShape === "legacy" || modesShape === "both"
     ? {
-        currentModeId: modesShape === "both" ? withUrlId("agent") : "agent",
+        currentModeId: withUrlId("agent"),
         availableModes: [
           { id: withUrlId("agent"), name: "Agent", description: "Full agent, edits and runs freely." },
           { id: withUrlId("plan"), name: "Plan", description: "Read-only; drafts a plan before acting." },
@@ -103,7 +108,7 @@ function modeConfigOption() {
       name: "Mode",
       category: "mode",
       type: "select",
-      currentValue: "build",
+      currentValue: currentMode,
       options: [
         { value: "build", name: "Build", description: "Edits and runs freely." },
         { value: "plan", name: "Plan", description: "Read-only; drafts a plan first." },
@@ -137,9 +142,10 @@ function sessionResult(sid) {
   return result;
 }
 
-// current_mode_update 需要把两边（legacy currentModeId + config currentValue）一起改，
+// current_mode_update 必须把两边（legacy currentModeId + config currentValue）一起改，
 // 保证 both 形态下两个来源不会漂移。
 function setCurrentMode(id) {
+  currentMode = id;
   if (legacyModes) legacyModes.currentModeId = id;
 }
 
