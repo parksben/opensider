@@ -187,10 +187,10 @@ try {
 
   // ---------------------------------------------------------------- 超长 / 空 / 未知
   const before = selectionPrompts().length;
-  const tooLong = await runSelection({ mode: "translate", text: "字".repeat(201) });
+  const tooLong = await runSelection({ mode: "translate", text: "字".repeat(501) });
   check(
-    "a selection longer than 200 characters is refused",
-    tooLong.terminal?.type === "selection.failed" && /longer than 200/.test(String(tooLong.terminal.error)),
+    "a selection longer than 500 characters is refused",
+    tooLong.terminal?.type === "selection.failed" && /longer than 500/.test(String(tooLong.terminal.error)),
     String(tooLong.terminal?.error ?? "none"),
   );
   const empty = await runSelection({ mode: "search", text: "   " });
@@ -209,6 +209,13 @@ try {
     "refused requests never reach the CLI",
     selectionPrompts().length === before,
     `prompts=${selectionPrompts().length} before=${before}`,
+  );
+  // 阈值本身也是契约：正好 500 字必须放行（扩展侧与 Host 两侧都按同一个数拦）。
+  const atLimit = await runSelection({ mode: "translate", text: "字".repeat(500) });
+  check(
+    "a selection of exactly 500 characters is accepted",
+    atLimit.terminal?.type === "selection.done",
+    String(atLimit.terminal?.type ?? atLimit.terminal?.error ?? "none"),
   );
 
   // ---------------------------------------------------------------- 搜索

@@ -4,7 +4,7 @@
 //
 //   门控        -> 侧栏没开时划词什么都不出现；侧栏打开且 Agent 就绪后出现
 //   触发与位置  -> 120ms 内出现；选区贴边时工具条仍完整留在视口内（四边 8px 安全边距）
-//   上限        -> 超过 200 字的选区不出现
+//   上限        -> 超过 500 字的选区不出现（两三百字的段落得能用）
 //   跟随        -> 选区滚出视口，工具条跟着消失
 //   翻译        -> 结果层（iframe）出现并显示 Agent 的回复，带「复制」
 //   引用        -> 侧栏输入框里出现引文芯片（图标 + 排版引号 + 原文）
@@ -29,7 +29,9 @@ const dist = join(root, "packages", "extension", "dist");
 const results = [];
 const ok = (name, value, detail) => check(name, value, detail, results);
 
-const LONG = "长".repeat(220);
+const LONG = "长".repeat(520);
+// 刚好在阈值以内：用户截图里那种两行英文说明（约 220 字符）就属于这一类，必须能用。
+const NEAR = "划".repeat(480);
 const PAGE = `<!doctype html>
 <html lang="zh"><head><meta charset="utf-8"><title>selection fixture</title>
 <style>
@@ -43,6 +45,7 @@ const PAGE = `<!doctype html>
     <p id="target">浏览器里的划词工具条应该贴着这段文字浮出来。</p>
     <p id="edge">贴右边</p>
     <p id="tall">长内容</p>
+    <p id="near">${NEAR}</p>
     <p id="long">${LONG}</p>
   </div>
   <div id="tail"><p id="down">滚到很下面的一段文字。</p></div>
@@ -321,11 +324,18 @@ try {
   );
   await cspPage.close();
 
-  // 上限：超过 200 字直接不支持。
+  // 上限：500 字以内能用，超过就不支持。
+  await selectText(fixture, "near");
+  await sleep(500);
+  ok(
+    "480 字的选区仍然出现工具条",
+    (await toolbar(fixture).count()) === 1,
+    `${await toolbar(fixture).count()} 个 host`,
+  );
   await selectText(fixture, "long");
   await sleep(500);
   ok(
-    "超过 200 字的选区不出现工具条",
+    "超过 500 字的选区不出现工具条",
     (await toolbar(fixture).count()) === 0,
     `${await toolbar(fixture).count()} 个 host`,
   );

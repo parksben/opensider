@@ -6,7 +6,8 @@ import (
 )
 
 func TestTooLongCountsRunesNotBytes(t *testing.T) {
-	// 200 个汉字是 600 字节但只有 200 个字符——按码点算才对，中文用户不该被提前拒绝。
+	// MaxRunes 个汉字是三倍字节数但只有 MaxRunes 个字符——按码点算才对，中文用户
+	// 不该被提前拒绕。
 	chinese := strings.Repeat("汉", MaxRunes)
 	if TooLong(chinese) {
 		t.Fatal("exactly MaxRunes characters must still be allowed")

@@ -16,7 +16,7 @@ import type { Locale } from "./sidepanel/i18n";
  */
 
 const HOST_ID = "opensider-selection";
-const MAX_CHARS = 200; // 与 internal/selection 的 MaxRunes 对齐
+const MAX_CHARS = 500; // 与 internal/selection 的 MaxRunes 对齐
 const SAFE_MARGIN = 8;
 const GAP = 8;
 const SHOW_DELAY_MS = 120;
