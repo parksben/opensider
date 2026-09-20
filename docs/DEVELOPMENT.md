@@ -119,6 +119,7 @@ scripts/verify-page-overlays.mjs  动作后自动上报页面浮层（模态框/
 scripts/verify-host-skew.mjs  本机 Host 比扩展旧时的提示（可见 / 可关 / 不影响可用功能）
 scripts/verify-state-mirror.mjs  状态镜像（>1MB 分片推送 / 上传、超限帧不脱帧、空态不覆盖）的帧级验证
 scripts/verify-first-connect.mjs  首次打开侧栏要自己连上（`SCENARIO=local` 扩展重载 / `SCENARIO=mirror` 卸载重装）的端到端验证
+scripts/verify-held-send.mjs  连接未就绪时发消息（草稿按住、就绪后补发，不吞消息）的端到端验证
 scripts/verify-selection.mjs  划词隐藏通道（不进侧栏 / 独立会话 / 取消恢复）的帧级验证
 scripts/verify-selection-ui.mjs  划词工具条（门控 / 结构 / 定位 / 层级 / 结果层 / 引文芯片）的端到端验证
 scripts/verify-skill-menu.mjs  `/` skill 探测菜单（列表 / 搜索 / 详情面板 / 芯片落位 / 发出的提示词）的端到端验证
@@ -153,6 +154,11 @@ bin 目录冒充 `copilot`，并把本机桥接清单写进临时 profile 的 `N
 覆盖「消息进队列 → 点立即发送 → 新消息上屏且真的被 Agent 收到 → 新一轮起来 → 旧一轮
 被砍短 → Host 日志里确实走了 interrupt 路径」。注意：清单里 `copilot` 的解析顺序依赖
 `paths.AgentSearchDirs()`，改了那段要同步改这个脚本。
+
+「Agent 还没连上就按发送」跑 `node scripts/verify-held-send.mjs`（9 项）：它把 Host 的
+启动故意晚 4 秒（改沙箱里的 `launch-host.sh`），面板先打开、先打字，稳定落在「连接还没
+就绪」那个窗口里；断言草稿还在、没报离线错、也没先把气泡上屏，然后就绪后那条 prompt 真的
+到达假 Agent（trace 里有且只有一条），正文照常流回来。
 
 页面活动态（面板开着时把 Agent 在动的标签强制成「可见 + 有焦点」，关掉侧栏还原）分两层验：
 核心机制（`packages/extension/src/activity-shim.ts` 的可见性 / 焦点改写、事件静音、rAF 回退、

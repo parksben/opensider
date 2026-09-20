@@ -782,6 +782,16 @@ macOS 清单路径：`~/Library/Application Support/Google/Chrome/NativeMessagin
 - **文案单复数分开**：i18n 两条 key（`switchAgentRunningOne` / `switchAgentRunningMany`，后者带 `{n}` 占位符），不用复数规则拼接——中英都不需要「1 tasks」。
 - **验证**：`scripts/verify-agent-switch-guard.mjs`（12 项）跑真 Chromium + 假 Agent：有任务在跑 → 弹窗、文案数量正确、按钮与高危色就位；取消 → Host 侧没有新 runtime、弹窗收起；确认 → Host 起了新 runtime、那一轮不再显示为进行中；没有任务在跑 → 不弹、直接切。
 
+## 连接未就绪时的发送（草稿按住，就绪后补发）
+
+面板在 `connecting` / `starting` 时输入框就已经可以打字了，而 `sendToSession` 要 `status === "ready"` 才发得出去。旧代码的写法是「先把用户气泡上屏，发现没就绪就报 `offlineSend` 并停在那里」——消息看着发出去了，prompt 却没有会话可发，等 Host 连上也不会补发，用户看到的就是「消息被吞了」。
+
+- **拦在输入区，不在发送函数里**：`ChatPane.submit()` 在 `!hostReady` 时先把这次发送记下来（`heldSubmitRef`）并**直接 return，不清草稿、不上屏**，`hostReady` 翻真后由 effect 补跑一次同一个 `submit()`。这样「按住」的是一份草稿，不是一条半成品消息：连接失败、用户切走、面板关掉，都只是草稿还在，没有需要回收的幽灵气泡。
+- **为什么不用「连接中禁用发送」**：禁用后回车一点反应都没有，用户会以为键盘坏了；草稿留着则什么都没丢，就绪后自动发出，也省掉一句解释为什么要等的文案。
+- **为什么不上屏再补发**：上屏意味着得把这条挂在某个会话上并自己维护「还没发出去」的状态，而 App 里 `status !== "ready"` 的分支会 `bindRegistry` / `pendingRegen` 全清（那本来就是「连接没成就没有回执」的正确处理），补发路径要额外绕开这些清理，投入与收益不成比例。
+- **真实离线也是按住，不是报错**：`status` 落在 `error`（连接失败、用户准备重连）时草稿同样留在输入框，重连成功即自动发出——连接本身的错误已经由错误条告知，再叠一句「离线发送」只会让人以为草稿也废了（与旧行为不同，旧行为是报错+丢消息）。`missing`（桥接没装）整块换成引导页，输入区不渲染，轮不到这条。真正无法「按住」的是历史消息上的入口（重新生成 / 重跑），它们仍走 `offlineSend`。
+- **验证**：`scripts/verify-held-send.mjs`（9 项）在 runtime 还没就绪时就发消息——草稿必须还在、不能出现离线发送的报错、也不能已经上屏；Host 报 ready 之后那条 prompt 必须真的到达假 Agent（trace 里有且只有一条 `prompt`，内容就是草稿），随后正常流式出正文，草稿被消费掉。
+
 ## 品牌图标
 
 - 源文件 `packages/extension/assets/icon.svg` 由 `scripts/generate_icon.py` 生成，勿手改：Cursor 官方 CUBE_2D 六边形路径做 clipPath 外轮廓；镂空为圆角等腰三角形（`TRI_VERTICES` + `CORNER_R`，经 `ARROW_SCALE`=√3/2 缩放、净逆时针 90° 旋转）；360 个 1° 扇形逼近 conic 渐变，红→黄→绿顺时针风车、交界 40° smoothstep 平滑过渡，整体 `GRADIENT_ROTATE_DEG`=30° 顺时针旋转。空会话占位图直接引用这份 SVG，不另做淡色线稿
