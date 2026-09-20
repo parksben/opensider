@@ -454,9 +454,61 @@ on them with page tools using args.selector.
 
 不要把 `auto` 改名叫 Allow all。切到更宽的档位时，已弹出且符合该档的卡立刻回：`auto` / `workspace` 只冲权限卡；`unattended` 同时冲权限、提问、计划。切走 `unattended` 后新到的卡不再自动过。
 
-Host 推 mode 时先看这次 `session/new|load|fork` 广告出来的值（ACP `modes`，以及 `configOptions` 里 `id/category=mode` 的选项），只在广告集合与 Profile `modeMap` 的交集里试；没有广告过的 id 一律不发。先 `session/set_mode`，失败再 `session/set_config_option`（OpenCode 1.18+ 的 mode 只走后者，选项是 `build` / `plan`，没有 `bypassPermissions` / `auto`）。**Cursor ACP 没有第四种 session mode**：`ask` / `workspace` / `auto` / `unattended` 都映射到 `agent`，真正的「允许一切」只在侧栏拦卡。其它 CLI 的 `unattended` 复用该家最宽的**已广告** mode（OpenCode 是 `build`，Copilot 是 `#autopilot`，Claude 仍是 `bypassPermissions`）。没有任何交集则只在客户端拦卡，不要拿未知 mode 去砸 RPC。提问/计划自动答不经过 Host，侧栏直接 `cursor.reply`。
+Host 推 policy 对应的 mode 时先看这次 `session/new|load|fork` 广告出来的值（`configOptions` 里 `id/category=mode` 的选项优先，其次 `modes`），只在**适配器候选与广告集合的交集**里试，且候选只能是权限档类模式（`plan` / `build` 一律不推）；没有广告过的 id 一律不发。先 `session/set_config_option`，失败再 `session/set_mode`（OpenCode 1.18+ 的 mode 只走前者，选项是 `build` / `plan`）。**Cursor ACP 没有第四种 session mode**：四个权限档都不推，真正的「允许一切」只在侧栏拦卡。提问/计划自动答不经过 Host，侧栏直接 `cursor.reply`。
 
 侧栏 `ModeSelect` 外壳与 `ModelSelect` 一样**不要** `overflow-hidden`：省略只写在触发钮的 `truncate` 上。菜单用 `absolute bottom-full`（或 portal + `fixed`）画在按钮上方；外壳一裁，点击就像没反应（模型下拉能开、权限下拉不能，就是这个差）。文案走 `i18n`，按系统设置口吻写（短标题 + 一句说明，不要营销句）：`ask`「默认权限 / Ask every time」灰字「用户确认后方可调用工具 / Confirm each tool」；`workspace`「允许文件修改 / Allow workspace edits」灰字「允许工作区内文件修改，执行命令、联网操作仍需确认 / Workspace file edits skip confirmation; commands and network still ask」；`auto`「允许工具调用 / Auto-run tools」灰字「直接执行工具调用，问题和计划仍需确认 / Tools skip confirmation; questions and plans still need a click」；`unattended`「允许一切操作 / Allow all」灰字「工具、问题、计划无需确认 / Don't ask about tools, questions, or plans」。图标：`Shield` / `FolderPen` / `Zap` / `Unlock`。`isWorkspaceWritePermission` 按 `toolCall.kind` / `title` 启发式：命中 execute/shell/bash/terminal/command/fetch/http/network/web_search/mcp 则仍弹卡，命中 edit/write/delete/move/create/patch/apply 才自动过。客户端不按路径判断是否出目录；出目录仍问靠 Agent 的 `acceptEdits`。`autoQuestionAnswers`：每题取 `options[0].id`，没有则 `selectedOptionIds: []`。
+
+### 两个正交的轴
+
+`policy`（上面的四档）是我们的**拦卡策略**；`agentMode`（Agent 自己的 `plan` / `build` / `ask` / `autopilot`…）是 CLI 的**工作流模式**。两者不得互相代表：曾经把 `policy=ask` 映射到 OpenCode 的 `plan`，结果用户只是想要「每次都问」，就被静默切成了计划模式——既不可发现也不诚实。`agentMode` 由 `internal/modes` 统一发现与归类，UI 只显示 Agent **真广告过**的值。
+
+### 发现（泛化优先）
+
+`modes.Discover(configOptions, modes)` 按规范取值：先在 `configOptions` 里找 `category=mode`（其次 `id` / `configId` 为 `mode`）的 select 项——规范明确 **Config Options 取代 Session Modes**，两者都发时客户端 SHOULD **只用 configOptions 并忽略 `modes`**；没有再回退 `modes.availableModes`（`currentModeId` + `availableModes[].id/name/description`）。只认规范字段：值取 `value`/`id`，名字取 `name`，说明取 `description`（可选）；`options[]` 允许是分组（`group`+`options`），**必须摊平**。产出 `Target{Source, ConfigID, Current, Options}`。
+
+宁可没有也不猜：`options` 少于两项就不产生 `Target`（无从切换）；解析不出来就是「没有模式可切」，UI 整个控件不画。**没有「什么都没广告也照样发」的回退**——那是旧代码 `pickModeCandidates` 的行为（空广告集合时返回未过滤的猜测 id），会对 gemini 这种不给模式的 CLI 白发 RPC 并刷日志。
+
+### 归类（只为了选图标）
+
+`modes.Kind(option)` 返回 `plan` / `build` / `ask` / `agent` / `auto` / `full_access` / `edits` / `unknown`，优先级：Agent 自己给的 `_meta.kind`（Codex / Claude 会带 `plan` / `auto_review` / `full_access` / `standard`，不是官方字段但可用）→ 该 CLI 适配器的显式表 → 保守关键词启发式（`plan` / `build` / `ask` / `yolo` / `bypass`…）。认不出来给 `unknown`，前端回落中性图标。**分类只影响图标，不影响任何行为**，所以猜错的代价只是图标不准。
+
+### 适配层（唯一允许写各家差异的地方）
+
+`internal/modes.Adapter` 按 `AgentProfile.ID` 注册，查不到就用 `genericAdapter`。它只解决泛化拿不到的两件事：
+
+1. `PolicyCandidates(policy)`——该权限档在这家对应哪个 id。**只允许返回「权限档类」模式**（`acceptEdits` / `bypassPermissions` / `agent-full-access` / `#autopilot` 之类），**不许**返回 `plan` / `build` 这类工作流模式；确实没有权限档类的家返回空（那就只在客户端拦卡，不动 CLI）。
+2. `PermissionOption(policy)`——有的 CLI 把权限放在**独立的配置项**里而不是 mode（Copilot 是 `{id:"allow_all", category:"permissions", options:[on,off]}`），这种就映射成配置项值，不去动它的 mode。
+
+外加 `Kind` 覆盖。**泛化能解决的都不许写进适配器**：适配器里每一条都得是实测验证过的，删掉即回落泛化。
+
+### 设置
+
+`acp.SetSessionMode(target, id)` 按 `Target.Source` 分派：配置项走 `session/set_config_option{sessionId, configId, value}`，否则 `session/set_mode{sessionId, modeId}`（`session/set_mode` 在新版规范里会被移除，所以配置项优先）。只发广告集合内的值；失败只记日志（`session/set_mode X skipped: …`），不改本地状态、不阻断会话。
+
+### 同步与记忆
+
+`session/new|load|fork` 回来后吸收一次；`config_option_update` 与 **`current_mode_update`**（`{currentModeId}`，Agent 从内部「退出 plan 模式」工具切走时会发）都要更新当前值并重推侧栏。以前全仓库没人处理 `current_mode_update`，Agent 自己换了模式 UI 还停在旧值。用户的选择按 **Agent id** 记在 `chrome.storage.local`（与 `selectedModelId` 同路子，并一起镜像进 `ui-state.json`）；下个会话若仍在广告集合内就沿用，否则回到 Agent 的默认。切换 Agent 时清空。
+
+### 权限档与模式的边界
+
+policy 只在「该 CLI 适配器声明了这个权限档」且「用户没显式选过模式」时才推 native mode；用户选过就以用户为准（客户端拦卡照旧按 policy 生效）。这样「允许一切」仍能在有 autopilot / bypassPermissions 的家真正放开 CLI 侧，而不会把用户手选的 plan 拽走。
+
+### 线格式与侧栏渲染
+
+Host → 侧栏 `{type:"agentModes", source:"config"|"modes", configId?, currentId, options:[{id,name,desc,kind}]}`（发现不到就发空 `options`，等同「不显示」）；侧栏 → Host `{type:"agent.setMode", modeId}`。都按会话路由（带 `sessionId`），与 `models` / `model.set` 同一套。
+
+`AgentModeSelect` 与权限 `ModeSelect` 同构（同一套弹出层、涟漪、tooltip、`bottom-full` 定位规则），选项来自 `agentModes`。`options.length < 2` → **整个控件不渲染**；名称原样用 Agent 给的 `name`（**不翻译**），说明用 `description`（没有就不画第二行）。图标按 `kind` 映射（只准用 lucide）：`plan`→`ClipboardList`、`build`→`Hammer`、`ask`→`MessageCircleQuestion`、`agent`→`Bot`、`edits`→`FolderPen`、`auto`→`Zap`、`full_access`→`Unlock`、`unknown`→`Workflow`。窄宽度（<348px）时两个钮都只画图标，tooltip 给「名称 — 含义」。
+
+### 各家情况（适配器只写差异）
+
+| Agent | 泛化发现（实测/文档） | 适配器要写的差异 |
+|---|---|---|
+| OpenCode 1.18+ | `configOptions.mode` = `build` / `plan`（**无** `modes`） | 无权限档类模式：policy 不推 native mode |
+| Cursor | `modes` + `configOptions.mode` = `agent` / `plan` / `ask` | 四个权限档都不映射（没有权限档类模式） |
+| Copilot | `modes`（URL id）`#agent` / `#plan` / `#autopilot` + 独立 `allow_all` | `auto`/`unattended` → `allow_all: on`；权限档模式用 `#agent` |
+| Claude | 5 个 `modes`（带 `_meta.kind`）+ `configOptions.mode` | `workspace`→`acceptEdits`、`auto`/`unattended`→`bypassPermissions` |
+| Codex | `modes` = `read-only` / `agent` / `agent-full-access` + 独立 `collaboration_mode` | `auto`/`unattended` → `agent-full-access`（待真机 probe 复核） |
+| Gemini / Qwen / Kimi / iFlow / Trae / Qoder / CodeBuddy | 未实测到可靠模式广告 | **不画控件**；先真机 probe，确有关系再补适配器 |
 
 ## 多 Agent CLI
 
