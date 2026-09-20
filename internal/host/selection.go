@@ -37,11 +37,13 @@ type selectionRun struct {
 	mode      string
 	text      string
 
-	mu      sync.Mutex
-	runtime *acpRuntime
-	buffer  strings.Builder
-	cancel  bool
-	done    bool
+	mu       sync.Mutex
+	runtime  *acpRuntime
+	buffer   strings.Builder
+	previous string
+	toolSeen bool
+	cancel   bool
+	done     bool
 }
 
 func (r *selectionRun) attachRuntime(runtime *acpRuntime) {
@@ -68,7 +70,32 @@ func (r *selectionRun) append(text string) string {
 func (r *selectionRun) snapshot() string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	// 最后一次工具调用之后的正文才是答案；Agent 在那之后一个字都没说（极端情况）才退回
+	// 被清掉的那段：宁可给它看过程，也别给它一个空层。
+	if strings.TrimSpace(r.buffer.String()) == "" {
+		return r.previous
+	}
 	return r.buffer.String()
+}
+
+// startToolCall 收到「工具调用开始」：在这之前累积的正文都是过程叙述（"我先去搜一下…"），
+// 结果层要的是最终结论，所以把它挪到 previous 当兜底、清空累积——只留这次调用之后的正文。
+func (r *selectionRun) startToolCall() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.toolSeen = true
+	if r.buffer.Len() == 0 {
+		return
+	}
+	r.previous = r.buffer.String()
+	r.buffer.Reset()
+}
+
+// hasTool 报告这次请求里 Agent 是否已经动过工具。
+func (r *selectionRun) hasTool() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.toolSeen
 }
 
 // cancelTurn 取消这次请求：标记 + 停掉正在跑的那一轮（幂等）。
@@ -227,12 +254,18 @@ func (h *Host) runSelectionTurn(run *selectionRun, target string) {
 // absorbSelectionUpdate 收隐藏通道的流式文本。工具调用之类的更新直接丢掉：结果层只渲染
 // 助手正文，中间过程对用户没有意义（也不该出现在页面里）。
 func (h *Host) absorbSelectionUpdate(runtime *acpRuntime, update map[string]any) {
-	if str(update["sessionUpdate"]) != "agent_message_chunk" {
-		return
-	}
 	run := runtime.selection
 	if run == nil {
 		return // 上一轮取消后迟到的增量：丢掉
+	}
+	switch str(update["sessionUpdate"]) {
+	case "tool_call":
+		// 工具调用开始：前面那些「我准备搜索一下…」的过程叙述作废（见 startToolCall）。
+		run.startToolCall()
+		return
+	case "agent_message_chunk":
+	default:
+		return
 	}
 	content, ok := update["content"].(map[string]any)
 	if !ok {
@@ -241,6 +274,12 @@ func (h *Host) absorbSelectionUpdate(runtime *acpRuntime, update map[string]any)
 	// 这里**不能**用 str()：它会 TrimSpace，流式文本里的空格与换行都是内容。
 	chunk, _ := content["text"].(string)
 	if chunk == "" {
+		return
+	}
+	// 搜索：还没动过工具时说的话全是过程叙述（"我先去搜一下"），一个字都不推给页面——
+	// 结果层这时就该停在「搜索中」，等它真的拿到东西再说。翻译没工具可调，照常逐字推。
+	if run.mode == selection.ModeSearch && !run.hasTool() {
+		run.append(chunk)
 		return
 	}
 	full := run.append(chunk)

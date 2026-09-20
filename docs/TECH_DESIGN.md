@@ -678,6 +678,7 @@ Host 是通用 ACP Client + 数据驱动 `AgentProfile`（启动命令、鉴权�
 - 它的 `session/update` **一条都不广播**：`OnUpdate` 里按 runtime 分流，utility 的文本只累积进本次请求的缓冲，按增量推给发起标签页；`turn.end` 同样不发侧栏。也不写 `workspace.WriteSessionID`、不进会话列表。
 - 权限：客户端固定用**自动放行**策略（复用现有 `unattended` 语义里「工具权限回 always」的那部分，只作用于这个 runtime）。否则一张无人应答的权限卡会把这一轮永远卡住。它**不 anchor 标签页**，所以扩展那边的浏览器控制闸门天然不放行——它拿不到标签页。
 - 单飞：同时只允许一个 utility 请求；新请求先 `session/cancel` 旧的。取消 / 超时的触发点：用户关工具条、门控转关、**发起页导航走或标签被关**（页面没了就没人收结果，谁也不会再取消，那一轮会白跑到说完；所以 SW 按 tabId 记一份在飞请求，`tabs.onUpdated(loading)` / `onRemoved` 时替它取消）、请求超过 60s。
+- **只留结论**：过程叙述不该落到结果层。搜索时 Agent 会先说一段「我先去搜一下…」再动工具，所以收到 `tool_call` 就把已累积的正文挪作兜底、清空累积——之后到来的才是答案；**搜索在动过工具之前一个字都不推给页面**（结果层那段时间就停在「搜索中」），翻译没工具可调、照常逐字流。只有在工具调用之后一个字都没说的极端情况下才退回被清掉的那段（宁可给过程，也别给一层空白）。判据只能是工具调用：没有任何工具调用时（Agent 直接凭能力答或老实说搜不了）没有一刀切的边界，整段就整段，把「只要结论」交给提示词。
 - 模型沿用当前 Agent 默认（不额外配置）。
 
 ### 提示词
@@ -696,7 +697,7 @@ Host 是通用 ACP Client + 数据驱动 `AgentProfile`（启动命令、鉴权�
 
 - 新增扩展页 `src/selection/index.html`：**除了**挂进 `web_accessible_resources`，还要在 `vite.config.ts` 的 `build.rollupOptions.input` 里显式登记——crxjs 只自动处理 manifest 里登记的页面（侧栏那种），漏登记的话构建产物里留下的是没打包的 `./main.tsx`，iframe 一加载就 404（踩过），它只做一件事：接收 `{kind:"translate"|"search", state, markdown|text}` 的 postMessage，用与侧栏同一套 `Markdown` 组件渲染，在末尾放「复制 / 已复制」；
 - 工具条在 shadow DOM 里用 `<iframe src=chrome-extension://…/src/selection/index.html>` 装它：两个方向都隔离样式，主题跟随（页面 `dark`/`light` 由 postMessage 告知，默认跟随浏览器）；
-- 高度：iframe 内容用 `ResizeObserver` 量高后 postMessage 给父层，父层再按视口上限（约 60vh）夹紧并允许内部滚动——这样「结果层也永远在视口内」。
+- 高度：iframe 内容用 `ResizeObserver` 量高后 postMessage 给父层；**上限由父层（工具条）算**：`min(0.8 × 视口高, 视口高 − 2×SAFE_MARGIN − 条高 − GAP)`——第二条保证工具条 + 结果层一起留在视口里（`place()` 再夹一次同样的总量）；超出这个上限的内容由结果层**文档自己滚动**（`src/selection/result.css` 把共享样式里 `html/body/#root` 的 `overflow: hidden` 打开，结果层是独立文档，这里不会污染侧栏）。结果层页面**不要再设自己的高度上限**：设了父层想让框长高也长不动（踩过：那里卡着 `min(52vh, 26rem)`，于是「框永远很小」）。
 
 ### 引用芯片
 
@@ -713,7 +714,7 @@ Host 是通用 ACP Client + 数据驱动 `AgentProfile`（启动命令、鉴权�
 ### 验证
 
 - 宿主级（`scripts/verify-selection.mjs`）：隐藏通道真的不进侧栏（整轮里没有任何 `update` / `turn.end` 发给扩展）、结果文本正确、取消生效、`utility` runtime 不被聊天复用、它拿不到标签页控制；
-- 页面级（`scripts/verify-selection-ui.mjs`，真 Chromium + 本地 fixture 页）：门控关掉时不出现、选中 200 字以内出现、超过 200 字不出现、**结构**（三个按钮都在 `.bar` 里、排成一行、shadow 里没有漏在条外面的节点、host 高度就是条的高度、按钮上解析得出工具条自己的调色板）、四边安全边距（把选区放到视口四角各试一次）、选区滚出视口即隐藏、翻译与搜索的结果层（Markdown 要真渲染成 `h2/ul/a`，不是贴纯文本）、引用后输入框里出现引文芯片；
+- 页面级（`scripts/verify-selection-ui.mjs`，真 Chromium + 本地 fixture 页）：门控关掉时不出现、选中 200 字以内出现、超过 200 字不出现、**结构**（三个按钮都在 `.bar` 里、排成一行、shadow 里没有漏在条外面的节点、host 高度就是条的高度、按钮上解析得出工具条自己的调色板）、四边安全边距（把选区放到视口四角各试一次）、选区滚出视口即隐藏、翻译与搜索的结果层（Markdown 要真渲染成 `h2/ul/a`，不是贴纯文本）、**结果层里没有过程叙述**（假引擎照真实形态先演一遍「过程叙述 → 工具调用 → 结论」）、**长结果把框撑到按视口算的上限且整条仍在视口内、超出部分自己滚动**、引用后输入框里出现引文芯片；
 - 同一条脚本里还有两个**针对上面两条教训的回归**：fixture 用 `Content-Security-Policy: style-src 'self'` 提供一份严格 CSP 页面（样式仍要生效），并在页面上盖一层 `position:fixed; z-index:2147483647` 的全屏浮层（`elementFromPoint` 打到的必须还是我们的 host，即我们真的在顶层）；
 - Go 单测：`internal/selection` 的提示词拼装与语言映射表。
 

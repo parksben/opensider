@@ -42,6 +42,7 @@ const PAGE = `<!doctype html>
   <div class="pad">
     <p id="target">浏览器里的划词工具条应该贴着这段文字浮出来。</p>
     <p id="edge">贴右边</p>
+    <p id="tall">长内容</p>
     <p id="long">${LONG}</p>
   </div>
   <div id="tail"><p id="down">滚到很下面的一段文字。</p></div>
@@ -362,7 +363,8 @@ try {
     await searchButton.click();
     const frames = fixture.frames().filter((frame) => frame.url().includes("src/selection"));
     let body = "";
-    for (let i = 0; i < 40 && !body.includes("Sources"); i += 1) {
+    // 等到来源链接也流完再断言（只等 "Sources" 会太早：标题先到，列表项还在流）。
+    for (let i = 0; i < 60 && !body.includes("example"); i += 1) {
       await sleep(250);
       body = await frames[0]?.evaluate(() => document.body.innerText).catch(() => "");
     }
@@ -384,8 +386,88 @@ try {
       Boolean(rendered?.heading && rendered?.list && rendered?.link),
       JSON.stringify(rendered ?? {}),
     );
+    // 结果层只该有结论。假引擎照真实形态演了一遍：先说 "I'll search the web for …"，
+    // 再调工具，最后才给结论——前面那段过程不该出现在这里。
+    ok(
+      "结果层没有过程叙述（CoT）",
+      !/I'll search the web/i.test(body),
+      body.replace(/\s+/g, " ").slice(0, 60) || "空",
+    );
   } else {
     ok("搜索结果层渲染 Markdown（标题 + 来源）", false, "没有搜索按钮");
+  }
+
+  // 长结果：框要高得起来（不再被页面里那道 52vh / 26rem 卡住），但整条仍要留在视口内、
+  // 超出部分在结果层内部滚动。
+  await fixture.bringToFront();
+  await selectText(fixture, "tall");
+  await sleep(400);
+  const tallButton = actionButton(fixture, "Search selection");
+  if ((await tallButton.count()) > 0) {
+    await tallButton.click();
+    let tall = null;
+    // 长回复本身要流一会儿（每一段增量都会重渲一次 Markdown），给足时间。
+    // 结果层是扩展页（跨域 iframe）：只能走 Playwright 的 frame 句柄读它，
+    // `contentDocument` 对跨域 iframe 永远是 null（踩过）。
+    for (let i = 0; i < 120 && !tall; i += 1) {
+      await sleep(250);
+      const frames = fixture.frames().filter((frame) => frame.url().includes("src/selection"));
+      const resultFrame = frames[frames.length - 1];
+      const body = await resultFrame?.evaluate(() => document.body.innerText).catch(() => "");
+      if (!body || !body.includes("第 15 节")) continue;
+      const scroll = await resultFrame
+        .evaluate(() => ({
+          scrollHeight: document.documentElement.scrollHeight,
+          clientHeight: document.documentElement.clientHeight,
+        }))
+        .catch(() => null);
+      const geometry = await fixture
+        .evaluate(() => {
+          const host = document.getElementById("opensider-selection");
+          const root = host?.shadowRoot;
+          const frame = root?.querySelector("iframe");
+          const bar = root?.querySelector(".bar");
+          if (!host || !frame || !bar) return null;
+          return {
+            height: Math.round(frame.getBoundingClientRect().height),
+            barHeight: bar.offsetHeight,
+            hostBottom: Math.round(host.getBoundingClientRect().bottom),
+            viewport: window.innerHeight,
+          };
+        })
+        .catch(() => null);
+      if (!geometry || !scroll) continue;
+      tall = {
+        ...geometry,
+        scrollable: scroll.scrollHeight > scroll.clientHeight + 4,
+        text: body.replace(/\s+/g, " ").slice(0, 40),
+      };
+    }
+    if (!tall) {
+      ok("长结果层出现并渲染完", false, "30s 内没等到内容");
+    } else {
+      const room = tall.viewport - 2 * 8 - tall.barHeight - 8;
+      const cap = Math.max(96, Math.min(Math.round(tall.viewport * 0.8), room));
+      ok("长结果层出现并渲染完", true, tall.text);
+      ok(
+        "长结果把框撑高（不再卡在 52vh）",
+        tall.height > tall.viewport * 0.6,
+        `height=${tall.height} vh=${tall.viewport} 旧上限=${Math.round(tall.viewport * 0.52)}`,
+      );
+      ok(
+        "框高按视口与安全边距夹紧",
+        Math.abs(tall.height - cap) <= 1,
+        `height=${tall.height} cap=${cap} room=${room}`,
+      );
+      ok(
+        "整条（工具条 + 结果层）仍在视口内",
+        tall.hostBottom <= tall.viewport - 7,
+        `hostBottom=${tall.hostBottom} vh=${tall.viewport}`,
+      );
+      ok("超出部分在结果层内部滚动", tall.scrollable, `scrollable=${tall.scrollable}`);
+    }
+  } else {
+    ok("长结果把框撑高（不再卡在 52vh）", false, "没有搜索按钮");
   }
 
   // 引用：芯片进侧栏输入框。

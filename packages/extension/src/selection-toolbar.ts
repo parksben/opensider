@@ -21,7 +21,9 @@ const SAFE_MARGIN = 8;
 const GAP = 8;
 const SHOW_DELAY_MS = 120;
 const RESULT_MIN_HEIGHT = 96;
-const RESULT_MAX_VH = 0.6;
+// 结果层最多占视口高度的这个比例（比过去 0.6 高一些，能多看点内容）。真的放不下就压到
+// 实际可用高度、由结果层自己滚动，见 maxResultHeight。
+const RESULT_MAX_VH = 0.8;
 
 type Gate = { enabled: boolean };
 
@@ -481,14 +483,27 @@ function pushResult(payload: { kind: SelectionMode; state: ResultState; text: st
   place();
 }
 
+/**
+ * 结果层的最大高度。
+ *
+ * 两条夹在一起：视口高度的 RESULT_MAX_VH（多看点内容），以及**实际可用空间**——整条
+ * （工具条 + 结果层）必须留在视口里、上下各留 SAFE_MARGIN，所以还要按 bar 高与间距再夹
+ * 一次；超出这个高度的内容在结果层内部滚动（父层把 iframe 高度固定在这里）。
+ */
+function maxResultHeight(): number {
+  const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+  const barHeight = bar?.offsetHeight ?? 36;
+  const room = viewportHeight - 2 * SAFE_MARGIN - barHeight - GAP;
+  return Math.max(RESULT_MIN_HEIGHT, Math.min(Math.round(viewportHeight * RESULT_MAX_VH), room));
+}
+
 /** 结果层页面回信：高度同步、复制请求。 */
 function onResultMessage(event: MessageEvent): void {
   if (!frame || event.source !== frame.contentWindow) return;
   const data = event.data as { source?: string; height?: number; action?: string; text?: string } | undefined;
   if (!data || data.source !== "opensider-selection-result") return;
   if (typeof data.height === "number" && Number.isFinite(data.height)) {
-    const maxHeight = Math.round(window.innerHeight * RESULT_MAX_VH);
-    resultHeight = clamp(Math.round(data.height), RESULT_MIN_HEIGHT, Math.max(RESULT_MIN_HEIGHT, maxHeight));
+    resultHeight = clamp(Math.round(data.height), RESULT_MIN_HEIGHT, maxResultHeight());
     if (frame) frame.style.height = `${resultHeight}px`;
     place();
     return;

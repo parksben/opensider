@@ -554,8 +554,10 @@ mark.cs-at-match {
   }
 }
 
-/* 划词工具条的结果层（跑在 iframe 里的 src/selection 页面）。高度由父层按上报值夹紧，
-   所以这里只负责「内容长了内部滚动」，不设自己的视口高度。 */
+/* 划词工具条的结果层（跑在 iframe 里的 src/selection 页面）。高度由父层按上报值夹紧
+   （见 selection-toolbar.ts 的 maxResultHeight），这里不再设自己的上限——它一旦设了，
+   父层想让结果层长高也没用（出过：这里卡 52vh / 26rem，框一直很小）。内容超出 iframe
+   的高度时由文档自己滚动，见 src/selection/result.css。 */
 .cs-selection-result {
   display: flex;
   flex-direction: column;
@@ -593,8 +595,6 @@ mark.cs-at-match {
 }
 
 .cs-selection-body {
-  max-height: min(52vh, 26rem);
-  overflow-y: auto;
   font-size: 12.5px;
   line-height: 1.55;
 }

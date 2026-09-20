@@ -81,6 +81,24 @@ const chunk = (text) =>
       update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text } },
     },
   });
+// 工具调用开始。搜索的真实形态是「先说一段我先去搜一下 → 调工具 → 才给结论」，Host 那边
+// 就靠这条更新把前面的过程叙述作废（见 internal/host 的 absorbSelectionUpdate），所以
+// 这里必须真的演出来，否则那条逻辑在测试里永远跑不到。
+const toolCall = (title) =>
+  write({
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: {
+      sessionId,
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: `call-${turn}`,
+        title,
+        kind: "fetch",
+        status: "in_progress",
+      },
+    },
+  });
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const trace = (entry) => {
   if (!tracePath) return;
@@ -258,6 +276,8 @@ function setCurrentMode(id) {
 // 定稿，这里只需要能把「翻译 / 搜索」与普通聊天分开。
 const TRANSLATE_PREFIX = "Translate the text below into";
 const SEARCH_PREFIX = "Search the web for the query below";
+// fixture 里那行触发「长回答」的标记（见 scripts/verify-selection-ui.mjs）。
+const SEARCH_TALL_MARK = "长内容";
 
 function selectionKind(text) {
   const trimmed = text.trimStart();
@@ -275,6 +295,22 @@ function selectionInput(text) {
 
 function selectionReply(kind, input) {
   if (kind === "translate") return `[translated] ${input}`;
+  // 专门用来把结果层撑高的长回答（fixture 里那行「长内容」），验高度上限与内部滚动。
+  if (kind === "search" && input.includes(SEARCH_TALL_MARK)) {
+    const sections = [];
+    for (let index = 1; index <= 15; index += 1) {
+      sections.push(`### 第 ${index} 节\n\n${"这一段用来把结果层撑高，看它能不能长到该有的高度。".repeat(4)}`);
+    }
+    return [
+      "## Summary",
+      `- searched for: ${input}`,
+      "",
+      sections.join("\n\n"),
+      "",
+      "**Sources**",
+      "- [example](https://example.com/source)",
+    ].join("\n");
+  }
   return [
     "## Summary",
     `- searched for: ${input}`,
@@ -286,6 +322,15 @@ function selectionReply(kind, input) {
 
 /** 按小块流式吐出固定回复，好让「增量、取消」这两条路都能被测到。 */
 async function streamSelectionReply(id, kind, input) {
+  if (kind === "search") {
+    // 过程叙述：不该出现在结果层里（只该看到工具调用之后的结论）。
+    for (const piece of ["I'll search the web for ", input, " and summarise it."]) {
+      chunk(piece);
+      await sleep(20);
+    }
+    toolCall(`search: ${input}`);
+    await sleep(20);
+  }
   const replyText = selectionReply(kind, input);
   const size = 12;
   for (let at = 0; at < replyText.length; at += size) {
