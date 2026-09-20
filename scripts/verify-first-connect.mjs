@@ -127,10 +127,16 @@ try {
 
   let model = null;
   let effort = null;
+  // `agent.connect` 只允许发一次：`agents` / `idle` 两条回放与 hydration 之后的判定容易
+  // 落在同一拍，各发一次会把 Host 正在进行的连接一次次作废重来，结果谁也没连上（面板一直
+  // 停在 connecting，模型列表与档位全空）。SW 只留最近 12 条出站消息，所以每一拍都读一次取最大值。
+  let maxConnects = 0;
   for (let i = 0; i < 60 && !(model && effort); i += 1) {
     const seen = await sample().catch(() => ({ model: null, effort: null }));
     if (seen.model && !model) model = { value: seen.model, seconds: (i * 0.5).toFixed(1) };
     if (seen.effort && !effort) effort = { value: seen.effort, seconds: (i * 0.5).toFixed(1) };
+    const sent = await sw.evaluate(() => globalThis.__opensiderOutbound?.() ?? []).catch(() => []);
+    maxConnects = Math.max(maxConnects, sent.filter((msg) => msg.type === "agent.connect").length);
     if (!model || !effort) await sleep(500);
   }
 
@@ -151,6 +157,11 @@ try {
     "the host really connected an agent",
     /acp runtime ready/.test(logged),
     /acp runtime ready/.test(logged) ? "" : "no `acp runtime ready` in host.log",
+  );
+  ok(
+    "the panel asked for the agent exactly once",
+    maxConnects === 1,
+    `agent.connect sent ${maxConnects} times`,
   );
 } catch (error) {
   ok("verification ran to completion", false, String(error?.message ?? error).slice(0, 200));

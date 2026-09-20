@@ -188,6 +188,15 @@ export function App() {
   // Host 是否已经扫完 Agent 列表（agents / idle 任一条到过）。自动连接的判断要等它。
   const hostScannedRef = useRef(false);
   const agentsRef = useRef<AgentInfo[]>([]);
+  // 已经发出的那次 `agent.connect` 还在进行中。
+  //
+  // 非有不可：`agents` / `idle` 两条消息与 hydration 之后的判定可能落在同一拍里，各发一次
+  // `agent.connect`；Host 每收到一次就 `beginConnect()` 一次并作废上一次，三次并发的结果是
+  // 谁都没连完——面板一直停在 `connecting`，模型列表与配置项全空，用户得手动切一次 Agent
+  // 才恢复（真实报过，沙箱里能稳定复现）。收到 `connecting` 之外的状态（`ready` / `error` /
+  // `missing` / `starting`）就说明这次请求已经结束；`idle` 不算——它只会来自 Host 启动或
+  // 我们自己的取消，不代表我们这次请求的结局（否则上面那两条重复的 `idle` 回放又会把门打开）。
+  const connectInFlightRef = useRef(false);
   const awaitingCancelRef = useRef(false);
   const pickWaiters = useRef(new Map<string, (items: AttachmentItem[]) => void>());
   // A host older than the extension silently drops commands it does not know, so a stale
@@ -338,6 +347,9 @@ export function App() {
     if (!providerId) return;
     if (connectedProviderRef.current === providerId && statusRef.current === "ready") return;
     if (pendingConnectRef.current === providerId && statusRef.current === "connecting") return;
+    // 同一次请求只发一次（见 connectInFlightRef）：同一家的重复请求直接当作已在飞行中。
+    // 换成另一家则照常发，Host 会作废正在进行的那个。
+    if (connectInFlightRef.current && pendingConnectRef.current === providerId) return;
     skipIdleConnectRef.current = false;
     awaitingCancelRef.current = false;
     if (statusRef.current !== "connecting") {
@@ -360,6 +372,7 @@ export function App() {
     appliedAgentOptionRef.current.clear();
     setModels([]);
     setProgress(undefined);
+    connectInFlightRef.current = true;
     sendRef.current({
       type: "agent.connect",
       providerId,
@@ -382,6 +395,8 @@ export function App() {
     if (!onboardingRef.current) return "";
     // 用户刚点过取消：不要立刻又连回去（标记由 idle 那条分支消费掉）。
     if (skipIdleConnectRef.current) return "";
+    // 已经有一次连接在飞：不要在同一拍里再发一次（见 connectInFlightRef）。
+    if (connectInFlightRef.current) return "";
     // Host 还没扫完 Agent 列表（只报过 starting）：这会儿连上去会和它自己的扫描撞车。
     if (!hostScannedRef.current) return "";
     if (statusRef.current !== "idle" && statusRef.current !== "starting") return "";
@@ -390,6 +405,7 @@ export function App() {
 
   const cancelConnect = () => {
     if (statusRef.current !== "connecting") return;
+    connectInFlightRef.current = false;
     const snap = rollbackRef.current;
     pendingConnectRef.current = "";
     awaitingCancelRef.current = true;
@@ -644,6 +660,10 @@ export function App() {
         finishAllTurns();
       }
       if (msg.state !== "ready") appliedModelRef.current = "";
+      // 连接请求有结果了（成功 / 报错 / SW 重连换了 Host）：解除在飞标记。**不**在
+      // `connecting`（那正是「还在连」）与 `idle`（只会来自 Host 启动或我们自己的取消）
+      // 上解除，见 connectInFlightRef 的注释。
+      if (msg.state !== "connecting" && msg.state !== "idle") connectInFlightRef.current = false;
       if (msg.state === "ready") {
         connectedProviderRef.current = selectedProviderRef.current;
         pendingConnectRef.current = "";
