@@ -26,17 +26,8 @@ export const MODEL_NARROW_MAIN_PX = 396;
 export const MODEL_NARROW_MAX_PX = 80;
 
 /**
- * The reasoning-effort pill's max width at or below MODEL_NARROW_MAIN_PX, in px. That pill
- * sits right of the model picker and only shows when the engine advertises a
- * `thought_level` option (Claude's `Effort`). At 396px there is room for the icon plus a
- * word or two and nothing more: it truncates on one line and never wraps, because a second
- * line would push the composer to two rows.
- */
-export const OPTION_NARROW_MAX_PX = 48;
-
-/**
  * Icon size for every button in the composer toolbar row (attach / pick / mention / session
- * mode / permission / reasoning effort / stop / send).
+ * mode / permission / stop / send).
  *
  * One value for all of them on purpose: these sit side by side, so the number in the code is
  * the thing that has to match. Do not size one of them "optically" by hand — a difference in

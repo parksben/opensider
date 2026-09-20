@@ -155,7 +155,7 @@ export function ChatPane({
   skills?: SkillItem[];
   /** 打开探测菜单前要一份最新列表（Host 侧有缓存，不会每次都真扫）。 */
   onRefreshSkills?: () => void;
-  /** ≤396px：模型下拉的最大宽度收到常值的 1/3；推理档位钮收到 OPTION_NARROW_MAX_PX。 */
+  /** ≤396px：模型下拉的最大宽度收到常值的 1/3（推理档位钮不设上限，见 AgentOptionSelect）。 */
   narrowModel?: boolean;
   /** 引擎广告的其它会话配置项（推理档位、模型开关…），没广告就是这家不支持。 */
   agentOptions?: AgentOption[];
@@ -918,7 +918,6 @@ export function ChatPane({
               {/* 推理档位紧跟模型下拉右侧（引擎不广告 thought_level 就整个不出现）。 */}
               <AgentOptionSelect
                 option={thoughtLevel}
-                narrow={narrowModel === true}
                 onValue={(configId, value) => onAgentOption?.(configId, value)}
               />
               {isRunning ? (

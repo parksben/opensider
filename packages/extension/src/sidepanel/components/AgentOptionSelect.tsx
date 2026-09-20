@@ -1,7 +1,7 @@
 import type { AgentOption } from "@shared";
-import { Check, Gauge } from "lucide-react";
+import { Check } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { COMPOSER_ICON_PX, OPTION_NARROW_MAX_PX } from "../layout";
+import { COMPOSER_ICON_PX } from "../layout";
 import { RippleButton } from "./RippleButton";
 import { useRipple } from "../useRipple";
 
@@ -13,11 +13,12 @@ import { useRipple } from "../useRipple";
  *  - 少于两个值**不渲染**（一项等于没得选）；引擎不广告这个类别就整个控件不出现
  *    （Copilot CLI 与 OpenCode 至今都没有这一类）；
  *  - 名称与值名**原样用引擎给的**（Claude 是 `Effort` + `Default/Low/High/Max`），
- *    只做首字母大写当排版，不翻译、不造译名；
- *  - 窄宽度（≤MODEL_NARROW_MAIN_PX）时最大宽度收到 `OPTION_NARROW_MAX_PX`，单行省略、
- *    **不换行**——这一行已经挤了六个控件，多一行会把输入栏撑成两行；
- *  - 它**不跟着**模式 / 权限两个下拉一起收成纯图标：那两个的空间是靠「藏掉文案」省的，
- *    而这一档的档位名正是用户要看的信息，所以窄宽度下留文案、超出就省略。
+ *    只做首字母大写当排版，不翻译、不造译名。
+ *
+ * **它不带图标**：档位名（`Xhigh` / `Medium`）就是用户唯一要看的信息，图标既挤不掉
+ * 多余的宽度、又要跟模式 / 权限那两个下拉抢地方。带上图标时，窄宽度下 48px 里被
+ * 「内边距 16 + 图标 14 + 间距 4」吃掉，标签只剩 14px——连一个省略号都排不下，看着
+ * 就是硬切。所以这里**不设人为上限**：钮跟着内容走，只有整行真的挤不下时才省略。
  */
 
 function displayName(name: string) {
@@ -34,12 +35,9 @@ function tooltipOf(option: AgentOption, currentId: string) {
 
 export function AgentOptionSelect({
   option,
-  narrow,
   onValue,
 }: {
   option: AgentOption | undefined;
-  /** ≤MODEL_NARROW_MAIN_PX：最大宽度收到 OPTION_NARROW_MAX_PX，单行省略。 */
-  narrow: boolean;
   onValue: (configId: string, value: string) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -69,10 +67,9 @@ export function AgentOptionSelect({
   const currentId = option.current ?? values[0].id;
   const current = values.find((value) => value.id === currentId) ?? values[0];
   const tip = tooltipOf(option, current.id);
-  const cap = narrow ? { maxWidth: OPTION_NARROW_MAX_PX } : undefined;
 
   return (
-    <div ref={rootRef} className="relative min-w-0 shrink" style={cap}>
+    <div ref={rootRef} className="relative min-w-0 shrink">
       <button
         type="button"
         title={tip}
@@ -80,10 +77,8 @@ export function AgentOptionSelect({
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
         onPointerDown={(event) => spawn(event)}
-        style={cap}
-        className="relative flex h-7 w-fit max-w-full min-w-0 items-center gap-1 overflow-hidden whitespace-nowrap rounded-full px-2 text-[11px] text-[var(--muted)] hover:bg-[var(--hover)]"
+        className="relative flex h-7 w-fit max-w-full min-w-0 items-center overflow-hidden whitespace-nowrap rounded-full px-2 text-[11px] text-[var(--muted)] hover:bg-[var(--hover)]"
       >
-        <Gauge size={COMPOSER_ICON_PX} className="shrink-0" />
         <span className="min-w-0 truncate">{displayName(current.name || current.id)}</span>
         {ripples.map((ripple) => (
           <span

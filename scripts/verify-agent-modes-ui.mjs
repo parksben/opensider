@@ -215,7 +215,8 @@ try {
     }
     await panel.keyboard.press("Escape");
 
-    // ≤396px：推理档位钮收到 48px，单行省略、**不许换行**（换行会把输入栏撑成两行）。
+    // 窄宽度下这个钮**不设人为上限**：档位名要完整看得见，而且它不带图标（见过的问题：
+    // 48px 上限 + 图标把标签挤到 14px，连一个省略号都排不下，看着像硬切）。
     await panel.setViewportSize({ width: 390, height: 620 });
     await new Promise((r) => setTimeout(r, 600));
     const narrow = await panel.evaluate(() => {
@@ -225,23 +226,29 @@ try {
       const style = getComputedStyle(effort);
       // 省略发生在内层 span 上（它才是 truncate 的那一层），所以要量它。
       const label = effort.querySelector("span");
+      const row = effort.parentElement?.parentElement;
       return {
         width: Number(rect.width.toFixed(1)),
         height: Number(rect.height.toFixed(1)),
         whiteSpace: style.whiteSpace,
-        overflow: style.overflow,
+        icons: effort.querySelectorAll("svg").length,
         clipped: label ? label.scrollWidth > label.clientWidth : false,
         text: (effort.textContent || "").trim(),
+        labelWidth: label ? Number(label.getBoundingClientRect().width.toFixed(1)) : null,
+        rowOverflow: row ? row.scrollWidth > row.clientWidth + 1 : false,
       };
     });
-    // 与模式 / 权限两个下拉不同：这一档不藏文案（档位名就是用户要看的信息），
-    // 而是把宽度收到 48px 后省略。
     check(
-      "below 396px the label stays and is truncated at 48px on one line",
-      Boolean(narrow) && narrow.width <= 48.5 && narrow.height <= 30
-        && narrow.whiteSpace === "nowrap" && narrow.text.length > 0 && narrow.clipped,
+      "the effort pill carries no icon",
+      Boolean(narrow) && narrow.icons === 0,
+      narrow ? `icons=${narrow.icons}` : "not found",
+    );
+    check(
+      "below 396px the value name still fits on one line, not clipped to a stub",
+      Boolean(narrow) && narrow.height <= 30 && narrow.whiteSpace === "nowrap"
+        && narrow.text.length > 0 && !narrow.clipped && !narrow.rowOverflow,
       narrow
-        ? `width=${narrow.width} height=${narrow.height} white-space=${narrow.whiteSpace} clipped=${narrow.clipped} text=${JSON.stringify(narrow.text)}`
+        ? `width=${narrow.width} label=${narrow.labelWidth} height=${narrow.height} clipped=${narrow.clipped} row-overflow=${narrow.rowOverflow} text=${JSON.stringify(narrow.text)}`
         : "not found",
     );
     await panel.setViewportSize({ width: 900, height: 620 });
