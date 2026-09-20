@@ -84,7 +84,7 @@ export function ChatPane({
   agentModes,
   agentModeId,
   onAgentModeId,
-  compact,
+  iconOnly,
   page,
   hitl,
   control,
@@ -137,7 +137,8 @@ export function ChatPane({
   agentModes?: AgentModeOption[];
   agentModeId?: string;
   onAgentModeId?: (modeId: string) => void;
-  compact?: boolean;
+  /** ≤448px：两个下拉收成纯图标（隐藏文案，tooltip 里给全）。 */
+  iconOnly?: boolean;
   page?: CurrentPage;
 }) {
   const [draft, setDraft] = useState("");
@@ -676,10 +677,10 @@ export function ChatPane({
                   locale={locale}
                   options={agentModes ?? []}
                   currentId={agentModeId ?? ""}
-                  compact={compact === true}
+                  iconOnly={iconOnly === true}
                   onMode={onAgentModeId ?? (() => undefined)}
                 />
-                <ModeSelect locale={locale} mode={agentMode} compact={compact === true} onMode={onAgentMode} />
+                <ModeSelect locale={locale} mode={agentMode} iconOnly={iconOnly === true} onMode={onAgentMode} />
               </div>
               <AtMenu
                 open={atOpen}
@@ -902,12 +903,12 @@ function AttachmentChips({
 function ModeSelect({
   locale,
   mode,
-  compact,
+  iconOnly,
   onMode,
 }: {
   locale: Locale;
   mode: AgentMode;
-  compact: boolean;
+  iconOnly: boolean;
   onMode: (mode: AgentMode) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -950,7 +951,7 @@ function ModeSelect({
   return (
     // 不参与撑开：两个下拉与左侧三个图标钮紧挨成一组居左，多余空间留给右侧的
     // 模型选择 / 发送（所以不要 flex-1，否则会被拉宽推到中间）。
-    <div ref={rootRef} className={`relative min-w-0 shrink ${compact ? "" : "min-w-[5rem] max-w-full"}`}>
+    <div ref={rootRef} className={`relative min-w-0 shrink ${iconOnly ? "" : "min-w-[5rem] max-w-full"}`}>
       <button
         type="button"
         title={tip}
@@ -964,7 +965,7 @@ function ModeSelect({
         }`}
       >
         <CurrentIcon size={14} className="shrink-0" />
-        {compact ? null : <span className="min-w-0 truncate">{current.name}</span>}
+        {iconOnly ? null : <span className="min-w-0 truncate">{current.name}</span>}
         {ripples.map((ripple) => (
           <span
             key={ripple.id}

@@ -123,9 +123,20 @@ try {
   const ready = await waitFor((msg) => msg.type === "status" && msg.state === "ready", 40_000);
   check("the agent connects", Boolean(ready), ready ? "" : `stderr: ${stderr.slice(-300)}`);
 
-  // 模式是在会话建立时才被广告的（session/new 的返回里带 configOptions / modes）。
-  send({ type: "session.new" });
+  // Modes are advertised in `session/new`, so the bridge prepares a session as soon as the
+  // agent connects and pushes them there — the panel must not have to ask first, otherwise
+  // the control only shows up after the first message (the reported bug).
   const modes = await waitFor((msg) => msg.type === "agentModes");
+  check(
+    "the bridge announces the modes straight after connecting, before any session request",
+    Boolean(modes),
+    modes ? `source=${modes.source}` : `stderr: ${stderr.slice(-200)}`,
+  );
+
+  // The panel's own bind then reuses that prepared session instead of creating a second one.
+  send({ type: "session.new" });
+  const adopted = await waitFor((msg) => msg.type === "session");
+  check("the prepared session is the one the panel gets", Boolean(adopted), adopted?.sessionId ?? "none");
   if (!modes) {
     check("the bridge announces the session modes", false, `stderr: ${stderr.slice(-300)}`);
     throw new Error("no agentModes message");

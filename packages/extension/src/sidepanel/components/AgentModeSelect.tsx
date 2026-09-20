@@ -65,13 +65,14 @@ export function AgentModeSelect({
   locale,
   options,
   currentId,
-  compact,
+  iconOnly,
   onMode,
 }: {
   locale: Locale;
   options: AgentModeOption[];
   currentId: string;
-  compact: boolean;
+  /** ≤ICON_ONLY_MAIN_PX：只画图标，含义靠 tooltip 给全。 */
+  iconOnly: boolean;
   onMode: (modeId: string) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -115,7 +116,7 @@ export function AgentModeSelect({
         className="relative flex h-7 w-fit max-w-full min-w-0 items-center gap-1 overflow-hidden whitespace-nowrap rounded-full px-2 text-[11px] text-[var(--muted)] hover:bg-[var(--hover)]"
       >
         <CurrentIcon size={14} className="shrink-0" />
-        {compact ? null : <span className="min-w-0 truncate">{displayName(current)}</span>}
+        {iconOnly ? null : <span className="min-w-0 truncate">{displayName(current)}</span>}
         {ripples.map((ripple) => (
           <span
             key={ripple.id}

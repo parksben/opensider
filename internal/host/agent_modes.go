@@ -1,6 +1,7 @@
 package host
 
 import (
+	"github.com/parksben/opensider/internal/acp"
 	"github.com/parksben/opensider/internal/log"
 	"github.com/parksben/opensider/internal/modes"
 )
@@ -93,6 +94,47 @@ func (h *Host) absorbSessionUpdate(update map[string]any, runtime *acpRuntime) {
 	case "current_mode_update":
 		h.refreshAgentModes(runtime)
 	}
+}
+
+// openPrepared 在连接成功后就建一个会话，并把它的模式广告推给侧栏。
+//
+// 为何不等侧栏自己绑：Agent 的模式只出现在 `session/new|load` 的返回里，而侧栏绑会话是
+// 它自己的节奏（连接就绪、切会话、发消息都可能触发）。挂在那个节奏上，用户就会看到
+// 「连接或切换 Agent 后，模式下拉要等发出第一条消息才出现」。代价只是把同一个会话提前
+// 建出来——侧栏随后那次 `session.new` 会直接采用它（见 takePrepared），不会多建一个。
+func (h *Host) openPrepared(runtime *acpRuntime) {
+	if runtime == nil || runtime.client == nil {
+		return
+	}
+	opened, err := withBinding(runtime, runtime.client.CreateSession)
+	if err != nil {
+		log.Log("prepared session skipped: " + err.Error())
+		return
+	}
+	runtime.prepared = &opened
+	h.absorbSessionOptions(opened)
+	h.refreshAgentModes(runtime)
+	log.Log("prepared session " + opened.SessionID)
+}
+
+// takePrepared 取用连接时预建的会话。
+//
+// `session.new`（wantID 为空）无条件采用；`session.use` 只在要的就是同一个会话时才采用，
+// 要的是别的就丢弃，免得在 CLI 里留下一个没人用的会话；`session.fork` 传的是源会话 id
+// （永远不相等），所以必须真的走 fork，不能拿预建会话冒充一次 fork。
+func (h *Host) takePrepared(runtime *acpRuntime, wantID string) (acp.SessionOpen, bool) {
+	if runtime == nil || runtime.prepared == nil {
+		return acp.SessionOpen{}, false
+	}
+	opened := *runtime.prepared
+	if wantID != "" && opened.SessionID != wantID {
+		runtime.prepared = nil
+		log.Log("dropping prepared session " + opened.SessionID + " in favour of " + wantID)
+		return acp.SessionOpen{}, false
+	}
+	runtime.prepared = nil
+	log.Log("adopting prepared session " + opened.SessionID)
+	return opened, true
 }
 
 // resetAgentModes 换 Agent 时清空：模式集合是每家引擎自己的，不能串。

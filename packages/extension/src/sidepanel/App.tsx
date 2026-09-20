@@ -26,7 +26,7 @@ import { BridgeSetup } from "./components/BridgeSetup";
 import { ChatPane } from "./components/ChatPane";
 import { ControlBanner, type BorrowRequest } from "./components/ControlBanner";
 import { Header } from "./components/Header";
-import { COMPACT_MAIN_PX } from "./layout";
+import { COMPACT_MAIN_PX, ICON_ONLY_MAIN_PX } from "./layout";
 import { PermissionBar } from "./components/PermissionBar";
 import { SessionDrawer } from "./components/SessionDrawer";
 import { UpdateDialog } from "./components/UpdateDialog";
@@ -110,6 +110,8 @@ export function App() {
   const [sessionsOpen, setSessionsOpen] = useState(false);
   const [drawerWidth, setDrawerWidth] = useState(SESSION_DRAWER_DEFAULT);
   const [compact, setCompact] = useState(false);
+  // 两个下拉（模式 / 权限）是否已收成纯图标。与 compact 分开：下拉该早收，其余布局不必跟着早改版。
+  const [iconOnly, setIconOnly] = useState(false);
   const mainColumnRef = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState<HostStatusState>("starting");
   const [error, setError] = useState<string>();
@@ -1006,7 +1008,10 @@ export function App() {
   useLayoutEffect(() => {
     const node = mainColumnRef.current;
     if (!node) return;
-    const update = () => setCompact(node.clientWidth < COMPACT_MAIN_PX);
+    const update = () => {
+      setCompact(node.clientWidth < COMPACT_MAIN_PX);
+      setIconOnly(node.clientWidth <= ICON_ONLY_MAIN_PX);
+    };
     update();
     const observer = new ResizeObserver(update);
     observer.observe(node);
@@ -1707,7 +1712,7 @@ export function App() {
               agentModes={agentModes}
               agentModeId={agentModeId}
               onAgentModeId={onAgentModeId}
-              compact={compact}
+              iconOnly={iconOnly}
               onAgentMode={(mode) => {
                 setAgentMode(mode);
                 sendRef.current({ type: "agent.setPolicy", policy: mode });

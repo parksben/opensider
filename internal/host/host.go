@@ -32,6 +32,11 @@ type acpRuntime struct {
 	prompting bool
 	binding   bool
 
+	// prepared 是**连接时预建**的会话（见 openPrepared）。Agent 自己的模式只在会话
+	// 建立时才被广告，挂在侧栏那次绑定上会让模式下拉迟到（用户报过：连接/切 Agent
+	// 后要发第一条消息才出现）；侧栏随后的 session.new 会直接采用它，不重复建。
+	prepared *acp.SessionOpen
+
 	// turnDone 在那一轮 prompt 返回时被关闭（每开始一轮换一个新的）。
 	// 「立即发送」靠它知道旧一轮真的收尾了，而不是去等侧栏永远可能等不到的 turn.end。
 	turnDone chan struct{}
@@ -488,6 +493,9 @@ func (h *Host) connectAgent(providerID string, policy protocol.AgentPolicy) erro
 	log.Log(fmt.Sprintf("acp runtime ready provider=%s count=%d", resolved.Profile.ID, count))
 
 	h.sendProgress(5, 6, "session", "Ready for sessions")
+	// 连接成功就先把会话建起来：Agent 自己的模式只在会话建立时才被广告，挂在侧栏那次
+	// 绑定上会让模式下拉迟到（用户报过）。侧栏随后那次 session.new 会采用它。
+	h.openPrepared(runtime)
 	h.sendProgress(6, 6, "models", "Loading models")
 	h.refreshModels()
 	h.applyFallbackModels()
@@ -720,7 +728,7 @@ func (h *Host) attachClient(runtime *acpRuntime) error {
 	return nil
 }
 
-func (h *Host) spawnRuntime() (*acpRuntime, error) {
+func (h *Host) spawnRuntime(prepareSession bool) (*acpRuntime, error) {
 	runtime := &acpRuntime{}
 	if err := h.attachClient(runtime); err != nil {
 		return nil, err
@@ -737,6 +745,9 @@ func (h *Host) spawnRuntime() (*acpRuntime, error) {
 	count := len(h.runtimes)
 	h.mu.Unlock()
 	log.Log(fmt.Sprintf("acp runtime ready count=%d", count))
+	if prepareSession {
+		h.openPrepared(runtime)
+	}
 	return runtime, nil
 }
 
@@ -776,13 +787,19 @@ func (h *Host) acquireRuntime(preferSessionID string) (*acpRuntime, error) {
 	if idle != nil {
 		return idle, nil
 	}
-	return h.spawnRuntime()
+	// 按需补的进程不预建会话：调用方接着会 session/load|fork 自己要的那个会话，
+	// 预建只会多出一个没人用的 ACP 会话。
+	return h.spawnRuntime(false)
 }
 
-func (h *Host) openAndAnnounce(runtime *acpRuntime, requestID string, open func() (acp.SessionOpen, error)) (acp.SessionOpen, error) {
-	opened, err := withBinding(runtime, open)
-	if err != nil {
-		return acp.SessionOpen{}, err
+func (h *Host) openAndAnnounce(runtime *acpRuntime, requestID string, wantID string, open func() (acp.SessionOpen, error)) (acp.SessionOpen, error) {
+	opened, adopted := h.takePrepared(runtime, wantID)
+	var err error
+	if !adopted {
+		opened, err = withBinding(runtime, open)
+		if err != nil {
+			return acp.SessionOpen{}, err
+		}
 	}
 	workspace.WriteSessionID(opened.SessionID)
 	h.absorbSessionOptions(opened)
@@ -979,7 +996,7 @@ func (h *Host) dispatch(typ string, msg map[string]any) error {
 			if err != nil {
 				return err
 			}
-			_, err = h.openAndAnnounce(runtime, requestID, runtime.client.CreateSession)
+			_, err = h.openAndAnnounce(runtime, requestID, "", runtime.client.CreateSession)
 			return err
 		})
 	case "session.use":
@@ -1000,7 +1017,7 @@ func (h *Host) dispatch(typ string, msg map[string]any) error {
 			if err != nil {
 				return err
 			}
-			_, err = h.openAndAnnounce(runtime, requestID, func() (acp.SessionOpen, error) {
+			_, err = h.openAndAnnounce(runtime, requestID, sessionID, func() (acp.SessionOpen, error) {
 				return runtime.client.UseSession(sessionID)
 			})
 			return err
@@ -1019,7 +1036,7 @@ func (h *Host) dispatch(typ string, msg map[string]any) error {
 			if err != nil {
 				return err
 			}
-			_, err = h.openAndAnnounce(runtime, requestID, func() (acp.SessionOpen, error) {
+			_, err = h.openAndAnnounce(runtime, requestID, sessionID, func() (acp.SessionOpen, error) {
 				return runtime.client.ForkSession(sessionID)
 			})
 			return err
