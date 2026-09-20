@@ -214,14 +214,16 @@ function mount(): void {
   // 定位与层级挂在 host 上（shadow 里的 .root 只负责排版）：place() 改的就是这两个坐标。
   // `all:initial` 会把 display 也复位成 inline（块级子元素在 inline 盒子里会量出 0 宽、坐标
   // 落在 0），所以紧接着显式给 block + max-content：host 收缩包裹内容，place() 才量得准。
+  // 层级：先争取**顶层（top layer）**——`popover="manual"` + showPopover() 能压过页面上任何
+  // z-index（Google 翻译那类气泡就是靠 z-index 抢位的，它们常用到 2147483647）。拿不到顶层
+  // （旧内核 / 全屏）时退回最大 z-index。
   host.style.cssText =
-    "all:initial; display:block; position:fixed; width:max-content; z-index:2147483646; pointer-events:auto;";
+    "all:initial; display:block; position:fixed; width:max-content; z-index:2147483647; pointer-events:auto;";
+  host.setAttribute("popover", "manual");
   // **open** 而不是 closed：工具条要能被无障碍工具与自动化测试按名字点到（页面本来就能看见
   // 这个 host 元素，样式隔离靠 shadow 边界照样成立；「不给页面留痕」那条硬约束针对的是主世界
   // 注入，内容脚本的 DOM 不在其列）。
   const shadow = host.attachShadow({ mode: "open" });
-  const style = document.createElement("style");
-  style.textContent = styleText();
   const root = document.createElement("div");
   root.className = "root";
 
@@ -249,11 +251,38 @@ function mount(): void {
   frameWrap.append(frame);
 
   root.append(bar, frameWrap);
-  shadow.append(style, root);
+  shadow.append(root);
+  applyShadowStyles(shadow);
   // 工具条自身不该成为「点空白处」的判定目标。
   host.addEventListener("pointerdown", (event) => event.stopPropagation());
   (document.fullscreenElement ?? document.documentElement).append(host);
+  raiseToTopLayer();
   watchMount();
+}
+
+/**
+ * 把工具条的样式挂进 shadow。
+ *
+ * 用**构造式样式表**（`adoptedStyleSheets`）而不是 `<style>` 元素：页面的 CSP 会拦掉注入到
+ * 它文档里的 `<style>`（YouTube 这类站点的 `style-src` 只放行自己的 nonce），而 CSSOM 构造出来
+ * 的样式表不受 CSP 管——这正是「在有些站点上工具条变成一堆没样式的按钮」的根因。旧内核没有
+ * `adoptedStyleSheets` 时退回 `<style>`。
+ */
+function applyShadowStyles(shadow: ShadowRoot): void {
+  const css = styleText();
+  if (typeof CSSStyleSheet === "function" && "adoptedStyleSheets" in shadow) {
+    try {
+      const sheet = new CSSStyleSheet();
+      sheet.replaceSync(css);
+      shadow.adoptedStyleSheets = [...shadow.adoptedStyleSheets, sheet];
+      return;
+    } catch {
+      // 落到下面的 <style> 兜底
+    }
+  }
+  const style = document.createElement("style");
+  style.textContent = css;
+  shadow.prepend(style);
 }
 
 function watchMount(): void {
@@ -270,6 +299,37 @@ function watchMount(): void {
 function mountParent(): void {
   if (!host) return;
   (document.fullscreenElement ?? document.documentElement).append(host);
+  raiseToTopLayer();
+}
+
+/**
+ * 把工具条抬到顶层。`showPopover()` 失败就退回 z-index（已经在 host 上写好了）。
+ *
+ * 顶层元素之间也有先后：后 showPopover 的在上。所以每次重新定位 / 重新打开结果层时会再抬一次
+ * （先隐藏再显示），保证用户当前要看的那个结果还在 Google 翻译那类气泡之上。
+ */
+function raiseToTopLayer(): void {
+  if (!host || typeof host.showPopover !== "function") {
+    host?.removeAttribute("popover");
+    return;
+  }
+  try {
+    if (host.matches(":popover-open")) return;
+    host.showPopover();
+  } catch {
+    // 已经在顶层、或这个元素不适合当 popover：退回 z-index 就行，不影响功能。
+  }
+}
+
+/** 重新压到顶层最上面（结果层刚展开、或工具条重新定位时用）。 */
+function restackTopLayer(): void {
+  if (!host || typeof host.showPopover !== "function") return;
+  try {
+    if (host.matches(":popover-open")) host.hidePopover();
+    host.showPopover();
+  } catch {
+    // 忽略：拿不到顶层也不影响可用性。
+  }
 }
 
 // ------------------------------------------------------------------ 显示 / 隐藏
@@ -389,6 +449,7 @@ function postToFrame(payload: Record<string, unknown>): void {
 function pushResult(payload: { kind: SelectionMode; state: ResultState; text: string }): void {
   if (!frameWrap || !frame) return;
   frameWrap.setAttribute("data-open", "1");
+  restackTopLayer();
   const frameWidth = Math.min(380, Math.max(240, window.innerWidth - 2 * SAFE_MARGIN));
   frame.style.width = `${frameWidth}px`;
   frame.style.height = `${resultHeight}px`;
@@ -477,8 +538,15 @@ function onDocumentClick(event: MouseEvent): void {
 }
 
 export function setSelectionGate(enabled: boolean): void {
+  const wasEnabled = gate.enabled;
   gate = { enabled };
-  if (!enabled) hide();
+  if (!enabled) {
+    hide();
+    return;
+  }
+  // 刚变可用：用户可能正选着一段文字（甚至从侧栏还没连上时就选着了）。补一次判定，
+  // 别让他白等下一次划词——service worker 被回收再唤醒、面板刚连上都会走到这里。
+  if (!wasEnabled) schedule();
 }
 
 export function isSelectionToolbarMounted(): boolean {

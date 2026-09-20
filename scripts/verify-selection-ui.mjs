@@ -65,7 +65,35 @@ const actionButton = (page, label) =>
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-const server = createServer((_req, res) => {
+// 第二条 fixture：模拟 YouTube 那种「页面自己带严格 CSP、还有别的高位浮层（Google 翻译气泡那种）」
+// 的站点。`style-src 'self'` 会拦掉**注入到页面文档里的** <style>（我们的第一版就是这么废掉的），
+// 但拦不住 CSSOM 构造出来的样式表——正是要验的那条。
+const CSP_PAGE = `<!doctype html>
+<html lang="zh"><head><meta charset="utf-8"><title>csp fixture</title>
+<link rel="stylesheet" href="/csp.css">
+</head>
+<body>
+  <p id="ctarget">严格 CSP 页面上的划词工具条也要有样式。</p>
+  <div id="rival" aria-hidden="true"></div>
+</body></html>`;
+
+const CSP_CSS = `#rival { position: fixed; inset: 0; z-index: 2147483647; background: rgba(255,0,0,.25); }`;
+
+const server = createServer((req, res) => {
+  const path = (req.url ?? "/").split("?")[0];
+  if (path === "/csp.css") {
+    res.writeHead(200, { "content-type": "text/css; charset=utf-8" });
+    res.end(CSP_CSS);
+    return;
+  }
+  if (path === "/csp") {
+    res.writeHead(200, {
+      "content-type": "text/html; charset=utf-8",
+      "content-security-policy": "style-src 'self'; script-src 'self'; object-src 'none'",
+    });
+    res.end(CSP_PAGE);
+    return;
+  }
   res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
   res.end(PAGE);
 });
@@ -182,6 +210,53 @@ try {
       box ? `x=${box.x} w=${box.width} vw=${viewport?.width}` : "没有工具条",
     );
   }
+
+  // 严格 CSP + 高位浮层：样式照生效，层级压过页面上抢位的浮层。
+  const cspPage = await context.newPage();
+  // 页面里的报错直接打出来：这类问题（CSP、层级）断言失败的信息量远不如它。
+  cspPage.on("pageerror", (error) => console.log("    csp pageerror:", String(error).slice(0, 160)));
+  cspPage.on("console", (msg) => {
+    if (msg.type() === "error") console.log("    csp console:", msg.text().slice(0, 200));
+  });
+  await cspPage.setViewportSize({ width: 900, height: 640 });
+  await cspPage.goto(`http://127.0.0.1:${port}/csp`);
+  await cspPage.bringToFront();
+  let cspInfo = null;
+  for (let i = 0; i < 40 && !cspInfo; i += 1) {
+    // 每一拍都重选一次：门控可能刚好在这一拍才可用（SW 醒来 / 面板刚连上），
+    // 用户遇到这种情况也会再划一次。
+    await selectText(cspPage, "ctarget");
+    await sleep(250);
+    cspInfo = await cspPage
+      .evaluate(() => {
+        const host = document.getElementById("opensider-selection");
+        if (!host) return null;
+        const root = host.shadowRoot;
+        const brand = root?.querySelector("img");
+        const bar = root?.querySelector(".bar");
+        const box = host.getBoundingClientRect();
+        const top = box.width > 0 ? document.elementFromPoint(box.left + box.width / 2, box.top + 6) : null;
+        return {
+          brandWidth: brand ? getComputedStyle(brand).width : "none",
+          barDisplay: bar ? `${getComputedStyle(bar).display}/${getComputedStyle(bar).flexDirection}` : "none",
+          popover: host.matches(":popover-open"),
+          zIndex: getComputedStyle(host).zIndex,
+          topIsOurs: top === host,
+        };
+      })
+      .catch(() => null);
+  }
+  ok(
+    "页面严格 CSP 下工具条的样式照常生效",
+    cspInfo?.brandWidth === "16px" && cspInfo?.barDisplay === "flex/row",
+    JSON.stringify(cspInfo ?? {}),
+  );
+  ok(
+    "工具条在顶层，压过页面上抢 z-index 的浮层",
+    cspInfo?.popover === true && cspInfo?.topIsOurs === true && cspInfo?.zIndex === "2147483647",
+    JSON.stringify(cspInfo ?? {}),
+  );
+  await cspPage.close();
 
   // 上限：超过 200 字直接不支持。
   await selectText(fixture, "long");

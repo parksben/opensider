@@ -636,13 +636,15 @@ Host 是通用 ACP Client + 数据驱动 `AgentProfile`（启动命令、鉴权�
 | 侧栏已展开 | `sidebars.size > 0`（侧栏的 `chrome.runtime.connect({name:"sidebar"})` 长连接，SW 已在用这个集合做「最后一个面板关掉就释放页面活性」） |
 | Agent 已就绪 | SW 缓存的 `lastStatus.state === "ready"` |
 
-任一变化就向所有 http(s) 标签页推 `selection.gate{enabled, locale}`；内容脚本缓存它，并在**真正要显示工具条前**复核一次（`chrome.runtime.sendMessage({type:"ping"})` 那条现成通道就能拿到 `lastStatus`），避免「刚断开但推送还没到」的错觉窗口。门控转关时页面侧立即拆除工具条与结果层，并取消在飞请求。
+任一变化就向所有 http(s) 标签页推 `selection.gate{enabled}`（界面语言的来源是页面自己读 `chrome.storage` 里的面板状态，推送里不带）；内容脚本缓存它，并在**真正要显示工具条前**复核一次，避免两种不对称的窗口：推送没到（页面早于侧栏打开、service worker 刚被回收又醒来）和推送说可用但实际已经断了。**门控由关转开时还要补一次判定**——用户可能正选着一段文字（甚至从侧栏还没连上时就选着了），不补的话他得再划一次才看得见。门控转关时页面侧立即拆除工具条与结果层，并取消在飞请求。
 
 ### 页面内的注入
 
 沿 `picker.ts` 那套（**隔离世界**，页面看不见我们，符合「不给没在用的页面留痕」）：
 
-- host `<div>` + `attachShadow({mode:"open"})` + `all:initial` + `position:fixed` + 高 z-index + `popover="manual"`（穿出层叠上下文、也穿出全屏），挂到 `document.fullscreenElement ?? documentElement`（shadow 用 **open**：工具条要能被无障碍工具和自动化测试按名字点到，样式隔离靠 shadow 边界照样成立——「不给页面留痕」那条硬约束针对的是主世界注入，内容脚本的 DOM 不在其列）；
+- host `<div>` + `attachShadow({mode:"open"})` + `all:initial; display:block; position:fixed; width:max-content` + `popover="manual"`，挂到 `document.fullscreenElement ?? documentElement`（shadow 用 **open**：工具条要能被无障碍工具和自动化测试按名字点到，样式隔离靠 shadow 边界照样成立——「不给页面留痕」那条硬约束针对的是主世界注入，内容脚本的 DOM 不在其列）；
+- **样式必须用构造式样式表**（`new CSSStyleSheet()` + `shadow.adoptedStyleSheets`），不要往 shadow 里塞 `<style>` 元素：注入到页面文档里的 `<style>` 归**页面自己的 CSP** 管，`style-src` 只放行自己 nonce 的站点（YouTube 那类）会把它整份拦掉——现象就是「工具条出现在选区旁边，但完全没样式：图标按原图大小、三个按钮竖着排」。CSSOM 构造出来的样式表不受 CSP 约束，这正是它存在的意义；旧内核没有 `adoptedStyleSheets` 时再退回 `<style>`；
+- **层级走顶层**（`popover="manual"` + `showPopover()`，`picker.ts` 同款），不要跟页面拼 z-index：Google 翻译那类气泡常用到 z-index 上限（2147483647），拼不过。拿不到顶层（旧内核 / 全屏）时才退回 `z-index: 2147483647`。顶层内部也有先后（后 showPopover 的在上），所以结果层每次展开都会重新抬一次（hide + show），保证用户正在看的结果在气泡之上；
 - `MutationObserver` 盯 host 的父节点：被站点清掉或 SPA 换页（含 YouTube 的 `yt-navigate-*`）就重挂；`fullscreenchange` 同样处理；
 - 品牌标记用 `chrome.runtime.getURL("icons/icon32.png")`，因此 manifest 要加一条 `web_accessible_resources`（只放这一个图标与结果层页面），不要为了省一次声明把品牌 path 复制进 TS。
 
@@ -710,7 +712,8 @@ Host 是通用 ACP Client + 数据驱动 `AgentProfile`（启动命令、鉴权�
 ### 验证
 
 - 宿主级（`scripts/verify-selection.mjs`）：隐藏通道真的不进侧栏（整轮里没有任何 `update` / `turn.end` 发给扩展）、结果文本正确、取消生效、`utility` runtime 不被聊天复用、它拿不到标签页控制；
-- 页面级（`scripts/verify-selection-ui.mjs`，真 Chromium + 本地 fixture 页）：门控关掉时不出现、选中 200 字以内出现、超过 200 字不出现、四边安全边距（把选区放到视口四角各试一次）、选区滚出视口即隐藏、翻译结果层出现并可复制、引用后输入框里出现引文芯片；
+- 页面级（`scripts/verify-selection-ui.mjs`，真 Chromium + 本地 fixture 页）：门控关掉时不出现、选中 200 字以内出现、超过 200 字不出现、四边安全边距（把选区放到视口四角各试一次）、选区滚出视口即隐藏、翻译与搜索的结果层（Markdown 要真渲染成 `h2/ul/a`，不是贴纯文本）、引用后输入框里出现引文芯片；
+- 同一条脚本里还有两个**针对上面两条教训的回归**：fixture 用 `Content-Security-Policy: style-src 'self'` 提供一份严格 CSP 页面（样式仍要生效），并在页面上盖一层 `position:fixed; z-index:2147483647` 的全屏浮层（`elementFromPoint` 打到的必须还是我们的 host，即我们真的在顶层）；
 - Go 单测：`internal/selection` 的提示词拼装与语言映射表。
 
 ## ACP 映射
