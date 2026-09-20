@@ -44,6 +44,14 @@ export default defineManifest({
     // fixed names by `scripts/build-page-hooks.mjs` — a hook has to be re-runnable, and an ESM
     // loader would be evaluated once per document.
   ],
+  // 划词工具条要往页面里装两样东西，都得是可被页面读到的扩展资源：品牌标记（图标）与
+  // 结果层页面（iframe，复用侧栏的 markdown 渲染）。只放这两个，别的一律不放出去。
+  web_accessible_resources: [
+    {
+      resources: ["icons/icon16.png", "icons/icon32.png", "src/selection/index.html"],
+      matches: ["http://*/*", "https://*/*"],
+    },
+  ],
   permissions: ["sidePanel", "nativeMessaging", "tabs", "windows", "storage", "unlimitedStorage", "scripting", "favicon"],
   // `<all_urls>` (not the http/https pair) is what `tabs.captureVisibleTab` accepts without an
   // activeTab grant — screenshots must work on the Agent's pinned tab while the user looks

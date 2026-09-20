@@ -570,6 +570,8 @@ export type HostToExt =
     }
   | { type: "agentOptions"; options: AgentOption[] }
   | SelectionResult
+  /** SW → 侧栏：用户点了「引用」，把这段网页文字插进输入框（不走 Host）。 */
+  | { type: "selection.quote"; text: string; title?: string; url?: string; tabId?: number }
   | { type: "skills"; items: SkillItem[] }
   | { type: "fs.revealed"; path: string; missing?: boolean; error?: string }
   // An older host replying to a command it does not implement: see internal/host/host.go.

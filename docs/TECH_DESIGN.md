@@ -642,7 +642,7 @@ Host 是通用 ACP Client + 数据驱动 `AgentProfile`（启动命令、鉴权�
 
 沿 `picker.ts` 那套（**隔离世界**，页面看不见我们，符合「不给没在用的页面留痕」）：
 
-- host `<div>` + `attachShadow({mode:"closed"})` + `all:initial` + `position:fixed` + 高 z-index + `popover="manual"`（穿出层叠上下文、也穿出全屏），挂到 `document.fullscreenElement ?? documentElement`；
+- host `<div>` + `attachShadow({mode:"open"})` + `all:initial` + `position:fixed` + 高 z-index + `popover="manual"`（穿出层叠上下文、也穿出全屏），挂到 `document.fullscreenElement ?? documentElement`（shadow 用 **open**：工具条要能被无障碍工具和自动化测试按名字点到，样式隔离靠 shadow 边界照样成立——「不给页面留痕」那条硬约束针对的是主世界注入，内容脚本的 DOM 不在其列）；
 - `MutationObserver` 盯 host 的父节点：被站点清掉或 SPA 换页（含 YouTube 的 `yt-navigate-*`）就重挂；`fullscreenchange` 同样处理；
 - 品牌标记用 `chrome.runtime.getURL("icons/icon32.png")`，因此 manifest 要加一条 `web_accessible_resources`（只放这一个图标与结果层页面），不要为了省一次声明把品牌 path 复制进 TS。
 
@@ -674,7 +674,7 @@ Host 是通用 ACP Client + 数据驱动 `AgentProfile`（启动命令、鉴权�
 - **每次请求在这个进程上新开一个 ACP 会话**再 prompt，结束即弃：进程复用（不重复起进程）＋上下文干净（这次划词不受上次影响）。用户要求的「固定会话」就是这条固定通道，而不是一个会累积上下文的会话。
 - 它的 `session/update` **一条都不广播**：`OnUpdate` 里按 runtime 分流，utility 的文本只累积进本次请求的缓冲，按增量推给发起标签页；`turn.end` 同样不发侧栏。也不写 `workspace.WriteSessionID`、不进会话列表。
 - 权限：客户端固定用**自动放行**策略（复用现有 `unattended` 语义里「工具权限回 always」的那部分，只作用于这个 runtime）。否则一张无人应答的权限卡会把这一轮永远卡住。它**不 anchor 标签页**，所以扩展那边的浏览器控制闸门天然不放行——它拿不到标签页。
-- 单飞：同时只允许一个 utility 请求；新请求先 `session/cancel` 旧的。取消 / 超时的触发点：用户关工具条、门控转关、发起页导航走了、请求超过 60s。
+- 单飞：同时只允许一个 utility 请求；新请求先 `session/cancel` 旧的。取消 / 超时的触发点：用户关工具条、门控转关、**发起页导航走或标签被关**（页面没了就没人收结果，谁也不会再取消，那一轮会白跑到说完；所以 SW 按 tabId 记一份在飞请求，`tabs.onUpdated(loading)` / `onRemoved` 时替它取消）、请求超过 60s。
 - 模型沿用当前 Agent 默认（不额外配置）。
 
 ### 提示词
@@ -691,7 +691,7 @@ Host 是通用 ACP Client + 数据驱动 `AgentProfile`（启动命令、鉴权�
 
 搜索引擎返回的是 Markdown，而渲染器（含代码高亮 / mermaid）在侧栏的 React 包里，所以结果层**不是一个自研渲染器**：
 
-- 新增扩展页 `src/selection/index.html`（`@crxjs/vite-plugin` 会跟着 manifest 里的 `web_accessible_resources` 一起打），它只做一件事：接收 `{kind:"translate"|"search", state, markdown|text}` 的 postMessage，用与侧栏同一套 `Markdown` 组件渲染，在末尾放「复制 / 已复制」；
+- 新增扩展页 `src/selection/index.html`：**除了**挂进 `web_accessible_resources`，还要在 `vite.config.ts` 的 `build.rollupOptions.input` 里显式登记——crxjs 只自动处理 manifest 里登记的页面（侧栏那种），漏登记的话构建产物里留下的是没打包的 `./main.tsx`，iframe 一加载就 404（踩过），它只做一件事：接收 `{kind:"translate"|"search", state, markdown|text}` 的 postMessage，用与侧栏同一套 `Markdown` 组件渲染，在末尾放「复制 / 已复制」；
 - 工具条在 shadow DOM 里用 `<iframe src=chrome-extension://…/src/selection/index.html>` 装它：两个方向都隔离样式，主题跟随（页面 `dark`/`light` 由 postMessage 告知，默认跟随浏览器）；
 - 高度：iframe 内容用 `ResizeObserver` 量高后 postMessage 给父层，父层再按视口上限（约 60vh）夹紧并允许内部滚动——这样「结果层也永远在视口内」。
 

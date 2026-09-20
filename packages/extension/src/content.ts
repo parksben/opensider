@@ -3,6 +3,7 @@ import { createControlMark } from "./control-badge";
 import { extractSnapshot, measureTarget, measureViewport, runPageMethod } from "./page-api";
 import { PAGE_PICK_API } from "./page-pick";
 import { startPick, stopPick } from "./picker";
+import { acceptSelectionResult, setSelectionGate, startSelectionToolbar } from "./selection-toolbar";
 
 const controlMark = createControlMark(document);
 
@@ -27,7 +28,35 @@ function isPrerenderDocument(): boolean {
   return typeof document !== "undefined" && "prerendering" in document && Boolean(document.prerendering);
 }
 
+// 划词工具条：门控（侧栏开着 + Agent 就绪）由 service worker 算，这里只缓存结果；文案语言
+// 直接读侧栏持久化的那份状态（不把面板的 i18n 整个拖进内容脚本——它跑在每个页面上）。
+void chrome.storage.local
+  .get("opensider/state")
+  .then((stored) => {
+    const locale = (stored?.["opensider/state"] as { locale?: unknown } | undefined)?.locale;
+    startSelectionToolbar(locale === "zh" ? "zh" : "en");
+  })
+  .catch(() => startSelectionToolbar("en"));
+chrome.runtime
+  .sendMessage({ type: "selection.gate.get" })
+  .then((reply: { enabled?: boolean } | undefined) => setSelectionGate(reply?.enabled === true))
+  .catch(() => setSelectionGate(false));
+
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.type === "selection.gate") {
+    setSelectionGate(message.enabled === true);
+    sendResponse({ ok: true });
+    return true;
+  }
+  if (
+    message?.type === "selection.delta" ||
+    message?.type === "selection.done" ||
+    message?.type === "selection.failed"
+  ) {
+    acceptSelectionResult(message);
+    sendResponse({ ok: true });
+    return true;
+  }
   if (message?.type === "page.ping") {
     sendResponse({ ok: !isPrerenderDocument() });
     return true;

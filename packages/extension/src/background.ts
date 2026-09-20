@@ -219,6 +219,7 @@ function remember(msg: HostToExt): void {
   }
   if (msg.type === "status") {
     lastStatus = msg;
+    void publishSelectionGate();
     if (msg.state === "starting") {
       armStartingWatchdog();
     } else {
@@ -279,6 +280,34 @@ function broadcast(msg: HostToExt): void {
   }
 }
 
+/**
+ * 划词工具条的门控：**侧栏开着 + Agent 已就绪**两条都在 service worker 手里，所以在这里算，
+ * 页面侧只缓存结果。任一条变化就推给所有 http(s) 标签页；新加载的页面自己来问一次
+ * （`selection.gate.get`），不必依赖推送的时序。
+ */
+function selectionGateEnabled(): boolean {
+  return sidebars.size > 0 && lastStatus.type === "status" && lastStatus.state === "ready";
+}
+
+async function publishSelectionGate(): Promise<void> {
+  const enabled = selectionGateEnabled();
+  if (enabled === lastSelectionGate) return;
+  lastSelectionGate = enabled;
+  const tabs = await chrome.tabs.query({ url: ["http://*/*", "https://*/*"] }).catch(() => []);
+  for (const tab of tabs) {
+    if (tab.id === undefined) continue;
+    void chrome.tabs.sendMessage(tab.id, { type: "selection.gate", enabled }, { frameId: 0 }).catch(() => undefined);
+  }
+}
+
+/** 替某个标签页取消在飞的划词请求（导航、关闭时用）。 */
+function cancelSelectionFor(tabId: number): void {
+  const requestId = selectionRequests.get(tabId);
+  if (!requestId) return;
+  selectionRequests.delete(tabId);
+  sendNative({ type: "selection.cancel", requestId } as ExtToHost);
+}
+
 function nativeError(detail: string): string {
   return `${detail} Extension id: ${chrome.runtime.id}. Host: ${HOST_NAME}.`;
 }
@@ -323,6 +352,18 @@ function connectNative(force = false): void {
           console.warn("opensider: chunked ui.state is not json", error);
         }
       }
+      return;
+    }
+    if (
+      msg.type === "selection.delta" ||
+      msg.type === "selection.done" ||
+      msg.type === "selection.failed"
+    ) {
+      // 划词结果只回发起请求的那个标签页：这条链上侧栏完全不需要知道。
+      if (msg.type !== "selection.delta") selectionRequests.delete(msg.tabId);
+      void chrome.tabs
+        .sendMessage(msg.tabId, msg, { frameId: 0 })
+        .catch(() => undefined);
       return;
     }
     if (msg.type === "browser.command") {
@@ -463,6 +504,15 @@ type ControlGate = {
 let controlState: ControlSnapshot = emptyControl();
 let controlLoaded = false;
 let lastControl: HostToExt | undefined;
+/** 上一次推给标签页的划词门控（undefined = 还没推过），用来避免重复推送。 */
+let lastSelectionGate: boolean | undefined;
+/**
+ * 每个标签页在飞的划词请求（tabId → requestId）。
+ *
+ * 页面一旦导航走或标签被关，发起请求的那个上下文就没了，谁也不会再去取消——那一轮会一直跑到
+ * Agent 说完为止（白烧 token）。所以这里记一份，导航 / 关闭时替它取消。
+ */
+const selectionRequests = new Map<number, string>();
 let lastControlSessionId: string | undefined;
 /** The sidebar's permission mode (`ask` | `workspace` | `auto` | `unattended`). It lives in
  * the sidebar's persisted state; the SW follows it through storage so the borrow gate can
@@ -2189,6 +2239,8 @@ chrome.runtime.onConnect.addListener((port) => {
   sidebars.add(port);
   replay(port);
   connectNative();
+  // 面板打开/关闭直接决定划词工具条能不能出现（另一条是 Agent 是否就绪）。
+  void publishSelectionGate();
   // A panel just opened: its tab-control banner should be current, not a stale replay.
   void publishControl();
   // A panel just opened: the tab it will work with has to start reading as visible even
@@ -2208,6 +2260,7 @@ chrome.runtime.onConnect.addListener((port) => {
   });
   port.onDisconnect.addListener(() => {
     sidebars.delete(port);
+    void publishSelectionGate();
     // Last panel gone: the pages should stop pretending to be visible.
     if (sidebars.size === 0) void releaseActivity();
   });
@@ -2231,6 +2284,40 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg?.type === "ping") {
     connectNative();
     sendResponse({ ok: true, status: lastStatus });
+    return true;
+  }
+  if (msg?.type === "selection.gate.get") {
+    sendResponse({ ok: true, enabled: selectionGateEnabled() });
+    return true;
+  }
+  if (msg?.type === "selection.run") {
+    // tabId 由这里填：Host 只把它带回来，好让结果知道该回哪一页。
+    const tabId = _sender.tab?.id;
+    if (tabId === undefined) {
+      sendResponse({ ok: false, error: "no tab" });
+      return true;
+    }
+    selectionRequests.set(tabId, String(msg.requestId ?? ""));
+    sendNative({ ...msg, tabId } as ExtToHost);
+    sendResponse({ ok: true });
+    return true;
+  }
+  if (msg?.type === "selection.cancel") {
+    if (_sender.tab?.id !== undefined) selectionRequests.delete(_sender.tab.id);
+    sendNative(msg as ExtToHost);
+    sendResponse({ ok: true });
+    return true;
+  }
+  if (msg?.type === "selection.quote") {
+    // 引用只进侧栏输入框：不经过 Host，也不进 Agent 的上下文。
+    broadcast({
+      type: "selection.quote",
+      text: String(msg.text ?? ""),
+      title: typeof msg.title === "string" ? msg.title : undefined,
+      url: typeof msg.url === "string" ? msg.url : undefined,
+      tabId: _sender.tab?.id,
+    });
+    sendResponse({ ok: true });
     return true;
   }
   if (msg?.type === "reconnect") {
@@ -2259,8 +2346,16 @@ chrome.tabs.onUpdated.addListener((tabId, change, tab) => {
   if (change.status || change.title || change.url || change.favIconUrl || change.pinned) {
     scheduleTabsPublish();
   }
+  if (change.status === "loading" && selectionRequests.has(tabId)) {
+    // 页面要走了：它那条划词请求已经没人看结果，替它取消。
+    cancelSelectionFor(tabId);
+  }
   if (change.status === "complete") {
     void reassertControlBadge(tabId);
+    // 新加载的页面需要知道当前门控（内容脚本自己也会问一次，这里补推是为了不等它问）。
+    void chrome.tabs
+      .sendMessage(tabId, { type: "selection.gate", enabled: selectionGateEnabled() }, { frameId: 0 })
+      .catch(() => undefined);
   }
   // Held tabs: keep the side-panel card's title / url in step with the tab itself.
   if (change.status || change.title || change.url) void publishControlIfHeld(tabId);
@@ -2272,6 +2367,7 @@ chrome.tabs.onCreated.addListener((tab) => {
 });
 
 chrome.tabs.onRemoved.addListener((tabId, info) => {
+  cancelSelectionFor(tabId);
   if (isClosedCurrentTab(currentTabId, tabId) || isClosedCurrentTab(lastKnownTabId(), tabId)) {
     rememberCurrentTab(undefined);
   }

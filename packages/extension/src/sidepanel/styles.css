@@ -553,3 +553,65 @@ mark.cs-at-match {
     box-shadow: 0 0 0 0 transparent;
   }
 }
+
+/* 划词工具条的结果层（跑在 iframe 里的 src/selection 页面）。高度由父层按上报值夹紧，
+   所以这里只负责「内容长了内部滚动」，不设自己的视口高度。 */
+.cs-selection-result {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px 12px;
+  color: var(--text);
+}
+
+.cs-selection-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cs-selection-title {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.cs-selection-copy {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+.cs-selection-copy:hover {
+  color: var(--text);
+  border-color: var(--brass);
+}
+
+.cs-selection-body {
+  max-height: min(52vh, 26rem);
+  overflow-y: auto;
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.cs-selection-muted,
+.cs-selection-error {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.cs-selection-error {
+  color: var(--danger, #c2563f);
+}
+
+.cs-selection-text {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

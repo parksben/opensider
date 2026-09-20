@@ -27,4 +27,14 @@ export default defineConfig({
       "@shared": path.resolve(__dirname, "../shared/src/index.ts"),
     },
   },
+  build: {
+    rollupOptions: {
+      // crxjs 只会自动处理 manifest 里登记的页面（侧栏那种）。结果层页面只在
+      // web_accessible_resources 里挂着（它由页面里的 iframe 加载），所以要在这里显式登记，
+      // 否则构建产物里留下的是没打包的 `./main.tsx`，iframe 一加载就 404。
+      input: {
+        "selection-result": path.resolve(__dirname, "src/selection/index.html"),
+      },
+    },
+  },
 });
