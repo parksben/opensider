@@ -1,6 +1,10 @@
 package models
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/parksben/opensider/internal/sessioncfg"
+)
 
 func TestParseOpenCodeModelsReadsProviderSlashIDs(t *testing.T) {
 	catalog := ParseOpenCodeModels("Models cache refreshed\nopencode/big-pickle\ndeepseek/deepseek-v4-flash\n")
@@ -30,15 +34,15 @@ func TestParseOpenCodeModelsSkipsNoise(t *testing.T) {
 }
 
 func TestCatalogFromConfigOptionsPrefersPopulatedModel(t *testing.T) {
-	catalog := CatalogFromConfigOptions([]ConfigOption{
-		{ID: "model", Category: "model", CurrentValue: "x", Options: nil},
+	catalog := CatalogFromConfigOptions([]sessioncfg.Option{
+		{ID: "model", Category: "model", Current: "x"},
 		{
-			ID:           "model",
-			Category:     "model",
-			CurrentValue: "opencode/big-pickle",
-			Options: []ConfigChoice{
-				{Value: "opencode/big-pickle", Name: "OpenCode/Big Pickle"},
-				{Value: "deepseek/deepseek-v4-flash", Name: "DeepSeek/V4 Flash"},
+			ID:       "model",
+			Category: "model",
+			Current:  "opencode/big-pickle",
+			Values: []sessioncfg.Value{
+				{ID: "opencode/big-pickle", Name: "OpenCode/Big Pickle"},
+				{ID: "deepseek/deepseek-v4-flash", Name: "DeepSeek/V4 Flash"},
 			},
 		},
 	})
@@ -50,8 +54,8 @@ func TestCatalogFromConfigOptionsPrefersPopulatedModel(t *testing.T) {
 	}
 }
 
-func TestOptionsFromAnyAcceptsObjectMap(t *testing.T) {
-	options := OptionsFromAny(map[string]any{
+func TestParseAcceptsObjectMap(t *testing.T) {
+	options := sessioncfg.Parse(map[string]any{
 		"model": map[string]any{
 			"id":           "model",
 			"category":     "model",

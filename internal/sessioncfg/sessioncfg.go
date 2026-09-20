@@ -81,6 +81,15 @@ func (o Option) ValueName(id string) string {
 	return id
 }
 
+// Accepts 报告界面传来的某个字符串值是否合法：布尔项只认 "true" / "false"，
+// 其余项必须在广告过的值集合里（`off` 这类字符串值也算，不许自己造）。
+func (o Option) Accepts(value string) bool {
+	if o.IsBoolean() {
+		return value == "true" || value == "false"
+	}
+	return o.HasValue(value)
+}
+
 // WireValue 把界面用的字符串值转成规范要求的 JSON 值，并给出要不要带 `type`。
 // 规范要求**布尔值必须带 `type: "boolean"`**，否则引擎会当成字符串处理。
 func (o Option) WireValue(value string) (any, string) {

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/parksben/opensider/internal/protocol"
+	"github.com/parksben/opensider/internal/sessioncfg"
 )
 
 // 这里的 JSON 片段都是从真机 ACP probe 里原样抄回来的（2026-09-19 实测），
@@ -98,7 +99,7 @@ func decode(t *testing.T, raw string) map[string]any {
 func discover(t *testing.T, agentID, raw string) (Target, bool) {
 	t.Helper()
 	session := decode(t, raw)
-	return Discover(agentID, session["configOptions"], session["modes"])
+	return Discover(agentID, sessioncfg.Parse(session["configOptions"]), session["modes"])
 }
 
 func TestDiscoverOpenCodeUsesConfigOption(t *testing.T) {
@@ -141,7 +142,7 @@ func TestDiscoverPrefersConfigOptionsOverLegacyModes(t *testing.T) {
 func TestDiscoverLegacyOnlyModes(t *testing.T) {
 	session := decode(t, `{"modes": {"currentModeId": "build", "availableModes": [
 		{"id": "build", "name": "Build"}, {"id": "plan", "name": "Plan"}]}}`)
-	target, ok := Discover("some-new-cli", session["configOptions"], session["modes"])
+	target, ok := Discover("some-new-cli", sessioncfg.Parse(session["configOptions"]), session["modes"])
 	if !ok {
 		t.Fatal("expected a target from legacy modes")
 	}
@@ -224,9 +225,9 @@ func TestPolicyLeavesUserPinnedModeAlone(t *testing.T) {
 
 func TestPolicyUsesSeparatePermissionOption(t *testing.T) {
 	session := decode(t, copilotSession)
-	target, has := Discover("copilot", session["configOptions"], session["modes"])
+	target, has := Discover("copilot", sessioncfg.Parse(session["configOptions"]), session["modes"])
 
-	push := Plan(protocol.PolicyUnattended, "copilot", target, has, session["configOptions"], "")
+	push := Plan(protocol.PolicyUnattended, "copilot", target, has, sessioncfg.Parse(session["configOptions"]), "")
 	if push.ModeID != "" {
 		t.Fatalf("copilot permissions live in allow_all, not the mode: %+v", push)
 	}
@@ -234,7 +235,7 @@ func TestPolicyUsesSeparatePermissionOption(t *testing.T) {
 		t.Fatalf("want allow_all=on, got %+v", push)
 	}
 
-	ask := Plan(protocol.PolicyAsk, "copilot", target, has, session["configOptions"], "")
+	ask := Plan(protocol.PolicyAsk, "copilot", target, has, sessioncfg.Parse(session["configOptions"]), "")
 	if ask.ConfigID != "allow_all" || ask.ConfigValue != "off" {
 		t.Fatalf("ask should turn allow_all off, got %+v", ask)
 	}
@@ -249,8 +250,8 @@ func TestPolicySkipsUnadvertisedCandidates(t *testing.T) {
 	// 某家适配器声明了 id，但这次会话没广告它——不能盲发。
 	session := decode(t, `{"configOptions": [{"id": "mode", "category": "mode", "currentValue": "build", "options": [
 		{"value": "build", "name": "Build"}, {"value": "plan", "name": "Plan"}]}]}`)
-	target, has := Discover("claude", session["configOptions"], session["modes"])
-	if push := Plan(protocol.PolicyUnattended, "claude", target, has, session["configOptions"], ""); push.ModeID != "" {
+	target, has := Discover("claude", sessioncfg.Parse(session["configOptions"]), session["modes"])
+	if push := Plan(protocol.PolicyUnattended, "claude", target, has, sessioncfg.Parse(session["configOptions"]), ""); push.ModeID != "" {
 		t.Fatalf("bypassPermissions was not advertised, must not be sent: %+v", push)
 	}
 }

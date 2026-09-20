@@ -9,8 +9,8 @@
 // `modes` 字段、只在 configOptions 里给 `mode: build|plan`。靠字符串相等匹配必然散成
 // 一堆 if。所以：
 //
-//  1. 规范能解决的（Config Options 优先于 Session Modes、只认 value/name/description）
-//     全部走 Discover 这一条泛化路径；
+//  1. 规范能解决的（Config Options 优先于 Session Modes）全部走 Discover 这一条泛化
+//     路径；原始字段的解析归 internal/sessioncfg，本包只消费它解析好的配置项；
 //  2. 规范解决不了的各家差异**只允许**写进 adapters.go，而且要实测验证过；
 //  3. 认不出来就老实说「不知道」（Kind unknown / 没有 Target），UI 那边对应的表现是
 //     不画控件，而不是拿猜测的 id 去砸 RPC。
@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	"github.com/parksben/opensider/internal/protocol"
+	"github.com/parksben/opensider/internal/sessioncfg"
 )
 
 // Source 说明这个会话的模式是用哪种机制表达的。规范里 Config Options 已经取代
@@ -96,53 +97,37 @@ func (t Target) Name(id string) string {
 // 取值顺序照规范：先 configOptions 里 category=mode 的项（其次 id/configId=mode），
 // 没有再退回旧的 `modes`。少于两项就算「没有可切换的模式」——一项的时候切换没有意义，
 // 与其画一个只有一个选项的下拉，不如不画。
-func Discover(agentID string, configOptions any, legacy any) (Target, bool) {
+func Discover(agentID string, options []sessioncfg.Option, legacy any) (Target, bool) {
 	adapter := AdapterFor(agentID)
-	if opt, ok := modeConfigOption(configOptions); ok {
-		options := parseChoices(opt["options"])
-		if len(options) < 2 {
+	if opt, ok := sessioncfg.LookupMode(options); ok {
+		choices := optionsFromValues(opt.Values)
+		if len(choices) < 2 {
 			return Target{}, false
-		}
-		current := str(opt["currentValue"])
-		if current == "" {
-			current = str(opt["value"])
 		}
 		return Target{
 			Source:   SourceConfig,
-			ConfigID: optionID(opt),
-			Current:  current,
-			Options:  classifyAll(adapter, options),
+			ConfigID: opt.ID,
+			Current:  opt.Current,
+			Options:  classifyAll(adapter, choices),
 		}, true
 	}
 	return fromLegacyModes(adapter, legacy)
 }
 
-// HasConfigOption 报告某个独立配置项（例如 copilot 的 `allow_all`）是否真被广告。
-// 权限档要在这种项上表达时，必须先过这一关，否则又是一次盲发。
-func HasConfigOption(configOptions any, configID string) bool {
-	for _, opt := range configOptionList(configOptions) {
-		if optionID(opt) == configID {
-			return true
-		}
+// optionsFromValues 把解析层的值列表转成模式选项（只补我们的归类字段）。
+func optionsFromValues(values []sessioncfg.Value) []Option {
+	out := make([]Option, 0, len(values))
+	for _, value := range values {
+		out = append(out, Option{ID: value.ID, Name: value.Name, Desc: value.Desc})
 	}
-	return false
+	return out
 }
 
-// modeConfigOption 挑出表达 mode 的那个配置项。category 是规范给的语义标记，优先用它；
-// 有的老实现不带 category，才退回按 id/configId 判断。
-func modeConfigOption(configOptions any) (map[string]any, bool) {
-	list := configOptionList(configOptions)
-	for _, opt := range list {
-		if strings.EqualFold(str(opt["category"]), "mode") {
-			return opt, true
-		}
-	}
-	for _, opt := range list {
-		if optionID(opt) == "mode" {
-			return opt, true
-		}
-	}
-	return nil, false
+// HasConfigOption 报告某个独立配置项（例如 copilot 的 `allow_all`）是否真被广告。
+// 权限档要在这种项上表达时，必须先过这一关，否则又是一次盲发。
+func HasConfigOption(options []sessioncfg.Option, configID string) bool {
+	_, ok := sessioncfg.ByID(options, configID)
+	return ok
 }
 
 func fromLegacyModes(adapter Adapter, legacy any) (Target, bool) {
@@ -164,7 +149,7 @@ func fromLegacyModes(adapter Adapter, legacy any) (Target, bool) {
 	default:
 		raw = legacy
 	}
-	options := parseChoices(raw)
+	options := optionsFromValues(sessioncfg.ParseValues(raw))
 	if len(options) < 2 {
 		return Target{}, false
 	}
@@ -173,42 +158,6 @@ func fromLegacyModes(adapter Adapter, legacy any) (Target, bool) {
 		Current: current,
 		Options: classifyAll(adapter, options),
 	}, true
-}
-
-// parseChoices 把 ACP 的 options 数组摊平成 {id, name, desc}。规范允许分组
-// （`{group, name, options:[…]}`），分组只影响排版，这里摊平即可——嵌套最多一层。
-func parseChoices(v any) []Option {
-	var out []Option
-	seen := map[string]bool{}
-	add := func(opt Option) {
-		if opt.ID == "" || seen[opt.ID] {
-			return
-		}
-		if opt.Name == "" {
-			opt.Name = opt.ID
-		}
-		seen[opt.ID] = true
-		out = append(out, opt)
-	}
-	for _, item := range asSlice(v) {
-		switch entry := item.(type) {
-		case string:
-			add(Option{ID: strings.TrimSpace(entry)})
-		case map[string]any:
-			if nested, ok := entry["options"]; ok && entry["value"] == nil && entry["id"] == nil {
-				for _, opt := range parseChoices(nested) {
-					add(opt)
-				}
-				continue
-			}
-			add(Option{
-				ID:   firstNonEmpty(str(entry["value"]), str(entry["id"])),
-				Name: str(entry["name"]),
-				Desc: str(entry["description"]),
-			})
-		}
-	}
-	return out
 }
 
 func classifyAll(adapter Adapter, options []Option) []Option {
@@ -300,30 +249,6 @@ func Resolve(candidates []string, target Target) (string, bool) {
 	return "", false
 }
 
-func optionID(opt map[string]any) string {
-	return firstNonEmpty(str(opt["id"]), str(opt["configId"]))
-}
-
-func configOptionList(configOptions any) []map[string]any {
-	var out []map[string]any
-	for _, item := range asSlice(configOptions) {
-		if opt, ok := item.(map[string]any); ok {
-			out = append(out, opt)
-		}
-	}
-	if len(out) == 0 {
-		// 有的实现把 configOptions 包在外层对象里。
-		if wrapper, ok := configOptions.(map[string]any); ok {
-			for _, item := range asSlice(wrapper["configOptions"]) {
-				if opt, ok := item.(map[string]any); ok {
-					out = append(out, opt)
-				}
-			}
-		}
-	}
-	return out
-}
-
 func asSlice(v any) []any {
 	if items, ok := v.([]any); ok {
 		return items
@@ -338,15 +263,6 @@ func str(v any) string {
 	return ""
 }
 
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if value != "" {
-			return value
-		}
-	}
-	return ""
-}
-
 // PolicyPush 汇总「某个权限档该往 CLI 推什么」。空结果表示这家没有对应概念，
 // 那就只在客户端拦卡（不猜、不发）。
 type PolicyPush struct {
@@ -357,7 +273,7 @@ type PolicyPush struct {
 
 // Plan 算出把某个权限档表达成 CLI 侧设置的动作。`pinned` 是用户显式选过的模式：
 // 一旦用户自己选了模式，权限档就不再覆盖它（但仍然会去动独立权限项——那个不是模式）。
-func Plan(policy protocol.AgentPolicy, agentID string, target Target, hasTarget bool, configOptions any, pinned string) PolicyPush {
+func Plan(policy protocol.AgentPolicy, agentID string, target Target, hasTarget bool, options []sessioncfg.Option, pinned string) PolicyPush {
 	adapter := AdapterFor(agentID)
 	var push PolicyPush
 	if pinned == "" && hasTarget {
@@ -368,7 +284,7 @@ func Plan(policy protocol.AgentPolicy, agentID string, target Target, hasTarget 
 		}
 	}
 	if configID, value, ok := adapter.PermissionOption(policy); ok && configID != "" {
-		if HasConfigOption(configOptions, configID) {
+		if HasConfigOption(options, configID) {
 			push.ConfigID = configID
 			push.ConfigValue = value
 		}
