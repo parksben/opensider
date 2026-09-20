@@ -618,7 +618,7 @@ mark.cs-at-match {
 }
 
 .cs-selection-error {
-  color: var(--danger, #c2563f);
+  color: var(--bad);
 }
 
 .cs-selection-text {

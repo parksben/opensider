@@ -26,6 +26,7 @@ import type { ChatMessage, PermissionRequest, PlanPrompt, QuestionPrompt, TodoIt
 import { AgentSetup } from "./components/AgentSetup";
 import { BridgeSetup } from "./components/BridgeSetup";
 import { ChatPane } from "./components/ChatPane";
+import { ConfirmDialog } from "./components/ConfirmDialog";
 import { ControlBanner, type BorrowRequest } from "./components/ControlBanner";
 import { Header } from "./components/Header";
 import { COMPACT_MAIN_PX, COMPOSER_ACTION_FLAT_PX, ICON_ONLY_MAIN_PX, MODEL_NARROW_MAIN_PX } from "./layout";
@@ -185,6 +186,8 @@ export function App() {
   const connectedProviderRef = useRef("");
   const rollbackRef = useRef<{ providerId: string; wasReady: boolean } | null>(null);
   const skipIdleConnectRef = useRef(false);
+  /** 切换 Agent 前的高危确认：跑着的任务会被 Host 停掉旧 runtime 而中断，先问一句。 */
+  const [agentSwitch, setAgentSwitch] = useState<{ providerId: string; running: number }>();
   // Host 是否已经扫完 Agent 列表（agents / idle 任一条到过）。自动连接的判断要等它。
   const hostScannedRef = useRef(false);
   const agentsRef = useRef<AgentInfo[]>([]);
@@ -403,6 +406,35 @@ export function App() {
     if (!hostScannedRef.current) return "";
     if (statusRef.current !== "idle" && statusRef.current !== "starting") return "";
     return selectedProviderRef.current || list[0]?.id || "";
+  };
+
+  /**
+   * header 上点 Agent：有正在跑的任务就先弹窗确认，别默默把它们打断。
+   *
+   * 只拦这一条用户主动切 Agent 的路径。自动连接（重载 / 重装后恢复上次那家）不弹窗——
+   * 那是恢复、不是切换；点子已经连着的那家也不弹（requestConnect 本来就会自己 return）。
+   */
+  const pickAgent = (providerId: string) => {
+    if (!providerId) return;
+    if (providerId === connectedProviderRef.current && statusRef.current === "ready") {
+      requestConnect(providerId);
+      return;
+    }
+    const running = runningIdsRef.current.size;
+    if (running > 0) {
+      setAgentSwitch({ providerId, running });
+      return;
+    }
+    requestConnect(providerId);
+  };
+
+  /** 确认切换：先把这几轮按中断结算（旧 runtime 确实被 Host 停掉了），再发起连接。 */
+  const confirmAgentSwitch = () => {
+    const target = agentSwitch;
+    setAgentSwitch(undefined);
+    if (!target) return;
+    finishAllTurns();
+    requestConnect(target.providerId);
   };
 
   const cancelConnect = () => {
@@ -1796,7 +1828,7 @@ export function App() {
           sessionsOpen={sessionsOpen}
           updateAvailable={updateAvailable}
           onShowUpdate={() => setUpdateOpen(true)}
-          onSelectAgent={requestConnect}
+          onSelectAgent={pickAgent}
           onCancelConnect={cancelConnect}
           onToggleSessions={() => setSessionsOpen((open) => !open)}
           onRetry={() => {
@@ -2031,6 +2063,21 @@ export function App() {
       ) : null}
       {uninstallOpen ? (
         <UninstallDialog locale={locale} onClose={() => setUninstallOpen(false)} />
+      ) : null}
+      {/* 切换 Agent 前的高危确认：跑着的任务会被打断，先问一句（文案见 i18n）。 */}
+      {agentSwitch ? (
+        <ConfirmDialog
+          locale={locale}
+          title={t(locale, "switchAgentTitle")}
+          message={t(
+            locale,
+            agentSwitch.running > 1 ? "switchAgentRunningMany" : "switchAgentRunningOne",
+          ).replace("{n}", String(agentSwitch.running))}
+          cancelLabel={t(locale, "switchAgentCancel")}
+          confirmLabel={t(locale, "switchAgentConfirm")}
+          onCancel={() => setAgentSwitch(undefined)}
+          onConfirm={confirmAgentSwitch}
+        />
       ) : null}
     </div>
   );

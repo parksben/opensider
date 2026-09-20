@@ -211,6 +211,14 @@ const copy = {
     deleteSessionConfirmDetail: "This cannot be undone.",
     deleteSessionConfirmAction: "Delete",
     deleteSessionCancel: "Cancel",
+    // 切换 Agent 前的高危确认：英文分开单复数两条（词条文案已与用户确认）。
+    switchAgentTitle: "Switch Agent?",
+    switchAgentRunningOne:
+      "1 task is still running. Switching Agent will interrupt it — switch anyway?",
+    switchAgentRunningMany:
+      "{n} tasks are still running. Switching Agent will interrupt them — switch anyway?",
+    switchAgentCancel: "Cancel",
+    switchAgentConfirm: "Switch",
     untitled: "New Chat",
     forked: "Forked",
     sessionRunning: "Running",
@@ -400,6 +408,11 @@ const copy = {
     deleteSessionConfirmDetail: "删除后无法恢复。",
     deleteSessionConfirmAction: "删除",
     deleteSessionCancel: "取消",
+    switchAgentTitle: "切换 Agent？",
+    switchAgentRunningOne: "当前有 1 个任务正在执行中，切换 Agent 会导致其中断，请确认是否切换？",
+    switchAgentRunningMany: "当前有 {n} 个任务正在执行中，切换 Agent 会导致其中断，请确认是否切换？",
+    switchAgentCancel: "取消",
+    switchAgentConfirm: "切换",
     untitled: "新会话",
     forked: "分叉",
     sessionRunning: "进行中",
