@@ -100,10 +100,18 @@ OpenSider is itself an Agent client: its local bridge starts an Agent process an
 
 Desktop apps such as Claude and Codex keep their runtime behind their own UI and do not expose a stable ACP process endpoint for OpenSider to start and control. Automating their windows would be brittle and could not preserve the full protocol behavior, so the desktop apps themselves are not supported. Their corresponding CLIs can still be used when they provide ACP or have a compatible adapter.
 
-To connect either product, use its CLI counterpart:
+To connect a supported Agent product:
 
-- **Claude Code:** install and sign in to [Claude Code CLI](https://docs.claude.com/en/docs/claude-code/setup), then run the OpenSider installation prompt above again. OpenSider will detect `claude` and set up the required ACP adapter.
-- **Codex:** install and sign in to [Codex CLI](https://developers.openai.com/codex/cli), then run the OpenSider installation prompt above again. OpenSider will detect `codex` and set up the required ACP adapter.
+1. Visit the product's official website and find its official Agent CLI.
+2. Follow the official instructions to install the CLI and sign in.
+3. Run the OpenSider installation prompt above again. OpenSider will detect the CLI and configure any available ACP integration.
+
+For example:
+
+- **Claude Code:** install and sign in to [Claude Code CLI](https://docs.claude.com/en/docs/claude-code/setup), then run the OpenSider installation prompt again.
+- **Codex:** install and sign in to [Codex CLI](https://developers.openai.com/codex/cli), then run the OpenSider installation prompt again.
+
+If the product has no Agent CLI, ACP interface, or compatible adapter, OpenSider cannot connect to it yet.
 
 ### I installed an Agent CLI. Why can't I select it in the side panel?
 

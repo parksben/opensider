@@ -100,10 +100,18 @@ OpenSider 本身就是一个 Agent 客户端：本地桥接程序负责启动 Ag
 
 Claude、Codex 等桌面应用将运行时封装在自己的界面中，没有向 OpenSider 暴露可供启动和控制的稳定 ACP 进程接口。模拟操作它们的窗口既不可靠，也无法完整承载协议行为，因此不支持桌面应用本身；如果对应的 CLI 支持 ACP 或具有兼容适配器，仍可单独接入。
 
-如需接入这两款产品，请改用对应的 CLI：
+如需接入一款受支持的 Agent 产品：
 
-- **Claude Code：**先安装并登录 [Claude Code CLI](https://docs.claude.com/en/docs/claude-code/setup)，再重新执行上方的 OpenSider 安装提示词。OpenSider 会检测 `claude` 并配置所需的 ACP 适配器。
-- **Codex：**先安装并登录 [Codex CLI](https://developers.openai.com/codex/cli)，再重新执行上方的 OpenSider 安装提示词。OpenSider 会检测 `codex` 并配置所需的 ACP 适配器。
+1. 前往该产品的官方网站，找到它提供的官方 Agent CLI。
+2. 按官方说明安装 CLI 并完成登录。
+3. 重新执行上方的 OpenSider 安装提示词，由 OpenSider 探测该 CLI 并配置可用的 ACP 接入。
+
+例如：
+
+- **Claude Code：**安装并登录 [Claude Code CLI](https://docs.claude.com/en/docs/claude-code/setup)，再重新执行 OpenSider 安装提示词。
+- **Codex：**安装并登录 [Codex CLI](https://developers.openai.com/codex/cli)，再重新执行 OpenSider 安装提示词。
+
+如果该产品没有 Agent CLI、ACP 接口或兼容适配器，OpenSider 暂时无法接入。
 
 ### 已经安装了 Agent CLI，为什么侧边栏里仍然无法选择？
 
