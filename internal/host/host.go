@@ -21,6 +21,7 @@ import (
 	"github.com/parksben/opensider/internal/protocol"
 	"github.com/parksben/opensider/internal/release"
 	"github.com/parksben/opensider/internal/reveal"
+	"github.com/parksben/opensider/internal/sessioncfg"
 	"github.com/parksben/opensider/internal/uistate"
 	"github.com/parksben/opensider/internal/version"
 	"github.com/parksben/opensider/internal/watch"
@@ -520,7 +521,7 @@ func (h *Host) refreshModels() {
 }
 
 func (h *Host) absorbConfigUpdate(update map[string]any) {
-	overlay := models.CatalogFromConfigOptions(models.OptionsFromAny(update["configOptions"]))
+	overlay := models.CatalogFromConfigOptions(sessioncfg.Parse(update["configOptions"]))
 	h.mu.Lock()
 	h.catalog = models.MergeCatalog(h.catalog, overlay)
 	h.catalog = models.MergeCatalog(h.catalog, models.CatalogFromSessionModels(update["models"]))
@@ -529,7 +530,7 @@ func (h *Host) absorbConfigUpdate(update map[string]any) {
 }
 
 func (h *Host) absorbSessionOptions(opened acp.SessionOpen) {
-	overlay := models.CatalogFromConfigOptions(models.OptionsFromAny(opened.ConfigOptions))
+	overlay := models.CatalogFromConfigOptions(sessioncfg.Parse(opened.ConfigOptions))
 	h.mu.Lock()
 	h.catalog = models.MergeCatalog(h.catalog, overlay)
 	h.catalog = models.MergeCatalog(h.catalog, models.CatalogFromSessionModels(opened.Models))
@@ -542,7 +543,7 @@ func (h *Host) absorbSessionOptions(opened acp.SessionOpen) {
 	if n > 0 {
 		log.Log(fmt.Sprintf("models %d current=%s", n, current))
 	} else {
-		opts := models.OptionsFromAny(opened.ConfigOptions)
+		opts := sessioncfg.Parse(opened.ConfigOptions)
 		var ids []string
 		for _, option := range opts {
 			id := option.ID
@@ -861,9 +862,9 @@ func (h *Host) applyModel(runtime *acpRuntime, modelID string) error {
 	if err != nil {
 		return err
 	}
-	var options []models.ConfigOption
+	var options []sessioncfg.Option
 	if obj, ok := result.(map[string]any); ok {
-		options = models.OptionsFromAny(obj["configOptions"])
+		options = sessioncfg.Parse(obj["configOptions"])
 	}
 	overlay := models.CatalogFromConfigOptions(options)
 	overlay.CurrentID = modelID

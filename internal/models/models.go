@@ -9,22 +9,8 @@ import (
 
 	"github.com/parksben/opensider/internal/log"
 	"github.com/parksben/opensider/internal/protocol"
+	"github.com/parksben/opensider/internal/sessioncfg"
 )
-
-type ConfigOption struct {
-	ID           string         `json:"id"`
-	ConfigID     string         `json:"configId"`
-	Name         string         `json:"name"`
-	Category     string         `json:"category"`
-	Type         string         `json:"type"`
-	CurrentValue any            `json:"currentValue"`
-	Options      []ConfigChoice `json:"options"`
-}
-
-type ConfigChoice struct {
-	Value string `json:"value"`
-	Name  string `json:"name"`
-}
 
 type Catalog struct {
 	Models        []protocol.AgentModel
@@ -100,14 +86,14 @@ func ParseAgentModels(stdout string) Catalog {
 	return Catalog{Models: unique, CurrentID: currentID, ModelConfigID: "model"}
 }
 
-func CatalogFromConfigOptions(options []ConfigOption) Catalog {
-	var model *ConfigOption
+func CatalogFromConfigOptions(options []sessioncfg.Option) Catalog {
+	var model *sessioncfg.Option
 	for i := range options {
 		option := &options[i]
 		if !isModelOption(option) {
 			continue
 		}
-		if model == nil || (len(model.Options) == 0 && len(option.Options) > 0) {
+		if model == nil || (len(model.Values) == 0 && len(option.Values) > 0) {
 			model = option
 		}
 	}
@@ -115,29 +101,22 @@ func CatalogFromConfigOptions(options []ConfigOption) Catalog {
 		return Catalog{}
 	}
 	var models []protocol.AgentModel
-	for _, option := range model.Options {
-		if option.Value == "" {
+	for _, value := range model.Values {
+		if value.ID == "" {
 			continue
 		}
-		name := option.Name
+		name := value.Name
 		if name == "" {
-			name = option.Value
+			name = value.ID
 		}
-		models = append(models, protocol.AgentModel{ID: option.Value, Name: name})
+		models = append(models, protocol.AgentModel{ID: value.ID, Name: name})
 	}
 	unique := UniqueModels(models)
-	currentID := ""
-	if s, ok := model.CurrentValue.(string); ok {
-		currentID = s
-	}
 	configID := model.ID
-	if configID == "" {
-		configID = model.ConfigID
-	}
 	if configID == "" {
 		configID = "model"
 	}
-	out := Catalog{CurrentID: currentID, ModelConfigID: configID}
+	out := Catalog{CurrentID: model.Current, ModelConfigID: configID}
 	if len(unique) > 0 {
 		out.Models = unique
 	}
@@ -314,80 +293,11 @@ func openCodeModelID(line string) string {
 	return line
 }
 
-func OptionsFromAny(v any) []ConfigOption {
-	switch raw := v.(type) {
-	case []any:
-		var out []ConfigOption
-		for _, item := range raw {
-			if opt, ok := optionFromMap(item); ok {
-				out = append(out, opt)
-			}
-		}
-		return out
-	case map[string]any:
-		if opt, ok := optionFromMap(raw); ok {
-			return []ConfigOption{opt}
-		}
-		var out []ConfigOption
-		if nested, ok := raw["configOptions"]; ok && nested != nil {
-			out = append(out, OptionsFromAny(nested)...)
-		}
-		for key, item := range raw {
-			if key == "configOptions" {
-				continue
-			}
-			if opt, ok := optionFromMap(item); ok {
-				out = append(out, opt)
-			}
-		}
-		return out
-	default:
-		return nil
+func isModelOption(option *sessioncfg.Option) bool {
+	if strings.EqualFold(option.Category, sessioncfg.CategoryModel) {
+		return true
 	}
-}
-
-func optionFromMap(v any) (ConfigOption, bool) {
-	obj, ok := v.(map[string]any)
-	if !ok {
-		return ConfigOption{}, false
-	}
-	opt := ConfigOption{
-		ID:           firstStr(obj, "id", "configId"),
-		ConfigID:     firstStr(obj, "configId", "id"),
-		Name:         str(obj["name"]),
-		Category:     str(obj["category"]),
-		Type:         str(obj["type"]),
-		CurrentValue: obj["currentValue"],
-	}
-	if opt.CurrentValue == nil {
-		opt.CurrentValue = obj["value"]
-	}
-	if choices, ok := obj["options"].([]any); ok {
-		for _, c := range choices {
-			co, ok := c.(map[string]any)
-			if !ok {
-				continue
-			}
-			value := firstStr(co, "value", "id", "modelId")
-			name := str(co["name"])
-			if name == "" {
-				name = value
-			}
-			if value == "" {
-				continue
-			}
-			opt.Options = append(opt.Options, ConfigChoice{Value: value, Name: name})
-		}
-	}
-	if opt.ID == "" && opt.ConfigID == "" && opt.Category == "" && len(opt.Options) == 0 {
-		return ConfigOption{}, false
-	}
-	return opt, true
-}
-
-func isModelOption(option *ConfigOption) bool {
-	id := strings.ToLower(option.ID + " " + option.ConfigID)
-	return option.Category == "model" || strings.Contains(id, "model")
+	return strings.Contains(strings.ToLower(option.ID), "model")
 }
 
 func firstStr(obj map[string]any, keys ...string) string {

@@ -113,6 +113,12 @@ func Parse(v any) []Option {
 	}
 }
 
+// ParseValues 解析一组「可选值」（`options[]` 的形状），legacy 的
+// `modes.availableModes` 也是同一形状，两处共用一套摊平逻辑。
+func ParseValues(v any) []Value {
+	return parseValues(v)
+}
+
 // ByCategory 按类别取（规范字段 `category`，大小写不敏感），保持原顺序。
 func ByCategory(options []Option, category string) []Option {
 	var out []Option
