@@ -122,6 +122,7 @@ scripts/verify-first-connect.mjs  首次打开侧栏要自己连上（`SCENARIO=
 scripts/verify-selection.mjs  划词隐藏通道（不进侧栏 / 独立会话 / 取消恢复）的帧级验证
 scripts/verify-selection-ui.mjs  划词工具条（门控 / 结构 / 定位 / 层级 / 结果层 / 引文芯片）的端到端验证
 scripts/verify-skill-menu.mjs  `/` skill 探测菜单（列表 / 搜索 / 详情面板 / 芯片落位 / 发出的提示词）的端到端验证
+scripts/verify-agent-switch-guard.mjs  有任务在跑时切 Agent（确认弹窗 / 取消不切 / 确认才切）的端到端验证
 scripts/lib/sandbox.mjs  上面几个脚本共用的沙箱（临时 HOME / 现编 Host / 假 Agent / profile 内桥接清单）
 scripts/fixtures/player-check.html  模拟「站点自己做环境自检就拒绝播」的假播放器（人工验收用）
 scripts/fake-acp-agent.mjs  假 ACP Agent（e2e 用，按行 JSON，可控分片/是否响应 cancel；另答 `<cli> models`）

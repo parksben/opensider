@@ -770,6 +770,18 @@ macOS 清单路径：`~/Library/Application Support/Google/Chrome/NativeMessagin
 - 字体：IBM Plex Sans / Mono（中英都不用衬线体）。Google Fonts 只拉 400/500。`html`/`body` 默认 `font-weight: 400`；`b`/`strong`/标题/`th`、Markdown 标题与表头、以及 Tailwind `font-medium`/`semibold`/`bold` 一律 500（`@theme` 把更重的 weight token 压到 500），避免浏览器 `bolder` 或 preflight 跳出 600/700。
 - 工具行左侧按 ACP `kind` 换 lucide 图标：read / edit / execute / search / fetch 等，颜色跟灰字走。`pending` / `in_progress` 时只渲 `LoaderCircle`，结束后才换回 kind 图标，二者不同时出现。标题始终用 `toolLiveHeadline`：短名（`toolLabel`）+ 全角 `：` + `primaryArg`。`tool_call` / 更新时 `withPrimaryArg` 把关键参数写进 `ToolPart.primaryArg` 并落盘；hydrate 时缺了再补算。二次进会话只读已存的 `primaryArg`，不因 args 形态变化丢掉拼接。`TextFold` 一行：外层 `w-full min-w-0`，内层簇 `max-w-full` 随文案变窄；文案 `min-w-0 truncate`（不要 `flex-1`），箭头 `shrink-0` 紧贴文案，只有标题被省略时才顶到行尾。展开后的入参 / 返回走 `ToolJsonView`：字符串以 `{`/`[` 包住才 `JSON.parse`，失败则原文；对象 / 数组直接拆。最外层单 key 只渲 value；其余层每项一段 `key：value`，复合 value 先写 `key：` 再以 `padding-left: 1em` 递进。`formatScalar` / 原文把 `\n{2,}` 压成 `\n`，只空白的段不渲。不再 `JSON.stringify` 进 `pre`。
 
+## 有任务在跑时切 Agent（确认弹窗）
+
+切 Agent 会换掉本机 runtime：Host 先把旧 runtime 拆掉（`finishAllTurns()` → kill），正在跑的那几轮随即断在半路。这是**用户点一下就可能丢掉活儿**的动作，所以只在这一个入口拦一次。
+
+- **拦的只有顶栏那一处**：`App` 的 `pickAgent(providerId)` 是 header Agent 选择器唯一的回调。目标就是当前这家（重连，例如模型掉线后重来）则直接 `requestConnect()`，不弹；否则数一下「还在跑的会话」——侧栏自己的 `runningIdsRef`（每个会话的 `isRunning` 集合），**不额外问 Host**，因为这本来就是侧栏已经知道的事实。
+- **不拦自动路径**：启动时的自动连接（`autoConnectTarget()`）不是用户切换，也不能弹窗——那时用户还没表达任何意图。拦在这里会变成「一打开侧栏就弹一个框」。
+- **弹窗形态**：抽了 `ModalShell`（遮罩 + `role="dialog"` 面板 + 标题栏 + Esc / 点遮罩关闭 + `stopImmediatePropagation`）出来，`PromptDialog`（更新 / 卸载）与新的 `ConfirmDialog` 共用同一套外壳——样式一致不是靠「照着再写一遍」，而是同一份组件。`ConfirmDialog` 固定「取消 + 一个动作」，取消 `autoFocus`：这是会打断任务的确认，回车不能等于「切」。
+- **高危色用 `--bad`**：主题里已有语义色（浅色深红 `#b63d45` / 深色亮橙红 `#e07a5c`），文字用 `--on-brass`（它就是「饱和色上的文字」），hover 走 `color-mix(in oklab, var(--bad) 86%, var(--text))`，跟 `RippleButton` 的 primary 同一套加深逻辑。另起的 `--danger` 变量已删，避免两套语义色并存。
+- **确认之后的顺序**：`finishAllTurns()` 把在跑的会话全部收尾（Host 侧 kill 旧 runtime），再 `requestConnect(新的)`。顺序反过来会让 Host 起来新 runtime 又被旧的收尾动作带掉。被 kill 的那一轮 Host 随后还会补一条 `turn.end{stopReason:"error"}` 作为兜底，侧栏按会话写回，所以「取消之后那一轮不再显示为进行中」不需要侧栏自己造状态。
+- **文案单复数分开**：i18n 两条 key（`switchAgentRunningOne` / `switchAgentRunningMany`，后者带 `{n}` 占位符），不用复数规则拼接——中英都不需要「1 tasks」。
+- **验证**：`scripts/verify-agent-switch-guard.mjs`（12 项）跑真 Chromium + 假 Agent：有任务在跑 → 弹窗、文案数量正确、按钮与高危色就位；取消 → Host 侧没有新 runtime、弹窗收起；确认 → Host 起了新 runtime、那一轮不再显示为进行中；没有任务在跑 → 不弹、直接切。
+
 ## 品牌图标
 
 - 源文件 `packages/extension/assets/icon.svg` 由 `scripts/generate_icon.py` 生成，勿手改：Cursor 官方 CUBE_2D 六边形路径做 clipPath 外轮廓；镂空为圆角等腰三角形（`TRI_VERTICES` + `CORNER_R`，经 `ARROW_SCALE`=√3/2 缩放、净逆时针 90° 旋转）；360 个 1° 扇形逼近 conic 渐变，红→黄→绿顺时针风车、交界 40° smoothstep 平滑过渡，整体 `GRADIENT_ROTATE_DEG`=30° 顺时针旋转。空会话占位图直接引用这份 SVG，不另做淡色线稿
