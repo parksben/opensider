@@ -35,6 +35,11 @@ export type ComposerHandle = {
   focus: () => void;
   insertAtStart: (text: string) => void;
   insertMention: (mention: MentionChip) => void;
+  /**
+   * 插入一枚芯片，但**不抢焦点**：聚焦时插到光标处，没聚焦时追加到正文末尾。划词工具条的
+   * 「引用」用它——用户可能还在网页上看，focus() 会把注意力硬拽回侧栏。
+   */
+  appendMention: (mention: MentionChip) => void;
   /** 插到正文最前面（skill 芯片的前缀只有落在最前才会被 CLI 当 skill 调用）。 */
   insertSkill: (mention: SkillMention) => void;
   moveCaretToEnd: () => void;
@@ -213,6 +218,22 @@ function placeCaret(node: Node, offset: number): void {
   selection.addRange(range);
 }
 
+/** 用户此刻的光标/选区是否就在编辑器里（"聚焦在输入框" 的判据）。 */
+function liveRangeInEditor(editor: HTMLElement): Range | undefined {
+  const selection = window.getSelection();
+  if (!selection || selection.rangeCount === 0) return undefined;
+  const range = selection.getRangeAt(0);
+  return editor.contains(range.startContainer) ? range.cloneRange() : undefined;
+}
+
+/** 正文末尾的空范围（未聚焦时插入芯片用）。 */
+function endRange(editor: HTMLElement): Range {
+  const range = document.createRange();
+  range.selectNodeContents(editor);
+  range.collapse(false);
+  return range;
+}
+
 function placeCaretAfterChip(wrap: HTMLElement): Range {
   const range = document.createRange();
   const next = wrap.nextSibling;
@@ -346,6 +367,26 @@ export const ComposerEditor = forwardRef<
     flushSync(() => {
       root.render(<MentionChipView mention={mention} />);
     });
+  };
+
+  /**
+   * 在给定位置插一枚芯片：两边按需补空格（免得和相邻文字或芯片粘在一起），后面跟一个零宽
+   * 空格好让光标能停在它后面。`insertMention` 与 `appendMention` 共用这一处。
+   */
+  const insertChipAtRange = (target: HTMLElement, mention: MentionChip, range: Range) => {
+    range.deleteContents();
+    const needLeft = !isPadSpace(charBeforeRange(range, target));
+    const needRight = !isPadSpace(charAfterRange(range, target));
+    const wrap = createChipWrap(mention);
+    const zwsp = document.createTextNode("\u200b");
+    const fragment = document.createDocumentFragment();
+    if (needLeft) fragment.appendChild(document.createTextNode(" "));
+    fragment.appendChild(wrap);
+    if (needRight) fragment.appendChild(document.createTextNode(" "));
+    fragment.appendChild(zwsp);
+    range.insertNode(fragment);
+    mountChip(wrap, parseMentionToken(wrap.dataset.token ?? "") ?? mention);
+    placeCaret(zwsp, 1);
   };
 
   const unmountDetached = () => {
@@ -499,19 +540,16 @@ export const ComposerEditor = forwardRef<
       const range = restoreRange();
       if (!editor || !range) return;
       consumeAtBeforeCaret(range);
-      range.deleteContents();
-      const needLeft = !isPadSpace(charBeforeRange(range, editor));
-      const needRight = !isPadSpace(charAfterRange(range, editor));
-      const wrap = createChipWrap(mention);
-      const zwsp = document.createTextNode("\u200b");
-      const fragment = document.createDocumentFragment();
-      if (needLeft) fragment.appendChild(document.createTextNode(" "));
-      fragment.appendChild(wrap);
-      if (needRight) fragment.appendChild(document.createTextNode(" "));
-      fragment.appendChild(zwsp);
-      range.insertNode(fragment);
-      mountChip(wrap, parseMentionToken(wrap.dataset.token ?? "") ?? mention);
-      placeCaret(zwsp, 1);
+      insertChipAtRange(editor, mention, range);
+      saveRange();
+      emit();
+    },
+    appendMention: (mention) => {
+      const editor = editorRef.current;
+      if (!editor) return;
+      // 聚焦时插到光标处；没聚焦时追加到正文末尾。全程不调 focus()：用户可能还在网页上看，
+      // 把焦点硬拽回侧栏是打扰。
+      insertChipAtRange(editor, mention, liveRangeInEditor(editor) ?? endRange(editor));
       saveRange();
       emit();
     },

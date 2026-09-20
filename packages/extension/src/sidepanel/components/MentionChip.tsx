@@ -1,5 +1,5 @@
 import type { AttachmentKind } from "@shared";
-import { File, Folder, Globe, Image, MousePointer2, Wand2 } from "lucide-react";
+import { File, Folder, Globe, Image, MousePointer2, Quote, Wand2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
   mentionLabel,
@@ -38,16 +38,20 @@ export function TabFavicon({ pageUrl, favIconUrl }: { pageUrl?: string; favIconU
 
 export function MentionIcon({ mention }: { mention: Mention }) {
   if (mention.kind === "skill") return <Wand2 size={12} className="shrink-0 opacity-80" />;
+  if (mention.kind === "quote") return <Quote size={12} className="shrink-0 opacity-80" />;
   if (mention.kind === "tab") return <TabFavicon pageUrl={mention.url} favIconUrl={mention.favIconUrl} />;
   const Icon = kindIcon(mention.fileKind);
   return <Icon size={12} className="shrink-0 opacity-80" />;
 }
 
 export function MentionChip({ mention, className = "" }: { mention: Mention; className?: string }) {
+  // 引用芯片：图标 + 被排版引号包住的原文。引号只是**展示**——芯片里保存的原文一字不改，
+  // 发给 Agent 时也是原样展开成 `> 原文`。
+  const label = mentionLabel(mention);
   return (
     <span title={mentionTitle(mention)} className={`cs-mention-chip ${className}`}>
       <MentionIcon mention={mention} />
-      <span className="cs-mention-chip-label truncate">{mentionLabel(mention)}</span>
+      <span className="cs-mention-chip-label truncate">{mention.kind === "quote" ? `\u201c${label}\u201d` : label}</span>
     </span>
   );
 }

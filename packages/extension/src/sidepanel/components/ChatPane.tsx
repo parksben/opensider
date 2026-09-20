@@ -95,6 +95,8 @@ export function ChatPane({
   onRefreshSkills,
   agentOptions,
   onAgentOption,
+  insertQuote,
+  onQuoteInserted,
   page,
   hitl,
   control,
@@ -160,10 +162,21 @@ export function ChatPane({
   /** 引擎广告的其它会话配置项（推理档位、模型开关…），没广告就是这家不支持。 */
   agentOptions?: AgentOption[];
   onAgentOption?: (configId: string, value: string) => void;
+  /** 网页上点了「引用」：往输入框插一枚引文芯片（聚焦就插光标处，否则追加末尾）。 */
+  insertQuote?: { id: string; text: string };
+  onQuoteInserted?: (id: string) => void;
   page?: CurrentPage;
 }) {
   // 引擎广告的其它配置项按类别分流：`thought_level` 是模型钮旁边的推理档位钮，
   // `model_config` 放进模型菜单里——工具栏这一行已经挤不下更多钮了。
+  // 引文芯片：插入完就告诉 App 清掉，免得同一段文字被重复插入。
+  useEffect(() => {
+    if (!insertQuote) return;
+    composerRef.current?.appendMention({ kind: "quote", text: insertQuote.text });
+    onQuoteInserted?.(insertQuote.id);
+    // 只看这一次请求的 id：同一段文字连点两次是两个 id，各插一次。
+  }, [insertQuote?.id]);
+
   const thoughtLevel = (agentOptions ?? []).find((option) => option.category === "thought_level");
   const modelConfigOptions = (agentOptions ?? []).filter((option) => option.category === "model_config");
   const [draft, setDraft] = useState("");  const [attachments, setAttachments] = useState<AttachmentItem[]>([]);

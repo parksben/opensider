@@ -24,11 +24,20 @@ export type SkillMention = {
   name: string;
 };
 
-export type MentionChip = TabMention | AttachmentMention | SkillMention;
+/**
+ * 用户在网页上划词后点「引用」插进来的那段原文。与其它芯片不同，它没有路径也没有 id：
+ * 它就是要发出去的一段文字，所以发给 Agent 时展开成 markdown 引用块（`> 原文`）。
+ */
+export type QuoteMention = {
+  kind: "quote";
+  text: string;
+};
+
+export type MentionChip = TabMention | AttachmentMention | SkillMention | QuoteMention;
 
 export type MentionSegment = { type: "text"; text: string } | { type: "mention"; mention: MentionChip };
 
-const TOKEN_RE = /«@(tab|att):[^»]+»|«\/skill:[^»]+»/g;
+const TOKEN_RE = /«@(tab|att|quote):[^»]+»|«\/skill:[^»]+»/g;
 
 function encodePayload(data: unknown): string {
   return encodeURIComponent(JSON.stringify(data));
@@ -40,16 +49,19 @@ function decodePayload(raw: string): unknown {
 
 export function mentionLabel(mention: MentionChip): string {
   if (mention.kind === "skill") return `/${mention.name}`;
+  if (mention.kind === "quote") return mention.text;
   return mention.kind === "tab" ? mention.title || mention.url : mention.name || mention.path;
 }
 
 /** Chips render skill names with a leading slash; everything else keeps the `@` marker. */
 function mentionMarker(mention: MentionChip): string {
-  return mention.kind === "skill" ? "" : "@";
+  // skill 用 `/` 开头、引用直接就是正文，只有标签页 / 附件带 `@`。
+  return mention.kind === "skill" || mention.kind === "quote" ? "" : "@";
 }
 
 export function mentionTitle(mention: MentionChip): string {
   if (mention.kind === "skill") return `/${mention.name}`;
+  if (mention.kind === "quote") return mention.text;
   if (mention.kind === "tab") {
     return mention.url && mention.url !== mention.title ? `${mention.title}\n${mention.url}` : mention.title || mention.url;
   }
@@ -59,6 +71,9 @@ export function mentionTitle(mention: MentionChip): string {
 export function serializeMention(mention: MentionChip): string {
   if (mention.kind === "skill") {
     return `«/skill:${encodeURIComponent(mention.name)}»`;
+  }
+  if (mention.kind === "quote") {
+    return `«@quote:${encodePayload({ text: mention.text })}»`;
   }
   if (mention.kind === "tab") {
     return `«@tab:${encodePayload({
@@ -86,10 +101,14 @@ export function parseMentionToken(token: string): MentionChip | undefined {
     }
     return name ? { kind: "skill", name } : undefined;
   }
-  const match = /^«@(tab|att):([^»]+)»$/.exec(token);
+  const match = /^«@(tab|att|quote):([^»]+)»$/.exec(token);
   if (!match) return undefined;
   try {
     const data = decodePayload(match[2]) as Record<string, unknown>;
+    if (match[1] === "quote") {
+      const text = String(data.text ?? "").trim();
+      return text ? { kind: "quote", text } : undefined;
+    }
     if (match[1] === "tab") {
       const title = String(data.title ?? "");
       const url = String(data.url ?? "");
@@ -129,6 +148,25 @@ export function parseMentionSegments(text: string): MentionSegment[] {
   }
   if (last < text.length) segments.push({ type: "text", text: text.slice(last) });
   return segments;
+}
+
+/**
+ * 给 Agent 看的形态：引用芯片展开成 markdown 引用块（`> 原文`），别的芯片与 `displayMentionText`
+ * 一致。内部 token 不该出现在发给模型的提示词里。
+ */
+export function promptMentionText(text: string): string {
+  return parseMentionSegments(text)
+    .map((segment) => {
+      if (segment.type === "text") return segment.text;
+      if (segment.mention.kind === "quote") {
+        return segment.mention.text
+          .split("\n")
+          .map((line) => `> ${line}`.trimEnd())
+          .join("\n");
+      }
+      return `${mentionMarker(segment.mention)}${mentionLabel(segment.mention)}`;
+    })
+    .join("");
 }
 
 export function displayMentionText(text: string): string {
@@ -220,7 +258,9 @@ function wrapRequestedSkills(mentions: MentionChip[], skills: SkillItem[]): stri
 
 export function wrapUserMentions(text: string, skills: SkillItem[] = []): { display: string; appendix: string } {
   const mentions = mentionsOf(text);
-  const display = displayMentionText(text).replace(/\u200b/g, "").trim();
+  // 这里用 promptMentionText（不是 displayMentionText）：引用芯片发给 Agent 时要展开成
+  // markdown 引用块，而不是把那段原文直接混进正文里显得像是用户自己写的。
+  const display = promptMentionText(text).replace(/\u200b/g, "").trim();
   const appendix = [
     wrapMentionedTabs(mentions),
     wrapMentionedAttachments(mentions),

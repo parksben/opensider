@@ -110,6 +110,9 @@ export function App() {
   // 引擎广告的其它配置项（推理档位 / 模型开关…）与用户选中的值。值按 Agent 记
   // （configId → value），与模式记忆同一路子；没广告过就是这家不支持，控件不出现。
   const [agentOptions, setAgentOptions] = useState<AgentOption[]>([]);
+  // 划词工具条的「引用」：把一段网页原文插进输入框。用 id 区分两次相同的引用（同一段文字
+  // 连点两次也要各插一次），插完由 ChatPane 回调清掉。
+  const [quoteInsert, setQuoteInsert] = useState<{ id: string; text: string }>();
   const [agentOptionByProvider, setAgentOptionByProvider] = useState<Record<string, Record<string, string>>>({});
   const [selectedProviderId, setSelectedProviderId] = useState("");
   const [onboardingCompleted, setOnboardingCompleted] = useState(false);
@@ -732,6 +735,11 @@ export function App() {
         const session = sessionsRef.current.find((item) => item.id === selectedIdRef.current);
         sendRef.current({ type: "agent.setMode", modeId: remembered, sessionId: session?.acpSessionId });
       }
+      return;
+    }
+    if (msg.type === "selection.quote") {
+      const text = String(msg.text ?? "").trim();
+      if (text) setQuoteInsert({ id: crypto.randomUUID(), text });
       return;
     }
     if (msg.type === "agentOptions") {
@@ -1799,6 +1807,8 @@ export function App() {
               onAgentModeId={onAgentModeId}
               agentOptions={agentOptions}
               onAgentOption={onAgentOption}
+              insertQuote={quoteInsert}
+              onQuoteInserted={(id) => setQuoteInsert((current) => (current?.id === id ? undefined : current))}
               iconOnly={iconOnly}
               narrowModel={modelNarrow}
               flatActions={actionFlat}
