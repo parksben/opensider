@@ -116,6 +116,14 @@ try {
   if (!sw) sw = await context.waitForEvent("serviceworker", { timeout: 15_000 });
   const extensionId = new URL(sw.url()).host;
   check("extension service worker started", Boolean(extensionId));
+  // The worker gets its chrome.* bindings a moment after it starts; without this wait the
+  // seeding call below crashes on `chrome.storage` being undefined.
+  let storageReady = false;
+  for (let i = 0; i < 40 && !storageReady; i += 1) {
+    storageReady = await sw.evaluate(() => Boolean(globalThis.chrome?.storage?.local)).catch(() => false);
+    if (!storageReady) await new Promise((r) => setTimeout(r, 250));
+  }
+  check("the service worker has its chrome bindings", storageReady);
 
   // Seed a conversation already bound to "verify-s1" so the side panel's banner is the
   // real one (a matching `selectedAcpId`), then open it.
@@ -224,7 +232,8 @@ try {
   };
   const setMode = async (from, to) => {
     await statusReady();
-    await panel.getByRole("button", { name: from, exact: true }).click({ timeout: 5_000 });
+    // 权限 pill 的 aria-label 是「名称 — 含义」，所以只能按前缀匹配（exact 永远匹配不上）。
+    await panel.getByRole("button", { name: new RegExp(`^${from}`) }).click({ timeout: 5_000 });
     await panel.getByRole("button", { name: new RegExp(`^${to}`) }).click({ timeout: 5_000 });
   };
   const outbound = async () => sw.evaluate(() => globalThis.__opensiderOutbound());
