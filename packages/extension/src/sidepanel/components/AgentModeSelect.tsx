@@ -44,9 +44,21 @@ export function agentModeIcon(kind: AgentModeKind) {
 
 function tooltipOf(locale: Locale, option: AgentModeOption | undefined) {
   if (!option) return t(locale, "agentMode");
+  const name = displayName(option);
   const desc = option.desc?.trim();
   // 有引擎给的说明就用「名称 — 说明」；没有就退回「Agent 模式：名称」，反正不编造含义。
-  return desc ? `${option.name} — ${desc}` : `${t(locale, "agentMode")}: ${option.name}`;
+  return desc ? `${name} — ${desc}` : `${t(locale, "agentMode")}: ${name}`;
+}
+
+/**
+ * 只做**排版**：首字母大写。
+ *
+ * 引擎给的名字不翻译也不换词（opencode 那类只给 id 的引擎会把 `build` / `plan` 原样报
+ * 回来，直接画出来全是小写）。已有的驼峰、句首大写（`Accept edits`）不受影响。
+ */
+function displayName(option: AgentModeOption) {
+  const name = option.name.trim() || option.id;
+  return name.charAt(0).toUpperCase() + name.slice(1);
 }
 
 export function AgentModeSelect({
@@ -100,7 +112,7 @@ export function AgentModeSelect({
         className="relative flex h-7 max-w-full min-w-0 items-center gap-1 overflow-hidden whitespace-nowrap rounded-full px-2 text-[11px] text-[var(--muted)] hover:bg-[var(--hover)]"
       >
         <CurrentIcon size={14} className="shrink-0" />
-        {compact ? null : <span className="min-w-0 truncate">{current.name}</span>}
+        {compact ? null : <span className="min-w-0 truncate">{displayName(current)}</span>}
         {ripples.map((ripple) => (
           <span
             key={ripple.id}
@@ -132,7 +144,7 @@ export function AgentModeSelect({
                   }`}
                 >
                   <Icon size={14} />
-                  {option.name}
+                  {displayName(option)}
                 </span>
                 {option.desc ? (
                   <span className="pl-[22px] text-[11px] leading-snug text-[var(--muted)]">{option.desc}</span>

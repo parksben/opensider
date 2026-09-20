@@ -497,7 +497,7 @@ policy 只在「该 CLI 适配器声明了这个权限档」且「用户没显�
 
 Host → 侧栏 `{type:"agentModes", source:"config"|"modes", configId?, currentId, options:[{id,name,desc,kind}]}`（发现不到就发空 `options`，等同「不显示」）；侧栏 → Host `{type:"agent.setMode", modeId}`。都按会话路由（带 `sessionId`），与 `models` / `model.set` 同一套。
 
-`AgentModeSelect` 与权限 `ModeSelect` 同构（同一套弹出层、涟漪、tooltip、`bottom-full` 定位规则），选项来自 `agentModes`。`options.length < 2` → **整个控件不渲染**；名称原样用 Agent 给的 `name`（**不翻译**），说明用 `description`（没有就不画第二行）。图标按 `kind` 映射（只准用 lucide）：`plan`→`ClipboardList`、`build`→`Hammer`、`ask`→`MessageCircleQuestion`、`agent`→`Bot`、`edits`→`FolderPen`、`auto`→`Zap`、`full_access`→`Unlock`、`unknown`→`Workflow`。窄宽度（<348px）时两个钮都只画图标，tooltip 给「名称 — 含义」。
+`AgentModeSelect` 与权限 `ModeSelect` 同构（同一套弹出层、涟漪、tooltip、`bottom-full` 定位规则），选项来自 `agentModes`。`options.length < 2` → **整个控件不渲染**；名称用 Agent 给的 `name`（**不翻译、不换词**，渲染时只把首字母大写——opencode 那类只给 `id` 的引擎会返回 `build` / `plan`，直接画出来全是小写；已有的驼峰 / 句首大写不受影响），说明用 `description`（没有就不画第二行）。图标按 `kind` 映射（只准用 lucide）：`plan`→`ClipboardList`、`build`→`Hammer`、`ask`→`MessageCircleQuestion`、`agent`→`Bot`、`edits`→`FolderPen`、`auto`→`Zap`、`full_access`→`Unlock`、`unknown`→`Workflow`。窄宽度（<348px）时两个钮都只画图标，tooltip 给「名称 — 含义」。
 
 ### 各家情况（适配器只写差异）
 

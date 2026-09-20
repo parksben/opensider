@@ -96,7 +96,7 @@
 17. **Host 必须应答，不许装死**：侧栏发的每条带 `requestId` 的请求，Host 无论成败都要回一条（成功回结果，失败回 `error`）；**不认识的消息类型也要回一条「不支持」**，让「新扩展 + 旧 Host」表现为一句明确的错误，而不是永远静默。侧栏一侧也要有超时兜底。
 
 18. **会话内可切换 Agent 自己的模式**（plan / build / ask / autopilot / yolo 等，各家命名与 id 都不一样），它与「权限档」是两个互不替代的概念，单独一个下拉：
-    - **只信 Agent 广告**：优先读 ACP `configOptions` 里 `category: "mode"`（或 `id` / `configId` 为 `mode`）的选项，没有则回退 `modes.availableModes`。模式名**原样用 Agent 给的 `name`**，不造译名；说明用它的 `description`。
+    - **只信 Agent 广告**：优先读 ACP `configOptions` 里 `category: "mode"`（或 `id` / `configId` 为 `mode`）的选项，没有则回退 `modes.availableModes`。模式名**原样用 Agent 给的 `name`**，不造译名；渲染时只做**首字母大写**这个排版处理（opencode 给的 `build` / `plan` → `Build` / `Plan`），不换词、不翻译；说明用它的 `description`。
     - **只显示真能切的**：广告少于两项（例如某家只有 `default`），或什么都没广告（某家既不带 `modes` 也不带 `configOptions`）时，**整个模式下拉不出现**——宁可没有，也不要摆一个点了没反应的假菜单。这条与「权限档永远显示」不同。
     - **切换要真的写回**：有 mode 配置项时走 `session/set_config_option`，否则走 `session/set_mode`；**只发广告集合里出现过的值**，绝不盲发猜测的 id。
     - **跟随 Agent 自己切换**：Agent 自己换模式（典型是从 plan 退出到 build）后，触发钮必须跟着变，不能停在旧值。
