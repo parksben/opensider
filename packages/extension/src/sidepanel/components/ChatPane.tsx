@@ -1,10 +1,11 @@
-import type { AgentModeOption, AgentModel, AttachmentItem, CurrentPage, FsPickMode } from "@shared";
-import { ArrowDown, AtSign, Check, ChevronDown, Copy, FileDown, FolderPen, GitFork, LoaderCircle, MousePointer2, Paperclip, RefreshCw, Send, Shield, Square, TriangleAlert, Unlock, X, Zap } from "lucide-react";
+import type { AgentModeOption, AgentModel, AgentOption, AttachmentItem, CurrentPage, FsPickMode, SkillItem } from "@shared";
+import { ArrowDown, AtSign, Check, ChevronDown, Copy, File, FileDown, Folder, FolderPen, GitFork, LoaderCircle, MousePointer2, Paperclip, Plus, RefreshCw, Send, Shield, Slash, Square, TriangleAlert, Unlock, X, Zap } from "lucide-react";
 import logoUrl from "../../../assets/icon.svg?url";
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from "react";
 import type { ChatMessage, ChatPart, TodoItem } from "../chat-types";
 import { useComposerHistory } from "../composer-history";
 import { COMPOSER_ICON_PX, MODEL_NARROW_MAX_PX } from "../layout";
+import { AgentOptionSelect } from "./AgentOptionSelect";
 import type { Locale } from "../i18n";
 import { t } from "../i18n";
 import { closeAtMenuLock, installAtMenuGuard, openAtMenuLock, shouldBlockSubmit } from "../at-menu-lock";
@@ -32,6 +33,8 @@ import type { QueuedMessage } from "../queued-message";
 import { AttachMenu } from "./AttachMenu";
 import { AgentModeSelect } from "./AgentModeSelect";
 import { AtMenu } from "./AtMenu";
+import { ComposerActionsMenu, type ComposerAction } from "./ComposerActionsMenu";
+import { SlashMenu } from "./SlashMenu";
 import { ComposerEditor, type ComposerHandle } from "./ComposerEditor";
 import { IconButton } from "./IconButton";
 import { kindIcon, UserRichText } from "./MentionChip";
@@ -87,6 +90,11 @@ export function ChatPane({
   onAgentModeId,
   iconOnly,
   narrowModel,
+  flatActions,
+  skills,
+  onRefreshSkills,
+  agentOptions,
+  onAgentOption,
   page,
   hitl,
   control,
@@ -141,12 +149,24 @@ export function ChatPane({
   onAgentModeId?: (modeId: string) => void;
   /** ≤448px：两个下拉收成纯图标（隐藏文案，tooltip 里给全）。 */
   iconOnly?: boolean;
-  /** ≤396px：模型下拉的最大宽度收到常值的 1/3。 */
+  /** ≥600px：四个功能钮（附件 / 拾取 / @ / 斜杠）平铺；否则收成一个加号钮。 */
+  flatActions?: boolean;
+  /** 本机全局已装的 skill，斜杠探测菜单列的就是它（与连哪个 Agent 无关）。 */
+  skills?: SkillItem[];
+  /** 打开探测菜单前要一份最新列表（Host 侧有缓存，不会每次都真扫）。 */
+  onRefreshSkills?: () => void;
+  /** ≤396px：模型下拉的最大宽度收到常值的 1/3；推理档位钮收到 OPTION_NARROW_MAX_PX。 */
   narrowModel?: boolean;
+  /** 引擎广告的其它会话配置项（推理档位、模型开关…），没广告就是这家不支持。 */
+  agentOptions?: AgentOption[];
+  onAgentOption?: (configId: string, value: string) => void;
   page?: CurrentPage;
 }) {
-  const [draft, setDraft] = useState("");
-  const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
+  // 引擎广告的其它配置项按类别分流：`thought_level` 是模型钮旁边的推理档位钮，
+  // `model_config` 放进模型菜单里——工具栏这一行已经挤不下更多钮了。
+  const thoughtLevel = (agentOptions ?? []).find((option) => option.category === "thought_level");
+  const modelConfigOptions = (agentOptions ?? []).filter((option) => option.category === "model_config");
+  const [draft, setDraft] = useState("");  const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
   const [pickingFiles, setPickingFiles] = useState(false);
   const [attachOpen, setAttachOpen] = useState(false);
   const paperclipRef = useRef<HTMLSpanElement>(null);
@@ -160,6 +180,11 @@ export function ChatPane({
   const [atQuery, setAtQuery] = useState("");
   const composerRef = useRef<ComposerHandle>(null);
   const atButtonRef = useRef<HTMLSpanElement>(null);
+  const [slashOpen, setSlashOpen] = useState(false);
+  const [slashQuery, setSlashQuery] = useState("");
+  const slashButtonRef = useRef<HTMLSpanElement>(null);
+  const [plusOpen, setPlusOpen] = useState(false);
+  const plusButtonRef = useRef<HTMLSpanElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const { tabs: historyTabs } = useComposerHistory();
   const threadEndRef = useRef<HTMLDivElement>(null);
@@ -227,6 +252,61 @@ export function ChatPane({
     closeAtMenuLock();
     setAtOpen(false);
     setAtQuery("");
+  };
+
+  const openSlashMenu = () => {
+    openAtMenuLock();
+    setSlashOpen(true);
+  };
+
+  const closeSlashMenu = () => {
+    closeAtMenuLock();
+    setSlashOpen(false);
+    setSlashQuery("");
+  };
+
+  const handleSlashQueryChange = (query: string | null) => {
+    if (query === null) {
+      closeSlashMenu();
+      return;
+    }
+    setSlashQuery(query);
+  };
+
+  /**
+   * 两个菜单互斥：同一个位置不能同时挂两个弹层，而 `@` 与 `/` 又是在同一个输入框里打字。
+   */
+  const startAtMenu = () => {
+    if (atOpen) {
+      closeAtMenu();
+      return;
+    }
+    if (slashOpen) closeSlashMenu();
+    composerRef.current?.insertAtStart("@");
+    openAtMenu();
+  };
+
+  const startSlashMenu = () => {
+    if (slashOpen) {
+      closeSlashMenu();
+      return;
+    }
+    if (atOpen) closeAtMenu();
+    onRefreshSkills?.();
+    composerRef.current?.insertAtStart("/");
+    openSlashMenu();
+  };
+
+  /** 直接在输入框里敲 `@` / `/` 的路径：只负责打开，不做「再敲一下关掉」。 */
+  const onAtTyped = () => {
+    if (slashOpen) closeSlashMenu();
+    openAtMenu();
+  };
+
+  const onSlashTyped = () => {
+    if (atOpen) closeAtMenu();
+    onRefreshSkills?.();
+    openSlashMenu();
   };
 
   const handleAtQueryChange = (query: string | null) => {
@@ -347,6 +427,8 @@ export function ChatPane({
     }
     setAwayFromBottom(false);
     setAttachOpen(false);
+    setPlusOpen(false);
+    closeSlashMenu();
     requestAnimationFrame(() => stickToBottom(listRef.current));
   }, [sessionId]);
 
@@ -387,6 +469,45 @@ export function ChatPane({
       return;
     }
     setAttachOpen((open) => !open);
+  };
+
+  // 收起来的加号菜单：Windows 把「文件 / 文件夹」拆成两条（系统框不能混选），其它系统
+  // 合成一条「添加附件」（macOS 本来就开一个混选的框，Linux 再弹二级菜单）。
+  const actionItems: ComposerAction[] =
+    detectDesktopOs() === "windows"
+      ? [
+          { id: "files", label: label("pickFiles"), icon: File },
+          { id: "folders", label: label("pickFolders"), icon: Folder },
+          { id: "pick", label: label("pickElement"), icon: MousePointer2 },
+          { id: "mention", label: label("mention"), icon: AtSign },
+          { id: "slash", label: label("slash"), icon: Slash },
+        ]
+      : [
+          { id: "attach", label: label("attach"), icon: Paperclip },
+          { id: "pick", label: label("pickElement"), icon: MousePointer2 },
+          { id: "mention", label: label("mention"), icon: AtSign },
+          { id: "slash", label: label("slash"), icon: Slash },
+        ];
+
+  const runAction = (id: string) => {
+    setPlusOpen(false);
+    if (id === "files" || id === "folders") {
+      void addAttachments(id);
+      return;
+    }
+    if (id === "attach") {
+      onPaperclip();
+      return;
+    }
+    if (id === "pick") {
+      void startElementPick();
+      return;
+    }
+    if (id === "mention") {
+      startAtMenu();
+      return;
+    }
+    if (id === "slash") startSlashMenu();
   };
 
   const addPastedImages = async (files: File[]) => {
@@ -607,73 +728,113 @@ export function ChatPane({
             value={draft}
             placeholder={label("placeholder")}
             menuOpen={atOpen}
+            slashMenuOpen={slashOpen}
             onChange={setDraft}
             onSubmit={() => submit(true)}
             onPasteImages={(files) => void addPastedImages(files)}
             onComposerClipboardCarry={carryAttachments}
             onComposerPastedText={restoreCarriedAttachments}
-            onAtTyped={openAtMenu}
+            onAtTyped={onAtTyped}
             onAtQueryChange={handleAtQueryChange}
+            onSlashTyped={onSlashTyped}
+            onSlashQueryChange={handleSlashQueryChange}
           />
           <div className="flex min-w-0 items-center gap-2">
             <div className="relative flex min-w-0 flex-1 items-center gap-1">
               <div className="flex shrink-0 items-center gap-0">
-                <span ref={paperclipRef}>
-                  <IconButton
-                    side="top"
-                    label={label("attach")}
-                    onClick={onPaperclip}
-                    disabled={busy}
-                    className={`flex h-7 w-7 items-center justify-center rounded-full hover:bg-[var(--hover)] disabled:opacity-30 disabled:hover:bg-transparent ${
-                      attachOpen ? "bg-[var(--hover)] text-[var(--brass)]" : "text-[var(--text)]"
-                    }`}
-                  >
-                    {pickingFiles || savingPaste ? (
-                      <LoaderCircle size={COMPOSER_ICON_PX} className="animate-spin" />
-                    ) : (
-                      <Paperclip size={COMPOSER_ICON_PX} />
-                    )}
-                  </IconButton>
-                </span>
+                {flatActions === false ? (
+                  // <600px：四个功能钮收成一个加号钮（hover 或点击弹出）。
+                  <span ref={plusButtonRef} onMouseEnter={() => setPlusOpen(true)}>
+                    <IconButton
+                      side="top"
+                      label={label("moreActions")}
+                      onClick={() => setPlusOpen((open) => !open)}
+                      disabled={busy}
+                      className={`flex h-7 w-7 items-center justify-center rounded-full hover:bg-[var(--hover)] disabled:opacity-30 disabled:hover:bg-transparent ${
+                        plusOpen || attachOpen ? "bg-[var(--hover)] text-[var(--brass)]" : "text-[var(--text)]"
+                      }`}
+                    >
+                      {pickingFiles || savingPaste ? (
+                        <LoaderCircle size={COMPOSER_ICON_PX} className="animate-spin" />
+                      ) : (
+                        <Plus size={COMPOSER_ICON_PX} />
+                      )}
+                    </IconButton>
+                  </span>
+                ) : (
+                  <>
+                    <span ref={paperclipRef}>
+                      <IconButton
+                        side="top"
+                        label={label("attach")}
+                        onClick={onPaperclip}
+                        disabled={busy}
+                        className={`flex h-7 w-7 items-center justify-center rounded-full hover:bg-[var(--hover)] disabled:opacity-30 disabled:hover:bg-transparent ${
+                          attachOpen ? "bg-[var(--hover)] text-[var(--brass)]" : "text-[var(--text)]"
+                        }`}
+                      >
+                        {pickingFiles || savingPaste ? (
+                          <LoaderCircle size={COMPOSER_ICON_PX} className="animate-spin" />
+                        ) : (
+                          <Paperclip size={COMPOSER_ICON_PX} />
+                        )}
+                      </IconButton>
+                    </span>
+                    <IconButton
+                      side="top"
+                      label={label("pickElement")}
+                      onClick={() => void startElementPick()}
+                      disabled={locking}
+                      className={`flex h-7 w-7 items-center justify-center rounded-full hover:bg-[var(--hover)] disabled:opacity-30 disabled:hover:bg-transparent ${
+                        pickingElement ? "bg-[var(--hover)] text-[var(--brass)]" : "text-[var(--text)]"
+                      }`}
+                    >
+                      <MousePointer2 size={COMPOSER_ICON_PX} />
+                    </IconButton>
+                    <span ref={atButtonRef}>
+                      <IconButton
+                        side="top"
+                        label={label("mention")}
+                        onClick={startAtMenu}
+                        disabled={locking}
+                        className={`flex h-7 w-7 items-center justify-center rounded-full hover:bg-[var(--hover)] disabled:opacity-30 disabled:hover:bg-transparent ${
+                          atOpen ? "bg-[var(--hover)] text-[var(--brass)]" : "text-[var(--text)]"
+                        }`}
+                      >
+                        <AtSign size={COMPOSER_ICON_PX} />
+                      </IconButton>
+                    </span>
+                    <span ref={slashButtonRef}>
+                      <IconButton
+                        side="top"
+                        label={label("slash")}
+                        onClick={startSlashMenu}
+                        disabled={locking}
+                        className={`flex h-7 w-7 items-center justify-center rounded-full hover:bg-[var(--hover)] disabled:opacity-30 disabled:hover:bg-transparent ${
+                          slashOpen ? "bg-[var(--hover)] text-[var(--brass)]" : "text-[var(--text)]"
+                        }`}
+                      >
+                        <Slash size={COMPOSER_ICON_PX} />
+                      </IconButton>
+                    </span>
+                  </>
+                )}
+                <ComposerActionsMenu
+                  open={plusOpen}
+                  items={actionItems}
+                  ignoreRef={plusButtonRef}
+                  getAnchorRect={() => plusButtonRef.current?.getBoundingClientRect()}
+                  onPick={runAction}
+                  onClose={() => setPlusOpen(false)}
+                />
                 <AttachMenu
                   open={attachOpen}
                   locale={locale}
                   ignoreRef={paperclipRef}
-                  getAnchorRect={() => paperclipRef.current?.getBoundingClientRect()}
+                  getAnchorRect={() => (paperclipRef.current ?? plusButtonRef.current)?.getBoundingClientRect()}
                   onPick={(mode) => void addAttachments(mode)}
                   onClose={() => setAttachOpen(false)}
                 />
-                <IconButton
-                  side="top"
-                  label={label("pickElement")}
-                  onClick={() => void startElementPick()}
-                  disabled={locking}
-                  className={`flex h-7 w-7 items-center justify-center rounded-full hover:bg-[var(--hover)] disabled:opacity-30 disabled:hover:bg-transparent ${
-                    pickingElement ? "bg-[var(--hover)] text-[var(--brass)]" : "text-[var(--text)]"
-                  }`}
-                >
-                  <MousePointer2 size={COMPOSER_ICON_PX} />
-                </IconButton>
-                <span ref={atButtonRef}>
-                  <IconButton
-                    side="top"
-                    label={label("mention")}
-                    onClick={() => {
-                      if (atOpen) {
-                        closeAtMenu();
-                        return;
-                      }
-                      composerRef.current?.insertAtStart("@");
-                      openAtMenu();
-                    }}
-                    disabled={locking}
-                    className={`flex h-7 w-7 items-center justify-center rounded-full hover:bg-[var(--hover)] disabled:opacity-30 disabled:hover:bg-transparent ${
-                      atOpen ? "bg-[var(--hover)] text-[var(--brass)]" : "text-[var(--text)]"
-                    }`}
-                  >
-                    <AtSign size={COMPOSER_ICON_PX} />
-                  </IconButton>
-                </span>
               </div>
               {/* 两个下拉之间的间距跟图标钮那组一样（gap-1），不要把两个钮贴死。 */}
               <div className="flex min-w-0 items-center gap-1">
@@ -705,11 +866,36 @@ export function ChatPane({
                 }}
                 onClose={closeAtMenu}
               />
+              <SlashMenu
+                open={slashOpen}
+                locale={locale}
+                query={slashQuery}
+                skills={skills ?? []}
+                ignoreRef={slashButtonRef}
+                getAnchorRect={() => composerRef.current?.getCaretRect()}
+                onQuery={setSlashQuery}
+                onSelect={(skill) => composerRef.current?.insertSkill({ kind: "skill", name: skill.name })}
+                onClose={closeSlashMenu}
+              />
             </div>
             <div className="flex min-w-0 shrink items-center justify-end gap-1.5">
               {showModelPicker ? (
-                <ModelSelect locale={locale} models={models} modelId={modelId} narrow={narrowModel} onModel={onModel} />
+                <ModelSelect
+                  locale={locale}
+                  models={models}
+                  modelId={modelId}
+                  narrow={narrowModel}
+                  onModel={onModel}
+                  modelConfigs={modelConfigOptions}
+                  onConfig={onAgentOption}
+                />
               ) : null}
+              {/* 推理档位紧跟模型下拉右侧（引擎不广告 thought_level 就整个不出现）。 */}
+              <AgentOptionSelect
+                option={thoughtLevel}
+                narrow={narrowModel === true}
+                onValue={(configId, value) => onAgentOption?.(configId, value)}
+              />
               {isRunning ? (
                 <IconButton
                   side="top"
@@ -1022,6 +1208,8 @@ function ModelSelect({
   disabled,
   narrow,
   onModel,
+  modelConfigs,
+  onConfig,
 }: {
   locale: Locale;
   models: AgentModel[];
@@ -1030,6 +1218,13 @@ function ModelSelect({
   /** ≤MODEL_NARROW_MAIN_PX：最大宽度收到常值的 1/3。 */
   narrow?: boolean;
   onModel: (modelId: string) => void;
+  /**
+   * `model_config` 类配置项（Claude 的 `Fast mode`、Cursor 的 `Fast`…）。它们不是独立
+   * 控件，而是排在模型菜单底部：这一行已经挤不下更多钮，而这几个开关本来就是「模型
+   * 自身的设置」，跟着模型菜单走最自然。
+   */
+  modelConfigs?: AgentOption[];
+  onConfig?: (configId: string, value: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -1045,6 +1240,10 @@ function ModelSelect({
   const current = models.find((model) => model.id === modelId) ?? models[0];
   const label = current?.name || modelId || t(locale, "model");
   const visible = models.filter((model) => matchesModel(model, query));
+  // 只画「有值可切」的项：布尔项（开关）或至少两个值的选择项。
+  const configs = (modelConfigs ?? []).filter(
+    (option) => option.type === "boolean" || (option.values?.length ?? 0) >= 2,
+  );
 
   const pick = (id: string) => {
     onModel(id);
@@ -1176,8 +1375,79 @@ function ModelSelect({
               })
             )}
           </div>
+          {configs.length > 0 ? (
+            <div className="shrink-0 border-t border-[var(--line)] py-1">
+              {configs.map((option) => (
+                <ModelConfigRow key={option.id} option={option} onConfig={onConfig} />
+              ))}
+            </div>
+          ) : null}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * 模型菜单底部的一行 `model_config`：布尔项画成开关（引擎没给值名，开关正好不需要文案），
+ * 多值项逐个列出引擎给的值名并给当前值打勾。名称一律用引擎自己的，不翻译。
+ */
+function ModelConfigRow({
+  option,
+  onConfig,
+}: {
+  option: AgentOption;
+  onConfig?: (configId: string, value: string) => void;
+}) {
+  const boolean = option.type === "boolean";
+  const values = option.values ?? [];
+  if (!boolean && values.length < 2) return null;
+  const on = option.current === "true";
+  return (
+    <div>
+      {boolean ? (
+        <button
+          type="button"
+          title={option.name}
+          aria-pressed={on}
+          onClick={() => onConfig?.(option.id, on ? "false" : "true")}
+          className="flex w-full items-center justify-between gap-2 px-2.5 py-1.5 text-left text-[12px] text-[var(--muted)] hover:text-[var(--text)]"
+        >
+          <span className="min-w-0 truncate">{option.name}</span>
+          <span
+            aria-hidden
+            className={`relative h-4 w-7 shrink-0 rounded-full transition-colors ${
+              on ? "bg-[var(--brass)]" : "bg-[var(--line)]"
+            }`}
+          >
+            <span
+              className={`absolute top-0.5 h-3 w-3 rounded-full bg-[var(--panel)] transition-transform ${
+                on ? "translate-x-3.5" : "translate-x-0.5"
+              }`}
+            />
+          </span>
+        </button>
+      ) : (
+        <>
+          <p className="px-2.5 py-1 text-[11px] text-[var(--muted)]">{option.name}</p>
+          {values.map((value) => {
+            const active = value.id === option.current;
+            return (
+              <RippleButton
+                key={value.id}
+                title={value.desc ? `${value.name || value.id} — ${value.desc}` : undefined}
+                onClick={() => onConfig?.(option.id, value.id)}
+                className={`flex w-full items-center gap-1.5 px-2.5 py-1.5 text-left text-[12px] ${
+                  active ? "bg-[var(--hover-strong)] text-[var(--text)]" : "text-[var(--muted)] hover:text-[var(--text)]"
+                }`}
+              >
+                <Check size={COMPOSER_ICON_PX} className={active ? "shrink-0" : "shrink-0 opacity-0"} />
+                <span className="min-w-0 truncate">{value.name || value.id}</span>
+              </RippleButton>
+            );
+          })}
+        </>
+      )}
     </div>
   );
 }

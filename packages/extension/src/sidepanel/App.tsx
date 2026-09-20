@@ -2,6 +2,7 @@ import type {
   AgentInfo,
   AgentModeOption,
   AgentModel,
+  AgentOption,
   AgentProgress,
   AttachmentItem,
   BrowserCommand,
@@ -11,6 +12,7 @@ import type {
   HostToExt,
   HostStatusState,
   FsPickMode,
+  SkillItem,
   TabControlState,
 } from "@shared";
 import { MousePointer2 } from "lucide-react";
@@ -26,7 +28,7 @@ import { BridgeSetup } from "./components/BridgeSetup";
 import { ChatPane } from "./components/ChatPane";
 import { ControlBanner, type BorrowRequest } from "./components/ControlBanner";
 import { Header } from "./components/Header";
-import { COMPACT_MAIN_PX, ICON_ONLY_MAIN_PX, MODEL_NARROW_MAIN_PX } from "./layout";
+import { COMPACT_MAIN_PX, COMPOSER_ACTION_FLAT_PX, ICON_ONLY_MAIN_PX, MODEL_NARROW_MAIN_PX } from "./layout";
 import { PermissionBar } from "./components/PermissionBar";
 import { SessionDrawer } from "./components/SessionDrawer";
 import { UpdateDialog } from "./components/UpdateDialog";
@@ -100,8 +102,15 @@ export function App() {
   // Agent 自己广告的模式（plan / build / ask…）与用户选中的那个。它们是**另一个轴**：
   // agentMode 是我们的权限档位，这两个是引擎自己的工作流模式。
   const [agentModes, setAgentModes] = useState<AgentModeOption[]>([]);
+  // 本机全局已装的 skill（与连哪个 Agent 无关），斜杠探测菜单列的就是它。
+  const [skills, setSkills] = useState<SkillItem[]>([]);
+  const skillsRef = useRef<SkillItem[]>([]);
   const [agentModeId, setAgentModeId] = useState("");
   const [agentModeByProvider, setAgentModeByProvider] = useState<Record<string, string>>({});
+  // 引擎广告的其它配置项（推理档位 / 模型开关…）与用户选中的值。值按 Agent 记
+  // （configId → value），与模式记忆同一路子；没广告过就是这家不支持，控件不出现。
+  const [agentOptions, setAgentOptions] = useState<AgentOption[]>([]);
+  const [agentOptionByProvider, setAgentOptionByProvider] = useState<Record<string, Record<string, string>>>({});
   const [selectedProviderId, setSelectedProviderId] = useState("");
   const [onboardingCompleted, setOnboardingCompleted] = useState(false);
   const [agents, setAgents] = useState<AgentInfo[]>([]);
@@ -114,6 +123,8 @@ export function App() {
   const [iconOnly, setIconOnly] = useState(false);
   // ≤MODEL_NARROW_MAIN_PX：模型下拉的最大宽度收到 1/3。
   const [modelNarrow, setModelNarrow] = useState(false);
+  // ≥COMPOSER_ACTION_FLAT_PX：四个功能钮（附件 / 拾取 / @ / 斜杠）平铺；不然收成一个加号钮。
+  const [actionFlat, setActionFlat] = useState(true);
   const mainColumnRef = useRef<HTMLDivElement>(null);
   const [status, setStatus] = useState<HostStatusState>("starting");
   const [error, setError] = useState<string>();
@@ -162,6 +173,9 @@ export function App() {
   const agentModeRef = useRef(agentMode);
   const agentModesRef = useRef<AgentModeOption[]>([]);
   const agentModeByProviderRef = useRef<Record<string, string>>({});
+  const agentOptionByProviderRef = useRef<Record<string, Record<string, string>>>({});
+  // 已经发出去的「用户选中的配置项值」（configId=value），避免 Host 推回的旧值反复重发。
+  const appliedAgentOptionRef = useRef<Set<string>>(new Set());
   const selectedProviderRef = useRef(selectedProviderId);
   const onboardingRef = useRef(onboardingCompleted);
   const pendingConnectRef = useRef("");
@@ -208,7 +222,9 @@ export function App() {
   selectedModelByProviderRef.current = selectedModelByProvider;
   agentModeRef.current = agentMode;
   agentModesRef.current = agentModes;
+  skillsRef.current = skills;
   agentModeByProviderRef.current = agentModeByProvider;
+  agentOptionByProviderRef.current = agentOptionByProvider;
   selectedProviderRef.current = selectedProviderId;
   onboardingRef.current = onboardingCompleted;
 
@@ -227,6 +243,7 @@ export function App() {
     setSelectedModelByProvider(state.selectedModelByProvider);
     setAgentMode(state.agentMode);
     setAgentModeByProvider(state.agentModeByProvider);
+    setAgentOptionByProvider(state.agentOptionByProvider);
     setSelectedProviderId(state.selectedProviderId);
     setOnboardingCompleted(state.onboardingCompleted);
     setSessionsOpen(state.sessionsOpen);
@@ -329,6 +346,9 @@ export function App() {
     setAgentModeId("");
     appliedAgentModeRef.current = "";
     appliedModelRef.current = "";
+    // 配置项集合也是上一家的，先清空；记住的值留在 storage 里等新家广告回来再认。
+    setAgentOptions([]);
+    appliedAgentOptionRef.current.clear();
     setModels([]);
     setProgress(undefined);
     sendRef.current({
@@ -336,6 +356,7 @@ export function App() {
       providerId,
       policy: agentModeRef.current,
       modeId: agentModeByProviderRef.current[providerId] || undefined,
+      optionValues: agentOptionByProviderRef.current[providerId] || undefined,
     });
   };
 
@@ -517,6 +538,10 @@ export function App() {
   };
 
   const handleHost = (msg: HostToExt) => {
+    if (msg.type === "skills") {
+      setSkills(msg.items);
+      return;
+    }
     if (msg.type === "agents") {
       setSawAgents(true);
       setAgents(msg.agents);
@@ -539,6 +564,8 @@ export function App() {
     }
     if (msg.type === "hello") {
       if (msg.providerId) connectedProviderRef.current = msg.providerId;
+      // 面板一挂上就把 skill 列表要一份（Host 侧有 5 分钟缓存，不会真去扫）。
+      sendRef.current({ type: "skills.refresh" });
       setBridgeVersion(displayVersion(msg.version));
       const host = displayVersion(msg.version);
       const extension = displayVersion(EXTENSION_VERSION);
@@ -624,7 +651,7 @@ export function App() {
       const regen = pendingRegen.current.get(ticket.localId);
       if (regen && ticket.kind === "new") {
         pendingRegen.current.delete(ticket.localId);
-        const body = wrapUserPrompt(regen.text, regen.attachments);
+        const body = wrapUserPrompt(regen.text, regen.attachments, skillsRef.current);
         beginTurn(ticket.localId);
         setError(undefined);
         sendPrompt(
@@ -699,6 +726,30 @@ export function App() {
         appliedAgentModeRef.current = remembered;
         const session = sessionsRef.current.find((item) => item.id === selectedIdRef.current);
         sendRef.current({ type: "agent.setMode", modeId: remembered, sessionId: session?.acpSessionId });
+      }
+      return;
+    }
+    if (msg.type === "agentOptions") {
+      const options = msg.options ?? [];
+      setAgentOptions(options);
+      const providerId = selectedProviderRef.current;
+      const remembered = agentOptionByProviderRef.current[providerId] ?? {};
+      const applied = appliedAgentOptionRef.current;
+      // 记住的值还没落到会话上（刚连上、刚开会话、或引擎换模型后把档位重置了）：补一次。
+      // applied 保证同一个值只重试一次，不会与服务端来回拉锯；引擎报回同一个值时把它
+      // 撤掉，这样以后再次被重置还能补。
+      for (const option of options) {
+        const value = remembered[option.id];
+        if (!value) continue;
+        if (option.current === value) {
+          applied.delete(`${option.id}=${value}`);
+          continue;
+        }
+        const key = `${option.id}=${value}`;
+        if (applied.has(key)) continue;
+        applied.add(key);
+        const session = sessionsRef.current.find((item) => item.id === selectedIdRef.current);
+        sendRef.current({ type: "agent.setOption", configId: option.id, value, sessionId: session?.acpSessionId });
       }
       return;
     }
@@ -974,6 +1025,7 @@ export function App() {
       selectedModelByProvider,
       agentMode,
       agentModeByProvider,
+      agentOptionByProvider,
       selectedProviderId,
       onboardingCompleted,
       sessionsOpen,
@@ -994,6 +1046,7 @@ export function App() {
     selectedModelByProvider,
     agentMode,
     agentModeByProvider,
+    agentOptionByProvider,
     selectedProviderId,
     onboardingCompleted,
     sessionsOpen,
@@ -1014,6 +1067,7 @@ export function App() {
       setCompact(node.clientWidth < COMPACT_MAIN_PX);
       setIconOnly(node.clientWidth <= ICON_ONLY_MAIN_PX);
       setModelNarrow(node.clientWidth <= MODEL_NARROW_MAIN_PX);
+      setActionFlat(node.clientWidth >= COMPOSER_ACTION_FLAT_PX);
     };
     update();
     const observer = new ResizeObserver(update);
@@ -1072,7 +1126,7 @@ export function App() {
     if (context && session) {
       patchSession(session.id, (item) => ({ ...item, pendingForkContext: undefined }));
     }
-    const body = wrapUserPrompt(text, attachments);
+    const body = wrapUserPrompt(text, attachments, skillsRef.current);
     beginTurn(localId);
     setError(undefined);
     if (!session?.acpSessionId) {
@@ -1396,6 +1450,27 @@ export function App() {
     sendRef.current({ type: "agent.setMode", modeId, sessionId: session?.acpSessionId });
   };
 
+  /**
+   * 用户选了一个会话配置项的值（推理档位、模型开关…）：先就地更新，再把选择交给 Host。
+   * 真正的权威是引擎推回来的状态（换模型可能把档位重置），所以这里只当「马上有反应」。
+   */
+  const onAgentOption = (configId: string, value: string) => {
+    if (!configId || !value) return;
+    const providerId = selectedProviderRef.current;
+    appliedAgentOptionRef.current.add(`${configId}=${value}`);
+    setAgentOptions((options) =>
+      options.map((option) => (option.id === configId ? { ...option, current: value } : option)),
+    );
+    if (providerId) {
+      setAgentOptionByProvider((current) => ({
+        ...current,
+        [providerId]: { ...(current[providerId] ?? {}), [configId]: value },
+      }));
+    }
+    const session = sessionsRef.current.find((item) => item.id === selectedIdRef.current);
+    sendRef.current({ type: "agent.setOption", configId, value, sessionId: session?.acpSessionId });
+  };
+
   const onModel = (modelId: string) => {
     setSelectedModelId(modelId);
     appliedModelRef.current = modelId;
@@ -1715,8 +1790,13 @@ export function App() {
               agentModes={agentModes}
               agentModeId={agentModeId}
               onAgentModeId={onAgentModeId}
+              agentOptions={agentOptions}
+              onAgentOption={onAgentOption}
               iconOnly={iconOnly}
               narrowModel={modelNarrow}
+              flatActions={actionFlat}
+              skills={skills}
+              onRefreshSkills={() => sendRef.current({ type: "skills.refresh" })}
               onAgentMode={(mode) => {
                 setAgentMode(mode);
                 sendRef.current({ type: "agent.setPolicy", policy: mode });

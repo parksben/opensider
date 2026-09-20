@@ -1,4 +1,4 @@
-import type { AttachmentItem } from "@shared";
+import type { AttachmentItem, SkillItem } from "@shared";
 import type { ChatMessage, ChatPart, TodoItem } from "./chat-types";
 import { detectBrowserLocale, readCachedLocale, type Locale } from "./i18n";
 import { displayMentionText, wrapUserMentions } from "./mentions";
@@ -125,6 +125,8 @@ export type PersistedState = {
   agentMode?: AgentMode;
   /** 用户显式选过的 Agent 模式，按 provider 分开记：模式集合是每家自己的。 */
   agentModeByProvider?: Record<string, string>;
+  /** 用户显式选过的会话配置项值（推理档位、模型开关…），按 provider → configId 分开记。 */
+  agentOptionByProvider?: Record<string, Record<string, string>>;
   selectedProviderId?: string;
   onboardingCompleted?: boolean;
   sessionsOpen?: boolean;
@@ -394,6 +396,7 @@ export type LoadedState = {
   selectedModelByProvider: Record<string, string>;
   agentMode: AgentMode;
   agentModeByProvider: Record<string, string>;
+  agentOptionByProvider: Record<string, Record<string, string>>;
   selectedProviderId: string;
   onboardingCompleted: boolean;
   sessionsOpen: boolean;
@@ -422,6 +425,7 @@ function emptyLoaded(savedAt?: string): LoadedState {
     selectedModelByProvider: {},
     agentMode: "ask",
     agentModeByProvider: {},
+    agentOptionByProvider: {},
     selectedProviderId: "",
     onboardingCompleted: false,
     sessionsOpen: false,
@@ -445,6 +449,7 @@ export function fromPersisted(data: PersistedState | undefined | null): LoadedSt
     : (sessions[0]?.id ?? "");
   const selectedModelByProvider = data.selectedModelByProvider ?? {};
   const agentModeByProvider = data.agentModeByProvider ?? {};
+  const agentOptionByProvider = data.agentOptionByProvider ?? {};
   const selectedModelId =
     (selectedProviderId && selectedModelByProvider[selectedProviderId]) || data.selectedModelId || "";
   return {
@@ -456,6 +461,7 @@ export function fromPersisted(data: PersistedState | undefined | null): LoadedSt
     selectedModelByProvider,
     agentMode: isAgentMode(data.agentMode) ? data.agentMode : "ask",
     agentModeByProvider,
+    agentOptionByProvider,
     selectedProviderId,
     onboardingCompleted,
     sessionsOpen: data.sessionsOpen === true,
@@ -477,6 +483,7 @@ export function toPersistedState(state: {
   selectedModelByProvider: Record<string, string>;
   agentMode: AgentMode;
   agentModeByProvider: Record<string, string>;
+  agentOptionByProvider: Record<string, Record<string, string>>;
   selectedProviderId: string;
   onboardingCompleted: boolean;
   sessionsOpen: boolean;
@@ -493,6 +500,7 @@ export function toPersistedState(state: {
     selectedModelByProvider: state.selectedModelByProvider,
     agentMode: state.agentMode,
     agentModeByProvider: Object.keys(state.agentModeByProvider).length ? state.agentModeByProvider : undefined,
+    agentOptionByProvider: Object.keys(state.agentOptionByProvider).length ? state.agentOptionByProvider : undefined,
     selectedProviderId: state.selectedProviderId || undefined,
     onboardingCompleted: state.onboardingCompleted || undefined,
     sessionsOpen: state.sessionsOpen,
@@ -538,8 +546,8 @@ export function wrapAttachments(text: string, items: AttachmentItem[]): string {
   return parts.join("\n\n");
 }
 
-export function wrapUserPrompt(text: string, items: AttachmentItem[]): string {
-  const { display, appendix } = wrapUserMentions(text);
+export function wrapUserPrompt(text: string, items: AttachmentItem[], skills: SkillItem[] = []): string {
+  const { display, appendix } = wrapUserMentions(text, skills);
   const body = wrapAttachments(display, items);
   return [body, appendix].filter(Boolean).join("\n\n");
 }
