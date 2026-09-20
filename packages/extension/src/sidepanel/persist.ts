@@ -1,7 +1,7 @@
 import type { AttachmentItem, SkillItem } from "@shared";
 import type { ChatMessage, ChatPart, TodoItem } from "./chat-types";
 import { detectBrowserLocale, readCachedLocale, type Locale } from "./i18n";
-import { displayMentionText, wrapUserMentions } from "./mentions";
+import { displayMentionText, leadingSkillNames, stripLeadingSkills, wrapUserMentions } from "./mentions";
 import { isBenignStreamCloseText, stripBenignStreamClose } from "./stream-close";
 import { stampToolParts } from "./tool-label";
 import { detectBrowserTheme, isThemePreference, readCachedTheme, type ThemePreference } from "./theme";
@@ -546,8 +546,22 @@ export function wrapAttachments(text: string, items: AttachmentItem[]): string {
   return parts.join("\n\n");
 }
 
-export function wrapUserPrompt(text: string, items: AttachmentItem[], skills: SkillItem[] = []): string {
+/**
+ * `/a /b` 前缀：斜杠语法只有落在**整个提示词**的最前面才会被 CLI 当 skill 调用，而 Host
+ * 还会在正文前面拼当前标签页信息，所以这一段要单独交给 Host 去拼（见 internal/host 的 prompt
+ * 分发）。正文里保留同样的 `/name`，人看着也一致。
+ *
+ * 前缀只从**芯片**推导，不去认用户手打的文本：`/usr/local/bin is broken` 这种正文不能被当成
+ * skill。
+ */
+export function wrapUserPrompt(
+  text: string,
+  items: AttachmentItem[],
+  skills: SkillItem[] = [],
+): { skillPrefix: string; body: string } {
   const { display, appendix } = wrapUserMentions(text, skills);
-  const body = wrapAttachments(display, items);
-  return [body, appendix].filter(Boolean).join("\n\n");
+  const names = leadingSkillNames(text);
+  const skillPrefix = names.map((name) => `/${name}`).join(" ");
+  const body = wrapAttachments(stripLeadingSkills(display, names), items);
+  return { skillPrefix, body: [body, appendix].filter(Boolean).join("\n\n") };
 }

@@ -428,6 +428,12 @@ export type ExtToHost =
       text: string;
       sessionId?: string;
       requestId?: string;
+      /**
+       * Leading `/skill-name` list the panel asks for. The host prepends it in front of
+       * everything else (including the current-tab block): a slash invocation only counts
+       * when it is the very first thing the CLI reads.
+       */
+      skillPrefix?: string;
       currentPage?: { title: string; url: string };
       /** 「立即发送」：该会话正在跑就先取消它，等它收尾再开始这一轮（顺序由 Host 定）。 */
       interrupt?: boolean;

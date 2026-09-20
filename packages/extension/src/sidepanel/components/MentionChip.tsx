@@ -1,5 +1,5 @@
 import type { AttachmentKind } from "@shared";
-import { File, Folder, Globe, Image, MousePointer2 } from "lucide-react";
+import { File, Folder, Globe, Image, MousePointer2, Wand2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import {
   mentionLabel,
@@ -37,6 +37,7 @@ export function TabFavicon({ pageUrl, favIconUrl }: { pageUrl?: string; favIconU
 }
 
 export function MentionIcon({ mention }: { mention: Mention }) {
+  if (mention.kind === "skill") return <Wand2 size={12} className="shrink-0 opacity-80" />;
   if (mention.kind === "tab") return <TabFavicon pageUrl={mention.url} favIconUrl={mention.favIconUrl} />;
   const Icon = kindIcon(mention.fileKind);
   return <Icon size={12} className="shrink-0 opacity-80" />;

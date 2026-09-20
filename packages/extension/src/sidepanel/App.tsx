@@ -277,6 +277,7 @@ export function App() {
     text: string,
     interrupt = false,
     anchor = true,
+    skillPrefix = "",
   ) => {
     const requestId = crypto.randomUUID();
     bindRegistry.current.add(requestId, localId, "prompt");
@@ -296,6 +297,7 @@ export function App() {
       sessionId,
       requestId,
       interrupt,
+      ...(skillPrefix ? { skillPrefix } : {}),
       currentPage: pageRef.current
         ? { title: pageRef.current.title, url: pageRef.current.url }
         : undefined,
@@ -651,13 +653,16 @@ export function App() {
       const regen = pendingRegen.current.get(ticket.localId);
       if (regen && ticket.kind === "new") {
         pendingRegen.current.delete(ticket.localId);
-        const body = wrapUserPrompt(regen.text, regen.attachments, skillsRef.current);
+        const { skillPrefix, body } = wrapUserPrompt(regen.text, regen.attachments, skillsRef.current);
         beginTurn(ticket.localId);
         setError(undefined);
         sendPrompt(
           ticket.localId,
           msg.sessionId,
           regen.context ? `${wrapForkContext(regen.context)}\n\n${body}` : body,
+          false,
+          true,
+          skillPrefix,
         );
       }
       return;
@@ -1126,7 +1131,7 @@ export function App() {
     if (context && session) {
       patchSession(session.id, (item) => ({ ...item, pendingForkContext: undefined }));
     }
-    const body = wrapUserPrompt(text, attachments, skillsRef.current);
+    const { skillPrefix, body } = wrapUserPrompt(text, attachments, skillsRef.current);
     beginTurn(localId);
     setError(undefined);
     if (!session?.acpSessionId) {
@@ -1139,6 +1144,8 @@ export function App() {
       session.acpSessionId,
       context ? `${wrapForkContext(context)}\n\n${body}` : body,
       options.interrupt,
+      true,
+      skillPrefix,
     );
   };
 

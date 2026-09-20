@@ -1,4 +1,4 @@
-import type { AttachmentItem, AttachmentKind } from "@shared";
+import type { AttachmentItem, AttachmentKind, SkillItem } from "@shared";
 
 export type TabMention = {
   kind: "tab";
@@ -15,11 +15,20 @@ export type AttachmentMention = {
   fileKind: AttachmentKind;
 };
 
-export type MentionChip = TabMention | AttachmentMention;
+/**
+ * A skill the user picked in the probe menu. `name` is the identifier the CLIs know (the
+ * menu may show a friendlier alias, but this is what goes out).
+ */
+export type SkillMention = {
+  kind: "skill";
+  name: string;
+};
+
+export type MentionChip = TabMention | AttachmentMention | SkillMention;
 
 export type MentionSegment = { type: "text"; text: string } | { type: "mention"; mention: MentionChip };
 
-const TOKEN_RE = /«@(tab|att):([^»]+)»/g;
+const TOKEN_RE = /«@(tab|att):[^»]+»|«\/skill:[^»]+»/g;
 
 function encodePayload(data: unknown): string {
   return encodeURIComponent(JSON.stringify(data));
@@ -30,10 +39,17 @@ function decodePayload(raw: string): unknown {
 }
 
 export function mentionLabel(mention: MentionChip): string {
+  if (mention.kind === "skill") return `/${mention.name}`;
   return mention.kind === "tab" ? mention.title || mention.url : mention.name || mention.path;
 }
 
+/** Chips render skill names with a leading slash; everything else keeps the `@` marker. */
+function mentionMarker(mention: MentionChip): string {
+  return mention.kind === "skill" ? "" : "@";
+}
+
 export function mentionTitle(mention: MentionChip): string {
+  if (mention.kind === "skill") return `/${mention.name}`;
   if (mention.kind === "tab") {
     return mention.url && mention.url !== mention.title ? `${mention.title}\n${mention.url}` : mention.title || mention.url;
   }
@@ -41,6 +57,9 @@ export function mentionTitle(mention: MentionChip): string {
 }
 
 export function serializeMention(mention: MentionChip): string {
+  if (mention.kind === "skill") {
+    return `«/skill:${encodeURIComponent(mention.name)}»`;
+  }
   if (mention.kind === "tab") {
     return `«@tab:${encodePayload({
       id: mention.tabId,
@@ -57,6 +76,16 @@ export function serializeMention(mention: MentionChip): string {
 }
 
 export function parseMentionToken(token: string): MentionChip | undefined {
+  const skill = /^«\/skill:([^»]+)»$/.exec(token);
+  if (skill) {
+    let name = "";
+    try {
+      name = decodeURIComponent(skill[1]).trim();
+    } catch {
+      return undefined;
+    }
+    return name ? { kind: "skill", name } : undefined;
+  }
   const match = /^«@(tab|att):([^»]+)»$/.exec(token);
   if (!match) return undefined;
   try {
@@ -104,7 +133,9 @@ export function parseMentionSegments(text: string): MentionSegment[] {
 
 export function displayMentionText(text: string): string {
   return parseMentionSegments(text)
-    .map((segment) => (segment.type === "text" ? segment.text : `@${mentionLabel(segment.mention)}`))
+    .map((segment) =>
+      segment.type === "text" ? segment.text : `${mentionMarker(segment.mention)}${mentionLabel(segment.mention)}`,
+    )
     .join("");
 }
 
@@ -147,10 +178,56 @@ function wrapMentionedAttachments(mentions: MentionChip[]): string {
   return parts.join("\n\n");
 }
 
-export function wrapUserMentions(text: string): { display: string; appendix: string } {
+/**
+ * 正文**最前面**那串 skill 芯片的 name，按出现顺序（只算开头连着的一串：中间再插一个
+ * skill，它就不在「最前」了，不该当斜杠前缀发出去）。
+ */
+export function leadingSkillNames(text: string): string[] {
+  const names: string[] = [];
+  for (const segment of parseMentionSegments(text)) {
+    if (segment.type === "mention") {
+      if (segment.mention.kind !== "skill") break;
+      names.push(segment.mention.name);
+      continue;
+    }
+    if (segment.text.trim() !== "") break;
+  }
+  return names;
+}
+
+/** 把 display 开头那串 `/name` 摘掉，返回剩下的正文。 */
+export function stripLeadingSkills(display: string, names: string[]): string {
+  let rest = display;
+  for (const name of names) {
+    const token = `/${name}`;
+    if (!rest.startsWith(token)) break;
+    rest = rest.slice(token.length).replace(/^\s+/, "");
+  }
+  return rest;
+}
+
+function wrapRequestedSkills(mentions: MentionChip[], skills: SkillItem[]): string {
+  const names = [
+    ...new Set(mentions.filter((item): item is SkillMention => item.kind === "skill").map((item) => item.name)),
+  ];
+  if (names.length === 0) return "";
+  const lines = names.map((name) => {
+    const path = skills.find((skill) => skill.name === name)?.path;
+    return path ? `- ${name} — ${path}` : `- ${name}`;
+  });
+  return `[Skills requested by the user]\nThe user explicitly asked to use these skills. Read each skill's SKILL.md and follow it.\n${lines.join("\n")}`;
+}
+
+export function wrapUserMentions(text: string, skills: SkillItem[] = []): { display: string; appendix: string } {
   const mentions = mentionsOf(text);
   const display = displayMentionText(text).replace(/\u200b/g, "").trim();
-  const appendix = [wrapMentionedTabs(mentions), wrapMentionedAttachments(mentions)].filter(Boolean).join("\n\n");
+  const appendix = [
+    wrapMentionedTabs(mentions),
+    wrapMentionedAttachments(mentions),
+    wrapRequestedSkills(mentions, skills),
+  ]
+    .filter(Boolean)
+    .join("\n\n");
   return { display, appendix };
 }
 

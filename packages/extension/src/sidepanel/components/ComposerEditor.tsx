@@ -16,6 +16,7 @@ import {
   shouldBlockSubmit,
 } from "../at-menu-lock";
 import { consumeAtBeforeCaret, readAtQuery } from "../at-query";
+import { consumeSlashBeforeCaret, readSlashQuery } from "../slash-query";
 import {
   coversWholeEditor,
 } from "../composer-clipboard";
@@ -24,6 +25,7 @@ import {
   parseMentionToken,
   serializeMention,
   type MentionChip,
+  type SkillMention,
 } from "../mentions";
 import { MentionChip as MentionChipView } from "./MentionChip";
 
@@ -33,10 +35,13 @@ export type ComposerHandle = {
   focus: () => void;
   insertAtStart: (text: string) => void;
   insertMention: (mention: MentionChip) => void;
+  /** 插到正文最前面（skill 芯片的前缀只有落在最前才会被 CLI 当 skill 调用）。 */
+  insertSkill: (mention: SkillMention) => void;
   moveCaretToEnd: () => void;
   getSerialized: () => string;
   getCaretRect: () => DOMRect | undefined;
   getAtQuery: () => string | null;
+  getSlashQuery: () => string | null;
 };
 
 function clipboardImages(data: DataTransfer | null): File[] {
@@ -229,6 +234,23 @@ function chipWrapFromEvent(target: EventTarget | null, editor: HTMLElement | nul
   return wrap instanceof HTMLElement && editor.contains(wrap) ? wrap : null;
 }
 
+/** True for the `/name` chips: only those count as the draft's leading skill prefix. */
+function isSkillChip(node: Node | null): boolean {
+  return (
+    node instanceof HTMLElement &&
+    node.classList.contains(CHIP_WRAP) &&
+    (node.dataset.token ?? "").startsWith("«/skill:")
+  );
+}
+
+/**
+ * 空白文本节点：吃掉触发用的 `/` 之后会原地留下一个空节点，前导芯片之间也会夹着空格。
+ * 算插入位置时两者都要当它们不存在，否则新芯片会被插到最前面，顺序就反了。
+ */
+function isBlankTextNode(node: Node | null): boolean {
+  return node !== null && node.nodeType === Node.TEXT_NODE && (node.textContent ?? "").trim() === "";
+}
+
 function scrollCaret(editor: HTMLElement): void {
   const selection = window.getSelection();
   if (!selection || selection.rangeCount === 0) return;
@@ -245,6 +267,8 @@ export const ComposerEditor = forwardRef<
     value: string;
     placeholder: string;
     menuOpen?: boolean;
+    /** The `/` skill probe menu is open (see SlashMenu): it takes the same key gate as `@`. */
+    slashMenuOpen?: boolean;
     onChange: (value: string) => void;
     onSubmit: () => void;
     onPasteImages: (files: File[]) => void;
@@ -254,12 +278,15 @@ export const ComposerEditor = forwardRef<
     onComposerPastedText?: (text: string) => void;
     onAtTyped?: () => void;
     onAtQueryChange?: (query: string | null) => void;
+    onSlashTyped?: () => void;
+    onSlashQueryChange?: (query: string | null) => void;
   }
 >(function ComposerEditor(
   {
     value,
     placeholder,
     menuOpen,
+    slashMenuOpen,
     onChange,
     onSubmit,
     onPasteImages,
@@ -267,6 +294,8 @@ export const ComposerEditor = forwardRef<
     onComposerPastedText,
     onAtTyped,
     onAtQueryChange,
+    onSlashTyped,
+    onSlashQueryChange,
   },
   ref,
 ) {
@@ -275,21 +304,35 @@ export const ComposerEditor = forwardRef<
   const lastRangeRef = useRef<Range | null>(null);
   const valueRef = useRef(value);
   const menuOpenRef = useRef(menuOpen);
+  const slashMenuOpenRef = useRef(slashMenuOpen);
   const onAtQueryChangeRef = useRef(onAtQueryChange);
+  const onSlashQueryChangeRef = useRef(onSlashQueryChange);
   valueRef.current = value;
   menuOpenRef.current = menuOpen;
+  slashMenuOpenRef.current = slashMenuOpen;
   onAtQueryChangeRef.current = onAtQueryChange;
+  onSlashQueryChangeRef.current = onSlashQueryChange;
 
-  const readAtQueryFromEditor = (): string | null => {
+  /** Either menu owns the keyboard: Enter must insert instead of sending while one is open. */
+  const anyMenuOpen = () => Boolean(menuOpenRef.current) || Boolean(slashMenuOpenRef.current);
+
+  const readQueryFromEditor = (reader: (range: Range) => string | null): string | null => {
     const editor = editorRef.current;
     const selection = window.getSelection();
     if (!editor || !selection || selection.rangeCount === 0) return null;
     const range = selection.getRangeAt(0);
     if (!editor.contains(range.startContainer)) return null;
-    return readAtQuery(range);
+    return reader(range);
   };
 
+  const readAtQueryFromEditor = () => readQueryFromEditor(readAtQuery);
+  const readSlashQueryFromEditor = () => readQueryFromEditor(readSlashQuery);
+
   const syncAtQuery = () => {
+    if (slashMenuOpenRef.current) {
+      onSlashQueryChangeRef.current?.(readSlashQueryFromEditor());
+      return;
+    }
     if (!menuOpenRef.current) return;
     onAtQueryChangeRef.current?.(readAtQueryFromEditor());
   };
@@ -472,6 +515,52 @@ export const ComposerEditor = forwardRef<
       saveRange();
       emit();
     },
+    insertSkill: (mention) => {
+      const editor = editorRef.current;
+      if (!editor) return;
+      // 先把触发用的 `/` 与搜索词吃掉（芯片取代它）——光标可能早就不在那儿了，所以取不到
+      // 就跳过，不硬猜。
+      const range = restoreRange();
+      if (range && editor.contains(range.startContainer)) {
+        consumeSlashBeforeCaret(range);
+        range.deleteContents();
+      }
+      editor.focus();
+      const token = serializeMention(mention);
+      const existing = [...editor.querySelectorAll<HTMLElement>(`.${CHIP_WRAP}`)].find(
+        (wrap) => wrap.dataset.token === token,
+      );
+      if (existing) {
+        // 同一个 skill 选两次只留一个：光标落到已有芯片后面就行。
+        lastRangeRef.current = placeCaretAfterChip(existing);
+        emit();
+        return;
+      }
+      // 插到「正文最前面」＝已插入的前导 skill 芯片之后、其它内容之前；多次选择按选择
+      // 顺序在最左侧挨个累积（chip a → chip b），而不是反着插到绝对最前。
+      // 前导区里会混着空文本节点（吃掉触发用的 `/` 之后留下的）与芯片之间的空白，算位
+      // 置时要跳过它们，否则新芯片会被插到最前面，顺序就反了。
+      let lastChip: Node | null = null;
+      let node: Node | null = editor.firstChild;
+      while (node && (isSkillChip(node) || isBlankTextNode(node))) {
+        if (isSkillChip(node)) lastChip = node;
+        node = node.nextSibling;
+      }
+      const at = lastChip ? lastChip.nextSibling : editor.firstChild;
+      const wrap = createChipWrap(mention);
+      const fragment = document.createDocumentFragment();
+      // 紧跟在别的芯片后面插入时补一个空格；插在开头则不补（草稿不以空格起头）。
+      if (lastChip) fragment.appendChild(document.createTextNode(" "));
+      fragment.appendChild(wrap);
+      // 插入点后面是正文（且不是空白）时补一个空格，免得芯片和文字粘在一起。
+      if (at && !isBlankTextNode(at) && !isPadSpace(firstCharOfNode(at))) {
+        fragment.appendChild(document.createTextNode(" "));
+      }
+      editor.insertBefore(fragment, at);
+      mountChip(wrap, mention);
+      lastRangeRef.current = placeCaretAfterChip(wrap);
+      emit();
+    },
     moveCaretToEnd: () => {
       const editor = editorRef.current;
       if (!editor) return;
@@ -503,11 +592,12 @@ export const ComposerEditor = forwardRef<
       return editorRef.current?.getBoundingClientRect();
     },
     getAtQuery: () => readAtQueryFromEditor(),
+    getSlashQuery: () => readSlashQueryFromEditor(),
   }));
 
   useLayoutEffect(() => {
-    if (menuOpen) syncAtQuery();
-  }, [menuOpen]);
+    if (menuOpen || slashMenuOpen) syncAtQuery();
+  }, [menuOpen, slashMenuOpen]);
 
   useLayoutEffect(() => {
     const editor = editorRef.current;
@@ -536,13 +626,13 @@ export const ComposerEditor = forwardRef<
     if (!editor) return;
     const onKeyDownCapture = (event: globalThis.KeyboardEvent) => {
       if (!isEnterKey(event)) return;
-      if (!shouldBlockSubmit() && !menuOpenRef.current) return;
+      if (!shouldBlockSubmit() && !anyMenuOpen()) return;
       blockEnterEvent(event);
       if (!event.repeat) atMenuLock.confirm?.(event);
     };
     const onBeforeInput = (event: InputEvent) => {
       if (event.inputType !== "insertParagraph" && event.inputType !== "insertLineBreak") return;
-      if (!shouldBlockSubmit() && !menuOpenRef.current) return;
+      if (!shouldBlockSubmit() && !anyMenuOpen()) return;
       event.preventDefault();
       event.stopPropagation();
     };
@@ -555,11 +645,11 @@ export const ComposerEditor = forwardRef<
   }, []);
 
   const requestSubmit = () => {
-    if (shouldBlockSubmit() || menuOpenRef.current) return;
+    if (shouldBlockSubmit() || anyMenuOpen()) return;
     onSubmit();
   };
 
-  const menuKeysActive = () => shouldBlockSubmit() || Boolean(menuOpenRef.current);
+  const menuKeysActive = () => shouldBlockSubmit() || anyMenuOpen();
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (menuKeysActive() && ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Tab", "Enter", "Escape"].includes(event.key)) {
@@ -629,12 +719,16 @@ export const ComposerEditor = forwardRef<
         const input = event.nativeEvent as InputEvent;
         emit();
         if (input.inputType?.startsWith("insert") && input.data === "@") onAtTyped?.();
+        // 只有「行首或空白后」的斜杠才算触发，不然 `/usr/local` 这种路径也会弹菜单。
+        if (input.inputType?.startsWith("insert") && input.data === "/" && readSlashQueryFromEditor() !== null) {
+          onSlashTyped?.();
+        }
       }}
       onKeyDown={onKeyDown}
       onBeforeInput={(event) => {
         const input = event.nativeEvent;
         if (input.inputType !== "insertParagraph" && input.inputType !== "insertLineBreak") return;
-        if (!shouldBlockSubmit() && !menuOpenRef.current) return;
+        if (!shouldBlockSubmit() && !anyMenuOpen()) return;
         event.preventDefault();
       }}
       onKeyUp={saveRange}

@@ -42,6 +42,8 @@ const chunks = Number(process.env.FAKE_ACP_CHUNKS ?? 20);
 const chunkMs = Number(process.env.FAKE_ACP_CHUNK_MS ?? 300);
 const ignoreCancelMs = Number(process.env.FAKE_ACP_IGNORE_CANCEL_MS ?? 0);
 const tracePath = process.env.FAKE_ACP_TRACE ?? "";
+// 默认只 trace 前 200 字符（够看开头）；要断言整段提示词时设 FAKE_ACP_TRACE_FULL=1。
+const traceFull = process.env.FAKE_ACP_TRACE_FULL === "1";
 const modesShape = process.env.FAKE_MODES ?? "none";
 const modeUrlIds = process.env.FAKE_MODE_URL_IDS === "1";
 const modeSwitchOnPrompt = process.env.FAKE_MODE_SWITCH_ON_PROMPT ?? "";
@@ -249,7 +251,7 @@ async function runPrompt(id, text) {
   turn += 1;
   const label = turn;
   cancelledAt = 0;
-  trace({ event: "prompt", turn: label, text: text.slice(0, 200), sessionId });
+	  trace({ event: "prompt", turn: label, text: traceFull ? text : text.slice(0, 200), sessionId });
   // 「Agent 自己换模式」：收到带文本的 prompt 时主动推一条 current_mode_update。
   if (modeSwitchOnPrompt && text.trim()) {
     const target = modeUrlIds ? withUrlId(modeSwitchOnPrompt) : modeSwitchOnPrompt;

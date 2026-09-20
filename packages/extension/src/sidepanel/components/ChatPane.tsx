@@ -185,6 +185,7 @@ export function ChatPane({
   const slashButtonRef = useRef<HTMLSpanElement>(null);
   const [plusOpen, setPlusOpen] = useState(false);
   const plusButtonRef = useRef<HTMLSpanElement>(null);
+  const hoverOpenedRef = useRef(false);
   const listRef = useRef<HTMLDivElement>(null);
   const { tabs: historyTabs } = useComposerHistory();
   const threadEndRef = useRef<HTMLDivElement>(null);
@@ -431,6 +432,11 @@ export function ChatPane({
     closeSlashMenu();
     requestAnimationFrame(() => stickToBottom(listRef.current));
   }, [sessionId]);
+
+  // 变宽之后加号钮本身不在了，它的弹层不能再留着（锚点已经失效）。
+  useEffect(() => {
+    if (flatActions !== false) setPlusOpen(false);
+  }, [flatActions]);
 
   useEffect(() => {
     const root = listRef.current;
@@ -744,11 +750,24 @@ export function ChatPane({
               <div className="flex shrink-0 items-center gap-0">
                 {flatActions === false ? (
                   // <600px：四个功能钮收成一个加号钮（hover 或点击弹出）。
-                  <span ref={plusButtonRef} onMouseEnter={() => setPlusOpen(true)}>
+                  <span
+                    ref={plusButtonRef}
+                    onMouseEnter={() => {
+                      hoverOpenedRef.current = true;
+                      setPlusOpen(true);
+                    }}
+                    onMouseLeave={() => {
+                      hoverOpenedRef.current = false;
+                    }}
+                  >
                     <IconButton
                       side="top"
                       label={label("moreActions")}
-                      onClick={() => setPlusOpen((open) => !open)}
+                      onClick={() => {
+                        // 鼠标已经把它带开了，这时再点一下不应该又关掉（点开与悬停两种入口不能互相打架）。
+                        if (hoverOpenedRef.current && plusOpen) return;
+                        setPlusOpen((open) => !open);
+                      }}
                       disabled={busy}
                       className={`flex h-7 w-7 items-center justify-center rounded-full hover:bg-[var(--hover)] disabled:opacity-30 disabled:hover:bg-transparent ${
                         plusOpen || attachOpen ? "bg-[var(--hover)] text-[var(--brass)]" : "text-[var(--text)]"

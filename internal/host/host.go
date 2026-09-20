@@ -1284,7 +1284,13 @@ func (h *Host) handlePrompt(msg map[string]any) error {
 	h.mu.Lock()
 	runtime.turnDone = make(chan struct{})
 	h.mu.Unlock()
-	stop, err := runtime.client.Prompt(prefix + str(msg["text"]))
+	// skill 的 `/name` 前缀必须排在**所有东西**前面（包括上面的当前标签页块）：斜杠调用只有
+	// 落在最前才会被 CLI 当 skill 用。
+	skillPrefix := strings.TrimSpace(str(msg["skillPrefix"]))
+	if skillPrefix != "" {
+		skillPrefix += "\n\n"
+	}
+	stop, err := runtime.client.Prompt(skillPrefix + prefix + str(msg["text"]))
 	interrupted, done := h.endPrompt(runtime)
 	if done != nil {
 		close(done)
