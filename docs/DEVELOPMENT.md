@@ -118,6 +118,7 @@ scripts/verify-composer-clipboard.mjs  输入框全选复制/剪切带上附件�
 scripts/verify-page-overlays.mjs  动作后自动上报页面浮层（模态框/抽屉）的端到端验证
 scripts/verify-host-skew.mjs  本机 Host 比扩展旧时的提示（可见 / 可关 / 不影响可用功能）
 scripts/verify-state-mirror.mjs  状态镜像（>1MB 分片推送 / 上传、超限帧不脱帧、空态不覆盖）的帧级验证
+scripts/verify-skill-menu.mjs  `/` skill 探测菜单（列表 / 搜索 / 详情面板 / 芯片落位 / 发出的提示词）的端到端验证
 scripts/lib/sandbox.mjs  上面几个脚本共用的沙箱（临时 HOME / 现编 Host / 假 Agent / profile 内桥接清单）
 scripts/fixtures/player-check.html  模拟「站点自己做环境自检就拒绝播」的假播放器（人工验收用）
 scripts/fake-acp-agent.mjs  假 ACP Agent（e2e 用，按行 JSON，可控分片/是否响应 cancel；另答 `<cli> models`）

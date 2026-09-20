@@ -448,8 +448,9 @@ on them with page tools using args.selector.
 2. **来源**：记住目录来源（claude / cursor / codex / agents / cursorBuiltin / stepclaw），用于列表项右侧小标签与左侧 lucide 图标。按 `name` 折叠同名，优先级 claude > cursor > agents > codex > stepclaw > cursorBuiltin（本机 `cli-model-alias-mapper` 同时装在 `~/.claude/skills` 与 `~/.cursor/skills`，列表里只应出现一条）。
 3. **别名与名称**：`Alias` = `display_name`（有值就用），否则 `Name`；`Name` 缺 frontmatter 时回退目录名，两者都没有则跳过该目录。**芯片与发给 Agent 的一律是 `Name`**，别名只用于列表展示与搜索（`description` 不当别名：实测 395–943 字符，是写给模型的触发说明）。
 4. **线格式**：Host → 侧栏 `{type:"skills", items:[{name, alias, source, path, description}]}`（`path` 是 `SKILL.md` 绝对路径）；侧栏 → Host `{type:"skills.refresh"}`。与 `agentModes` 同一套：不持久化，连接就绪后推一次，面板按需刷新。
-5. **插入位置**：芯片沿用 `@` 的 token 机制（token 形如 `«/skill:name»`，展示为 `/name`），与 `MentionChip` 并列解析，所以用户气泡、复制粘贴、队列编辑都天然复用。但插入**走 `ComposerEditor.insertAtStart`**，不是 `insertMention`（后者插到光标处）：斜杠前缀只有落在正文最前面才会被 CLI 当 skill 调用。连选多个按选择顺序从左到右累积，按 `name` 去重。
-6. **发给 Agent**：正文里 token 反序列化成 `/name`，再按 `@` 提及的 appendix 写法附一段说明（放在正文之后），兜底不认识斜杠语法的 CLI：
+5. **触发与搜索**：`@` 只要敲到就唤起；`/` 多一道限制——只在**行首或空白之后**才算触发（`slash-query.ts` 的 `readSlashQuery` 直接把这个判断当触发条件用），否则 `/usr/local/bin` 这种路径打到一半就弹菜单，纯属噪声。菜单打开期间在输入框里继续打字就是搜索词（与 `@` 同一套内联查询），匹配 `name` / `alias` / `description` 三处，命中高亮只标在别名上；匹配规则见 `scripts/verify-skill-menu.mjs` 覆盖的那几条（中文别名、大小写、仅说明命中）。
+6. **插入位置**：芯片沿用 `@` 的 token 机制（token 形如 `«/skill:name»`，展示为 `/name`），与 `MentionChip` 并列解析，所以用户气泡、复制粘贴、队列编辑都天然复用。插入**不走 `insertMention`**（那是插到光标处），而是自己算位置：前导区 = 开头的连续 skill 芯片及其间的空白/空文本节点（吃掉触发用的 `/` 会留下空节点，不跳过就会把新芯片插到最前面、顺序反了），新芯片插在**最后一个前导芯片之后**、正文之前；左侧补空格（草稿不以空格起头）、右侧只在紧跟正文时补。连选多个按选择顺序从左到右累积，按 `name` 去重（再选同一个只把光标放到已有芯片后面）。
+7. **发给 Agent**：正文里 token 反序列化成 `/name`，再按 `@` 提及的 appendix 写法附一段说明（放在正文之后），兜底不认识斜杠语法的 CLI：
 
 ```
 [Skills requested by the user]
@@ -457,8 +458,9 @@ The user explicitly asked to use these skills. Read each skill's SKILL.md and fo
 - coding-plan — /Users/…/.claude/skills/coding-plan/SKILL.md
 ```
 
-7. **弹层**：复用 `@` 菜单的定位（跟光标、优先上方、四边 16px）与键盘逻辑（上下循环高亮、回车只插入不发送、Esc 关闭），但布局两列：左列列表（≥200px）+ 右列详情（220–260px）。`vw - 32 < 200 + 8 + 220`（约 460px）时改成上下两段（列表在上、详情在下，详情 `overflow-y-auto`）。搜索框固定在弹层最底部、`open` 后 `focus()`，不属于任何一列。详情面板顶部是别名 / 来源 / 路径，正文是 `description` 全文；高亮项由「键盘」与「hover」两个来源合成，后发生的覆盖（记一个 `lastActive` 来源）。
-8. **`+` 收起**：`layout.ts` 加 `COMPOSER_ACTION_FLAT_PX = 600`。≥600 平铺四个钮；<600 只画一个 `Plus` 钮，hover 或 click 弹 `AttachMenu` 风格的浮层，非 Windows 四项、Windows / Linux 五项（把 `pick` 的 mode 选择并进来，复用它的 `FsPickMode` 分支）。点层里的 `@` / `/` 以 `+` 钮为锚点唤起各自菜单；在输入框里敲 `@` / `/` 的键盘路径不受收起影响。
+斜杠前缀走**单独的协议字段** `prompt.skillPrefix`，由 Host 拼在**所有东西之前**（含 Host 自己加的 `[Current tab] …` 块）：斜杠调用只有落在最前才会被 CLI 当 skill 用，而 Host 是在收到 prompt 后才把当前标签页拼进去的（`prefix + text`），侧栏无法自己抢到头几位。侧栏只负责把 display 开头连续的 `/name /name` 切出来（`splitSkillPrefix`），正文里保留同样的 `/name` 供人阅读。
+8. **弹层**：复用 `@` 菜单的定位（跟光标、优先上方、四边 16px）与键盘逻辑（上下循环高亮、回车只插入不发送、Esc 关闭），但布局两列：左列列表（≥`SKILL_LIST_MIN_PX` 224px）+ 右列详情（`SKILL_DETAIL_PX` 240px）。`vw < 224 + 240 + 32`（即 496px）时改成上下两段（列表在上、详情在下，详情 `overflow-y-auto`）；单列时宽度回到 `@` 菜单的 256px。搜索框固定在弹层最底部（不属于任何一列）并在 `open` 后 `focus()`——与模型下拉的筛选框同一套手感；两侧都能改同一个 query：在输入框里接着打字（内联）与在搜索框里打字等效。详情面板顶部是别名 /（别名≠name 时）`/name` / 来源 / 路径，正文是 `description` 全文；高亮项由「键盘」与「hover」两个来源合成，后发生的覆盖。
+9. **`+` 收起**：`layout.ts` 加 `COMPOSER_ACTION_FLAT_PX = 600`。≥600 平铺四个钮；<600 只画一个 `Plus` 钮，hover 或 click 弹 `ComposerActionsMenu`（`AttachMenu` 同款定位），非 Windows 四项（添加附件 / 拾取 / 提及 / 指定 skill）、Windows 五项（文件 / 文件夹拆开）。hover 带开的菜单再点一下**不关**（两种入口不互相打架）；Linux 上「添加附件」仍旧转出二级的 `AttachMenu`，URL 与以前完全一致。点层里的 `@` / `/` 以 `+` 钮为锚点唤起各自菜单；在输入框里敲 `@` / `/` 的键盘路径不受收起影响。两个菜单互斥：`startAtMenu` / `startSlashMenu` 会先关掉另一个（`@` 与 `/` 本来就在同一个输入框里打字）。
 
 ## 模型选择
 
