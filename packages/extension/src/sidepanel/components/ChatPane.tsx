@@ -198,7 +198,6 @@ export function ChatPane({
   const slashButtonRef = useRef<HTMLSpanElement>(null);
   const [plusOpen, setPlusOpen] = useState(false);
   const plusButtonRef = useRef<HTMLSpanElement>(null);
-  const hoverOpenedRef = useRef(false);
   const listRef = useRef<HTMLDivElement>(null);
   const { tabs: historyTabs } = useComposerHistory();
   const threadEndRef = useRef<HTMLDivElement>(null);
@@ -762,27 +761,15 @@ export function ChatPane({
             <div className="relative flex min-w-0 flex-1 items-center gap-1">
               <div className="flex shrink-0 items-center gap-0">
                 {flatActions === false ? (
-                  // <600px：四个功能钮收成一个加号钮（hover 或点击弹出）。
-                  <span
-                    ref={plusButtonRef}
-                    onMouseEnter={() => {
-                      hoverOpenedRef.current = true;
-                      setPlusOpen(true);
-                    }}
-                    onMouseLeave={() => {
-                      hoverOpenedRef.current = false;
-                    }}
-                  >
+                  // <600px：四个功能钮收成一个加号钮（**点一下才弹**；悬停弹菜单会误触，
+                  // 鼠标扫过就盖住输入框）。
+                  <span ref={plusButtonRef}>
                     <IconButton
                       side="top"
                       label={label("moreActions")}
                       // 弹层就在按钮正上方，tooltip 一定盖住菜单内容——这个钮不带 tooltip。
                       tooltip={false}
-                      onClick={() => {
-                        // 鼠标已经把它带开了，这时再点一下不应该又关掉（点开与悬停两种入口不能互相打架）。
-                        if (hoverOpenedRef.current && plusOpen) return;
-                        setPlusOpen((open) => !open);
-                      }}
+                      onClick={() => setPlusOpen((open) => !open)}
                       disabled={busy}
                       className={`flex h-7 w-7 items-center justify-center rounded-full hover:bg-[var(--hover)] disabled:opacity-30 disabled:hover:bg-transparent ${
                         plusOpen || attachOpen ? "bg-[var(--hover)] text-[var(--brass)]" : "text-[var(--text)]"
@@ -1186,10 +1173,11 @@ function ModeSelect({
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
         onPointerDown={(event) => spawn(event)}
-        // 内边距对称 px-2，与模式钮一致。
-        className={`relative flex h-7 max-w-full min-w-0 items-center gap-1 overflow-hidden whitespace-nowrap rounded-full px-2 text-[11px] hover:bg-[var(--hover)] ${
-          mode === "ask" ? "text-[var(--muted)]" : "text-[var(--brass)]"
-        }`}
+        // 内边距对称 px-2，与模式钮一致；收起态（只画图标）必须是**正圆**：h-7 配 w-7、
+        // 不加内边距、图标居中——否则宽 30 高 28 的“圆”在 hover 时会露出椭圆底。
+        className={`relative flex h-7 items-center gap-1 overflow-hidden whitespace-nowrap rounded-full text-[11px] hover:bg-[var(--hover)] ${
+          iconOnly ? "w-7 justify-center px-0" : "max-w-full min-w-0 px-2"
+        } ${mode === "ask" ? "text-[var(--muted)]" : "text-[var(--brass)]"}`}
       >
         <CurrentIcon size={COMPOSER_ICON_PX} className="shrink-0" />
         {iconOnly ? null : <span className="min-w-0 truncate">{current.name}</span>}

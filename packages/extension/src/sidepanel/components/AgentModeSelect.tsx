@@ -113,8 +113,11 @@ export function AgentModeSelect({
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
         onPointerDown={(event) => spawn(event)}
-        // 内边距对称 px-2，与权限钮一致；w-fit 让它贴合内容（不设最小宽度，否则会多出空白）。
-        className="relative flex h-7 w-fit max-w-full min-w-0 items-center gap-1 overflow-hidden whitespace-nowrap rounded-full px-2 text-[11px] text-[var(--muted)] hover:bg-[var(--hover)]"
+        // 内边距对称 px-2（展开态）；收起态（只画图标）必须是**正圆**：h-7 配 w-7、不加
+        // 内边距、图标居中——否则 hover 时露出来的是椭圆底（用户报过）。
+        className={`relative flex h-7 items-center gap-1 overflow-hidden whitespace-nowrap rounded-full text-[11px] text-[var(--muted)] hover:bg-[var(--hover)] ${
+          iconOnly ? "w-7 justify-center px-0" : "w-fit max-w-full min-w-0 px-2"
+        }`}
       >
         <CurrentIcon size={COMPOSER_ICON_PX} className="shrink-0" />
         {iconOnly ? null : <span className="min-w-0 truncate">{displayName(current)}</span>}

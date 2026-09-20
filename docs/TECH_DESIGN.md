@@ -460,7 +460,7 @@ The user explicitly asked to use these skills. Read each skill's SKILL.md and fo
 
 斜杠前缀走**单独的协议字段** `prompt.skillPrefix`，由 Host 拼在**所有东西之前**（含 Host 自己加的 `[Current tab] …` 块）：斜杠调用只有落在最前才会被 CLI 当 skill 用，而 Host 是在收到 prompt 后才把当前标签页拼进去的（`prefix + text`），侧栏无法自己抢到头几位。侧栏只负责把 display 开头连续的 `/name /name` 切出来（`splitSkillPrefix`），正文里保留同样的 `/name` 供人阅读。
 8. **弹层**：复用 `@` 菜单的定位（跟光标、优先上方、四边 16px）与键盘逻辑（上下循环高亮、回车只插入不发送、Esc 关闭），但布局两列：左列列表（≥`SKILL_LIST_MIN_PX` 224px）+ 右列详情（`SKILL_DETAIL_PX` 240px）。`vw < 224 + 240 + 32`（即 496px）时改成上下两段（列表在上、详情在下，详情 `overflow-y-auto`）；单列时宽度回到 `@` 菜单的 256px。搜索框固定在弹层最底部（不属于任何一列）并在 `open` 后 `focus()`——与模型下拉的筛选框同一套手感；两侧都能改同一个 query：在输入框里接着打字（内联）与在搜索框里打字等效。详情面板顶部是别名 /（别名≠name 时）`/name` / 来源 / 路径，正文是 `description` 全文；高亮项由「键盘」与「hover」两个来源合成，后发生的覆盖。
-9. **`+` 收起**：`layout.ts` 加 `COMPOSER_ACTION_FLAT_PX = 600`。≥600 平铺四个钮；<600 只画一个 `Plus` 钮，hover 或 click 弹 `ComposerActionsMenu`（`AttachMenu` 同款定位），非 Windows 四项（添加附件 / 拾取 / 提及 / 指定 skill）、Windows 五项（文件 / 文件夹拆开）。hover 带开的菜单再点一下**不关**（两种入口不互相打架）；Linux 上「添加附件」仍旧转出二级的 `AttachMenu`，URL 与以前完全一致。点层里的 `@` / `/` 以 `+` 钮为锚点唤起各自菜单；在输入框里敲 `@` / `/` 的键盘路径不受收起影响。两个菜单互斥：`startAtMenu` / `startSlashMenu` 会先关掉另一个（`@` 与 `/` 本来就在同一个输入框里打字）。
+9. **`+` 收起**：`layout.ts` 加 `COMPOSER_ACTION_FLAT_PX = 600`。≥600 平铺四个钮；**<600 只画一个 `Plus` 钮，点一下才弹 `ComposerActionsMenu`（`AttachMenu` 同款定位；悬停不弹——鼠标扫过就弹菜单会直接盖住输入框），非 Windows 四项（添加附件 / 拾取 / 提及 / 指定 skill）、Windows 五项（文件 / 文件夹拆开）。Linux 上「添加附件」仍旧转出二级的 `AttachMenu`，URL 与以前完全一致。点层里的 `@` / `/` 以 `+` 钮为锚点唤起各自菜单；在输入框里敲 `@` / `/` 的键盘路径不受收起影响。两个菜单互斥：`startAtMenu` / `startSlashMenu` 会先关掉另一个（`@` 与 `/` 本来就在同一个输入框里打字）。
 10. **tooltip 不许盖菜单**：`+` 钮传 `tooltip={false}`（`IconButton` 的类型因此是 `ReactNode | false`：`false` 表示不画 tooltip，但 `label` 仍作用在 `aria-label` 上）；`@` / `/` / Windows 下的回形针在**自己的菜单开着时**也把 tooltip 关掉（`tooltip={open ? false : undefined}`）。原因是这些弹层都长在按钮正上方，而 tooltip 也是往上弹的，两者必然重叠——截图里 `更多操作` 压住菜单就是这一条。
 
 ## 模型选择
@@ -533,7 +533,8 @@ Host → 侧栏 `{type:"agentModes", source:"config"|"modes", configId?, current
 
 `AgentModeSelect` 与权限 `ModeSelect` 同构（同一套弹出层、涟漪、tooltip、`bottom-full` 定位规则），选项来自 `agentModes`。`options.length < 2` → **整个控件不渲染**；名称用 Agent 给的 `name`（**不翻译、不换词**，渲染时只把首字母大写——opencode 那类只给 `id` 的引擎会返回 `build` / `plan`，直接画出来全是小写；已有的驼峰 / 句首大写不受影响），说明用 `description`（没有就不画第二行）。图标按 `kind` 映射（只准用 lucide）：`plan`→`ClipboardList`、`build`→`Hammer`、`ask`→`MessageCircleQuestion`、`agent`→`Bot`、`edits`→`FolderPen`、`auto`→`Zap`、`full_access`→`Unlock`、`unknown`→`Workflow`。
 
-**输入栏那一行的图标尺寸只有一个来源：`layout.ts` 的 `COMPOSER_ICON_PX`**（回形针 / 拾取 / `@` / `/` / 模式 / 权限 / 停止 / 发送、模型下拉的箭头，以及各下拉菜单里的图标；推理档位钮是**纯文本**，它不带图标，理由见「其它配置项」那一节）。不要给某个图标单独写一个“光学尺寸”——同行并排的东西，代码里的数值一致才是在屏幕上的尺寸一致；按墨迹 `getBBox()` 去逐个调是治不完的（同尺寸下实心块就是比细线显大）。宽度 ≤ 448px 时模式与权限两个钮只画图标，tooltip 给「名称 — 含义」。
+**输入栏那一行的图标尺寸只有一个来源：`layout.ts` 的 `COMPOSER_ICON_PX`**（回形针 / 拾取 / `@` / `/` / 模式 / 权限 / 停止 / 发送、模型下拉的箭头，以及各下拉菜单里的图标；推理档位钮是**纯文本**，它不带图标，理由见「其它配置项」那一节）。不要给某个图标单独写一个“光学尺寸”——同行并排的东西，代码里的数值一致才是在屏幕上的尺寸一致；按墨迹 `getBBox()` 去逐个调是治不完的（同尺寸下实心块就是比细线显大）。宽度 ≤ 448px 时模式与权限两个钮只画图标，tooltip 给「名称 — 含义」，**而且这时它必须是正圆**
+（`h-7` 配 `w-7`、不加内边距、图标居中）：宽 30 高 28 的「圆」hover 起来是个椭圆，用户报过。
 
 **工具栏的宽度断点也都住在 `layout.ts`**，组件里不许再写魔法数字：`COMPOSER_ACTION_FLAT_PX = 600`（≥600 平铺四个功能钮，<600 收成一个 `+` 钮，见「Skill 探测菜单」末条）、`ICON_ONLY_MAIN_PX = 448`（两个下拉收成图标）、`MODEL_NARROW_MAIN_PX = 396` / `MODEL_NARROW_MAX_PX = 80`、`COMPACT_MAIN_PX = 348`。
 

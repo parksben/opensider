@@ -347,7 +347,8 @@ try {
   const plus = panel.getByRole("button", { name: "More actions" });
   check("a narrow row collapses the four action buttons into one plus button", (await plus.count()) === 1);
   check("the flat buttons are gone while collapsed", (await slashButton().count()) === 0);
-  await plus.hover();
+  // 加号钮是**点**开的（悬停不再弹菜单：鼠标扫过就盖住输入框）。
+  await plus.click();
   await new Promise((r) => setTimeout(r, 300));
   // 弹层就在加号钮正上方：tooltip 会盖住菜单内容，所以这个钮不画 tooltip。
   check("the plus button shows no tooltip over its menu", (await panel.locator('[role="tooltip"]').count()) === 0);

@@ -251,6 +251,30 @@ try {
         ? `width=${narrow.width} label=${narrow.labelWidth} height=${narrow.height} clipped=${narrow.clipped} row-overflow=${narrow.rowOverflow} text=${JSON.stringify(narrow.text)}`
         : "not found",
     );
+    // 收起态（只画图标）的两个下拉钮必须是**正圆**：宽高相等 + 圆角至少半个高度。
+    // 出过的事：宽 30 高 28 的「圆」，hover 背景是个椭圆。
+    const round = await panel.evaluate(() => {
+      const buttons = [...document.querySelectorAll("button[aria-expanded]")];
+      const picked = buttons.filter(
+        (button) => (button.textContent || "").trim() === "" && button.getAttribute("title"),
+      );
+      return picked.map((button) => {
+        const rect = button.getBoundingClientRect();
+        const radius = parseFloat(getComputedStyle(button).borderTopLeftRadius) || 0;
+        return {
+          width: Number(rect.width.toFixed(1)),
+          height: Number(rect.height.toFixed(1)),
+          radius: Number(radius.toFixed(1)),
+          title: (button.getAttribute("title") || "").slice(0, 12),
+        };
+      });
+    });
+    check(
+      "the icon-only dropdowns are perfect circles",
+      round.length === 2 &&
+        round.every((item) => Math.abs(item.width - item.height) <= 1 && item.radius >= item.height / 2 - 1),
+      JSON.stringify(round),
+    );
     await panel.setViewportSize({ width: 900, height: 620 });
   } else if (optionShape === "cursor") {
     await panel.locator('button[aria-label="Model"]').first().click({ timeout: 10_000 });
