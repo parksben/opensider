@@ -4,7 +4,7 @@ import logoUrl from "../../../assets/icon.svg?url";
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from "react";
 import type { ChatMessage, ChatPart, TodoItem } from "../chat-types";
 import { useComposerHistory } from "../composer-history";
-import { COMPOSER_ICON_PX } from "../layout";
+import { COMPOSER_ICON_PX, MODEL_NARROW_MAX_PX } from "../layout";
 import type { Locale } from "../i18n";
 import { t } from "../i18n";
 import { closeAtMenuLock, installAtMenuGuard, openAtMenuLock, shouldBlockSubmit } from "../at-menu-lock";
@@ -1034,8 +1034,10 @@ function ModelSelect({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [highlightId, setHighlightId] = useState(modelId);
-  // 这一行到 396px 时已经挤了五个控件，模型名是唯一能让位的：最大宽度收到 1/3。
-  const shellMax = narrow ? "max-w-[calc(9.5rem/3)]" : "max-w-[9.5rem]";
+  // 这一行到 396px 时已经挤了五个控件，模型名是唯一能让位的：上限从 9.5rem 收到 80px。
+  // 宽度用常量（而不是这里写死一个类），保证这个数值在代码里只有一个来源。
+  const shellMax = narrow ? undefined : "max-w-[9.5rem]";
+  const shellStyle = narrow ? { maxWidth: MODEL_NARROW_MAX_PX } : undefined;
   const rootRef = useRef<HTMLDivElement>(null);
   const filterRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -1111,7 +1113,7 @@ function ModelSelect({
   }, [open, highlightId]);
 
   return (
-    <div ref={rootRef} className={`relative min-w-0 ${shellMax}`}>
+    <div ref={rootRef} className={`relative min-w-0 ${shellMax ?? ""}`} style={shellStyle}>
       <button
         type="button"
         title={label}
@@ -1122,7 +1124,8 @@ function ModelSelect({
         onPointerDown={(event) => {
           if (!disabled) spawn(event);
         }}
-        className={`relative flex h-7 w-full min-w-0 ${shellMax} items-center gap-1 overflow-hidden whitespace-nowrap rounded-full border border-[var(--line)] bg-[var(--panel-2)] px-2 text-[11px] text-[var(--muted)] hover:text-[var(--text)] disabled:opacity-40`}
+        style={shellStyle}
+        className={`relative flex h-7 w-full min-w-0 ${shellMax ?? ""} items-center gap-1 overflow-hidden whitespace-nowrap rounded-full border border-[var(--line)] bg-[var(--panel-2)] px-2 text-[11px] text-[var(--muted)] hover:text-[var(--text)] disabled:opacity-40`}
       >
         <span className="min-w-0 truncate">{label}</span>
         <ChevronDown size={COMPOSER_ICON_PX} className={`shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
