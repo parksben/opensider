@@ -487,7 +487,9 @@ Host 推 policy 对应的 mode 时先看这次 `session/new|load|fork` 广告出
 
 ### 同步与记忆
 
-`session/new|load|fork` 回来后吸收一次；`config_option_update` 与 **`current_mode_update`**（`{currentModeId}`，Agent 从内部「退出 plan 模式」工具切走时会发）都要更新当前值并重推侧栏。以前全仓库没人处理 `current_mode_update`，Agent 自己换了模式 UI 还停在旧值。用户的选择按 **Agent id** 记在 `chrome.storage.local`（与 `selectedModelId` 同路子，并一起镜像进 `ui-state.json`）；下个会话若仍在广告集合内就沿用，否则回到 Agent 的默认。切换 Agent 时清空。
+`session/new|load|fork` 回来后吸收一次；`config_option_update` 与 **`current_mode_update`**（`{currentModeId}`，Agent 从内部「退出 plan 模式」工具切走时会发）都要更新当前值并重推侧栏。
+
+模式是**会话级**的（`session/new` 的返回里才带），所以侧栏必须在**连接就绪那一刻就把当前会话绑上**，不能拖到用户发第一条消息：`tryBindCurrent()` 里读的 `statusRef` 必须在 `status` 消息的处理器里先写上 `msg.state`——只在渲染期赋值的话，处理器里 `setStatus("ready")` 之后它还是 `"connecting"`，这次绑定会被整条跳过，模式控件自然不出现（曾经的真实现象：连接后要再发一条消息才冒出来）。`requestConnect` 的回滚分支（`statusRef.current = "ready" / "idle"`）就是这个写法，保持一致。以前全仓库没人处理 `current_mode_update`，Agent 自己换了模式 UI 还停在旧值。用户的选择按 **Agent id** 记在 `chrome.storage.local`（与 `selectedModelId` 同路子，并一起镜像进 `ui-state.json`）；下个会话若仍在广告集合内就沿用，否则回到 Agent 的默认。切换 Agent 时清空。
 
 ### 权限档与模式的边界
 

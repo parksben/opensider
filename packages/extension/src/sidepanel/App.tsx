@@ -570,6 +570,11 @@ export function App() {
       if (msg.state === "idle" || msg.state === "ready" || msg.state === "error" || msg.state === "missing") {
         awaitingCancelRef.current = false;
       }
+      // 处理器里必须先把新状态写进 ref：下面 tryBindCurrent 读的就是它，而渲染期的
+      // `statusRef.current = status` 要等下一次渲染才生效。不写的话，这次「连接就绪」
+      // 的会话绑定会被整条跳过——会话没建起来，依赖会话广告的 Agent 模式下拉就要等到
+      // 用户发第一条消息才出现（见 docs/TECH_DESIGN.md「同步与记忆」）。
+      statusRef.current = msg.state;
       setStatus(msg.state);
       setError(msg.error);
       if (msg.state !== "ready") {
