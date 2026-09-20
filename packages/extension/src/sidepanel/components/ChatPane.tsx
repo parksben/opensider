@@ -670,16 +670,14 @@ export function ChatPane({
                   </IconButton>
                 </span>
               </div>
+              <AgentModeSelect
+                locale={locale}
+                options={agentModes ?? []}
+                currentId={agentModeId ?? ""}
+                compact={compact === true}
+                onMode={onAgentModeId ?? (() => undefined)}
+              />
               <ModeSelect locale={locale} mode={agentMode} compact={compact === true} onMode={onAgentMode} />
-              {agentModes && agentModes.length > 1 && onAgentModeId ? (
-                <AgentModeSelect
-                  locale={locale}
-                  options={agentModes}
-                  currentId={agentModeId ?? ""}
-                  compact={compact === true}
-                  onMode={onAgentModeId}
-                />
-              ) : null}
               <AtMenu
                 open={atOpen}
                 locale={locale}
@@ -947,7 +945,9 @@ function ModeSelect({
   }, [open]);
 
   return (
-    <div ref={rootRef} className={`relative min-w-0 ${compact ? "" : "min-w-[5rem] max-w-full flex-1"}`}>
+    // 不参与撑开：两个下拉与左侧三个图标钮紧挨成一组居左，多余空间留给右侧的
+    // 模型选择 / 发送（所以不要 flex-1，否则会被拉宽推到中间）。
+    <div ref={rootRef} className={`relative min-w-0 shrink ${compact ? "" : "min-w-[5rem] max-w-full"}`}>
       <button
         type="button"
         title={tip}

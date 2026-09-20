@@ -101,7 +101,8 @@ export function AgentModeSelect({
   const tip = tooltipOf(locale, current);
 
   return (
-    <div ref={rootRef} className={`relative min-w-0 ${compact ? "" : "min-w-[5rem] max-w-full flex-1"}`}>
+    // 与权限下拉同规：不撑开、紧挨左侧三个图标钮，多余空间留给右侧。
+    <div ref={rootRef} className={`relative min-w-0 shrink ${compact ? "" : "min-w-[5rem] max-w-full"}`}>
       <button
         type="button"
         title={tip}
