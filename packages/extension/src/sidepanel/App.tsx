@@ -185,6 +185,9 @@ export function App() {
   const connectedProviderRef = useRef("");
   const rollbackRef = useRef<{ providerId: string; wasReady: boolean } | null>(null);
   const skipIdleConnectRef = useRef(false);
+  // Host 是否已经扫完 Agent 列表（agents / idle 任一条到过）。自动连接的判断要等它。
+  const hostScannedRef = useRef(false);
+  const agentsRef = useRef<AgentInfo[]>([]);
   const awaitingCancelRef = useRef(false);
   const pickWaiters = useRef(new Map<string, (items: AttachmentItem[]) => void>());
   // A host older than the extension silently drops commands it does not know, so a stale
@@ -226,6 +229,7 @@ export function App() {
   agentModeRef.current = agentMode;
   agentModesRef.current = agentModes;
   skillsRef.current = skills;
+  agentsRef.current = agents;
   agentModeByProviderRef.current = agentModeByProvider;
   agentOptionByProviderRef.current = agentOptionByProvider;
   selectedProviderRef.current = selectedProviderId;
@@ -363,6 +367,25 @@ export function App() {
       modeId: agentModeByProviderRef.current[providerId] || undefined,
       optionValues: agentOptionByProviderRef.current[providerId] || undefined,
     });
+  };
+
+  /**
+   * 自动连上「记得的那家」：只看当前状态快照，不看消息到达顺序。
+   *
+   * 这个判断原先只写在「收到 agents / idle 那一刻」的分支里，而本地缓存的读取（会话多、
+   * 历史长时要慢上不少）与 Host 回放是赛跑的：回放先到的时候 refs 还全是空的（引导状态
+   * 还没灌进来、selectedProvider 也空），判断直接跳过，之后就再没人重新判一次——面板看着
+   * 正常，模型列表和推理档位却一片空白，得手动切一次 Agent 才醒过来（用户报过，用大
+   * 状态的沙箱能稳定复现）。所以：两条消息分支与 hydration 完成之后都调它。
+   */
+  const autoConnectTarget = (list: AgentInfo[] = agentsRef.current): string => {
+    if (!onboardingRef.current) return "";
+    // 用户刚点过取消：不要立刻又连回去（标记由 idle 那条分支消费掉）。
+    if (skipIdleConnectRef.current) return "";
+    // Host 还没扫完 Agent 列表（只报过 starting）：这会儿连上去会和它自己的扫描撞车。
+    if (!hostScannedRef.current) return "";
+    if (statusRef.current !== "idle" && statusRef.current !== "starting") return "";
+    return selectedProviderRef.current || list[0]?.id || "";
   };
 
   const cancelConnect = () => {
@@ -553,13 +576,10 @@ export function App() {
       if (!selectedProviderRef.current && msg.agents[0]) {
         setSelectedProviderId(msg.agents[0].id);
       }
-      if (
-        onboardingRef.current &&
-        (selectedProviderRef.current || msg.agents[0]?.id) &&
-        (statusRef.current === "idle" || statusRef.current === "starting")
-      ) {
-        requestConnect(selectedProviderRef.current || msg.agents[0].id);
-      }
+      // 扫完了（不管扫没扫到 CLI）：从现在起可以按状态快照自动连。
+      hostScannedRef.current = true;
+      const target = autoConnectTarget(msg.agents);
+      if (target) requestConnect(target);
       return;
     }
     if (msg.type === "agent.progress") {
@@ -631,13 +651,16 @@ export function App() {
         setProgress(undefined);
         tryBindCurrent();
       }
-      if (msg.state === "idle" && onboardingRef.current && selectedProviderRef.current) {
+      if (msg.state === "idle") {
+        // idle 只在 Host 扫完 Agent 列表之后才会报出来。
+        hostScannedRef.current = true;
         if (skipIdleConnectRef.current) {
           skipIdleConnectRef.current = false;
           setProgress(undefined);
           return;
         }
-        requestConnect(selectedProviderRef.current);
+        const target = autoConnectTarget();
+        if (target) requestConnect(target);
       }
       return;
     }
@@ -1111,6 +1134,15 @@ export function App() {
   useEffect(() => {
     if (hydrated) tryBindCurrent();
   }, [hydrated, selectedId]);
+
+  // hydration 完成之后再判一次自动连接：本地缓存读得比 Host 回放慢时（会话多、历史长），
+  // 上面那两条消息分支都会因为 refs 还是空的而跳过判断，没有人补这一次就永远连不上
+  // （见 autoConnectTarget）。
+  useEffect(() => {
+    if (!hydrated) return;
+    const target = autoConnectTarget();
+    if (target) requestConnect(target);
+  }, [hydrated]);
 
   const setSessionQueue = (sessionId: string, list: QueuedMessage[]) => {
     const next = { ...queuesRef.current };
