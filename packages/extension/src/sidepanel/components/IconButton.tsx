@@ -38,7 +38,11 @@ export function IconButton({
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & {
   label: string;
-  tooltip?: ReactNode;
+  /**
+   * Tooltip text; defaults to `label`. Pass `false` to render no tooltip at all — used by the
+   * buttons whose own popup sits right above them (the tooltip would cover the menu).
+   */
+  tooltip?: ReactNode | false;
   side?: "top" | "bottom";
   ripple?: boolean;
   children: ReactNode;
@@ -48,6 +52,7 @@ export function IconButton({
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState({ top: 0, left: 0, ready: false });
   const { ripples, spawn, done } = useRipple();
+  const tipEnabled = tooltip !== false;
 
   useLayoutEffect(() => {
     if (!open) {
@@ -67,9 +72,9 @@ export function IconButton({
       type="button"
       aria-label={label}
       className={`relative overflow-hidden ${ripple ? "hover:bg-[var(--hover)]" : ""} ${className}`}
-      onPointerEnter={() => setOpen(true)}
+      onPointerEnter={() => tipEnabled && setOpen(true)}
       onPointerLeave={() => setOpen(false)}
-      onFocus={() => setOpen(true)}
+      onFocus={() => tipEnabled && setOpen(true)}
       onBlur={() => setOpen(false)}
       onPointerDown={(event) => {
         if (ripple && !props.disabled) spawn(event);
@@ -86,7 +91,7 @@ export function IconButton({
           onAnimationEnd={() => done(ripple.id)}
         />
       ))}
-      {open
+      {tipEnabled && open
         ? createPortal(
             <span
               ref={tipRef}

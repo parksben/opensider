@@ -763,6 +763,8 @@ export function ChatPane({
                     <IconButton
                       side="top"
                       label={label("moreActions")}
+                      // 弹层就在按钮正上方，tooltip 一定盖住菜单内容——这个钮不带 tooltip。
+                      tooltip={false}
                       onClick={() => {
                         // 鼠标已经把它带开了，这时再点一下不应该又关掉（点开与悬停两种入口不能互相打架）。
                         if (hoverOpenedRef.current && plusOpen) return;
@@ -786,6 +788,8 @@ export function ChatPane({
                       <IconButton
                         side="top"
                         label={label("attach")}
+                        // 自己的下拉开着时不画 tooltip（那个下拉也在按钮正上方）。
+                        tooltip={attachOpen ? false : undefined}
                         onClick={onPaperclip}
                         disabled={busy}
                         className={`flex h-7 w-7 items-center justify-center rounded-full hover:bg-[var(--hover)] disabled:opacity-30 disabled:hover:bg-transparent ${
@@ -814,6 +818,7 @@ export function ChatPane({
                       <IconButton
                         side="top"
                         label={label("mention")}
+                        tooltip={atOpen ? false : undefined}
                         onClick={startAtMenu}
                         disabled={locking}
                         className={`flex h-7 w-7 items-center justify-center rounded-full hover:bg-[var(--hover)] disabled:opacity-30 disabled:hover:bg-transparent ${
@@ -827,6 +832,7 @@ export function ChatPane({
                       <IconButton
                         side="top"
                         label={label("slash")}
+                        tooltip={slashOpen ? false : undefined}
                         onClick={startSlashMenu}
                         disabled={locking}
                         className={`flex h-7 w-7 items-center justify-center rounded-full hover:bg-[var(--hover)] disabled:opacity-30 disabled:hover:bg-transparent ${

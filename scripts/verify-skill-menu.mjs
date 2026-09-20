@@ -349,6 +349,8 @@ try {
   check("the flat buttons are gone while collapsed", (await slashButton().count()) === 0);
   await plus.hover();
   await new Promise((r) => setTimeout(r, 300));
+  // 弹层就在加号钮正上方：tooltip 会盖住菜单内容，所以这个钮不画 tooltip。
+  check("the plus button shows no tooltip over its menu", (await panel.locator('[role="tooltip"]').count()) === 0);
   const actions = await panel.locator('[role="menuitem"]').allInnerTexts();
   // macOS：附件一条 + 拾取 + 提及 + 指定 skill。
   check(
@@ -365,6 +367,11 @@ try {
   await panel.setViewportSize({ width: 900, height: 640 });
   await new Promise((r) => setTimeout(r, 400));
   check("a wide row shows the four buttons instead", (await slashButton().count()) === 1 && (await plus.count()) === 0);
+  // 同理：自己的菜单开着时，斜杠钮也不该在菜单上盖一层 tooltip。
+  await openMenu();
+  await slashButton().hover();
+  await new Promise((r) => setTimeout(r, 300));
+  check("the slash button hides its tooltip while its menu is open", (await panel.locator('[role="tooltip"]').count()) === 0);
 } finally {
   await context.close();
   console.log(`\nsandbox: ${sandbox.dir}`);
