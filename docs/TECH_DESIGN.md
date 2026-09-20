@@ -623,6 +623,96 @@ Host 是通用 ACP Client + 数据驱动 `AgentProfile`（启动命令、鉴权�
 
 **侧栏**：`ControlBanner`（Header 之下）从 SW 广播 `control` 取状态（按选中会话的 acpId 匹配），带「收回」；借用请求卡在同一区域渲染（`control.request` → 允许 / 拒绝 → `control.grant`）。`sendPrompt` 时上报锚点；会话删除时发 `control.release`。
 
+## 划词工具条（选中文本的翻译 / 搜索 / 引用）
+
+侧栏开着、Agent 正常连上时，用户在网页上划选一段文字，就在选区附近浮出一条横向工具条（品牌标记 + 翻译 / 搜索 / 引用三个按钮）。它是纯辅助入口，**门控不成立就等于不存在**。
+
+### 门控（谁说了算）
+
+两个条件都在 service worker 里判定，页面侧不做任何推测：
+
+| 条件 | 判据 |
+|---|---|
+| 侧栏已展开 | `sidebars.size > 0`（侧栏的 `chrome.runtime.connect({name:"sidebar"})` 长连接，SW 已在用这个集合做「最后一个面板关掉就释放页面活性」） |
+| Agent 已就绪 | SW 缓存的 `lastStatus.state === "ready"` |
+
+任一变化就向所有 http(s) 标签页推 `selection.gate{enabled, locale}`；内容脚本缓存它，并在**真正要显示工具条前**复核一次（`chrome.runtime.sendMessage({type:"ping"})` 那条现成通道就能拿到 `lastStatus`），避免「刚断开但推送还没到」的错觉窗口。门控转关时页面侧立即拆除工具条与结果层，并取消在飞请求。
+
+### 页面内的注入
+
+沿 `picker.ts` 那套（**隔离世界**，页面看不见我们，符合「不给没在用的页面留痕」）：
+
+- host `<div>` + `attachShadow({mode:"closed"})` + `all:initial` + `position:fixed` + 高 z-index + `popover="manual"`（穿出层叠上下文、也穿出全屏），挂到 `document.fullscreenElement ?? documentElement`；
+- `MutationObserver` 盯 host 的父节点：被站点清掉或 SPA 换页（含 YouTube 的 `yt-navigate-*`）就重挂；`fullscreenchange` 同样处理；
+- 品牌标记用 `chrome.runtime.getURL("icons/icon32.png")`，因此 manifest 要加一条 `web_accessible_resources`（只放这一个图标与结果层页面），不要为了省一次声明把品牌 path 复制进 TS。
+
+### 位置与「跟着消失」
+
+- 锚点 = `selection.getRangeAt(0)` 的所有 `clientRect` 并集（多行选区不会只贴最后一行）；
+- 默认在锚点下方 8px，下方放不下翻到上方；左右按 **8px 安全边距**夹进视口（`clamp`），保证四边都不越界；
+- `scroll`（capture，内层滚动容器也收）/`resize`/`orientationchange`/`fullscreenchange` 都重算；
+- **锚点矩形与视口的交集为空 → 隐藏**（这是「选区移出视口就连工具条一起消失」的实现）；部分可见则继续夹紧显示；
+- 关闭：Esc、`selectionchange` 变成空选区（点空白处）、选区文本变化、门控转关、页面导航、`visibilitychange` 到 hidden 之外的场景不需要（页面被隐藏时浏览器本来就不会让用户划词）。
+
+### 数据通路
+
+| 方向 | 消息 |
+|---|---|
+| 内容脚本 → SW | `selection.run{requestId, mode:"translate"\|"search", text, targetLang?, title?, url?}` / `selection.cancel{requestId}` |
+| SW → Host | 同上（原样转发，Host 是唯一执行者） |
+| Host → SW → 发起标签页 | `selection.delta{requestId, text}`（增量）/ `selection.done{requestId, text, stopReason}` / `selection.failed{requestId, error}` |
+| SW → 侧栏 | `selection.quote{text, title?, url?, tabId}` |
+| SW → 所有标签页 | `selection.gate{enabled, locale}` |
+
+增量只发给**发起请求的那个 tabId**（SW 记住 requestId → tabId），不广播给侧栏：这条链上侧栏完全不需要知道。
+
+### 隐藏通道（Host 侧）
+
+「不进当前会话上下文」靠一个专用 runtime 实现，而不是靠提示词：
+
+- `h.utility` 懒建：`spawnRuntime(false)` + `CreateSession()`；打 `utility` 标记，让聊天侧**绝不**复用它——`acquireRuntime` 的空闲扫描、`runtimeBySession` 的用户会话匹配、`replyClient` 的兜底都要跳过它（否则权限 / cursor 回执可能投到错误的进程）。
+- **每次请求在这个进程上新开一个 ACP 会话**再 prompt，结束即弃：进程复用（不重复起进程）＋上下文干净（这次划词不受上次影响）。用户要求的「固定会话」就是这条固定通道，而不是一个会累积上下文的会话。
+- 它的 `session/update` **一条都不广播**：`OnUpdate` 里按 runtime 分流，utility 的文本只累积进本次请求的缓冲，按增量推给发起标签页；`turn.end` 同样不发侧栏。也不写 `workspace.WriteSessionID`、不进会话列表。
+- 权限：客户端固定用**自动放行**策略（复用现有 `unattended` 语义里「工具权限回 always」的那部分，只作用于这个 runtime）。否则一张无人应答的权限卡会把这一轮永远卡住。它**不 anchor 标签页**，所以扩展那边的浏览器控制闸门天然不放行——它拿不到标签页。
+- 单飞：同时只允许一个 utility 请求；新请求先 `session/cancel` 旧的。取消 / 超时的触发点：用户关工具条、门控转关、发起页导航走了、请求超过 60s。
+- 模型沿用当前 Agent 默认（不额外配置）。
+
+### 提示词
+
+三条文案（英文原文，已定稿）写在 `internal/selection/prompt.go` 里，纯函数、可直接单测：
+
+- 翻译：`Translate the text below into {target}. Output only the translation — no preamble, no notes, no quotes. If it is already in {target}, return it unchanged.`
+- 搜索：`Search the web for the query below and answer in Markdown only: a short summary, the key facts, then a "Sources" list of the links you actually used. If you cannot search the web with your tools, say so in one line instead of guessing — then give what you know from training data and label it as such.`
+- 引用展开（发消息时把芯片 token 换成这个）：`> {原文}`
+
+`{target}` 由 BCP-47 标签映射成英文语言名（常见标签走一张小表：`zh-CN` → Simplified Chinese、`zh-TW` → Traditional Chinese、`ja` → Japanese…），表里没有的标签就把标签本身交给模型。**目标语言取浏览器语言**（内容脚本读 `navigator.language`），与扩展界面语言无关。
+
+### 结果层（iframe 复用侧栏渲染）
+
+搜索引擎返回的是 Markdown，而渲染器（含代码高亮 / mermaid）在侧栏的 React 包里，所以结果层**不是一个自研渲染器**：
+
+- 新增扩展页 `src/selection/index.html`（`@crxjs/vite-plugin` 会跟着 manifest 里的 `web_accessible_resources` 一起打），它只做一件事：接收 `{kind:"translate"|"search", state, markdown|text}` 的 postMessage，用与侧栏同一套 `Markdown` 组件渲染，在末尾放「复制 / 已复制」；
+- 工具条在 shadow DOM 里用 `<iframe src=chrome-extension://…/src/selection/index.html>` 装它：两个方向都隔离样式，主题跟随（页面 `dark`/`light` 由 postMessage 告知，默认跟随浏览器）；
+- 高度：iframe 内容用 `ResizeObserver` 量高后 postMessage 给父层，父层再按视口上限（约 60vh）夹紧并允许内部滚动——这样「结果层也永远在视口内」。
+
+### 引用芯片
+
+- 在现有 `MentionChip` 体系里加 `{kind:"quote", text}`（token `«@quote:{…}»`，与 `@tab` / `@att` / `/skill` 同一套序列化与解析），因此编辑框、用户气泡、持久化三处都不用特判；
+- 渲染与附件 / 技能芯片同族（`cs-mention-chip` 外壳），图标用 lucide `Quote`，文本用**排版引号**包住（`“原文”`）——引号是**展示层**加的，token 里的原文一字不改；tooltip 给引用全文；
+- 插入：`ComposerHandle` 加一个「插到光标处 / 未聚焦则追加末尾」的入口（现有 `insertMention` 会抢焦点，这里要保留用户当前的聚焦状态）；插入后不抢焦点——用户可能还在页面上看。
+- 发送时把 token 展开成 `> 原文`（见上），并**照旧**从输入框内容里保留其余文本。
+
+### 文案与语言来源
+
+- 页面里的工具条与结果层文案：内容脚本自带一份小表（它不在 React 里），语言取 `selection.gate` 带来的扩展界面语言（与侧栏同一来源，SW 从 `ui-state` / `chrome.storage` 取）；
+- 结果层页面（iframe）直接用侧栏的 `i18n.ts`，不重复一套。
+
+### 验证
+
+- 宿主级（`scripts/verify-selection.mjs`）：隐藏通道真的不进侧栏（整轮里没有任何 `update` / `turn.end` 发给扩展）、结果文本正确、取消生效、`utility` runtime 不被聊天复用、它拿不到标签页控制；
+- 页面级（`scripts/verify-selection-ui.mjs`，真 Chromium + 本地 fixture 页）：门控关掉时不出现、选中 200 字以内出现、超过 200 字不出现、四边安全边距（把选区放到视口四角各试一次）、选区滚出视口即隐藏、翻译结果层出现并可复制、引用后输入框里出现引文芯片；
+- Go 单测：`internal/selection` 的提示词拼装与语言映射表。
+
 ## ACP 映射
 
 Host 是 ACP Client，`clientCapabilities` 关闭 `fs` / `terminal`，让 Agent 自己在工作区里用本地工具。
