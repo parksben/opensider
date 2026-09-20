@@ -35,6 +35,12 @@
 //   FAKE_OPTIONS=unknown       a category we do not render (`mystery`) — proves the host
 //                              still forwards it and the panel quietly ignores it.
 //   FAKE_OPTIONS=none | unset  Advertise nothing (Copilot / OpenCode today).
+//
+// Selection-toolbar prompts (used by scripts/verify-selection.mjs). The fake agent answers
+// the two hidden-channel prompts deterministically so a test can assert the result text,
+// and traces which session each one ran on (the whole point: it must NOT be the chat's):
+//   - a prompt starting with "Translate the text below into" -> "[translated] <text>"
+//   - a prompt starting with "Search the web for the query below" -> a small Markdown block
 import { appendFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 
@@ -247,10 +253,65 @@ function setCurrentMode(id) {
   if (legacyModes) legacyModes.currentModeId = id;
 }
 
+// ------------------------------------------------------------- selection prompts
+// 划词工具条的隐藏通道发来的两种提示词。识别前缀就够了：文案在 internal/selection 里
+// 定稿，这里只需要能把「翻译 / 搜索」与普通聊天分开。
+const TRANSLATE_PREFIX = "Translate the text below into";
+const SEARCH_PREFIX = "Search the web for the query below";
+
+function selectionKind(text) {
+  const trimmed = text.trimStart();
+  if (trimmed.startsWith(TRANSLATE_PREFIX)) return "translate";
+  if (trimmed.startsWith(SEARCH_PREFIX)) return "search";
+  return "";
+}
+
+/** 提示词最后一段就是用户选中的原文（见 internal/selection 的拼装）。 */
+function selectionInput(text) {
+  const parts = text.split("\n\n");
+  const tail = parts[parts.length - 1] ?? "";
+  return tail.replace(/^Query:\s*/, "").trim();
+}
+
+function selectionReply(kind, input) {
+  if (kind === "translate") return `[translated] ${input}`;
+  return [
+    "## Summary",
+    `- searched for: ${input}`,
+    "",
+    "**Sources**",
+    "- [example](https://example.com/source)",
+  ].join("\n");
+}
+
+/** 按小块流式吐出固定回复，好让「增量、取消」这两条路都能被测到。 */
+async function streamSelectionReply(id, kind, input) {
+  const replyText = selectionReply(kind, input);
+  const size = 12;
+  for (let at = 0; at < replyText.length; at += size) {
+    if (cancelledAt) {
+      trace({ event: "end", turn, stopReason: "cancelled", sessionId });
+      reply(id, { stopReason: "cancelled" });
+      return;
+    }
+    chunk(replyText.slice(at, at + size));
+    await sleep(30);
+  }
+  trace({ event: "end", turn, stopReason: "end_turn", sessionId });
+  reply(id, { stopReason: "end_turn" });
+}
+
 async function runPrompt(id, text) {
   turn += 1;
   const label = turn;
   cancelledAt = 0;
+	  const kind = selectionKind(text);
+	  if (kind) {
+	  	// 隐藏通道：记一笔它在哪个会话上跑（这条正是「不进当前会话」的判据）。
+	  	trace({ event: "selection_prompt", kind, sessionId, text: selectionInput(text).slice(0, 120) });
+	  	await streamSelectionReply(id, kind, selectionInput(text));
+	  	return;
+	  }
 	  trace({ event: "prompt", turn: label, text: traceFull ? text : text.slice(0, 200), sessionId });
   // 「Agent 自己换模式」：收到带文本的 prompt 时主动推一条 current_mode_update。
   if (modeSwitchOnPrompt && text.trim()) {

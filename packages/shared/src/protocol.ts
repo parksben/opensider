@@ -341,6 +341,21 @@ export type AgentOption = {
   values?: AgentOptionValue[];
 };
 
+/**
+ * The two things the selection toolbar can ask the agent for. The third action (quote) never
+ * reaches the host: it only drops a chip into the composer.
+ *
+ * Both run on a hidden channel — a dedicated process with a fresh ACP session per request —
+ * so they never enter the conversation the user is having (`internal/host/selection.go`).
+ */
+export type SelectionMode = "translate" | "search";
+
+/** Host → extension, one way or another, for a single selection request. */
+export type SelectionResult =
+  | { type: "selection.delta"; requestId: string; tabId: number; text: string }
+  | { type: "selection.done"; requestId: string; tabId: number; text: string }
+  | { type: "selection.failed"; requestId: string; tabId: number; error: string };
+
 export type AgentMark =
   | "cursor"
   | "opencode"
@@ -423,6 +438,21 @@ export type ExtToHost =
   | { type: "agent.setPolicy"; policy: AgentPolicy }
   | { type: "agent.setMode"; modeId: string; sessionId?: string }
   | { type: "agent.setOption"; configId: string; value: string; sessionId?: string }
+  /**
+   * 划词工具条：翻译 / 搜索。`tabId` 由 service worker 按发送方标签页填上（Host 只把它
+   * 原样带回来，好让结果能回到发起请求的那一页）。
+   */
+  | {
+      type: "selection.run";
+      requestId: string;
+      mode: SelectionMode;
+      text: string;
+      targetLang?: string;
+      title?: string;
+      url?: string;
+      tabId?: number;
+    }
+  | { type: "selection.cancel"; requestId: string }
   | {
       type: "prompt";
       text: string;
@@ -539,6 +569,7 @@ export type HostToExt =
       available: boolean;
     }
   | { type: "agentOptions"; options: AgentOption[] }
+  | SelectionResult
   | { type: "skills"; items: SkillItem[] }
   | { type: "fs.revealed"; path: string; missing?: boolean; error?: string }
   // An older host replying to a command it does not implement: see internal/host/host.go.

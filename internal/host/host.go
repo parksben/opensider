@@ -34,6 +34,12 @@ type acpRuntime struct {
 	prompting bool
 	binding   bool
 
+	// utility 标记这是「划词工具条」的隐藏通道（翻译 / 搜索）：不进侧栏、不参与聊天侧的
+	// 进程复用、也不 anchor 标签页（见 host/selection.go）。selection 是它当前正在跑的那
+	// 次请求（这条通道单飞，为空表示没有在跑）。
+	utility   bool
+	selection *selectionRun
+
 	// prepared 是**连接时预建**的会话（见 openPrepared）。Agent 自己的模式只在会话
 	// 建立时才被广告，挂在侧栏那次绑定上会让模式下拉迟到（用户报过：连接/切 Agent
 	// 后要发第一条消息才出现）；侧栏随后的 session.new 会直接采用它，不重复建。
@@ -65,6 +71,8 @@ type Host struct {
 	agentModes    modes.Target
 	hasAgentModes bool
 	pinnedMode    string
+	// selection 是正在跑的划词请求（翻译 / 搜索），见 host/selection.go。
+	selection *selectionRun
 	// agentOptions 是本会话广告的其它配置项（推理档位、模型开关…），pinnedOptions 是
 	// 用户选过的值（configId → value）。与模式同一套记忆纪律。
 	agentOptions       []sessioncfg.Option
@@ -369,6 +377,8 @@ func (h *Host) beginConnect() int {
 	stale := h.connectingClient
 	h.connectingClient = nil
 	h.mu.Unlock()
+	// 换 Agent 时在飞的划词请求已经没有意义了（进程马上会被停掉），先取消。
+	h.cancelSelection("")
 	if stale != nil {
 		stale.Stop()
 	}
@@ -684,6 +694,11 @@ func (h *Host) attachClient(runtime *acpRuntime) error {
 		Profile: agent.Profile,
 	}, acp.Handlers{
 		OnUpdate: func(update map[string]any, sessionID string) {
+			// 隐藏通道的文本只进这一次划词请求的缓冲，一条都不进侧栏。
+			if runtime.utility {
+				h.absorbSelectionUpdate(runtime, update)
+				return
+			}
 			if runtime.binding && !runtime.prompting {
 				h.absorbSessionUpdate(update, runtime)
 				return
@@ -696,6 +711,15 @@ func (h *Host) attachClient(runtime *acpRuntime) error {
 			h.send(map[string]any{"type": "update", "update": update, "sessionId": sid})
 		},
 		OnPermission: func(id int, params map[string]any, sessionID string) {
+			// 隐藏通道没有界面：权限卡当场放行（挑不出放行项就不答），绝不推给用户。
+			if runtime.utility {
+				if optionID := autoAllowOptionID(params); optionID != "" {
+					runtime.client.Respond(id, map[string]any{
+						"outcome": map[string]any{"outcome": "selected", "optionId": optionID},
+					})
+				}
+				return
+			}
 			if runtime.binding && !runtime.prompting {
 				return
 			}
@@ -711,6 +735,15 @@ func (h *Host) attachClient(runtime *acpRuntime) error {
 			h.send(map[string]any{"type": "permission", "id": id, "params": params, "sessionId": sid})
 		},
 		OnCursor: func(id *int, method string, params map[string]any, sessionID string) {
+			// 隐藏通道同样自答：交互式提问取第一项、计划直接接受（口径同侧栏 unattended）。
+			if runtime.utility {
+				if id != nil {
+					if result, ok := autoCursorResult(method, params); ok {
+						runtime.client.Respond(*id, result)
+					}
+				}
+				return
+			}
 			if runtime.binding && !runtime.prompting {
 				return
 			}
@@ -730,10 +763,18 @@ func (h *Host) attachClient(runtime *acpRuntime) error {
 			h.send(msg)
 		},
 	})
+	// 隐藏通道固定用放行档（见 host/selection.go）：它没有界面，一张无人应答的权限卡会
+	// 把这一轮永远卡住。它也不继承用户选的模式 / 配置项——万一用户选的是 plan，搜索会
+	// 交回一份计划而不是结果。
+	if runtime.utility {
+		policy = utilityPolicy
+	}
 	client.SetPolicy(policy)
-	// 用户记住的模式 / 配置项选择要跟着新进程走，否则新会话会回到引擎默认值。
-	client.SetPinnedMode(pinned)
-	client.SetPinnedOptions(pinnedOptions)
+	if !runtime.utility {
+		// 用户记住的模式 / 配置项选择要跟着新进程走，否则新会话会回到引擎默认值。
+		client.SetPinnedMode(pinned)
+		client.SetPinnedOptions(pinnedOptions)
+	}
 	runtime.client = client
 	return nil
 }
@@ -774,6 +815,9 @@ func (h *Host) runtimeBySession(sessionID string) *acpRuntime {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	for _, runtime := range h.runtimes {
+		if runtime.utility {
+			continue
+		}
 		if runtime.client.GetSessionID() == sessionID {
 			return runtime
 		}
@@ -788,7 +832,8 @@ func (h *Host) acquireRuntime(preferSessionID string) (*acpRuntime, error) {
 	h.mu.Lock()
 	var idle *acpRuntime
 	for _, runtime := range h.runtimes {
-		if !runtime.prompting {
+		// 隐藏通道不参与聊天的进程复用：它的会话是划词专用的，借去聊天会串上下文。
+		if !runtime.prompting && !runtime.utility {
 			idle = runtime
 			break
 		}
@@ -890,8 +935,11 @@ func (h *Host) replyClient(id int) *acp.Client {
 	if c := h.rpcClients[id]; c != nil {
 		return c
 	}
-	if len(h.runtimes) > 0 {
-		return h.runtimes[0].client
+	for _, runtime := range h.runtimes {
+		// 兜底也别投给隐藏通道：它的客户端不该收到聊天的权限 / cursor 回执。
+		if !runtime.utility {
+			return runtime.client
+		}
 	}
 	return nil
 }
@@ -1138,6 +1186,13 @@ func (h *Host) dispatch(typ string, msg map[string]any) error {
 		return nil
 	case "prompt":
 		return h.handlePrompt(msg)
+	case "selection.run":
+		// 划词工具条（翻译 / 搜索）：隐藏通道，不进当前会话。错误自己回报，不抛给 dispatch。
+		h.runSelection(msg)
+		return nil
+	case "selection.cancel":
+		h.cancelSelection(str(msg["requestId"]))
+		return nil
 	case "cancel":
 		sessionID := str(msg["sessionId"])
 		if sessionID == "" {
