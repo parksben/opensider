@@ -670,14 +670,17 @@ export function ChatPane({
                   </IconButton>
                 </span>
               </div>
-              <AgentModeSelect
-                locale={locale}
-                options={agentModes ?? []}
-                currentId={agentModeId ?? ""}
-                compact={compact === true}
-                onMode={onAgentModeId ?? (() => undefined)}
-              />
-              <ModeSelect locale={locale} mode={agentMode} compact={compact === true} onMode={onAgentMode} />
+              {/* 两个下拉之间不留间距（包一层 gap-0）；图标钮那组到模式下拉仍是 4px。 */}
+              <div className="flex min-w-0 items-center gap-0">
+                <AgentModeSelect
+                  locale={locale}
+                  options={agentModes ?? []}
+                  currentId={agentModeId ?? ""}
+                  compact={compact === true}
+                  onMode={onAgentModeId ?? (() => undefined)}
+                />
+                <ModeSelect locale={locale} mode={agentMode} compact={compact === true} onMode={onAgentMode} />
+              </div>
               <AtMenu
                 open={atOpen}
                 locale={locale}
