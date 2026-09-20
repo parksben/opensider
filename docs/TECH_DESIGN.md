@@ -26,6 +26,17 @@ Service Worker  ←── navigate / goBack / goForward / reload
 
 浏览器扩展不能 spawn 本机进程。Cursor CLI 的自定义客户端协议是 ACP（`agent acp`，stdio JSON-RPC）。二者之间只加一层 **Chrome Native Messaging Host**（Go 二进制 `opensider`）：浏览器在扩展连接时启动它，断开后退出。用户不必先开一个 Node 服务，本机也不需要 Node。
 
+## Agent 接入边界
+
+OpenSider 自己承担 ACP Client：侧栏把操作交给 Native Host，Host 再以子进程方式启动 Agent，并通过 stdio 上的 ACP JSON-RPC 处理会话、流式消息、工具调用、权限请求和取消。因此可接入对象必须同时具备两个条件：
+
+1. 有一个能由 Host 非交互式启动和管理生命周期的本机命令；
+2. 该命令直接提供 ACP，或存在能把它转换为 ACP 的适配器。
+
+“本机装有 Agent”或“该产品有桌面 UI”本身都不满足这两个条件。Claude、Codex 等桌面应用把会话与运行时封装在自己的 UI 和私有进程边界内，没有向第三方浏览器扩展暴露稳定的 ACP 子进程入口。通过辅助功能或坐标点击去遥控桌面 UI，不仅依赖易变的界面结构，也无法可靠映射 ACP 的流式事件、工具状态、权限和会话生命周期，所以不作为接入方案。同品牌的 CLI 是另一套入口：CLI 若直接支持 ACP，或能经适配器提供 ACP，仍可正常接入。
+
+README 的修复提示词统一进入 `skills/opensider/SKILL.md` 的 doctor 分支。诊断顺序是：确认桥接与扩展版本及注册状态 → 找到 CLI 的真实路径和启动命令 → 确认 ACP 入口 → 安装缺失的 Claude Code / Codex 适配器 → 重跑 `opensider install` → 以侧栏名单和 `host.log` 验证。内置 Profile 与 ACP Registry 都找不到可用入口时，结论应是“该 CLI 当前没有可用的 ACP 接入”，不能把普通 TUI 或桌面应用进程当作兼容入口。
+
 ## 为什么不用 MCP
 
 ACP 的 `session/new` 可以带 `mcpServers`，这是给 Agent 加工具的官方方式。页面读写和自动化都走同一套工作区命令文件，不必再加 MCP。

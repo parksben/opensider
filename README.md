@@ -91,3 +91,20 @@ OpenSider never uploads your configuration or chats to any server: all sessions 
 | The extension folder you picked at install (suggested `~/OpenSider/`) | The folder the browser actually loads — **do not move or delete it**, or the extension breaks |
 
 On Windows these live under `%USERPROFILE%\.opensider` and `%USERPROFILE%\OpenSider`.
+
+## FAQ
+
+### Why does OpenSider support Agent CLIs, but not desktop Agent apps?
+
+OpenSider is itself an Agent client: its local bridge starts an Agent process and uses ACP to carry sessions, streaming responses, tool calls, and permission requests. A compatible Agent therefore needs a CLI that speaks ACP directly or through an adapter.
+
+Desktop apps such as Claude and Codex keep their runtime behind their own UI and do not expose a stable ACP process endpoint for OpenSider to start and control. Automating their windows would be brittle and could not preserve the full protocol behavior, so the desktop apps themselves are not supported. Their corresponding CLIs can still be used when they provide ACP or have a compatible adapter.
+
+### I installed an Agent CLI. Why can't I select it in the side panel?
+
+Having the CLI installed is not enough by itself: it may lack an ACP entry point or adapter, be outside the local bridge's PATH, or have an incomplete setup. Send this prompt to the local Agent you already use:
+
+```
+Help me diagnose and fix an installed Agent CLI that does not appear in the OpenSider side panel.
+First read https://raw.githubusercontent.com/parksben/opensider/main/skills/opensider/SKILL.md, then follow its doctor and repair flow to check the CLI's ACP entry point, launch command, PATH, and required adapter. Fix what can be fixed and verify that it appears in the side panel; if it has no ACP interface or usable adapter, say so clearly.
+```

@@ -17,6 +17,27 @@
 - **本文件**：记产品做什么、为什么。
 - **`docs/TECH_DESIGN.md`**：记怎么做、为什么选这个方案。README 的 banner、品牌图标与演示视频放 `docs/` 第一层（`docs/banner.svg`、`docs/logo.svg`、`docs/opensider.mp4`），避免依赖 `packages/` 路径。不要再拆 `docs/images/` / `docs/demo/`。
 
+### README FAQ
+
+中英文 README 的最底部追加同构 FAQ，排在「工作区与本地数据」之后，先回答两件事：
+
+1. **为什么只支持可通过 CLI 接入的 Agent，不支持带 UI 的桌面 Agent 应用**：OpenSider 的侧栏是 Agent 客户端，不是桌面应用的遥控器。它需要本机桥接程序拉起一个可编程的 Agent 进程，并通过 ACP 完成会话、流式消息、工具调用和权限交互。只有直接提供 ACP，或能通过适配器转换成 ACP 的 CLI 才具备这个接入边界。Claude、Codex 等桌面应用即使与同名 CLI 共用品牌或账号，也没有向 OpenSider 暴露可稳定调用的 ACP 进程接口；模拟点击其 UI 不可靠，也无法完整承载上述语义，因此不支持桌面应用本身。用户仍可另行安装对应 CLI，并在需要时配上 ACP 适配器。
+2. **本机已有 CLI，但侧栏里不能选择时怎么办**：说明“已安装 CLI”不等于“已具备 ACP 接入”；常见原因包括 CLI 不提供 ACP、缺适配器、启动命令不在桥接程序可见的 PATH、或安装状态不完整。给出一段可复制给本地 Agent 的修复提示词，让它读取 OpenSider skill，按 doctor 流程检查、修复并验证。若目标 CLI 没有 ACP 接口或可用适配器，Agent 必须明确说明限制，不得假装已接入。
+
+中文版提示词固定为：
+
+```
+帮我排查并修复：本机已经安装的 Agent CLI 没有出现在 OpenSider 侧边栏中。
+请先读取 https://raw.githubusercontent.com/parksben/opensider/main/skills/opensider/SKILL.md，按其中的体检与修复流程检查该 CLI 的 ACP 接入方式、启动命令、PATH 和所需适配器，完成可修复项后验证它已出现在侧边栏；如果它没有 ACP 接口或可用适配器，请明确说明。
+```
+
+英文版提示词固定为：
+
+```
+Help me diagnose and fix an installed Agent CLI that does not appear in the OpenSider side panel.
+First read https://raw.githubusercontent.com/parksben/opensider/main/skills/opensider/SKILL.md, then follow its doctor and repair flow to check the CLI's ACP entry point, launch command, PATH, and required adapter. Fix what can be fixed and verify that it appears in the side panel; if it has no ACP interface or usable adapter, say so clearly.
+```
+
 ## 非目标（v1）
 
 - 不另起用户需要手动启动的本地 HTTP / WebSocket 服务（ACP / 附件仍由 Native Host 按需拉起）

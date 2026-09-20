@@ -91,3 +91,20 @@ OpenSider 不会将应用配置和聊天内容上传到任何云端服务器，�
 | 安装时你选定的扩展目录（建议 `~/OpenSider/`） | 浏览器实际加载的扩展目录，**不要移动或删除**，否则扩展会失效 |
 
 Windows 上对应 `%USERPROFILE%\.opensider` 与 `%USERPROFILE%\OpenSider`。
+
+## 常见问题
+
+### 为什么 OpenSider 只支持 Agent CLI，不支持带界面的桌面 Agent 应用？
+
+OpenSider 本身就是一个 Agent 客户端：本地桥接程序负责启动 Agent 进程，并通过 ACP 传递会话、流式回复、工具调用和权限请求。因此，可接入的 Agent 必须提供直接支持 ACP 的 CLI，或具有可用的 ACP 适配器。
+
+Claude、Codex 等桌面应用将运行时封装在自己的界面中，没有向 OpenSider 暴露可供启动和控制的稳定 ACP 进程接口。模拟操作它们的窗口既不可靠，也无法完整承载协议行为，因此不支持桌面应用本身；如果对应的 CLI 支持 ACP 或具有兼容适配器，仍可单独接入。
+
+### 已经安装了 Agent CLI，为什么侧边栏里仍然无法选择？
+
+仅安装 CLI 并不代表已经具备 ACP 接入：它可能缺少 ACP 入口或适配器、安装路径不在本地桥接程序可见的 PATH 中，或安装状态不完整。请把下面的提示词发给你正在使用的本地 Agent：
+
+```
+帮我排查并修复：本机已经安装的 Agent CLI 没有出现在 OpenSider 侧边栏中。
+请先读取 https://raw.githubusercontent.com/parksben/opensider/main/skills/opensider/SKILL.md，按其中的体检与修复流程检查该 CLI 的 ACP 接入方式、启动命令、PATH 和所需适配器，完成可修复项后验证它已出现在侧边栏；如果它没有 ACP 接口或可用适配器，请明确说明。
+```
