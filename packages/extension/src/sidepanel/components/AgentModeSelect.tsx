@@ -111,8 +111,8 @@ export function AgentModeSelect({
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
         onPointerDown={(event) => spawn(event)}
-        // pr-1：右内侧只留 4px，紧贴右边的权限钮（外侧仍是 px-2 的 8px）。
-        className="relative flex h-7 w-fit max-w-full min-w-0 items-center gap-1 overflow-hidden whitespace-nowrap rounded-full px-2 pr-1 text-[11px] text-[var(--muted)] hover:bg-[var(--hover)]"
+        // 内边距对称 px-2，与权限钮一致；w-fit 让它贴合内容（不设最小宽度，否则会多出空白）。
+        className="relative flex h-7 w-fit max-w-full min-w-0 items-center gap-1 overflow-hidden whitespace-nowrap rounded-full px-2 text-[11px] text-[var(--muted)] hover:bg-[var(--hover)]"
       >
         <CurrentIcon size={14} className="shrink-0" />
         {compact ? null : <span className="min-w-0 truncate">{displayName(current)}</span>}

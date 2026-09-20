@@ -670,8 +670,8 @@ export function ChatPane({
                   </IconButton>
                 </span>
               </div>
-              {/* 两个下拉之间不留间距（包一层 gap-0）；图标钮那组到模式下拉仍是 4px。 */}
-              <div className="flex min-w-0 items-center gap-0">
+              {/* 两个下拉之间的间距跟图标钮那组一样（gap-1），不要把两个钮贴死。 */}
+              <div className="flex min-w-0 items-center gap-1">
                 <AgentModeSelect
                   locale={locale}
                   options={agentModes ?? []}
@@ -958,8 +958,8 @@ function ModeSelect({
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
         onPointerDown={(event) => spawn(event)}
-        // pl-1：左内侧只留 4px，紧贴左边的模式钮（外侧仍是 px-2 的 8px）。
-        className={`relative flex h-7 max-w-full min-w-0 items-center gap-1 overflow-hidden whitespace-nowrap rounded-full px-2 pl-1 text-[11px] hover:bg-[var(--hover)] ${
+        // 内边距对称 px-2，与模式钮一致。
+        className={`relative flex h-7 max-w-full min-w-0 items-center gap-1 overflow-hidden whitespace-nowrap rounded-full px-2 text-[11px] hover:bg-[var(--hover)] ${
           mode === "ask" ? "text-[var(--muted)]" : "text-[var(--brass)]"
         }`}
       >
