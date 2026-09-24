@@ -406,6 +406,8 @@ Local paths. Read these files or folders if needed.
 
 输入区不用 textarea，改成 contenteditable（对齐 `react-plug-editor` 的 Plug 节点思路，不引入该包）：正文和 `contentEditable=false` 的芯片流式混排。芯片 DOM 用 `data-token` 存序列化值，React root 渲 icon + 标题。占位用 `::before` 绝对定位叠在空编辑器上（不进文档流），避免 caret 落到占位文案后面；删到空时清掉残留 `br` / zwsp，caret 重置到内容区开头。
 
+**光标跟随滚动**（REQUIREMENTS「聊天」第 2 条的「始终把光标所在行滚进可视区」）：`scrollCaret` 按折叠 Range 的矩形判断要不要滚，而折叠 Range 恰恰在三种最需要滚动的时刻给出**全 0** 的矩形——刚敲回车产生的空行、停在元素边界（两枚芯片之间）、以及内容末尾。早先写成「全 0 就返回」，等于把这三种情形全放过了（表现为打到第 11 行光标就跑到可视区外面）。`caretRect(range)` 因此改成**借相邻内容量一次**：先取 `getClientRects()` 的最后一项；文本节点里 `offset > 0` 就往前借一个字符、取它的右边缘当光标位置；元素边界上取光标偏移前后那个子节点的矩形；最后退到所在行的容器矩形。**不许为了测量往 DOM 里插标记节点**：这段跑在 `selectionchange` 上（每移动一次光标就跑一次），`insertNode` 会拆开用户正在编辑的那个文本节点。另外 `scrollCaret` 不能只挂在输入事件上——方向键与鼠标点击移动光标不产生 `input`，所以 `saveRange()` 里也调一次。`getCaretRect`（`@` / `/` 菜单的锚点）复用同一个 `caretRect`，空行上就不会把菜单甩回编辑器左上角。
+
 本地 token（只存在用户气泡 / 草稿，UI 不展示原文）：
 
 ```
