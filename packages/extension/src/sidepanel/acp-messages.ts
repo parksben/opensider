@@ -1,4 +1,4 @@
-import type { BrowserCommand, BrowserResult } from "@shared";
+import type { BrowserCommand, BrowserResult, ContextUsage } from "@shared";
 import type { ChatMessage, ChatPart, ToolPart, ToolStatus } from "./chat-types";
 import { isBenignStreamCloseText, stripBenignStreamClose } from "./stream-close";
 import { withPrimaryArg } from "./tool-label";
@@ -59,6 +59,23 @@ function findTool(messages: ChatMessage[], toolCallId: string): { messageIndex: 
     if (partIndex >= 0) return { messageIndex, partIndex };
   }
   return undefined;
+}
+
+/** ACP `usage_update`: how full the model's context window is right now. */
+export function usageFromUpdate(update: Record<string, unknown>): ContextUsage | undefined {
+  if (String(update.sessionUpdate ?? "") !== "usage_update") return undefined;
+  const used = Number(update.used);
+  const size = Number(update.size);
+  if (!Number.isFinite(used) || !Number.isFinite(size) || size <= 0) return undefined;
+  const rawCost = update.cost as { amount?: unknown; currency?: unknown } | undefined;
+  const amount = Number(rawCost?.amount);
+  return {
+    used,
+    size,
+    cost: Number.isFinite(amount)
+      ? { amount, currency: typeof rawCost?.currency === "string" ? rawCost.currency : undefined }
+      : undefined,
+  };
 }
 
 export function applyAcpUpdate(

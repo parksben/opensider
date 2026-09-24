@@ -279,6 +279,16 @@ export type AgentModel = {
   name: string;
 };
 
+/** Agent 报上来的上下文用量（ACP `usage_update`）。不报就没有这个控件。 */
+export type ContextUsage = {
+  /** 当前上下文里的 token 数。 */
+  used: number;
+  /** 上下文窗口总量。 */
+  size: number;
+  /** 本次会话累计花费，引擎给了才有。 */
+  cost?: { amount: number; currency?: string };
+};
+
 export type AgentPolicy = "ask" | "workspace" | "auto" | "unattended";
 
 /**

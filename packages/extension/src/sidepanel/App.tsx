@@ -7,6 +7,7 @@ import type {
   AttachmentItem,
   BrowserCommand,
   BrowserResult,
+  ContextUsage,
   CurrentPage,
   ExtToHost,
   HostToExt,
@@ -20,7 +21,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { encodeImageBlob } from "../image-encode";
 import { fileToBase64, type DropPlan } from "./file-drop";
 import { blobUrlFromBase64Chunks, isAttachedImagePath } from "./image-preview";
-import { applyAcpUpdate, applyBrowserTool, createUserMessage } from "./acp-messages";
+import { applyAcpUpdate, applyBrowserTool, createUserMessage, usageFromUpdate } from "./acp-messages";
 import { connectSidebar } from "./bridge";
 import type { ChatMessage, PermissionRequest, PlanPrompt, QuestionPrompt, TodoItem } from "./chat-types";
 import { AgentSetup } from "./components/AgentSetup";
@@ -146,6 +147,8 @@ export function App() {
   const checkWatchdogRef = useRef(0);
   const checkResetRef = useRef(0);
   const [page, setPage] = useState<CurrentPage>();
+  /** Agent 上报的上下文用量；不上报就一直是 undefined，控件不出现。 */
+  const [contextUsage, setContextUsage] = useState<ContextUsage>();
   const [runningIds, setRunningIds] = useState<string[]>([]);
   const [queues, setQueues] = useState<Record<string, QueuedMessage[]>>({});
   const [permissions, setPermissions] = useState<Record<string, PermissionRequest>>({});
@@ -966,6 +969,12 @@ export function App() {
       const modelName =
         models.find((item) => item.id === modelId)?.name ||
         (!modelId || modelId === "auto" ? "Auto" : modelId);
+      // 上下文用量只更新那个环，不能落进消息列表（否则会多出一条空的 assistant 气泡）。
+      const usage = usageFromUpdate(msg.update);
+      if (usage) {
+        setContextUsage(usage);
+        return;
+      }
       updateSessionMessages(localId, (current) => applyAcpUpdate(current, msg.update, { modelId, modelName }));
       return;
     }
@@ -1871,6 +1880,7 @@ export function App() {
               hostReady={status === "ready"}
               sessionId={selected.id}
               messages={selected.messages}
+              contextUsage={contextUsage}
               isRunning={runningIds.includes(selected.id)}
               pickingElement={pickingElement}
               models={models}

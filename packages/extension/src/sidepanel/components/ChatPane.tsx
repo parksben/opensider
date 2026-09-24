@@ -1,4 +1,4 @@
-import type { AgentModeOption, AgentModel, AgentOption, AttachmentItem, CurrentPage, FsPickMode, SkillItem } from "@shared";
+import type { AgentModeOption, AgentModel, AgentOption, AttachmentItem, ContextUsage as ContextUsageValue, CurrentPage, FsPickMode, SkillItem } from "@shared";
 import { ArrowDown, AtSign, Check, ChevronDown, Copy, File, FileDown, Folder, FolderPen, GitFork, LoaderCircle, MousePointer2, Paperclip, Plus, RefreshCw, Send, Shield, Slash, Square, TriangleAlert, Unlock, X, Zap } from "lucide-react";
 import logoUrl from "../../../assets/icon.svg?url";
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from "react";
@@ -46,6 +46,7 @@ import { TextFold } from "./TextFold";
 import { ArtifactList } from "./ArtifactList";
 import { TodoList } from "./TodoList";
 import { ToolCard } from "./ToolCard";
+import { ContextUsage } from "./ContextUsage";
 
 const STICKY_PX = 96;
 /** Where the "copy/cut carried the attachments" payload waits for its paste. */
@@ -103,6 +104,7 @@ export function ChatPane({
   todos,
   artifacts,
   onRevealArtifact,
+  contextUsage,
   notice,
   onDismissNotice,
   queue,
@@ -122,6 +124,8 @@ export function ChatPane({
   todos?: TodoItem[];
   artifacts?: AttachmentItem[];
   onRevealArtifact?: (path: string) => void;
+  /** Agent 上报的上下文用量；没有就不画那个环。 */
+  contextUsage?: ContextUsageValue;
   /** Something the user just tried did not work (a drop, a paste, a stale bridge). */
   notice?: string;
   onDismissNotice?: () => void;
@@ -922,6 +926,7 @@ export function ChatPane({
               />
             </div>
             <div className="flex min-w-0 shrink items-center justify-end gap-1.5">
+              <ContextUsage locale={locale} usage={contextUsage} />
               {showModelPicker ? (
                 <ModelSelect
                   locale={locale}
