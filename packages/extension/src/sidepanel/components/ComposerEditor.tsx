@@ -272,11 +272,60 @@ function isBlankTextNode(node: Node | null): boolean {
   return node !== null && node.nodeType === Node.TEXT_NODE && (node.textContent ?? "").trim() === "";
 }
 
+/**
+ * 光标所在位置的屏幕矩形。
+ *
+ * 折叠的 Range 在几种常见情形下会给出全 0 的矩形：刚敲回车产生的空行、停在元素
+ * 边界（两个芯片之间）、以及内容末尾。而这几种恰好就是最需要滚动的时刻。
+ *
+ * 退路是「借相邻内容量一次」，不是往 DOM 里插标记：这个测量跑在 selectionchange
+ * 上，每次移动光标都会触发，而 insertNode 会拆分文本节点、动到用户正在编辑的树。
+ */
+function caretRect(range: Range): DOMRect | undefined {
+  const rects = range.getClientRects();
+  const direct = rects.item(rects.length - 1) ?? range.getBoundingClientRect();
+  if (direct.height > 0 || direct.width > 0) return direct;
+
+  const container = range.startContainer;
+  const offset = range.startOffset;
+
+  // 文本节点里：往前借一个字符，取它的右边缘当光标位置。
+  if (container.nodeType === Node.TEXT_NODE && offset > 0) {
+    const probe = range.cloneRange();
+    probe.setStart(container, offset - 1);
+    probe.setEnd(container, offset);
+    const rect = probe.getBoundingClientRect();
+    if (rect.height > 0) return new DOMRect(rect.right, rect.top, 0, rect.height);
+  }
+
+  // 元素边界上（空行、芯片之间）：用光标前后那个子节点的矩形。
+  const element = container.nodeType === Node.ELEMENT_NODE ? (container as Element) : container.parentElement;
+  const children = element?.childNodes;
+  if (children && children.length > 0) {
+    const neighbour = children[Math.min(offset, children.length - 1)];
+    const box =
+      neighbour.nodeType === Node.ELEMENT_NODE
+        ? (neighbour as Element).getBoundingClientRect()
+        : (() => {
+            const probe = document.createRange();
+            probe.selectNodeContents(neighbour);
+            return probe.getBoundingClientRect();
+          })();
+    if (box.height > 0) return box;
+  }
+
+  // 最后退到编辑器里那一行的容器本身。
+  const fallback = element?.getBoundingClientRect();
+  return fallback && fallback.height > 0 ? fallback : undefined;
+}
+
 function scrollCaret(editor: HTMLElement): void {
   const selection = window.getSelection();
   if (!selection || selection.rangeCount === 0) return;
-  const rect = selection.getRangeAt(0).getBoundingClientRect();
-  if (rect.width === 0 && rect.height === 0) return;
+  const range = selection.getRangeAt(0);
+  if (!editor.contains(range.commonAncestorContainer)) return;
+  const rect = caretRect(range);
+  if (!rect) return;
   const box = editor.getBoundingClientRect();
   if (rect.bottom > box.bottom) editor.scrollTop += rect.bottom - box.bottom + 4;
   else if (rect.top < box.top) editor.scrollTop -= box.top - rect.top + 4;
@@ -428,6 +477,8 @@ export const ComposerEditor = forwardRef<
     const range = selection.getRangeAt(0);
     if (!editor.contains(range.commonAncestorContainer)) return;
     lastRangeRef.current = range.cloneRange();
+    // 方向键 / 点击移动光标同样要把它滚进视野，不能只在输入时跟随。
+    scrollCaret(editor);
     syncAtQuery();
   };
 
@@ -616,9 +667,8 @@ export const ComposerEditor = forwardRef<
     getCaretRect: () => {
       const saved = lastRangeRef.current;
       if (saved) {
-        const rects = saved.getClientRects();
-        const rect = rects.item(rects.length - 1) ?? saved.getBoundingClientRect();
-        if (rect.top || rect.left || rect.height || rect.width) return rect;
+        const rect = caretRect(saved);
+        if (rect && (rect.top || rect.left || rect.height || rect.width)) return rect;
       }
       const selection = window.getSelection();
       if (selection && selection.rangeCount > 0) {
