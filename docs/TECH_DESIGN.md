@@ -475,6 +475,14 @@ The user explicitly asked to use these skills. Read each skill's SKILL.md and fo
 6. 侧栏只在 `status === ready` 且列表非空时渲染下拉。连上后若列表含 `auto` 且用户没有已记住的具体模型，选中态为 `auto`。`selectedModelId` 写入 `chrome.storage.local`；仅当选的是具体模型时再 `model.set`。
 7. 下拉外壳不滚：顶部是固定筛选 `input`（无边框 / outline / ring），`open` 后 `focus()`；下面才是 `overflow-y-auto` 的条目。筛选只对已加载的 `models` 做 `name` / `id` 的 `toLowerCase().includes`，不另发请求。关掉下拉清空关键词。`ArrowDown` / `ArrowUp` 在 `visible` 上取模换 `highlightId`（打开时落在当前模型），`scrollIntoView({ block: "nearest" })` 跟滚；`Enter` 对高亮项 `onModel` 并关下拉。中文 placeholder 为「筛选...」。
 
+## 上下文用量环
+
+1. 数据只来自 ACP `usage_update`（`session/update` 的普通一种）：`used`（当前上下文里的 token 数）、`size`（上下文窗口总量）、可选 `cost`。Host 把 `session/update` 原样转发（`internal/acp` 的 `OnUpdate` → `internal/host` 的 `{ type: "update", update, sessionId }`），SW 广播时也不按类型筛，所以这个功能**不需要 Go 侧任何改动**。
+2. 侧栏 `acp-messages.ts` 的 `usageFromUpdate(update)` 只认这一种：`sessionUpdate` 不是 `usage_update`、`used` / `size` 不是有限数、或 `size <= 0`，一律返回 `undefined`。`App.tsx` 的 `update` 分支**先问它**，命中就 `setContextUsage` 并 `return`——不能让它接着走 `applyAcpUpdate`，否则这条上报会变成一条空的 assistant 消息。用量存在 `App` 的 `contextUsage` state，不持久化（重连后等 Agent 再报一次）。
+3. `ContextUsage.tsx`：`usage` 为空或 `size <= 0` 时 **`return null`**——「不估算、不画假控件」就落在这一行，与 `AgentOptionSelect` 同一套判断。SVG 环边长取 `COMPOSER_ICON_PX`，`strokeWidth` 2，底圈 `var(--line)`、进度 `var(--brass)`，比例 ≥ 0.9 换 `var(--bad)`；进度用 `strokeDasharray` / `strokeDashoffset` 加 `rotate(-90)`，从正上方起画。
+4. 外壳直接用 `IconButton`（`side="top"`、`ripple={false}`、`cursor-default`）：tooltip 的定位、`whitespace-pre-line` 的多行渲染、无障碍名称都已经在那儿了，不必为一个不可点的控件另造一层。三行 tooltip 用 `\n` 拼，没有 `cost` 就不拼那一行。
+5. 数字缩写在组件内：`short()` ≥1M 写 `1.2M`（≥10M 去掉小数位）、≥1K 写 `514K`、更小写原数；`money()` 小于 1 保留三位小数、否则两位，引擎给了 `currency` 就跟在数字后面，没给按 `$` 前缀。
+
 ## 权限模式
 
 `agentMode` 四档，写入 `chrome.storage.local`，默认 `ask`。前三档语义不变，第四档才是真正无人值守：
@@ -735,6 +743,7 @@ Host 是 ACP Client，`clientCapabilities` 关闭 `fs` / `terminal`，让 Agent 
 | `cursor/create_plan` | 计划审批 |
 | `cursor/update_todos` | 输入框上方可折叠 TodoList。新一轮 `beginTurn` 先清空 `session.todos`。下发时若 `merge` 且只是已有 id+文案的状态更新则合并；一旦出现新的 id/文案则整表覆盖，不保留上一轮条目 |
 | `cursor/task` | 子任务卡片 |
+| `usage_update` | 模型上下文用量环（模型下拉左侧，见「上下文用量环」）。**不进消息列表**：`usageFromUpdate` 命中就只更新 state 并 return |
 | `session/prompt` 结束 | 对应本地会话移出 `runningIds`，给**该会话**末尾 assistant 打上 `durationMs`。Cursor 在正文/工具已经流完后，偶尔用 JSON-RPC error `RetriableError: WritableIterable is closed` 收尾，或再推一段同样文案的 `agent_message_chunk` / `agent_thought_chunk`。这是 CLI 自己的流拆掉，不是 Host 提前关了 stdin。Host 若本轮已经转发过正文、思考或工具，把该 error 记日志并按 `end_turn` 结束，不发 `stopReason: error`。转发 update 前丢掉整段（或首尾整行 / 句末）的这一句。侧栏 `applyAcpUpdate` / `settleFinishedContent` 同样剥，避免旧 Host 或已落盘记录再画出来。空轮（只有这句、没有任何内容）仍当失败；鉴权 / 崩溃 / 其它 RPC error 照旧 `turn.end` + 顶栏错误 |
 
 消息状态由 Side Panel 持有并持久化。Host 重启后 `session/load` 只负责恢复 Agent 侧上下文；Panel 以本地存储的消息为准，不因为 `replay` 清空界面。`session/load` / `session/new` / `session/fork` 以及为了切会话而做的 `session/load` 期间，Agent 会把历史当 `session/update` 回放（常常是一整段带 `[Current tab]` 前缀的 `user_message_chunk`）。三层拦住：
