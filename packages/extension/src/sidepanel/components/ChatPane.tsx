@@ -1583,7 +1583,7 @@ function MessageFrame({
           <div className="flex shrink-0 items-center gap-1">
             <IconButton
               label={copied ? t(locale, "copiedReply") : t(locale, "copyReply")}
-              disabled={locked || !markdown}
+              disabled={!markdown}
               onClick={() => void copyReply()}
               className={`rounded p-1 disabled:opacity-40 ${
                 copied ? "text-[var(--ok)]" : "text-[var(--muted)] hover:text-[var(--text)]"
@@ -1593,7 +1593,6 @@ function MessageFrame({
             </IconButton>
             <IconButton
               label={t(locale, "fork")}
-              disabled={locked}
               onClick={onFork}
               className="rounded p-1 text-[var(--muted)] hover:text-[var(--text)] disabled:opacity-40"
             >

@@ -1689,7 +1689,7 @@ export function App() {
 
   const forkFromMessage = (messageId: string) => {
     const source = sessionsRef.current.find((item) => item.id === selectedIdRef.current);
-    if (!source || sessionBusy(source.id)) return;
+    if (!source) return;
     const index = source.messages.findIndex((message) => message.id === messageId);
     if (index < 0) return;
     const sliced = source.messages.slice(0, index + 1).map((message) => ({
