@@ -71,6 +71,7 @@ export function ChatPane({
   onDeleteQueued,
   onSendQueuedNow,
   onEditingQueued,
+  onMoveQueued,
   onRevise,
   onCancel,
   onFork,
@@ -136,6 +137,8 @@ export function ChatPane({
   onDeleteQueued: (id: string) => void;
   onSendQueuedNow: (id: string) => void;
   onEditingQueued: (id?: string) => void;
+  /** Reorder one queued message by `delta` (−1 up / +1 down). */
+  onMoveQueued: (id: string, delta: -1 | 1) => void;
   onRevise: (messageId: string, text: string, attachments: AttachmentItem[]) => void;
   onCancel: () => void;
   onFork: (messageId: string) => void;
@@ -740,6 +743,7 @@ export function ChatPane({
           onSendNow={sendQueuedNow}
           onEdit={startQueueEdit}
           onDelete={removeQueued}
+          onMove={onMoveQueued}
         />
         <div className={`cs-composer rounded-xl bg-[var(--panel)] px-2 py-2 ${isRunning ? "is-running" : ""}`}>
           {editingQueueId ? (

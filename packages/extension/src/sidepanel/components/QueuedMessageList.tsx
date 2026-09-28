@@ -1,4 +1,4 @@
-import { CornerDownLeft, Paperclip, Pencil, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, CornerDownLeft, Paperclip, Pencil, Trash2 } from "lucide-react";
 import type { QueuedMessage } from "../queued-message";
 import type { Locale } from "../i18n";
 import { t } from "../i18n";
@@ -12,6 +12,7 @@ export function QueuedMessageList({
   onSendNow,
   onEdit,
   onDelete,
+  onMove,
 }: {
   locale: Locale;
   items: QueuedMessage[];
@@ -19,19 +20,20 @@ export function QueuedMessageList({
   onSendNow: (id: string) => void;
   onEdit: (item: QueuedMessage) => void;
   onDelete: (id: string) => void;
+  onMove: (id: string, delta: -1 | 1) => void;
 }) {
   if (items.length === 0) return null;
 
   return (
     <ol className="mb-2 max-h-[9.5lh] overflow-y-auto rounded-lg border border-[var(--line)] bg-[var(--panel-2)] py-0.5">
-      {items.map((item) => {
+      {items.map((item, index) => {
         const preview =
           displayMentionText(item.text).replace(/\u200b/g, "").trim() || item.attachments[0]?.name || "";
         const editing = editingId === item.id;
         return (
           <li
             key={item.id}
-            className={`flex items-center gap-1 px-2 py-1.5 ${
+            className={`group/queue flex items-center gap-1 px-2 py-1.5 ${
               editing ? "bg-[var(--hover-strong)]" : ""
             }`}
           >
@@ -46,6 +48,26 @@ export function QueuedMessageList({
                 ) : null}
               </span>
             ) : null}
+            <span className="hidden shrink-0 items-center gap-1 group-hover/queue:flex">
+              <IconButton
+                side="top"
+                label={t(locale, "moveQueuedUp")}
+                disabled={index === 0}
+                onClick={() => onMove(item.id, -1)}
+                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[var(--muted)] hover:text-[var(--text)] disabled:opacity-30 disabled:hover:text-[var(--muted)]"
+              >
+                <ArrowUp size={12} />
+              </IconButton>
+              <IconButton
+                side="top"
+                label={t(locale, "moveQueuedDown")}
+                disabled={index === items.length - 1}
+                onClick={() => onMove(item.id, 1)}
+                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[var(--muted)] hover:text-[var(--text)] disabled:opacity-30 disabled:hover:text-[var(--muted)]"
+              >
+                <ArrowDown size={12} />
+              </IconButton>
+            </span>
             <IconButton
               side="top"
               label={t(locale, "sendQueuedNow")}

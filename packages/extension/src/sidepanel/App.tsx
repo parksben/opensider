@@ -1383,6 +1383,21 @@ export function App() {
     sendQueuedNow(sessionId, item);
   };
 
+  // 队列内上移 / 下移：把这条和相邻的一条换位，其他会话状态不动。换完照例冲一次队，
+  // 免得非运行态下队首已经不是同一条。
+  const onMoveQueued = (id: string, delta: -1 | 1) => {
+    const sessionId = selectedIdRef.current;
+    if (!sessionId) return;
+    const list = queuesRef.current[sessionId] ?? [];
+    const index = list.findIndex((item) => item.id === id);
+    const target = index + delta;
+    if (index < 0 || target < 0 || target >= list.length) return;
+    const next = [...list];
+    [next[index], next[target]] = [next[target], next[index]];
+    setSessionQueue(sessionId, next);
+    flushQueue(sessionId);
+  };
+
   const onEditingQueued = (id?: string) => {
     const sessionId = selectedIdRef.current;
     if (id) {
@@ -1995,6 +2010,7 @@ export function App() {
               onDeleteQueued={onDeleteQueued}
               onSendQueuedNow={onSendQueuedNow}
               onEditingQueued={onEditingQueued}
+              onMoveQueued={onMoveQueued}
               hitl={
                 <PermissionBar
                   locale={locale}
