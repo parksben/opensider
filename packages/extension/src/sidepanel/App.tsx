@@ -148,6 +148,8 @@ export function App() {
   const checkWatchdogRef = useRef(0);
   const checkResetRef = useRef(0);
   const [page, setPage] = useState<CurrentPage>();
+  /** `~/.opensider/ui-state.json`, derived from the host workspace path in `hello`. */
+  const [statePath, setStatePath] = useState("");
   /** Agent 上报的上下文用量；不上报就一直是 undefined，控件不出现。 */
   const [contextUsage, setContextUsage] = useState<ContextUsage>();
   const [runningIds, setRunningIds] = useState<string[]>([]);
@@ -646,6 +648,7 @@ export function App() {
       return;
     }
     if (msg.type === "hello") {
+      if (msg.workspace) setStatePath(uiStatePath(msg.workspace));
       if (msg.providerId) connectedProviderRef.current = msg.providerId;
       // 面板一挂上就把 skill 列表要一份（Host 侧有 5 分钟缓存，不会真去扫）。
       sendRef.current({ type: "skills.refresh" });
@@ -1921,6 +1924,7 @@ export function App() {
               skills={skills}
               onRefreshSkills={() => sendRef.current({ type: "skills.refresh" })}
               probeEditor={() => requestPeerProbe(sendRef.current)}
+              statePath={statePath}
               onAgentMode={(mode) => {
                 setAgentMode(mode);
                 sendRef.current({ type: "agent.setPolicy", policy: mode });
@@ -2101,6 +2105,14 @@ export function App() {
       ) : null}
     </div>
   );
+}
+
+/** Host workspace is `~/.opensider/workspace`; the session file sits next to that directory. */
+function uiStatePath(workspace: string): string {
+  const trimmed = workspace.trim().replace(/[\\/]+$/, "");
+  const slash = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"));
+  if (slash <= 0) return "~/.opensider/ui-state.json";
+  return `${trimmed.slice(0, slash)}/ui-state.json`;
 }
 
 function todoPlanKey(item: TodoItem): string {

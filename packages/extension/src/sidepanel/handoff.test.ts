@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { buildHandoffPrompt } from "./handoff.ts";
+import { buildHandoffPrompt, handoffCutoff } from "./handoff.ts";
 import { groupModelsByPrefix, modelShortName } from "./model-groups.ts";
 import { nextThreadScroll } from "./thread-follow.ts";
 
@@ -22,20 +22,28 @@ describe("model groups", () => {
 });
 
 describe("handoff prompt", () => {
-  it("tells the browser side to continue and includes the workspace", () => {
+  it("points at the session file and stops before the next round", () => {
+    const cut = handoffCutoff(
+      [
+        { id: "u1", role: "user" },
+        { id: "a1", role: "assistant" },
+        { id: "u2", role: "user" },
+      ],
+      "a1",
+    );
+    assert.ok(cut);
+    assert.equal(cut.beforeRound, 2);
     const prompt = buildHandoffPrompt({
       locale: "zh",
-      target: "browser",
-      workspace: "/tmp/repo",
-      turns: [
-        { role: "user", text: "看一下滚动" },
-        { role: "assistant", text: "已经钉住了" },
-      ],
+      target: "vscode",
+      statePath: "/tmp/ui-state.json",
+      sessionId: "sess",
+      ...cut,
     });
-    assert.match(prompt, /浏览器端 OpenSider/);
-    assert.match(prompt, /工作区：\/tmp\/repo/);
-    assert.match(prompt, /User: 看一下滚动/);
-    assert.match(prompt, /Assistant: 已经钉住了/);
+    assert.match(prompt, /VS Code 里的 OpenSider/);
+    assert.match(prompt, /\/tmp\/ui-state\.json/);
+    assert.match(prompt, /只看第 2 轮之前/);
+    assert.doesNotMatch(prompt, /User: /);
   });
 });
 
