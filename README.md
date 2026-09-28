@@ -16,34 +16,36 @@
 
 <br />
 
-OpenSider is a browser extension that drives local Agents (Claude Code, Codex, OpenCode, Cursor and other local Agent CLIs that speak ACP) from within your browser for web information gathering, web automation, and more.
+OpenSider drives the local Agent CLIs you already use — Claude Code, Codex, OpenCode, Cursor and other [ACP](https://agentclientprotocol.com) agents — from a side panel in your browser. It works on the page you are looking at: reading it, clicking it, filling it, and taking screenshots, with the login and form state that is already there. Nothing is uploaded.
 
-- **Collaborate with Agents in the browser**  
-  Chat with your local Agent directly in the browser side panel, without opening command line or terminal tools.
+## Highlights
 
-- **Reuse your real browser state**  
-  Your identity on a site (login state) and any form input you have already filled in are reused, so you never have to reconstruct the scene.
+- **The Agent lives in your side panel.** Chat with your local CLI without switching to a terminal.
+- **Your browser, exactly as it is.** Your logged-in sessions and anything you have already filled in are reused, so the scene is never reconstructed.
+- **The page is the context.** The Agent automatically gets the tab you are on; there is nothing to point it at.
+- **Automation you can watch.** Navigation, reading, clicking, form filling and screenshots are injected into the Agent as tools, and they run live on the page.
+- **Quote, translate, search.** Select text and use the toolbar; the result comes back in the side panel.
+- **Pick an element.** Point at one element on the page and ask about it.
 
-- **Automatic web page context**  
-  No need to tell the Agent which page you are viewing — the Agent automatically gets the page information loaded in your browser and can operate on it.
+## Demo
 
-- **Web automation**  
-  Navigation, reading, clicking, form filling, screenshots and more are injected into the Agent as tools, and the automation plays out live on the page (simulated mouse clicks, keyboard input, …).
+### Ask from the side panel
 
-- **Collaborate in place**  
-  Wherever you are, the Agent works with the information on that page. You can also pick a page element to ask about it.
+The Agent works on the tab you are on, with the page already in context — no need to paste the URL or describe the scene.
 
-- **Switch Agents and models freely**  
-  Switch Agent/model with one click, and even within the same session you can use different Agents — no terminal tooling to hold you back.
+![Chat with the Agent in the side panel next to a web page](./docs/readme/en/chat.png)
 
-- **Data persistence**  
-  All session data is stored locally, so it won't be lost when the app is updated or reinstalled.
+### Quote, translate, search
 
-## Video Demo
+Select text on any page, then translate it, search it, or quote it into the composer.
 
-What it shows: chat with the Agent to distill web page information into a news digest (an HTML file), which is then opened in the browser.
+![Selection toolbar over a selected sentence](./docs/readme/en/selection.png)
 
-https://github.com/user-attachments/assets/f0a9c654-b66e-43ef-a233-6942a30e83c6
+### Pick an element
+
+Pick one element — a card, a button, an input — and ask about it directly.
+
+![Picking an element on the page](./docs/readme/en/pick.png)
 
 ## Install & Use
 

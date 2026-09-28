@@ -845,7 +845,7 @@ docs/TECH_DESIGN.md   本文件：怎么做、为什么选这个方案
 docs/DEVELOPMENT.md   开发构建、Host 注册、工作区、打 extension.zip、tag 发 Release
 docs/logo.svg         品牌图标单图（512，源自 generate_icon；README 顶部已改用 banner，此文件保留备用）
 docs/banner.svg       README banner 概念图（由 scripts/generate_banner.py 生成）
-docs/opensider.mp4    README 演示视频：Agent 提炼网页信息、生成资讯榜单并在浏览器打开
+docs/readme/          README 演示截图（`scripts/shots.mjs` 从 shots 页面截取，`{en,zh}/`）
 cmd/opensider       唯一 Go 入口（host / install / pick）
 internal/           Host / install / pick / ACP
 packages/shared     扩展 ↔ Host 消息类型（TS）
