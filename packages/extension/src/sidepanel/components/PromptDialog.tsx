@@ -21,6 +21,7 @@ export function PromptDialog({
   prompt,
   copyLabel,
   children,
+  extra,
   onClose,
 }: {
   locale: Locale;
@@ -30,6 +31,8 @@ export function PromptDialog({
   copyLabel: string;
   /** 插在说明上方的额外内容，例如三个版本行。 */
   children?: ReactNode;
+  /** 插在说明和提示词之间，例如「前往安装」按钮。 */
+  extra?: ReactNode;
   onClose: () => void;
 }) {
   const [copied, setCopied] = useState(false);
@@ -51,6 +54,8 @@ export function PromptDialog({
         {children}
 
         <p className="m-0 text-[12px] leading-relaxed text-[var(--muted)]">{hint}</p>
+
+        {extra}
 
         <div className="rounded-lg border border-[var(--line)] bg-[var(--panel-2)] px-2.5 py-2">
           <pre className="m-0 max-h-[9rem] overflow-y-auto whitespace-pre-wrap break-words font-mono text-[11.5px] leading-relaxed text-[var(--text)]">

@@ -175,6 +175,12 @@ const copy = {
     regenerate: "Regenerate",
     copyReply: "Copy",
     copiedReply: "Copied",
+    continueInEditor: "Continue in VS Code",
+    continueReadyEditor: "The prompt is on the clipboard. Open OpenSider in VS Code, paste it into the input, and send it to continue this chat.",
+    continueMissingEditor: "OpenSider for VS Code is not installed on this machine. Install it, then paste the copied prompt into its input and send.",
+    continueUnknownEditor: "The prompt is on the clipboard. Paste it into OpenSider in VS Code and send it. If it is not installed yet, install it from GitHub first.",
+    continueInstall: "Install from GitHub",
+    copyContinuePrompt: "Copy prompt",
     // 划词工具条的结果层（工具条本身的按钮名在 src/selection-copy.ts 里，那是内容脚本，
     // 用不上这一份）。
     selectionTranslateTitle: "Translation",
@@ -376,6 +382,12 @@ const copy = {
     regenerate: "重新生成",
     copyReply: "复制",
     copiedReply: "已复制",
+    continueInEditor: "在 VS Code 中续聊",
+    continueReadyEditor: "提示词已复制。请打开 VS Code 里的 OpenSider，粘贴到输入框并发送，即可接着聊。",
+    continueMissingEditor: "没有检测到本机安装了 VS Code 端 OpenSider。请先安装，再把已复制的提示词粘贴到它的输入框并发送。",
+    continueUnknownEditor: "提示词已复制。请打开 VS Code 里的 OpenSider，粘贴到输入框并发送。如果还没安装，请先从 GitHub 安装。",
+    continueInstall: "前往 GitHub 安装",
+    copyContinuePrompt: "复制提示词",
     // 划词工具条的结果层（工具条本身的按钮名在 src/selection-copy.ts 里）。
     selectionTranslateTitle: "翻译",
     selectionSearchTitle: "搜索结果",

@@ -1,5 +1,5 @@
 import type { AgentModeOption, AgentModel, AgentOption, AttachmentItem, ContextUsage as ContextUsageValue, CurrentPage, FsPickMode, SkillItem } from "@shared";
-import { ArrowDown, AtSign, Check, ChevronDown, Copy, File, FileDown, Folder, FolderPen, GitFork, LoaderCircle, MousePointer2, Paperclip, Plus, RefreshCw, Send, Shield, Slash, Square, TriangleAlert, Unlock, X, Zap } from "lucide-react";
+import { ArrowDown, AtSign, Check, ChevronDown, Code, Copy, File, FileDown, Folder, FolderPen, GitFork, LoaderCircle, MousePointer2, Paperclip, Plus, RefreshCw, Send, Shield, Slash, Square, TriangleAlert, Unlock, X, Zap } from "lucide-react";
 import logoUrl from "../../../assets/icon.svg?url";
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from "react";
 import type { ChatMessage, ChatPart, TodoItem } from "../chat-types";
@@ -9,7 +9,10 @@ import { AgentOptionSelect } from "./AgentOptionSelect";
 import type { Locale } from "../i18n";
 import { t } from "../i18n";
 import { closeAtMenuLock, installAtMenuGuard, openAtMenuLock, shouldBlockSubmit } from "../at-menu-lock";
-import { composerHasContent, stripAttachmentMentions } from "../mentions";
+import { composerHasContent, displayMentionText, stripAttachmentMentions } from "../mentions";
+import { buildHandoffPrompt, EDITOR_REPO, type HandoffTurn } from "../handoff";
+import { groupModelsByPrefix, modelShortName } from "../model-groups";
+import { STICKY_PX, useThreadFollow } from "../thread-follow";
 import {
   composerCarryMatches,
   decodeComposerCarry,
@@ -36,6 +39,7 @@ import { AtMenu } from "./AtMenu";
 import { ComposerActionsMenu, type ComposerAction } from "./ComposerActionsMenu";
 import { SlashMenu } from "./SlashMenu";
 import { ComposerEditor, type ComposerHandle } from "./ComposerEditor";
+import { ContinueDialog } from "./ContinueDialog";
 import { IconButton } from "./IconButton";
 import { kindIcon, UserRichText } from "./MentionChip";
 import { Markdown } from "./Markdown";
@@ -48,14 +52,8 @@ import { TodoList } from "./TodoList";
 import { ToolCard } from "./ToolCard";
 import { ContextUsage } from "./ContextUsage";
 
-const STICKY_PX = 96;
 /** Where the "copy/cut carried the attachments" payload waits for its paste. */
 const COMPOSER_CARRY_KEY = "opensiderComposerCarry";
-
-function stickToBottom(node: HTMLElement | null, smooth = false): void {
-  if (!node) return;
-  node.scrollTo({ top: 0, behavior: smooth ? "smooth" : "auto" });
-}
 
 export function ChatPane({
   locale,
@@ -99,6 +97,7 @@ export function ChatPane({
   insertQuote,
   onQuoteInserted,
   page,
+  probeEditor,
   hitl,
   control,
   todos,
@@ -170,6 +169,8 @@ export function ChatPane({
   insertQuote?: { id: string; text: string };
   onQuoteInserted?: (id: string) => void;
   page?: CurrentPage;
+  /** Asks the host whether OpenSider for VS Code is installed. `null` means it could not tell. */
+  probeEditor?: () => Promise<boolean | null>;
 }) {
   // 引擎广告的其它配置项按类别分流：`thought_level` 是模型钮旁边的推理档位钮，
   // `model_config` 放进模型菜单里——工具栏这一行已经挤不下更多钮了。
@@ -205,6 +206,8 @@ export function ChatPane({
   const listRef = useRef<HTMLDivElement>(null);
   const { tabs: historyTabs } = useComposerHistory();
   const threadEndRef = useRef<HTMLDivElement>(null);
+  const stickToBottom = useThreadFollow(listRef, threadEndRef, sessionId, messages.length > 0);
+  const [handoff, setHandoff] = useState<{ prompt: string; installed: boolean | null } | null>(null);
   const editingRef = useRef<string | undefined>(undefined);
   const editingQueueRef = useRef<string | undefined>(undefined);
   const onEditingQueuedRef = useRef(onEditingQueued);
@@ -361,7 +364,7 @@ export function ChatPane({
     else if (queueEditId) onUpdateQueued(queueEditId, text, files);
     else if (isRunning) onEnqueue(text, files);
     else onSend(text, files);
-    requestAnimationFrame(() => stickToBottom(listRef.current));
+    requestAnimationFrame(() => stickToBottom());
   };
 
   submitRef.current = submit;
@@ -464,7 +467,7 @@ export function ChatPane({
     setAttachOpen(false);
     setPlusOpen(false);
     closeSlashMenu();
-    requestAnimationFrame(() => stickToBottom(listRef.current));
+    requestAnimationFrame(() => stickToBottom());
   }, [sessionId]);
 
   // 变宽之后加号钮本身不在了，它的弹层不能再留着（锚点已经失效）。
@@ -662,7 +665,7 @@ export function ChatPane({
           className="cs-thread flex min-h-0 flex-1 flex-col-reverse overflow-y-auto px-3"
         >
           <div aria-hidden className="min-h-0 flex-1" />
-          <div className="shrink-0 py-3">
+          <div data-thread-body="" className="shrink-0 py-3">
             <MessageThread
               locale={locale}
               messages={messages}
@@ -674,6 +677,23 @@ export function ChatPane({
               onPreview={openPreview}
               onFork={onFork}
               onRegenerate={onRegenerate}
+              onContinue={(messageId) => {
+                const prompt = buildHandoffPrompt({
+                  locale,
+                  target: "vscode",
+                  turns: handoffTurns(messages, messageId),
+                  pageTitle: page?.title,
+                  pageUrl: page?.url,
+                });
+                void (async () => {
+                  try {
+                    await writeClipboard(prompt);
+                  } catch {
+                    // The dialog still shows the prompt, so it can be copied from there.
+                  }
+                  setHandoff({ prompt, installed: (await probeEditor?.()) ?? null });
+                })();
+              }}
             />
             <div ref={threadEndRef} aria-hidden className="h-px w-full" />
           </div>
@@ -687,7 +707,7 @@ export function ChatPane({
                 side="top"
                 label={label("scrollToBottom")}
                 onClick={() => {
-                  stickToBottom(listRef.current, true);
+                  stickToBottom(true);
                   setAwayFromBottom(false);
                 }}
                 className="cs-jump-bottom pointer-events-auto flex h-[39px] w-[39px] items-center justify-center rounded-full border border-[var(--line)] text-[var(--text)]"
@@ -976,6 +996,26 @@ export function ChatPane({
           onClose={() => setPreview(undefined)}
         />
       ) : null}
+      {handoff ? (
+        <ContinueDialog
+          locale={locale}
+          title={t(locale, "continueInEditor")}
+          hint={t(
+            locale,
+            handoff.installed === false
+              ? "continueMissingEditor"
+              : handoff.installed == null
+                ? "continueUnknownEditor"
+                : "continueReadyEditor",
+          )}
+          prompt={handoff.prompt}
+          installUrl={handoff.installed === true ? undefined : EDITOR_REPO}
+          onOpenInstall={(url) => {
+            void chrome.tabs.create({ url, active: true });
+          }}
+          onClose={() => setHandoff(null)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -991,6 +1031,7 @@ const MessageThread = memo(function MessageThread({
   onPreview,
   onFork,
   onRegenerate,
+  onContinue,
 }: {
   locale: Locale;
   messages: ChatMessage[];
@@ -1002,13 +1043,14 @@ const MessageThread = memo(function MessageThread({
   onPreview: (item: AttachmentItem) => void;
   onFork: (messageId: string) => void;
   onRegenerate: (messageId: string) => void;
+  onContinue: (messageId: string) => void;
 }) {
   return (
     <>
       {messages.map((message, index) => {
         const gap = index === 0 ? "" : message.role === "user" ? "mt-6" : "mt-3";
         return message.role === "user" ? (
-          <div key={message.id} className={`flex justify-end ${gap}`}>
+          <div key={message.id} data-thread-anchor="" className={`flex justify-end ${gap}`}>
             <div
               role={isRunning ? undefined : "button"}
               tabIndex={isRunning ? undefined : 0}
@@ -1057,6 +1099,7 @@ const MessageThread = memo(function MessageThread({
             }
             onFork={() => onFork(message.id)}
             onRegenerate={() => onRegenerate(message.id)}
+            onContinue={() => onContinue(message.id)}
             replyMarkdown={replyMarkdown(message.content)}
           >
             <AssistantMessage
@@ -1386,7 +1429,7 @@ function ModelSelect({
         ))}
       </button>
       {open ? (
-        <div className="absolute right-0 bottom-full z-30 mb-1.5 flex w-56 flex-col overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--panel)] shadow-xl">
+        <div className="absolute right-0 bottom-full z-30 mb-1.5 flex w-max min-w-56 max-w-[22rem] flex-col overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--panel)] shadow-xl">
           <input
             ref={filterRef}
             type="text"
@@ -1404,23 +1447,30 @@ function ModelSelect({
             {visible.length === 0 ? (
               <p className="px-2.5 py-1.5 text-[12px] text-[var(--muted)]">{t(locale, "noMatchingModels")}</p>
             ) : (
-              visible.map((model) => {
-                const highlighted = model.id === highlightId;
-                return (
-                  <RippleButton
-                    key={model.id}
-                    data-model-id={model.id}
-                    title={model.name}
-                    onPointerEnter={() => setHighlightId(model.id)}
-                    onClick={() => pick(model.id)}
-                    className={`flex w-full px-2.5 py-1.5 text-left text-[12px] ${
-                      highlighted ? "bg-[var(--hover-strong)] text-[var(--text)]" : "text-[var(--muted)] hover:text-[var(--text)]"
-                    }`}
-                  >
-                    <span className="truncate">{model.name}</span>
-                  </RippleButton>
-                );
-              })
+              groupModelsByPrefix(visible).map((group) => (
+                <div key={group.label || "ungrouped"}>
+                  {group.label ? (
+                    <p className="px-2.5 pb-0.5 pt-1.5 text-[11px] font-medium text-[var(--muted)]">{group.label}</p>
+                  ) : null}
+                  {group.items.map((model) => {
+                    const highlighted = model.id === highlightId;
+                    return (
+                      <RippleButton
+                        key={model.id}
+                        data-model-id={model.id}
+                        title={model.name}
+                        onPointerEnter={() => setHighlightId(model.id)}
+                        onClick={() => pick(model.id)}
+                        className={`flex w-full px-2.5 py-1.5 text-left text-[12px] ${
+                          highlighted ? "bg-[var(--hover-strong)] text-[var(--text)]" : "text-[var(--muted)] hover:text-[var(--text)]"
+                        }`}
+                      >
+                        <span className="whitespace-normal break-words">{modelShortName(model.name)}</span>
+                      </RippleButton>
+                    );
+                  })}
+                </div>
+              ))
             )}
           </div>
           {configs.length > 0 ? (
@@ -1500,6 +1550,25 @@ function ModelConfigRow({
   );
 }
 
+function handoffTurns(messages: ChatMessage[], messageId: string): HandoffTurn[] {
+  const end = messages.findIndex((message) => message.id === messageId);
+  const slice = end < 0 ? messages : messages.slice(0, end + 1);
+  return slice.flatMap((message) => {
+    const raw = stripEnvPrompt(displayMentionText(textOf(message.content))).trim();
+    const tools = [
+      ...new Set(
+        message.content
+          .filter((part) => part.type === "tool-call")
+          .map((part) => part.toolName)
+          .filter(Boolean),
+      ),
+    ];
+    const text = [raw, tools.length ? `[${tools.join(", ")}]` : ""].filter(Boolean).join("\n");
+    if (!text) return [];
+    return [{ role: message.role, text }];
+  });
+}
+
 function replyMarkdown(content: ChatPart[]): string {
   const cut = lastTextIndex(content);
   if (cut < 0) return "";
@@ -1538,6 +1607,7 @@ function MessageFrame({
   replyMarkdown: markdown,
   onFork,
   onRegenerate,
+  onContinue,
   children,
 }: {
   locale: Locale;
@@ -1548,6 +1618,7 @@ function MessageFrame({
   replyMarkdown: string;
   onFork: () => void;
   onRegenerate: () => void;
+  onContinue: () => void;
   children: ReactNode;
 }) {
   const [copied, setCopied] = useState(false);
@@ -1565,7 +1636,7 @@ function MessageFrame({
     }
   };
   return (
-    <div className={`group/msg relative ${className}`}>
+    <div data-thread-anchor="" className={`group/msg relative ${className}`}>
       {children}
       {hideActions ? null : (
         <div
@@ -1590,6 +1661,13 @@ function MessageFrame({
               }`}
             >
               {copied ? <Check size={12} /> : <Copy size={12} />}
+            </IconButton>
+            <IconButton
+              label={t(locale, "continueInEditor")}
+              onClick={onContinue}
+              className="rounded p-1 text-[var(--muted)] hover:text-[var(--text)]"
+            >
+              <Code size={12} />
             </IconButton>
             <IconButton
               label={t(locale, "fork")}

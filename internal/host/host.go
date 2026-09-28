@@ -16,6 +16,7 @@ import (
 	"github.com/parksben/opensider/internal/modes"
 	"github.com/parksben/opensider/internal/native"
 	"github.com/parksben/opensider/internal/paths"
+	"github.com/parksben/opensider/internal/peer"
 	"github.com/parksben/opensider/internal/pick"
 	"github.com/parksben/opensider/internal/preview"
 	"github.com/parksben/opensider/internal/protocol"
@@ -1110,6 +1111,20 @@ func (h *Host) dispatch(typ string, msg map[string]any) error {
 			})
 			return err
 		})
+	case "peer.probe":
+		requestID := str(msg["requestId"])
+		target := str(msg["target"])
+		installed := target == "" || target == "vscode"
+		if installed {
+			installed = peer.EditorExtensionInstalled()
+		}
+		h.send(map[string]any{
+			"type":      "peer.probed",
+			"requestId": requestID,
+			"target":    target,
+			"installed": installed,
+		})
+		return nil
 	case "fs.pick":
 		requestID := str(msg["requestId"])
 		mode := pick.ParseMode(str(msg["mode"]))

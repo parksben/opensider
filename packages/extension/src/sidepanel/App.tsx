@@ -36,6 +36,7 @@ import { SessionDrawer } from "./components/SessionDrawer";
 import { UpdateDialog } from "./components/UpdateDialog";
 import { UninstallDialog } from "./components/UninstallDialog";
 import { applyLocale, detectBrowserLocale, readCachedLocale, t, type Locale } from "./i18n";
+import { requestPeerProbe, settlePeerProbe } from "./peer-probe";
 import { BindRegistry, findSessionIdByAcpId } from "./session-bind";
 import { displayVersion, isNewer, type ReleaseCheckState } from "./version";
 import {
@@ -619,6 +620,10 @@ export function App() {
   };
 
   const handleHost = (msg: HostToExt) => {
+    if (msg.type === "peer.probed") {
+      settlePeerProbe(msg.requestId, msg.installed);
+      return;
+    }
     if (msg.type === "skills") {
       setSkills(msg.items);
       return;
@@ -874,6 +879,10 @@ export function App() {
       else if (msg.error === "inject") setError(t(localeRef.current, "pickInjectFailed"));
       else if (msg.error) setError(msg.error);
       waiter?.(msg.items ?? []);
+      return;
+    }
+    if (msg.type === "host.unsupported" && msg.command === "peer.probe") {
+      settlePeerProbe(msg.requestId, null);
       return;
     }
     if (msg.type === "host.unsupported") {
@@ -1911,6 +1920,7 @@ export function App() {
               flatActions={actionFlat}
               skills={skills}
               onRefreshSkills={() => sendRef.current({ type: "skills.refresh" })}
+              probeEditor={() => requestPeerProbe(sendRef.current)}
               onAgentMode={(mode) => {
                 setAgentMode(mode);
                 sendRef.current({ type: "agent.setPolicy", policy: mode });
