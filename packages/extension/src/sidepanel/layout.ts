@@ -26,6 +26,15 @@ export const MODEL_NARROW_MAIN_PX = 396;
 export const MODEL_NARROW_MAX_PX = 80;
 
 /**
+ * The model menu is anchored to the picker's right edge and can grow to `w-max`, so in a
+ * normal side panel it would run past the left edge: the filter input's text origin (and
+ * its caret) land off-screen, and clicking it looks like it never focuses. Cap the menu to
+ * the space left of the picker, minus this safe margin, so the input always stays visible.
+ */
+export const MODEL_MENU_MAX_PX = 352;
+export const MODEL_MENU_SAFE_PX = 12;
+
+/**
  * Icon size for every button in the composer toolbar row (attach / pick / mention / session
  * mode / permission / stop / send).
  *

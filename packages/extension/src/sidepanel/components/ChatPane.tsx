@@ -4,7 +4,7 @@ import logoUrl from "../../../assets/icon.svg?url";
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from "react";
 import type { ChatMessage, ChatPart, TodoItem } from "../chat-types";
 import { useComposerHistory } from "../composer-history";
-import { COMPOSER_ICON_PX, MODEL_NARROW_MAX_PX } from "../layout";
+import { COMPOSER_ICON_PX, MODEL_MENU_MAX_PX, MODEL_MENU_SAFE_PX, MODEL_NARROW_MAX_PX } from "../layout";
 import { AgentOptionSelect } from "./AgentOptionSelect";
 import type { Locale } from "../i18n";
 import { t } from "../i18n";
@@ -1344,6 +1344,9 @@ function ModelSelect({
   const [query, setQuery] = useState("");
   const [highlightId, setHighlightId] = useState(modelId);
   const [collapsedGroups, setCollapsedGroups] = useState<ReadonlySet<string>>(() => new Set());
+  // 菜单锚在模型钮右缘、又会随最长的模型名撑宽（w-max）。窄面板里它会越过左边界，把筛选框
+  // 的起点和光标推到屏幕外，点起来像是根本没聚焦。量一下钮右缘到安全边的距离，给菜单一个上限。
+  const [menuMax, setMenuMax] = useState(MODEL_MENU_MAX_PX);
   // 这一行到 396px 时已经挤了五个控件，模型名是唯一能让位的：上限从 9.5rem 收到 80px。
   // 宽度用常量（而不是这里写死一个类），保证这个数值在代码里只有一个来源。
   const shellMax = narrow ? undefined : "max-w-[9.5rem]";
@@ -1399,6 +1402,18 @@ function ModelSelect({
     const next = models.filter((model) => matchesModel(model, value));
     setHighlightId((id) => (next.some((model) => model.id === id) ? id : (next[0]?.id ?? "")));
   };
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    const fit = () => {
+      const right = rootRef.current?.getBoundingClientRect().right;
+      if (right == null) return;
+      setMenuMax(Math.max(0, Math.min(MODEL_MENU_MAX_PX, right - MODEL_MENU_SAFE_PX)));
+    };
+    fit();
+    window.addEventListener("resize", fit);
+    return () => window.removeEventListener("resize", fit);
+  }, [open]);
 
   useEffect(() => {
     if (!open) {
@@ -1466,7 +1481,10 @@ function ModelSelect({
         ))}
       </button>
       {open ? (
-        <div className="absolute right-0 bottom-full z-30 mb-1.5 flex w-max min-w-56 max-w-[22rem] flex-col overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--panel)] shadow-xl">
+        <div
+          className="absolute right-0 bottom-full z-30 mb-1.5 flex w-max flex-col overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--panel)] shadow-xl"
+          style={{ maxWidth: menuMax }}
+        >
           <input
             ref={filterRef}
             type="text"
