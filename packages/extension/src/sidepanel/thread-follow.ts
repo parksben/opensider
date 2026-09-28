@@ -46,6 +46,28 @@ export function useThreadFollow(
     const body = scroller.querySelector<HTMLElement>("[data-thread-body]");
     if (!body) return;
 
+    // The transcript only ever grows: while a tool call streams, its live step is
+    // replaced in place (and the whole process folds at the end of the turn), which
+    // would otherwise shrink the body and pull the messages above back down. Pin the
+    // tallest the body has been so the height never drops. Blank below is fine — the
+    // next content fills it and the follow picks up again. A width change reflows the
+    // text, so start the measurement over there.
+    let peak = 0;
+    let width = scroller.clientWidth;
+    const reserve = () => {
+      if (scroller.clientWidth !== width) {
+        width = scroller.clientWidth;
+        peak = 0;
+        body.style.minHeight = "";
+      }
+      const height = body.offsetHeight;
+      if (height > peak) {
+        peak = height;
+        body.style.minHeight = `${height}px`;
+      }
+    };
+    reserve();
+
     let anchor: HTMLElement | null = null;
     let anchorTop = 0;
     let writing = false;
@@ -109,7 +131,10 @@ export function useThreadFollow(
       forceFollow.current = false;
     };
 
-    const observer = new ResizeObserver(() => apply());
+    const observer = new ResizeObserver(() => {
+      reserve();
+      apply();
+    });
     observer.observe(body);
     scroller.addEventListener("scroll", onScroll, { passive: true });
     scroller.addEventListener("wheel", releaseFollow, { passive: true });
@@ -119,6 +144,7 @@ export function useThreadFollow(
       scroller.removeEventListener("scroll", onScroll);
       scroller.removeEventListener("wheel", releaseFollow);
       scroller.removeEventListener("touchmove", releaseFollow);
+      body.style.minHeight = "";
     };
   }, [active, endRef, listRef, sessionId]);
 
