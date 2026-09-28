@@ -20,7 +20,7 @@ import "./styles.css";
 const params = new URLSearchParams(location.search);
 const locale: Locale = params.get("lang") === "zh" ? "zh" : "en";
 applyLocale(locale);
-applyThemePreference("dark");
+applyThemePreference("light");
 
 const PAGE: CurrentPage = {
   tabId: 1,
@@ -305,8 +305,8 @@ const SHOT_CSS = `
   width: 1120px;
   height: 700px;
   overflow: hidden;
-  background: #1e1e1e;
-  color: #cccccc;
+  background: #f1f3f4;
+  color: #1a2330;
   font-family: ui-sans-serif, system-ui, sans-serif;
 }
 .shot-chrome {
@@ -316,29 +316,29 @@ const SHOT_CSS = `
   height: 44px;
   flex: none;
   padding: 0 12px;
-  background: #17181b;
-  border-bottom: 1px solid #2b2b2b;
+  background: #e8eaed;
+  border-bottom: 1px solid #dadce0;
 }
 .shot-dots { display: flex; gap: 6px; }
-.shot-dots span { width: 11px; height: 11px; border-radius: 999px; background: #3a3d42; }
-.shot-nav { display: flex; align-items: center; gap: 10px; color: #8b8b8b; }
+.shot-dots span { width: 11px; height: 11px; border-radius: 999px; background: #c4c7cc; }
+.shot-nav { display: flex; align-items: center; gap: 10px; color: #5f6368; }
 .shot-address {
   display: flex; align-items: center; gap: 6px;
   min-width: 0; flex: 0 1 460px;
   height: 26px; padding: 0 10px;
-  border-radius: 999px; background: #24262b;
-  color: #9aa0a6; font-size: 12px;
+  border-radius: 999px; background: #ffffff;
+  color: #3c4043; font-size: 12px;
 }
 .shot-address span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.shot-chrome-right { margin-left: auto; display: flex; color: #8b8b8b; }
+.shot-chrome-right { margin-left: auto; display: flex; color: #5f6368; }
 .shot-body-row { display: flex; min-height: 0; flex: 1; }
-.shot-page-wrap { position: relative; min-width: 0; flex: 1; overflow: hidden; background: #f7f8fa; color: #1a2330; }
+.shot-page-wrap { position: relative; min-width: 0; flex: 1 1 50%; overflow: hidden; background: #f7f8fa; color: #1a2330; }
 .shot-panel {
-  width: 440px; flex: none;
+  width: 560px; flex: none;
   background: var(--ink);
-  border-left: 1px solid #2b2b2b;
-  --vscode-gitDecoration-addedResourceForeground: #8fbf6a;
-  --vscode-gitDecoration-deletedResourceForeground: #e07a5c;
+  border-left: 1px solid #dadce0;
+  --vscode-gitDecoration-addedResourceForeground: #2d7a62;
+  --vscode-gitDecoration-deletedResourceForeground: #b63d45;
 }
 .shot-page { padding: 22px 30px; }
 .shot-page-head { display: flex; align-items: center; justify-content: space-between; color: #5a6876; }
@@ -359,14 +359,15 @@ const SHOT_CSS = `
 .shot-toolbar {
   display: flex; gap: 4px; width: max-content; margin: 12px auto 0;
   padding: 4px; border-radius: 10px;
-  background: #1b1e16; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  background: #ffffff; box-shadow: 0 8px 24px rgba(16, 23, 34, 0.16);
+  border: 1px solid #e5e8ee;
 }
 .shot-toolbar button {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 5px 10px; border: 0; border-radius: 7px;
-  background: transparent; color: #ece6d4; font-size: 12px; cursor: default;
+  background: transparent; color: #1a2330; font-size: 12px; cursor: default;
 }
-.shot-toolbar button:first-child { background: rgba(212, 160, 84, 0.18); color: #d4a054; }
+.shot-toolbar button:first-child { background: rgba(58, 109, 154, 0.14); color: #3a6d9a; }
 .shot-pick { position: absolute; inset: 0; padding: 90px 30px 0; background: #f7f8fa; }
 .shot-pick-card {
   display: flex; gap: 14px; align-items: center;
