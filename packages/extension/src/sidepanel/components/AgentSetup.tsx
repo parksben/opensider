@@ -43,7 +43,9 @@ export function AgentSetup({
   return (
     <div className="flex h-full min-h-0 flex-col items-center justify-center overflow-y-auto px-5 py-8">
       <div className="flex w-full max-w-[22rem] flex-col items-center gap-5">
-        <p className="text-center text-[13px] leading-relaxed text-[var(--muted)]">{t(locale, "setupHint")}</p>
+        {connecting ? null : (
+          <p className="text-center text-[13px] leading-relaxed text-[var(--muted)]">{t(locale, "setupHint")}</p>
+        )}
 
         {connecting ? (
           <div className="flex w-full flex-col items-center gap-3 rounded-xl border border-[var(--line)] bg-[var(--panel)] px-4 py-5">
