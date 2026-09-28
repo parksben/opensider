@@ -459,6 +459,10 @@ mark.cs-at-match {
 
 .cs-thread {
   overflow-anchor: none;
+  /* Keep the transcript selectable even if something upstream left
+     `user-select: none` on the body. Chips still opt out below. */
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 .cs-jump-bottom {

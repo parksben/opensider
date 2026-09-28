@@ -1057,7 +1057,13 @@ const MessageThread = memo(function MessageThread({
               role={isRunning ? undefined : "button"}
               tabIndex={isRunning ? undefined : 0}
               onClick={() => {
-                if (!isRunning) onStartEdit(message);
+                if (isRunning) return;
+                // A click that ended a text selection is the user copying, not asking to
+                // edit. Dragging across the bubble fires a click too, which used to wipe
+                // the selection and jump into edit mode.
+                const selection = window.getSelection();
+                if (selection && !selection.isCollapsed) return;
+                onStartEdit(message);
               }}
               onKeyDown={(event) => {
                 if (isRunning) return;
@@ -1669,7 +1675,9 @@ function MessageFrame({
       {hideActions ? null : (
         <div
           className={`mt-1 flex items-center justify-between gap-2 transition-opacity ${
-            copied ? "opacity-100" : "opacity-0 group-hover/msg:opacity-100"
+            copied
+              ? "opacity-100"
+              : "pointer-events-none opacity-0 group-hover/msg:pointer-events-auto group-hover/msg:opacity-100"
           }`}
         >
           {modelLabel ? (
