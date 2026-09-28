@@ -583,9 +583,19 @@ export const ComposerEditor = forwardRef<
     const range = selection.getRangeAt(0);
     if (!editor.contains(range.commonAncestorContainer)) return;
     lastRangeRef.current = range.cloneRange();
-    // 方向键 / 点击移动光标同样要把它滚进视野，不能只在输入时跟随。
-    scrollCaret(editor);
     syncAtQuery();
+  };
+
+  /**
+   * 方向键 / 点击移动光标后把它滚进视野。刻意不放进 `saveRange`：`scrollCaret` 的探针会
+   * 重设选区，而 `saveRange` 挂在 `selectionchange` 上，两者互相触发就是一条每秒几千次的
+   * 死循环（存下来的 live Range 也会在探针拆分/合并文本节点时漂到 0，粘贴因此总落在最前）。
+   * 只有用户事件（keyup / mouseup / input）驱动滚动，自有选区变化不再触发滚动。
+   */
+  const saveRangeAndScroll = () => {
+    saveRange();
+    const editor = editorRef.current;
+    if (editor) scrollCaret(editor);
   };
 
   const restoreRange = (): Range | undefined => {
@@ -640,8 +650,11 @@ export const ComposerEditor = forwardRef<
 
   const insertSerialized = (raw: string) => {
     const editor = editorRef.current;
-    const range = restoreRange();
-    if (!editor || !range) return;
+    if (!editor) return;
+    // 用此刻真实的光标，而不是存下来的 lastRangeRef：探针会拆分/合并文本节点，让它漂到行首，
+    // 粘贴就会插到最前面。编辑器持有光标时以它为准，否则退回存储位置（程序化插入）。
+    const range = liveRangeInEditor(editor) ?? restoreRange();
+    if (!range) return;
     range.deleteContents();
     const segments = parseMentionSegments(raw);
     const nodes: Node[] = [];
@@ -912,7 +925,7 @@ export const ComposerEditor = forwardRef<
         if (!shouldBlockSubmit() && !anyMenuOpen()) return;
         event.preventDefault();
       }}
-      onKeyUp={saveRange}
+      onKeyUp={saveRangeAndScroll}
       onMouseDown={(event) => {
         const wrap = chipWrapFromEvent(event.target, editorRef.current);
         if (!wrap) return;
@@ -929,7 +942,7 @@ export const ComposerEditor = forwardRef<
           lastRangeRef.current = placeCaretAfterChip(wrap);
           return;
         }
-        saveRange();
+        saveRangeAndScroll();
       }}
       onPaste={onPaste}
       onCopy={onCopyOrCut}
