@@ -341,11 +341,31 @@ function scrollCaret(editor: HTMLElement): void {
   });
 }
 
+function nudgeScroll(editor: HTMLElement, rect: DOMRect): void {
+  const box = editor.getBoundingClientRect();
+  const slack = 4;
+  if (rect.bottom > box.bottom - 1) editor.scrollTop += rect.bottom - box.bottom + slack;
+  else if (rect.top < box.top + 1) editor.scrollTop -= box.top - rect.top + slack;
+}
+
 function revealCaret(editor: HTMLElement): void {
+  // An active IME composition owns its text node: dropping a probe into it (and
+  // merging the halves back) aborts the composition. Leave it alone.
+  if (editor.dataset.composing === "true") return;
+
   const selection = window.getSelection();
   if (!selection || selection.rangeCount === 0) return;
   const range = selection.getRangeAt(0);
   if (!editor.contains(range.commonAncestorContainer)) return;
+
+  // A live, non-empty selection belongs to the user — double/triple-click,
+  // Shift+Arrow, or a drag. Measure it, but never insert a probe or collapse it
+  // back to a caret.
+  if (!range.collapsed) {
+    const rect = caretRect(range);
+    if (rect) nudgeScroll(editor, rect);
+    return;
+  }
 
   const marker = document.createElement("span");
   marker.setAttribute("data-caret-probe", "");
@@ -809,6 +829,26 @@ export const ComposerEditor = forwardRef<
         queueMicrotask(() => root.unmount());
       }
       rootsRef.current.clear();
+    };
+  }, []);
+
+  // Mark the editor while an IME composition is in flight so `revealCaret` stops
+  // mutating the DOM under it. Backed by a dataset flag (not state) so the
+  // selectionchange handler reads it without a re-render.
+  useEffect(() => {
+    const node = editorRef.current;
+    if (!node) return;
+    const onStart = () => {
+      node.dataset.composing = "true";
+    };
+    const onEnd = () => {
+      delete node.dataset.composing;
+    };
+    node.addEventListener("compositionstart", onStart);
+    node.addEventListener("compositionend", onEnd);
+    return () => {
+      node.removeEventListener("compositionstart", onStart);
+      node.removeEventListener("compositionend", onEnd);
     };
   }, []);
 
