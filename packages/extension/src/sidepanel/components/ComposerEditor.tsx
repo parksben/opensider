@@ -319,78 +319,34 @@ function caretRect(range: Range): DOMRect | undefined {
   return fallback && fallback.height > 0 ? fallback : undefined;
 }
 
-function nudgeScroll(editor: HTMLElement, rect: DOMRect): void {
-  const box = editor.getBoundingClientRect();
-  const slack = 4;
-  if (rect.bottom > box.bottom - 1) editor.scrollTop += rect.bottom - box.bottom + slack;
-  else if (rect.top < box.top + 1) editor.scrollTop -= box.top - rect.top + slack;
-}
-
-function snapCaretToEnd(editor: HTMLElement): void {
-  const snap = () => {
-    if (!editor.isConnected) return;
-    editor.scrollTop = editor.scrollHeight;
+/**
+ * Keep the caret inside the composer's own scroller.
+ *
+ * A collapsed caret often has no box, and a multi-line paste's line boxes are
+ * frequently not laid out until the next frame — a rect taken in the same turn
+ * still sits on the old line and looks "already visible", so the scroller never
+ * moves. Drop a probe on the caret, scroll to that, and measure again after layout.
+ */
+function scrollCaret(editor: HTMLElement): void {
+  const token = String(Number(editor.dataset.scrollToken ?? "0") + 1);
+  editor.dataset.scrollToken = token;
+  const run = () => {
+    if (!editor.isConnected || editor.dataset.scrollToken !== token) return;
+    revealCaret(editor);
   };
-  snap();
+  run();
   requestAnimationFrame(() => {
-    snap();
-    requestAnimationFrame(snap);
+    run();
+    requestAnimationFrame(run);
   });
 }
 
-/**
- * A fresh line from Shift+Enter often has a 0px caret box, so measuring the
- * previous glyph still looks "on screen" and the scroller never moves. Pin the
- * end of the text to the bottom, and for a break in the middle drop a probe
- * the browser can scroll into view.
- */
-function scrollCaret(editor: HTMLElement): void {
+function revealCaret(editor: HTMLElement): void {
   const selection = window.getSelection();
   if (!selection || selection.rangeCount === 0) return;
   const range = selection.getRangeAt(0);
   if (!editor.contains(range.commonAncestorContainer)) return;
 
-  const freshLine = charBeforeRange(range, editor) === "\n";
-  const atEnd = charAfterRange(range, editor) === undefined;
-  if (atEnd && freshLine) {
-    snapCaretToEnd(editor);
-    return;
-  }
-  if (atEnd) {
-    const rect = caretRect(range);
-    const box = editor.getBoundingClientRect();
-    const visible = rect && rect.height > 0 && rect.top >= box.top - 1 && rect.bottom <= box.bottom + 1;
-    if (!visible) {
-      snapCaretToEnd(editor);
-      return;
-    }
-  }
-
-  const apply = (sel: Selection) => {
-    if (sel.rangeCount === 0) return;
-    const live = sel.getRangeAt(0);
-    if (!editor.contains(live.commonAncestorContainer)) return;
-    if (charBeforeRange(live, editor) === "\n") {
-      const probed = probeCaretLine(editor, sel);
-      if (probed) nudgeScroll(editor, probed);
-      return;
-    }
-    const rect = caretRect(live);
-    if (rect) nudgeScroll(editor, rect);
-  };
-  apply(selection);
-  if (!freshLine) return;
-  requestAnimationFrame(() => {
-    if (!editor.isConnected) return;
-    const sel = window.getSelection();
-    if (!sel) return;
-    apply(sel);
-  });
-}
-
-/** Insert a zero-width probe, scroll it into view, then put the caret back. */
-function probeCaretLine(editor: HTMLElement, selection: Selection): DOMRect | undefined {
-  const range = selection.getRangeAt(0);
   const marker = document.createElement("span");
   marker.setAttribute("data-caret-probe", "");
   marker.textContent = "\u200b";
@@ -401,19 +357,43 @@ function probeCaretLine(editor: HTMLElement, selection: Selection): DOMRect | un
   const container = probe.startContainer;
   const offset = probe.startOffset;
   probe.insertNode(marker);
-  const top = marker.offsetTop;
-  const height = marker.offsetHeight || parseFloat(getComputedStyle(editor).lineHeight) || 20;
-  const bottom = top + height;
-  const viewBottom = editor.scrollTop + editor.clientHeight;
-  if (bottom > viewBottom - 1) editor.scrollTop += bottom - viewBottom + 4;
-  else if (top < editor.scrollTop + 1) editor.scrollTop -= editor.scrollTop + 1 - top;
-  const rect = marker.getBoundingClientRect();
+
+  const slack = 4;
+  const line = marker.offsetHeight || parseFloat(getComputedStyle(editor).lineHeight) || 20;
+  const top = topWithin(marker, editor);
+  if (top != null) {
+    // Absolute, not a delta: a paste can land many lines below the fold, and a
+    // second measurement must replace the scroll position rather than add to it.
+    const bottom = top + line;
+    const viewBottom = editor.scrollTop + editor.clientHeight;
+    if (bottom > viewBottom - slack) editor.scrollTop = bottom - editor.clientHeight + slack;
+    else if (top < editor.scrollTop + slack) editor.scrollTop = Math.max(0, top - slack);
+  } else {
+    const rect = marker.getBoundingClientRect();
+    const box = editor.getBoundingClientRect();
+    const rectTop = rect.height > 0 ? rect.top : box.top;
+    const rectBottom = rect.height > 0 ? rect.bottom : rectTop + line;
+    if (rectBottom > box.bottom - 1) editor.scrollTop += rectBottom - box.bottom + slack;
+    else if (rectTop < box.top + 1) editor.scrollTop -= box.top - rectTop + slack;
+  }
+
   const parent = marker.parentNode;
   const next = marker.nextSibling;
   marker.remove();
   restoreCaret(selection, container, offset, parent, next);
-  if (rect.height <= 0 && rect.width <= 0) return undefined;
-  return rect;
+}
+
+/** Distance from the top of `editor`'s content to `node`, or null if it isn't inside. */
+function topWithin(node: HTMLElement, editor: HTMLElement): number | null {
+  let top = 0;
+  let current: HTMLElement | null = node;
+  while (current && current !== editor) {
+    top += current.offsetTop;
+    const parent = current.offsetParent as HTMLElement | null;
+    if (!parent) return null;
+    current = parent;
+  }
+  return current === editor ? top : null;
 }
 
 function restoreCaret(
