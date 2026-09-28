@@ -97,6 +97,6 @@ retry, and skip it completely if the update did not actually succeed.
 
 * Never update only one half on purpose: a bridge newer than the extension (or the other
   way round) is what the version row exists to warn about.
-* Do not touch `~/.opensider/workspace`, `ui-state.json` or `outputs/` during an update.
+* Do not touch `~/.opensider/workspace`, `ui-state.json`, `sessions/` or `outputs/` during an update.
 * If the update prompt came from a *stale* check (the release moved again since), just
   re-resolve `$tag` and continue.

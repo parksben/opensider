@@ -41,7 +41,7 @@ describe("handoff prompt", () => {
       ...cut,
     });
     assert.match(prompt, /VS Code 里的 OpenSider/);
-    assert.match(prompt, /\/tmp\/ui-state\.json/);
+    assert.match(prompt, /\/tmp\/sessions\/sess\.json/);
     assert.match(prompt, /只看第 2 轮之前/);
     assert.doesNotMatch(prompt, /User: /);
   });

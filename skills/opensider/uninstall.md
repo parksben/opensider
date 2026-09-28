@@ -11,7 +11,7 @@ remove from `chrome://extensions`. And there is data — ask about it, never ass
 |---|---|---|
 | `workspace/` | page snapshots the Agent reads | nothing important (it is regenerated) |
 | `workspace/outputs/` | files the Agent wrote for the user | **yes — real user files** |
-| `ui-state.json` | session list and every chat message | **yes — the whole chat history** |
+| `ui-state.json` and `sessions/` | session list and every chat message | **yes — the whole chat history** |
 | `host.log` (+ its rotated `host.log.<stamp>` files), `release-check.json` | logs and the version cache | nothing important |
 | `runtime/` | the bridge binary + ACP adapters | nothing important (reinstallable) |
 
@@ -78,4 +78,4 @@ Done.
 ```
 
 If they kept the data and later reinstall, the chat history comes back on the first
-connect (it is mirrored in `~/.opensider/ui-state.json`).
+connect (the index is `~/.opensider/ui-state.json`; each chat's messages are in `~/.opensider/sessions/`).

@@ -25,15 +25,16 @@ func LoadRaw() (json.RawMessage, bool) {
 }
 
 func LoadMap() (map[string]any, bool) {
-	raw, ok := LoadRaw()
-	if !ok {
+	state, _, err := loadSplit(paths.UIStatePath())
+	if err != nil {
+		// Splitting failed before the original was touched. Keep serving the
+		// inline file so the panel still has its history.
+		return readMap(paths.UIStatePath())
+	}
+	if state == nil {
 		return nil, false
 	}
-	var out map[string]any
-	if err := json.Unmarshal(raw, &out); err != nil {
-		return nil, false
-	}
-	return out, true
+	return state, true
 }
 
 func HasHistory(state map[string]any) bool {
@@ -66,17 +67,16 @@ func Save(state map[string]any) error {
 	if state == nil {
 		return nil
 	}
-	if !HasHistory(state) {
-		if existing, ok := LoadMap(); ok && HasHistory(existing) {
-			return nil
-		}
-	}
-	_ = os.MkdirAll(paths.SidebarHome(), 0o755)
-	raw, err := json.MarshalIndent(state, "", "  ")
+	path := paths.UIStatePath()
+	existing, hashes, err := loadSplit(path)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(paths.UIStatePath(), append(raw, '\n'), 0o644)
+	// An empty first frame after a reinstall must not wipe the mirror.
+	if !HasHistory(state) && HasHistory(existing) {
+		return nil
+	}
+	return writeSplit(path, state, hashes)
 }
 
 func str(v any) string {

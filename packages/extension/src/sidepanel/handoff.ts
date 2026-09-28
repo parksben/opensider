@@ -73,9 +73,9 @@ function promptZh(input: {
     `请在${where}里接着这个会话继续。把已经发生过的对话当作上下文：不要复述已有回复，也不要重复已经做过的操作，除非我明确要求。准备好后等待我的下一条消息。`,
     "",
     "会话内容在这个文件里，请直接读它，不要让我把记录贴过来：",
-    input.statePath || (input.target === "browser" ? "~/.opensider-vscode/workspaces/<工作区>/ui-state.json" : "~/.opensider/ui-state.json"),
+    transcriptPath(input.statePath, input.sessionId, input.target, "zh"),
     "",
-    `在 sessions 里找 id 为「${input.sessionId}」的会话。一轮从一条 role 为 user 的消息开始，按出现顺序从 1 计数。只看第 ${input.beforeRound} 轮之前的内容：读到消息 id「${input.throughMessageId}」为止（含这条），不要读它后面的消息。`,
+    `这个文件就是 id 为「${input.sessionId}」的会话，消息在 messages 数组里。一轮从一条 role 为 user 的消息开始，按出现顺序从 1 计数。只看第 ${input.beforeRound} 轮之前的内容：读到消息 id「${input.throughMessageId}」为止（含这条），不要读它后面的消息。`,
   ];
   if (input.nextRoundMessageId) {
     lines.push(`第 ${input.beforeRound} 轮从消息 id「${input.nextRoundMessageId}」开始，这条以及之后都不要读。`);
@@ -101,9 +101,9 @@ function promptEn(input: {
     `Continue this conversation in ${where}. Treat what already happened as context: do not restate the existing replies or repeat work that was already done unless I explicitly ask. Then wait for my next message.`,
     "",
     "The transcript is in this file. Read it yourself; do not ask me to paste it:",
-    input.statePath || (input.target === "browser" ? "~/.opensider-vscode/workspaces/<workspace>/ui-state.json" : "~/.opensider/ui-state.json"),
+    transcriptPath(input.statePath, input.sessionId, input.target, "en"),
     "",
-    `In sessions, find the one whose id is "${input.sessionId}". A round starts at each message with role "user", numbered from 1 in order. Read only the content before round ${input.beforeRound}: stop at message id "${input.throughMessageId}" (inclusive). Do not read anything after it.`,
+    `This file is the session whose id is "${input.sessionId}". The messages are in the messages array. A round starts at each message with role "user", numbered from 1 in order. Read only the content before round ${input.beforeRound}: stop at message id "${input.throughMessageId}" (inclusive). Do not read anything after it.`,
   ];
   if (input.nextRoundMessageId) {
     lines.push(`Round ${input.beforeRound} starts at message id "${input.nextRoundMessageId}". Skip that message and everything after it.`);
@@ -111,4 +111,19 @@ function promptEn(input: {
   if (input.workspace) lines.push(`Workspace: ${input.workspace}`);
   if (input.pageUrl) lines.push(`Page: ${input.pageTitle ? `${input.pageTitle} ` : ""}${input.pageUrl}`);
   return lines.join("\n");
+}
+
+/** Transcript file next to ui-state.json. The index no longer holds messages. */
+function transcriptPath(statePath: string, sessionId: string, target: HandoffTarget, locale: Locale): string {
+  const name = `${sessionId}.json`;
+  if (statePath) {
+    const slash = statePath.replace(/\\/g, "/");
+    const dir = slash.replace(/\/[^/]*$/, "");
+    return `${dir}/sessions/${name}`;
+  }
+  if (target === "browser") {
+    const bucket = locale === "zh" ? "<工作区>" : "<workspace>";
+    return `~/.opensider-vscode/workspaces/${bucket}/sessions/${name}`;
+  }
+  return `~/.opensider/sessions/${name}`;
 }

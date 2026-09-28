@@ -85,7 +85,8 @@ OpenSider 不会将应用配置和聊天内容上传到任何云端服务器，�
 | `~/.opensider/workspace/` | Agent 工作目录：所有标签页和会话均在同一目录下工作 |
 | `~/.opensider/workspace/browser/` | 会话过程产生的各类临时文件，如：当前页快照、交互控件列表、页面命令与结果、截图等 |
 | `~/.opensider/workspace/outputs/` | Agent 在会话中生成的各类产物（表格、文档、代码等） |
-| `~/.opensider/ui-state.json` | 会话列表、聊天记录与偏好设置 |
+| `~/.opensider/ui-state.json` | 会话列表与偏好设置 |
+| `~/.opensider/sessions/<id>.json` | 该会话的消息 |
 | `~/.opensider/runtime/` | 本机桥接二进制，以及 Claude Code / Codex 用的 ACP 适配器 |
 | `~/.opensider/host.log` | 桥接日志，可以让 Agent 根据此日志调试各类异常。按大小和日期自动轮转，历史片为同目录的 `host.log.<时间戳>` |
 | 安装时你选定的扩展目录（建议 `~/OpenSider/`） | 浏览器实际加载的扩展目录，**不要移动或删除**，否则扩展会失效 |
