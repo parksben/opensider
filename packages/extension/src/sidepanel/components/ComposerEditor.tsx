@@ -255,23 +255,6 @@ function chipWrapFromEvent(target: EventTarget | null, editor: HTMLElement | nul
   return wrap instanceof HTMLElement && editor.contains(wrap) ? wrap : null;
 }
 
-/** True for the `/name` chips: only those count as the draft's leading skill prefix. */
-function isSkillChip(node: Node | null): boolean {
-  return (
-    node instanceof HTMLElement &&
-    node.classList.contains(CHIP_WRAP) &&
-    (node.dataset.token ?? "").startsWith("«/skill:")
-  );
-}
-
-/**
- * 空白文本节点：吃掉触发用的 `/` 之后会原地留下一个空节点，前导芯片之间也会夹着空格。
- * 算插入位置时两者都要当它们不存在，否则新芯片会被插到最前面，顺序就反了。
- */
-function isBlankTextNode(node: Node | null): boolean {
-  return node !== null && node.nodeType === Node.TEXT_NODE && (node.textContent ?? "").trim() === "";
-}
-
 /**
  * 光标所在位置的屏幕矩形。
  *
@@ -730,47 +713,12 @@ export const ComposerEditor = forwardRef<
     insertSkill: (mention) => {
       const editor = editorRef.current;
       if (!editor) return;
-      // 先把触发用的 `/` 与搜索词吃掉（芯片取代它）——光标可能早就不在那儿了，所以取不到
-      // 就跳过，不硬猜。
-      const range = restoreRange();
-      if (range && editor.contains(range.startContainer)) {
-        consumeSlashBeforeCaret(range);
-        range.deleteContents();
-      }
-      editor.focus();
-      const token = serializeMention(mention);
-      const existing = [...editor.querySelectorAll<HTMLElement>(`.${CHIP_WRAP}`)].find(
-        (wrap) => wrap.dataset.token === token,
-      );
-      if (existing) {
-        // 同一个 skill 选两次只留一个：光标落到已有芯片后面就行。
-        lastRangeRef.current = placeCaretAfterChip(existing);
-        emit();
-        return;
-      }
-      // 插到「正文最前面」＝已插入的前导 skill 芯片之后、其它内容之前；多次选择按选择
-      // 顺序在最左侧挨个累积（chip a → chip b），而不是反着插到绝对最前。
-      // 前导区里会混着空文本节点（吃掉触发用的 `/` 之后留下的）与芯片之间的空白，算位
-      // 置时要跳过它们，否则新芯片会被插到最前面，顺序就反了。
-      let lastChip: Node | null = null;
-      let node: Node | null = editor.firstChild;
-      while (node && (isSkillChip(node) || isBlankTextNode(node))) {
-        if (isSkillChip(node)) lastChip = node;
-        node = node.nextSibling;
-      }
-      const at = lastChip ? lastChip.nextSibling : editor.firstChild;
-      const wrap = createChipWrap(mention);
-      const fragment = document.createDocumentFragment();
-      // 紧跟在别的芯片后面插入时补一个空格；插在开头则不补（草稿不以空格起头）。
-      if (lastChip) fragment.appendChild(document.createTextNode(" "));
-      fragment.appendChild(wrap);
-      // 插入点后面是正文（且不是空白）时补一个空格，免得芯片和文字粘在一起。
-      if (at && !isBlankTextNode(at) && !isPadSpace(firstCharOfNode(at))) {
-        fragment.appendChild(document.createTextNode(" "));
-      }
-      editor.insertBefore(fragment, at);
-      mountChip(wrap, mention);
-      lastRangeRef.current = placeCaretAfterChip(wrap);
+      // 编辑器还持有光标时就插在光标处；否则回到存下来的位置（工具栏 / 钮打开菜单时）。
+      const range = liveRangeInEditor(editor) ?? restoreRange();
+      if (!range) return;
+      consumeSlashBeforeCaret(range);
+      insertChipAtRange(editor, mention, range);
+      saveRange();
       emit();
     },
     moveCaretToEnd: () => {
@@ -952,6 +900,8 @@ export const ComposerEditor = forwardRef<
         if (input.inputType?.startsWith("insert") && input.data === "@") onAtTyped?.();
         // 只有「行首或空白后」的斜杠才算触发，不然 `/usr/local` 这种路径也会弹菜单。
         if (input.inputType?.startsWith("insert") && input.data === "/" && readSlashQueryFromEditor() !== null) {
+          // 菜单的搜索框马上会抢走焦点，先把此刻的光标存下来，选中 skill 时才知道往哪儿插。
+          saveRange();
           onSlashTyped?.();
         }
       }}

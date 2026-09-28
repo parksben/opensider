@@ -204,6 +204,8 @@ export function ChatPane({
   const [slashOpen, setSlashOpen] = useState(false);
   const [slashQuery, setSlashQuery] = useState("");
   const slashButtonRef = useRef<HTMLSpanElement>(null);
+  /** 工具栏的 `/` 钮打开菜单时不往输入框塞 `/`（塞了会把光标拽到最前），查询为 null 也不能关掉菜单。 */
+  const slashForcedRef = useRef(false);
   const [plusOpen, setPlusOpen] = useState(false);
   const plusButtonRef = useRef<HTMLSpanElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -287,15 +289,22 @@ export function ChatPane({
 
   const closeSlashMenu = () => {
     closeAtMenuLock();
+    slashForcedRef.current = false;
     setSlashOpen(false);
     setSlashQuery("");
   };
 
   const handleSlashQueryChange = (query: string | null) => {
     if (query === null) {
+      // 工具栏打开的菜单没有真的插入 `/`：查询取不到不是关闭的理由。
+      if (slashForcedRef.current) {
+        setSlashQuery("");
+        return;
+      }
       closeSlashMenu();
       return;
     }
+    slashForcedRef.current = false;
     setSlashQuery(query);
   };
 
@@ -319,7 +328,8 @@ export function ChatPane({
     }
     if (atOpen) closeAtMenu();
     onRefreshSkills?.();
-    composerRef.current?.insertAtStart("/");
+    // 不往输入框里塞 `/`：skill 芯片该按当前光标落下，塞 `/` 只会把光标拽到最前。
+    slashForcedRef.current = true;
     openSlashMenu();
   };
 
@@ -330,6 +340,7 @@ export function ChatPane({
   };
 
   const onSlashTyped = () => {
+    slashForcedRef.current = false;
     if (atOpen) closeAtMenu();
     onRefreshSkills?.();
     openSlashMenu();

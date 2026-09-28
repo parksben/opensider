@@ -244,7 +244,7 @@ try {
   check("picking a skill writes a /name chip", (await draft()).startsWith("/canvas"), await draft());
   check("the menu closes after picking", (await menu().count()) === 0);
 
-  // 第二个 skill 要接在第一个后面（最左侧依次累积），不是反着插到最前。
+  // 第二个 skill 接在第一个后面，落在光标处。
   await openMenu();
   await panel.locator('[data-skill-index="2"]').click();
   await new Promise((r) => setTimeout(r, 200));
@@ -254,16 +254,7 @@ try {
     await draft(),
   );
 
-  // 同一个 skill 再选一次只留一个。
-  await openMenu();
-  await panel.locator('[data-skill-index="2"]').click();
-  await new Promise((r) => setTimeout(r, 200));
-  const chips = await composer().evaluate(
-    (node) => [...node.querySelectorAll(".cs-mention-wrap")].map((wrap) => wrap.textContent || ""),
-  );
-  check("picking the same skill twice keeps one chip", chips.filter((text) => text === "/coding-plan").length === 1, chips.join(" | "));
-
-  // 在正文中间敲 `/` 唤起：芯片仍然必须落在最前面。
+  // 在正文中间敲 `/` 唤起：芯片就落在光标处，不再被挪到最前面。
   await composer().click();
   await panel.keyboard.press("End");
   await panel.keyboard.type(" hi there");
@@ -276,10 +267,19 @@ try {
   await new Promise((r) => setTimeout(r, 200));
   const midDraft = await draft();
   check(
-    "a chip picked mid-text still lands at the very front, and the trigger / is gone",
-    midDraft.startsWith("/canvas /coding-plan /cli-model-alias-mapper") && midDraft.endsWith("hi there"),
+    "a chip picked mid-text lands at the caret, and the trigger / is gone",
+    midDraft.startsWith("/canvas /coding-plan ") && midDraft.includes("hi /cli-model-alias-mapper there"),
     midDraft,
   );
+
+  // 同一个 skill 再选一次会再插一枚：不再去重、也不再强制挪到最前。
+  await openMenu();
+  await panel.locator('[data-skill-index="2"]').click();
+  await new Promise((r) => setTimeout(r, 200));
+  const chips = await composer().evaluate(
+    (node) => [...node.querySelectorAll(".cs-mention-wrap")].map((wrap) => wrap.textContent || ""),
+  );
+  check("picking the same skill again inserts another chip", chips.filter((text) => text === "/coding-plan").length === 2, chips.join(" | "));
 
   // 中文说明匹配 + 键盘回车：只插入、不发送。
   await composer().click();
@@ -293,7 +293,7 @@ try {
   const aliasDraft = await draft();
   check(
     "keyboard Enter inserts the alias match without sending",
-    aliasDraft.startsWith("/canvas /coding-plan /cli-model-alias-mapper /openclawmp") && aliasDraft.includes("hi there"),
+    aliasDraft.startsWith("/canvas /coding-plan") && aliasDraft.includes("/openclawmp") && aliasDraft.includes("hi "),
     aliasDraft,
   );
 
@@ -314,8 +314,8 @@ try {
     if (!sent) await new Promise((r) => setTimeout(r, 500));
   }
   check(
-    "the /name prefix is the very first thing the CLI reads",
-    sent.startsWith("/canvas /coding-plan /cli-model-alias-mapper /openclawmp\n\n[Current tab]"),
+    "only the leading skills go to the CLI as a /name prefix",
+    sent.startsWith("/canvas /coding-plan\n\n[Current tab]"),
     sent.split("\n")[0] || "no prompt reached the agent",
   );
   check(
