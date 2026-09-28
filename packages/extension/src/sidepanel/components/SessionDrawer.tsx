@@ -19,6 +19,12 @@ const GROUP_KEYS = {
   older: "sessionGroupOlder",
 } as const satisfies Record<SessionGroupId, MessageKey>;
 
+/** Undo the body-level styles the resize drag sets, so they cannot outlive it. */
+function clearResizeBodyStyles(): void {
+  document.body.style.removeProperty("cursor");
+  document.body.style.removeProperty("user-select");
+}
+
 function displayTitle(session: Session, locale: Locale): string {
   return isPlaceholderTitle(session.title) ? t(locale, "untitled") : session.title.trim();
 }
@@ -213,11 +219,9 @@ export function SessionDrawer({
     return () => window.removeEventListener("resize", onResize);
   }, [onWidth, width]);
 
+  useEffect(() => clearResizeBodyStyles, []);
+
   useEffect(() => {
-    const clear = () => {
-      document.body.style.removeProperty("cursor");
-      document.body.style.removeProperty("user-select");
-    };
     const move = (event: globalThis.PointerEvent) => {
       const drag = dragRef.current;
       if (!drag) return;
@@ -227,16 +231,16 @@ export function SessionDrawer({
       if (!dragRef.current) return;
       dragRef.current = undefined;
       setDragging(false);
-      clear();
+      clearResizeBodyStyles();
     };
     // 拖拽期间 body 上的 `user-select: none` 必须能收回来。指针移出 iframe（拖进编辑器/窗口外）
     // 时本帧收不到 pointerup，样式就永久留在 body 上，之后整个面板都划不了词。pointer capture
-    // 会把后续事件重定向回分隔条，blur 兜住窗口失焦，卸载时也清一次。
+    // 会把后续事件重定向回分隔条，blur 兜住窗口失焦，卸载时由上面那个 effect 清一次。
     const onBlur = () => {
       if (!dragRef.current) return;
       dragRef.current = undefined;
       setDragging(false);
-      clear();
+      clearResizeBodyStyles();
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", stop);
@@ -247,7 +251,6 @@ export function SessionDrawer({
       window.removeEventListener("pointerup", stop);
       window.removeEventListener("pointercancel", stop);
       window.removeEventListener("blur", onBlur);
-      clear();
     };
   }, [onWidth]);
 
