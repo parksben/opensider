@@ -11,7 +11,7 @@
 </div>
 
 <div align="center">
-  <a href="./README_ZH.md">中文</a> | English
+  English | <a href="./README_ZH.md">中文</a>
 </div>
 
 <br />
