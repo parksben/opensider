@@ -31,9 +31,9 @@ type Info struct {
 	CheckedAt string `json:"checkedAt"`
 }
 
-// TTL 一小时：GitHub 未认证 API 每小时只给 60 次，一小时最多问一次足够安静；
-// 再长了会出现「刚发完新版，侧栏一天内都还说最新是旧的」。
-const TTL = time.Hour
+// TTL 半小时。侧栏自己还会每 30 分钟强制再查一次；这份缓存只给「进程刚起来、
+// 还没到点」的那一次垫着。限频失败由调用方吞掉，不拿过期结果改界面。
+const TTL = 30 * time.Minute
 
 // Cached 返回仍在 TTL 内的缓存；没有、过期或读不动都返回 false。
 func Cached() (Info, bool) {

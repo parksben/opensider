@@ -319,16 +319,139 @@ function caretRect(range: Range): DOMRect | undefined {
   return fallback && fallback.height > 0 ? fallback : undefined;
 }
 
+function nudgeScroll(editor: HTMLElement, rect: DOMRect): void {
+  const box = editor.getBoundingClientRect();
+  const slack = 4;
+  if (rect.bottom > box.bottom - 1) editor.scrollTop += rect.bottom - box.bottom + slack;
+  else if (rect.top < box.top + 1) editor.scrollTop -= box.top - rect.top + slack;
+}
+
+function snapCaretToEnd(editor: HTMLElement): void {
+  const snap = () => {
+    if (!editor.isConnected) return;
+    editor.scrollTop = editor.scrollHeight;
+  };
+  snap();
+  requestAnimationFrame(() => {
+    snap();
+    requestAnimationFrame(snap);
+  });
+}
+
+/**
+ * A fresh line from Shift+Enter often has a 0px caret box, so measuring the
+ * previous glyph still looks "on screen" and the scroller never moves. Pin the
+ * end of the text to the bottom, and for a break in the middle drop a probe
+ * the browser can scroll into view.
+ */
 function scrollCaret(editor: HTMLElement): void {
   const selection = window.getSelection();
   if (!selection || selection.rangeCount === 0) return;
   const range = selection.getRangeAt(0);
   if (!editor.contains(range.commonAncestorContainer)) return;
-  const rect = caretRect(range);
-  if (!rect) return;
-  const box = editor.getBoundingClientRect();
-  if (rect.bottom > box.bottom) editor.scrollTop += rect.bottom - box.bottom + 4;
-  else if (rect.top < box.top) editor.scrollTop -= box.top - rect.top + 4;
+
+  const freshLine = charBeforeRange(range, editor) === "\n";
+  const atEnd = charAfterRange(range, editor) === undefined;
+  if (atEnd && freshLine) {
+    snapCaretToEnd(editor);
+    return;
+  }
+  if (atEnd) {
+    const rect = caretRect(range);
+    const box = editor.getBoundingClientRect();
+    const visible = rect && rect.height > 0 && rect.top >= box.top - 1 && rect.bottom <= box.bottom + 1;
+    if (!visible) {
+      snapCaretToEnd(editor);
+      return;
+    }
+  }
+
+  const apply = (sel: Selection) => {
+    if (sel.rangeCount === 0) return;
+    const live = sel.getRangeAt(0);
+    if (!editor.contains(live.commonAncestorContainer)) return;
+    if (charBeforeRange(live, editor) === "\n") {
+      const probed = probeCaretLine(editor, sel);
+      if (probed) nudgeScroll(editor, probed);
+      return;
+    }
+    const rect = caretRect(live);
+    if (rect) nudgeScroll(editor, rect);
+  };
+  apply(selection);
+  if (!freshLine) return;
+  requestAnimationFrame(() => {
+    if (!editor.isConnected) return;
+    const sel = window.getSelection();
+    if (!sel) return;
+    apply(sel);
+  });
+}
+
+/** Insert a zero-width probe, scroll it into view, then put the caret back. */
+function probeCaretLine(editor: HTMLElement, selection: Selection): DOMRect | undefined {
+  const range = selection.getRangeAt(0);
+  const marker = document.createElement("span");
+  marker.setAttribute("data-caret-probe", "");
+  marker.textContent = "\u200b";
+  marker.style.display = "inline-block";
+  marker.style.width = "0";
+  const probe = range.cloneRange();
+  probe.collapse(true);
+  const container = probe.startContainer;
+  const offset = probe.startOffset;
+  probe.insertNode(marker);
+  const top = marker.offsetTop;
+  const height = marker.offsetHeight || parseFloat(getComputedStyle(editor).lineHeight) || 20;
+  const bottom = top + height;
+  const viewBottom = editor.scrollTop + editor.clientHeight;
+  if (bottom > viewBottom - 1) editor.scrollTop += bottom - viewBottom + 4;
+  else if (top < editor.scrollTop + 1) editor.scrollTop -= editor.scrollTop + 1 - top;
+  const rect = marker.getBoundingClientRect();
+  const parent = marker.parentNode;
+  const next = marker.nextSibling;
+  marker.remove();
+  restoreCaret(selection, container, offset, parent, next);
+  if (rect.height <= 0 && rect.width <= 0) return undefined;
+  return rect;
+}
+
+function restoreCaret(
+  selection: Selection,
+  container: Node,
+  offset: number,
+  parent: Node | null,
+  next: Node | null,
+): void {
+  const place = (node: Node, index: number) => {
+    const restored = document.createRange();
+    const max = node.nodeType === Node.TEXT_NODE ? (node.textContent ?? "").length : node.childNodes.length;
+    restored.setStart(node, Math.min(Math.max(index, 0), max));
+    restored.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(restored);
+  };
+  if (container.nodeType === Node.TEXT_NODE && container.parentNode) {
+    const right = container.nextSibling;
+    if (right && right.nodeType === Node.TEXT_NODE) {
+      const caret = Math.min(offset, (container.textContent ?? "").length);
+      container.textContent = (container.textContent ?? "") + (right.textContent ?? "");
+      right.parentNode?.removeChild(right);
+      place(container, caret);
+      return;
+    }
+    place(container, offset);
+    return;
+  }
+  if (next && parent?.contains(next)) {
+    const restored = document.createRange();
+    restored.setStartBefore(next);
+    restored.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(restored);
+    return;
+  }
+  if (parent) place(parent, parent.childNodes.length);
 }
 
 export const ComposerEditor = forwardRef<

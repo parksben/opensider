@@ -506,7 +506,7 @@ export type ExtToHost =
   /** `auto` marks a grant that came from the permission mode, not from a click: it must not
    * be remembered as a user approval (`trusted`). */
   | { type: "control.grant"; requestId: string; allow: boolean; auto?: boolean }
-  | { type: "release.check" }
+  | { type: "release.check"; announce?: boolean }
   /** 侧栏问本机有没有装上 VS Code 端扩展。旧 Host 会回 `host.unsupported`。 */
   | { type: "peer.probe"; requestId: string; target?: "vscode" }
   | { type: "model.set"; modelId: string; sessionId?: string }
@@ -603,7 +603,7 @@ export type HostToExt =
       error?: string;
     }
   | { type: "artifacts"; items: AttachmentItem[]; sessionId?: string }
-  | { type: "release"; version: string; latest: string; checkedAt?: string; stale?: boolean }
+  | { type: "release"; version: string; latest: string; checkedAt?: string; stale?: boolean; announce?: boolean }
   | { type: "peer.probed"; requestId: string; installed: boolean; target?: string }
   | {
       type: "page.picked";

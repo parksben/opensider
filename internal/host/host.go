@@ -123,7 +123,8 @@ func Run() {
 func (h *Host) main() {
 	h.setHostState("starting", "")
 	go h.scanAndIdle()
-	go h.checkRelease(false)
+	go h.checkRelease(false, false, false)
+	go h.pollRelease()
 	if err := watch.WatchCommands(func(command protocol.BrowserCommand) {
 		h.handleWorkspaceCommand(command)
 	}); err != nil {
@@ -290,32 +291,43 @@ func (h *Host) sendHello() {
 	h.sendUIState()
 }
 
-// checkRelease 在后台查 GitHub 上最新 Release 的 tag（缓存 1h）并推给侧栏；侧栏
-// 拿它和本地版本比，决定要不要提示用户去更新（更新动作由用户自己的 AI Agent 按
-// 仓库里的 skill 执行，见 docs/TECH_DESIGN.md）。`release.check` 会强制重查一次。
+// checkRelease 查 GitHub 上最新 Release 的 tag。
 //
-// 失败降级顺序：新鲜缓存 → 在线查询（API，退网页重定向）→ 陈旧缓存（标 stale，让
-// 面板手点检查如实报失败）。失败只记日志：版本检查不该打扰用户，也不该挡住任何功能。
-func (h *Host) checkRelease(force bool) {
+// announce 为真时，侧栏在发现新版本后直接打开更新弹窗（面板每次加载会这样问一次）。
+// reportFailure 只给手动「检查更新」：失败要让按钮亮「检查失败」。自动检查失败
+// 什么都不发，界面保持原样。
+func (h *Host) checkRelease(force bool, announce bool, reportFailure bool) {
 	if !force {
 		if info, ok := release.Cached(); ok {
-			h.sendRelease(info, false)
+			h.sendRelease(info, false, false)
 			return
 		}
 	}
 	info, err := release.Latest(6 * time.Second)
 	if err != nil {
 		log.Log("release check failed: " + err.Error())
+		if !reportFailure {
+			return
+		}
 		if cached, ok := release.CachedAny(); ok {
-			h.sendRelease(cached, true)
+			h.sendRelease(cached, true, false)
 		}
 		return
 	}
 	log.Log("release latest=" + info.Tag)
-	h.sendRelease(info, false)
+	h.sendRelease(info, false, announce)
 }
 
-func (h *Host) sendRelease(info release.Info, stale bool) {
+// pollRelease 每半小时强制查一次，只刷新顶栏按钮，不弹窗。
+func (h *Host) pollRelease() {
+	ticker := time.NewTicker(30 * time.Minute)
+	defer ticker.Stop()
+	for range ticker.C {
+		h.checkRelease(true, false, false)
+	}
+}
+
+func (h *Host) sendRelease(info release.Info, stale bool, announce bool) {
 	msg := map[string]any{
 		"type":      "release",
 		"version":   version.Display(),
@@ -324,6 +336,9 @@ func (h *Host) sendRelease(info release.Info, stale bool) {
 	}
 	if stale {
 		msg["stale"] = true
+	}
+	if announce {
+		msg["announce"] = true
 	}
 	h.send(msg)
 }
@@ -997,7 +1012,8 @@ func (h *Host) dispatch(typ string, msg map[string]any) error {
 		h.handleSkillsRefresh()
 		return nil
 	case "release.check":
-		go h.checkRelease(true)
+		announce, _ := msg["announce"].(bool)
+		go h.checkRelease(true, announce, !announce)
 		return nil
 	case "agent.connect":
 		// 侧栏把自己记住的模式 / 配置项值一起带上来，连接后立刻交给客户端。

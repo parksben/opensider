@@ -785,7 +785,9 @@ export function App() {
         version: typeof msg.version === "string" ? msg.version : "",
         latest: typeof msg.latest === "string" ? msg.latest : "",
       };
-      setRelease(next);
+      // 自动检查失败时宿主不发这条。手动检查失败会带 stale：只改按钮文案，不拿旧 tag 改版本行。
+      if (msg.stale && !checkPendingRef.current) return;
+      if (!msg.stale) setRelease(next);
       // 用户手点的「检查更新」：这条回话就是结果——有新版本直接开提示词模态窗，
       // 没有就短暂亮一下「暂无新版本」，不要默默把按钮改回原样。
       if (checkPendingRef.current) {
@@ -802,6 +804,10 @@ export function App() {
         } else {
           flashCheckState("current");
         }
+        return;
+      }
+      if (msg.announce && (isNewer(next.latest, EXTENSION_VERSION) || isNewer(next.latest, next.version))) {
+        setUpdateOpen(true);
       }
       return;
     }
@@ -1186,6 +1192,8 @@ export function App() {
     const { send, reconnect, disconnect } = connectSidebar((msg) => handleHostRef.current(msg));
     sendRef.current = send;
     reconnectRef.current = reconnect;
+    // 面板每次加载先查一次。查到新版本才弹窗；限频或失败时宿主不回话，界面不动。
+    send({ type: "release.check", announce: true });
     return () => {
       sendRef.current = () => undefined;
       reconnectRef.current = () => undefined;
