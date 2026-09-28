@@ -214,6 +214,10 @@ export function SessionDrawer({
   }, [onWidth, width]);
 
   useEffect(() => {
+    const clear = () => {
+      document.body.style.removeProperty("cursor");
+      document.body.style.removeProperty("user-select");
+    };
     const move = (event: globalThis.PointerEvent) => {
       const drag = dragRef.current;
       if (!drag) return;
@@ -223,16 +227,27 @@ export function SessionDrawer({
       if (!dragRef.current) return;
       dragRef.current = undefined;
       setDragging(false);
-      document.body.style.removeProperty("cursor");
-      document.body.style.removeProperty("user-select");
+      clear();
+    };
+    // 拖拽期间 body 上的 `user-select: none` 必须能收回来。指针移出 iframe（拖进编辑器/窗口外）
+    // 时本帧收不到 pointerup，样式就永久留在 body 上，之后整个面板都划不了词。pointer capture
+    // 会把后续事件重定向回分隔条，blur 兜住窗口失焦，卸载时也清一次。
+    const onBlur = () => {
+      if (!dragRef.current) return;
+      dragRef.current = undefined;
+      setDragging(false);
+      clear();
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", stop);
     window.addEventListener("pointercancel", stop);
+    window.addEventListener("blur", onBlur);
     return () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", stop);
       window.removeEventListener("pointercancel", stop);
+      window.removeEventListener("blur", onBlur);
+      clear();
     };
   }, [onWidth]);
 
@@ -242,6 +257,12 @@ export function SessionDrawer({
     setDragging(true);
     document.body.style.cursor = "col-resize";
     document.body.style.userSelect = "none";
+    // 没有 capture 时，指针一旦移出 iframe，上面所有 window 监听都收不到收尾事件。
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      // capture 不可用：仍靠 window/blur 兜底。
+    }
   };
 
   return (

@@ -48,26 +48,28 @@ export function QueuedMessageList({
                 ) : null}
               </span>
             ) : null}
-            <span className="hidden shrink-0 items-center gap-1 group-hover/queue:flex">
-              <IconButton
-                side="top"
-                label={t(locale, "moveQueuedUp")}
-                disabled={index === 0}
-                onClick={() => onMove(item.id, -1)}
-                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[var(--muted)] hover:text-[var(--text)] disabled:opacity-30 disabled:hover:text-[var(--muted)]"
-              >
-                <ArrowUp size={12} />
-              </IconButton>
-              <IconButton
-                side="top"
-                label={t(locale, "moveQueuedDown")}
-                disabled={index === items.length - 1}
-                onClick={() => onMove(item.id, 1)}
-                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[var(--muted)] hover:text-[var(--text)] disabled:opacity-30 disabled:hover:text-[var(--muted)]"
-              >
-                <ArrowDown size={12} />
-              </IconButton>
-            </span>
+            {items.length > 1 ? (
+              <span className="hidden shrink-0 items-center gap-1 group-hover/queue:flex">
+                <IconButton
+                  side="top"
+                  label={t(locale, "moveQueuedUp")}
+                  disabled={index === 0}
+                  onClick={() => onMove(item.id, -1)}
+                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[var(--muted)] hover:text-[var(--text)] disabled:opacity-30 disabled:hover:text-[var(--muted)]"
+                >
+                  <ArrowUp size={12} />
+                </IconButton>
+                <IconButton
+                  side="top"
+                  label={t(locale, "moveQueuedDown")}
+                  disabled={index === items.length - 1}
+                  onClick={() => onMove(item.id, 1)}
+                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[var(--muted)] hover:text-[var(--text)] disabled:opacity-30 disabled:hover:text-[var(--muted)]"
+                >
+                  <ArrowDown size={12} />
+                </IconButton>
+              </span>
+            ) : null}
             <IconButton
               side="top"
               label={t(locale, "sendQueuedNow")}
