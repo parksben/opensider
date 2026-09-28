@@ -1,5 +1,5 @@
 import type { AgentModeOption, AgentModel, AgentOption, AttachmentItem, ContextUsage as ContextUsageValue, CurrentPage, FsPickMode, SkillItem } from "@shared";
-import { ArrowDown, AtSign, Check, ChevronDown, Code, Copy, File, FileDown, Folder, FolderPen, GitFork, LoaderCircle, MousePointer2, Paperclip, Plus, RefreshCw, Send, Shield, Slash, Square, TriangleAlert, Unlock, X, Zap } from "lucide-react";
+import { ArrowDown, AtSign, Check, ChevronDown, ChevronRight, Code, Copy, File, FileDown, Folder, FolderPen, GitFork, LoaderCircle, MousePointer2, Paperclip, Plus, RefreshCw, Send, Shield, Slash, Square, TriangleAlert, Unlock, X, Zap } from "lucide-react";
 import logoUrl from "../../../assets/icon.svg?url";
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from "react";
 import type { ChatMessage, ChatPart, TodoItem } from "../chat-types";
@@ -11,7 +11,7 @@ import { t } from "../i18n";
 import { closeAtMenuLock, installAtMenuGuard, openAtMenuLock, shouldBlockSubmit } from "../at-menu-lock";
 import { composerHasContent, stripAttachmentMentions } from "../mentions";
 import { buildHandoffPrompt, EDITOR_REPO, handoffCutoff } from "../handoff";
-import { groupModelsByPrefix, modelShortName } from "../model-groups";
+import { groupModelsByPrefix, modelGroupLabel, modelShortName } from "../model-groups";
 import { STICKY_PX, useThreadFollow } from "../thread-follow";
 import {
   composerCarryMatches,
@@ -1322,6 +1322,7 @@ function ModelSelect({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [highlightId, setHighlightId] = useState(modelId);
+  const [collapsedGroups, setCollapsedGroups] = useState<ReadonlySet<string>>(() => new Set());
   // 这一行到 396px 时已经挤了五个控件，模型名是唯一能让位的：上限从 9.5rem 收到 80px。
   // 宽度用常量（而不是这里写死一个类），保证这个数值在代码里只有一个来源。
   const shellMax = narrow ? undefined : "max-w-[9.5rem]";
@@ -1331,8 +1332,12 @@ function ModelSelect({
   const listRef = useRef<HTMLDivElement>(null);
   const { ripples, spawn, done } = useRipple();
   const current = models.find((model) => model.id === modelId) ?? models[0];
-  const label = current?.name || modelId || t(locale, "model");
+  const fullName = current?.name || modelId || t(locale, "model");
+  const label = current?.name ? modelShortName(current.name) : fullName;
   const visible = models.filter((model) => matchesModel(model, query));
+  const searching = query.trim().length > 0;
+  const groupExpanded = (groupLabel: string) => !groupLabel || searching || !collapsedGroups.has(groupLabel);
+  const listed = groupModelsByPrefix(visible).flatMap((group) => (groupExpanded(group.label) ? group.items : []));
   // 只画「有值可切」的项：布尔项（开关）或至少两个值的选择项。
   const configs = (modelConfigs ?? []).filter(
     (option) => option.type === "boolean" || (option.values?.length ?? 0) >= 2,
@@ -1344,10 +1349,10 @@ function ModelSelect({
   };
 
   const moveHighlight = (delta: number) => {
-    if (visible.length === 0) return;
-    const idx = visible.findIndex((model) => model.id === highlightId);
+    if (listed.length === 0) return;
+    const idx = listed.findIndex((model) => model.id === highlightId);
     const from = idx >= 0 ? idx : 0;
-    setHighlightId(visible[(from + delta + visible.length) % visible.length].id);
+    setHighlightId(listed[(from + delta + listed.length) % listed.length].id);
   };
 
   const onFilterKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
@@ -1363,7 +1368,7 @@ function ModelSelect({
     }
     if (event.key === "Enter") {
       event.preventDefault();
-      const chosen = visible.find((model) => model.id === highlightId) ?? visible[0];
+      const chosen = listed.find((model) => model.id === highlightId) ?? listed[0];
       if (chosen) pick(chosen.id);
     }
   };
@@ -1380,6 +1385,15 @@ function ModelSelect({
       return;
     }
     setHighlightId(current?.id ?? models[0]?.id ?? "");
+    const selectedGroup = current?.name ? modelGroupLabel(current.name) : "";
+    if (selectedGroup) {
+      setCollapsedGroups((groups) => {
+        if (!groups.has(selectedGroup)) return groups;
+        const next = new Set(groups);
+        next.delete(selectedGroup);
+        return next;
+      });
+    }
     const focusFilter = () => filterRef.current?.focus();
     focusFilter();
     const frame = requestAnimationFrame(focusFilter);
@@ -1408,7 +1422,7 @@ function ModelSelect({
     <div ref={rootRef} className={`relative min-w-0 ${shellMax ?? ""}`} style={shellStyle}>
       <button
         type="button"
-        title={label}
+        title={fullName}
         aria-label={t(locale, "model")}
         aria-expanded={open}
         disabled={disabled}
@@ -1449,30 +1463,61 @@ function ModelSelect({
             {visible.length === 0 ? (
               <p className="px-2.5 py-1.5 text-[12px] text-[var(--muted)]">{t(locale, "noMatchingModels")}</p>
             ) : (
-              groupModelsByPrefix(visible).map((group) => (
+              groupModelsByPrefix(visible).map((group) => {
+                const expanded = groupExpanded(group.label);
+                return (
                 <div key={group.label || "ungrouped"}>
                   {group.label ? (
-                    <p className="px-2.5 pb-0.5 pt-1.5 text-[11px] font-medium text-[var(--muted)]">{group.label}</p>
+                    <button
+                      type="button"
+                      aria-expanded={expanded}
+                      aria-label={`${group.label}. ${expanded ? t(locale, "collapseSessionGroup") : t(locale, "expandSessionGroup")}`}
+                      onClick={() => {
+                        setCollapsedGroups((groups) => {
+                          const next = new Set(groups);
+                          if (next.has(group.label)) next.delete(group.label);
+                          else next.add(group.label);
+                          return next;
+                        });
+                      }}
+                      className="flex w-full items-center gap-1 px-2.5 pb-0.5 pt-1.5 text-left text-[11px] font-medium text-[var(--muted)] hover:text-[var(--text)]"
+                    >
+                      {expanded ? (
+                        <ChevronDown size={12} className="shrink-0" />
+                      ) : (
+                        <ChevronRight size={12} className="shrink-0" />
+                      )}
+                      <span className="min-w-0 truncate">{group.label}</span>
+                    </button>
                   ) : null}
-                  {group.items.map((model) => {
-                    const highlighted = model.id === highlightId;
-                    return (
-                      <RippleButton
-                        key={model.id}
-                        data-model-id={model.id}
-                        title={model.name}
-                        onPointerEnter={() => setHighlightId(model.id)}
-                        onClick={() => pick(model.id)}
-                        className={`flex w-full px-2.5 py-1.5 text-left text-[12px] ${
-                          highlighted ? "bg-[var(--hover-strong)] text-[var(--text)]" : "text-[var(--muted)] hover:text-[var(--text)]"
-                        }`}
-                      >
-                        <span className="whitespace-normal break-words">{modelShortName(model.name)}</span>
-                      </RippleButton>
-                    );
-                  })}
+                  {expanded
+                    ? group.items.map((model) => {
+                        const highlighted = model.id === highlightId;
+                        const selected = model.id === modelId;
+                        return (
+                          <RippleButton
+                            key={model.id}
+                            data-model-id={model.id}
+                            title={model.name}
+                            onPointerEnter={() => setHighlightId(model.id)}
+                            onClick={() => pick(model.id)}
+                            className={`flex w-full items-center gap-1.5 py-1.5 text-left text-[12px] ${
+                              group.label ? "pl-7 pr-2.5" : "px-2.5"
+                            } ${
+                              selected || highlighted
+                                ? "bg-[var(--hover-strong)] text-[var(--text)]"
+                                : "text-[var(--muted)] hover:text-[var(--text)]"
+                            }`}
+                          >
+                            <Check size={COMPOSER_ICON_PX} className={selected ? "shrink-0" : "shrink-0 opacity-0"} />
+                            <span className="min-w-0 whitespace-normal break-words">{modelShortName(model.name)}</span>
+                          </RippleButton>
+                        );
+                      })
+                    : null}
                 </div>
-              ))
+                );
+              })
             )}
           </div>
           {configs.length > 0 ? (
