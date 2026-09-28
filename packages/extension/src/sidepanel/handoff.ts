@@ -72,10 +72,10 @@ function promptZh(input: {
   const lines = [
     `请在${where}里接着这个会话继续。把已经发生过的对话当作上下文：不要复述已有回复，也不要重复已经做过的操作，除非我明确要求。准备好后等待我的下一条消息。`,
     "",
-    "会话内容在这个文件里，请直接读它，不要让我把记录贴过来：",
+    "这条会话的消息不在 ui-state.json 里，那个文件只有会话列表。请直接读下面这个文件，不要让我把记录贴过来：",
     transcriptPath(input.statePath, input.sessionId, input.target, "zh"),
     "",
-    `这个文件就是 id 为「${input.sessionId}」的会话，消息在 messages 数组里。一轮从一条 role 为 user 的消息开始，按出现顺序从 1 计数。只看第 ${input.beforeRound} 轮之前的内容：读到消息 id「${input.throughMessageId}」为止（含这条），不要读它后面的消息。`,
+    `这个文件就是 id 为「${input.sessionId}」的会话。消息在 messages 数组里，按顺序排列。每条有 id、role（user 或 assistant）和 content。content 里 type 为 text 的 text 是对话正文；type 为 reasoning 的是思考；type 为 tool-call 的是已经执行过的操作，只当作上下文，不要再执行一遍。一轮从一条 role 为 user 的消息开始，按出现顺序从 1 计数。只看第 ${input.beforeRound} 轮之前的内容：读到消息 id「${input.throughMessageId}」为止（含这条），不要读它后面的消息。`,
   ];
   if (input.nextRoundMessageId) {
     lines.push(`第 ${input.beforeRound} 轮从消息 id「${input.nextRoundMessageId}」开始，这条以及之后都不要读。`);
@@ -100,10 +100,10 @@ function promptEn(input: {
   const lines = [
     `Continue this conversation in ${where}. Treat what already happened as context: do not restate the existing replies or repeat work that was already done unless I explicitly ask. Then wait for my next message.`,
     "",
-    "The transcript is in this file. Read it yourself; do not ask me to paste it:",
+    "The messages are not in ui-state.json. That file is only the session list. Read this file yourself; do not ask me to paste it:",
     transcriptPath(input.statePath, input.sessionId, input.target, "en"),
     "",
-    `This file is the session whose id is "${input.sessionId}". The messages are in the messages array. A round starts at each message with role "user", numbered from 1 in order. Read only the content before round ${input.beforeRound}: stop at message id "${input.throughMessageId}" (inclusive). Do not read anything after it.`,
+    `This file is the session whose id is "${input.sessionId}". Messages are in the messages array, in order. Each one has id, role ("user" or "assistant"), and content. In content, an item with type "text" is the spoken text; type "reasoning" is private thinking; type "tool-call" is work that already ran — use it as context and do not run it again. A round starts at each message with role "user", numbered from 1 in order. Read only the content before round ${input.beforeRound}: stop at message id "${input.throughMessageId}" (inclusive). Do not read anything after it.`,
   ];
   if (input.nextRoundMessageId) {
     lines.push(`Round ${input.beforeRound} starts at message id "${input.nextRoundMessageId}". Skip that message and everything after it.`);

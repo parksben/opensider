@@ -42,7 +42,10 @@ describe("handoff prompt", () => {
     });
     assert.match(prompt, /VS Code 里的 OpenSider/);
     assert.match(prompt, /\/tmp\/sessions\/sess\.json/);
+    assert.match(prompt, /不在 ui-state\.json/);
+    assert.match(prompt, /type 为 text/);
     assert.match(prompt, /只看第 2 轮之前/);
+    assert.doesNotMatch(prompt, /在 sessions 里找/);
     assert.doesNotMatch(prompt, /User: /);
   });
 });
