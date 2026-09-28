@@ -4,7 +4,7 @@
 //
 //   node scripts/shots.mjs
 //
-// Writes docs/readme/{en,zh}/{chat,selection,pick}.png
+// Writes docs/readme/{en,zh}/{automation,selection,pick}.png
 import { spawn } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -16,7 +16,7 @@ const ext = join(root, "packages", "extension");
 const outRoot = join(root, "docs", "readme");
 const PORT = 5198;
 const BASE = `http://localhost:${PORT}/shots.html`;
-const SCENES = ["chat", "selection", "pick"];
+const SCENES = ["automation", "selection", "pick"];
 const LANGS = ["en", "zh"];
 
 const server = spawn(
@@ -28,7 +28,7 @@ const server = spawn(
 async function waitForServer() {
   for (let i = 0; i < 80; i += 1) {
     try {
-      const res = await fetch(`${BASE}?scene=chat`);
+      const res = await fetch(`${BASE}?scene=automation`);
       if (res.ok) return;
     } catch {
       // not up yet

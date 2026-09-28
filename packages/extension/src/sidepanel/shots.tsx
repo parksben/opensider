@@ -3,10 +3,10 @@
  * match the product. Not part of the extension build (`vite.config.ts`).
  *
  *   cd packages/extension && npx vite --config vite.shots.config.ts
- *   # then open /shots.html?scene=chat|selection|pick&lang=en|zh
+ *   # then open /shots.html?scene=automation|selection|pick&lang=en|zh
  */
 import "./shots-shim";
-import { ArrowLeft, ArrowRight, Languages, Lock, MousePointer2, Quote, RotateCw, Search, Star } from "lucide-react";
+import { ArrowLeft, ArrowRight, Languages, LoaderCircle, Lock, MousePointer2, Quote, RotateCw, Search, Star } from "lucide-react";
 import { useEffect, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import type { AgentModeOption, AgentModel, CurrentPage, SkillItem } from "@shared";
@@ -89,6 +89,45 @@ function messagesFor(lang: Locale): ChatMessage[] {
           status: "completed",
           args: { url: PAGE.url },
           primaryArg: PAGE.title,
+        },
+        { type: "text", text: copy.answer },
+      ],
+    },
+  ];
+}
+
+const AUTO_COPY = {
+  en: {
+    user: "Search this site for open source AI news and open the first result.",
+    answer: "Filled the search box, submitted it, and opened “Small models close the gap on reasoning”.",
+    tool: "Search box",
+  },
+  zh: {
+    user: "在这个站点搜索「本周开源 AI 新闻」，并打开第一条结果。",
+    answer: "已把关键词填进搜索框并提交，然后打开了《小模型在推理上追平大模型》。",
+    tool: "搜索框",
+  },
+} as const;
+
+function automationMessagesFor(lang: Locale): ChatMessage[] {
+  const copy = AUTO_COPY[lang];
+  return [
+    { id: "u1", role: "user", createdAt: new Date(), content: [{ type: "text", text: copy.user }] },
+    {
+      id: "a1",
+      role: "assistant",
+      createdAt: new Date(),
+      modelName: "GPT-5.4",
+      durationMs: 9000,
+      content: [
+        {
+          type: "tool-call",
+          toolCallId: "type-1",
+          toolName: "page_type",
+          kind: "execute",
+          status: "completed",
+          args: { selector: "input[name=q]", text: "open source AI news" },
+          primaryArg: copy.tool,
         },
         { type: "text", text: copy.answer },
       ],
@@ -230,10 +269,33 @@ function PanelChat({ messages, pickingElement }: { messages: ChatMessage[]; pick
   );
 }
 
-function ChatScene() {
+function AutomationScene() {
   return (
-    <BrowserFrame>
-      <PanelChat messages={messagesFor(locale)} />
+    <BrowserFrame
+      overlay={
+        <div className="shot-automation">
+          <div className="shot-form">
+            <div className="shot-field">
+              <Search size={14} />
+              <span className="shot-typed">
+                {locale === "zh" ? "本周开源 AI 新闻" : "open source AI news this week"}
+              </span>
+              <span className="shot-caret" />
+            </div>
+            <button type="button" className="shot-submit is-clicking">
+              {locale === "zh" ? "搜索" : "Search"}
+              <span className="shot-ring" />
+              <MousePointer2 className="shot-hand" size={18} />
+            </button>
+          </div>
+          <div className="shot-auto-badge">
+            <LoaderCircle className="shot-spin" size={13} />
+            {locale === "zh" ? "Agent 正在操作此页面" : "The agent is driving this page"}
+          </div>
+        </div>
+      }
+    >
+      <PanelChat messages={automationMessagesFor(locale)} />
     </BrowserFrame>
   );
 }
@@ -353,6 +415,35 @@ const SHOT_CSS = `
 .shot-thumb { width: 84px; height: 56px; flex: none; border-radius: 6px; background: linear-gradient(135deg, #cfd6e2, #aeb8c8); }
 .shot-article-text h3 { margin: 0 0 4px; font-size: 15px; color: #101722; }
 .shot-article-text p { margin: 0; font-size: 12.5px; color: #5a6876; }
+.shot-automation { position: absolute; inset: 0; padding: 80px 40px 0; background: #f7f8fa; }
+.shot-form {
+  display: flex; align-items: center; gap: 10px; width: 100%; max-width: 520px; margin: 0 auto;
+  padding: 14px; background: #ffffff; border: 1px solid #e5e8ee; border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(16, 23, 34, 0.08);
+}
+.shot-field {
+  display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0;
+  height: 38px; padding: 0 12px; border: 1px solid #c9d2e0; border-radius: 8px;
+  background: #f8fafc; color: #3c4043; font-size: 14px;
+}
+.shot-typed { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shot-caret { width: 2px; height: 18px; flex: none; background: #3a6d9a; animation: shot-blink 1s steps(1) infinite; }
+.shot-submit {
+  position: relative; flex: none; height: 38px; padding: 0 18px;
+  border: 0; border-radius: 8px; background: #3a6d9a; color: #ffffff; font-size: 14px; font-weight: 500;
+}
+.shot-submit.is-clicking { box-shadow: 0 0 0 4px rgba(58, 109, 154, 0.25); }
+.shot-ring { position: absolute; inset: -5px; border: 2px solid #d4a054; border-radius: 11px; animation: shot-ping 1.3s ease-out infinite; }
+.shot-hand { position: absolute; right: -9px; bottom: -13px; color: #1a2330; }
+.shot-auto-badge {
+  display: flex; align-items: center; gap: 6px; width: max-content;
+  margin: 16px auto 0; padding: 5px 11px; border-radius: 999px;
+  background: #d4a054; color: #1a140b; font-size: 12px; font-weight: 500;
+}
+.shot-spin { animation: shot-spin 0.9s linear infinite; }
+@keyframes shot-spin { to { transform: rotate(360deg); } }
+@keyframes shot-blink { 50% { opacity: 0; } }
+@keyframes shot-ping { from { opacity: 0.9; transform: scale(0.96); } to { opacity: 0; transform: scale(1.12); } }
 .shot-selection { position: absolute; inset: 0; padding: 90px 30px 0; background: #f7f8fa; }
 .shot-selection p { max-width: 560px; margin: 0 auto; font-size: 17px; line-height: 1.7; color: #101722; }
 .shot-selected { background: rgba(58, 109, 154, 0.22); color: inherit; border-radius: 3px; }
@@ -392,7 +483,7 @@ function ReadyScene({ children }: { children: ReactNode }) {
 
 createRoot(document.getElementById("root")!).render(
   <ReadyScene>
-    {scene === "selection" ? <SelectionScene /> : scene === "pick" ? <PickScene /> : <ChatScene />}
+    {scene === "selection" ? <SelectionScene /> : scene === "pick" ? <PickScene /> : <AutomationScene />}
     <style>{SHOT_CSS}</style>
   </ReadyScene>,
 );

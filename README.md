@@ -29,11 +29,11 @@ OpenSider drives the local Agent CLIs you already use — Claude Code, Codex, Op
 
 ## Demo
 
-### Ask from the side panel
+### Automate the page
 
-The Agent works on the tab you are on, with the page already in context — no need to paste the URL or describe the scene.
+Ask in the side panel and the Agent works the page in front of you — navigating, clicking, filling fields and taking screenshots, live. You can take over at any time.
 
-![Chat with the Agent in the side panel next to a web page](./docs/readme/en/chat.png)
+![The Agent filling and submitting a form on the page](./docs/readme/en/automation.png)
 
 ### Quote, translate, search
 
