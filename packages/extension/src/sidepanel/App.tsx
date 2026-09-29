@@ -123,6 +123,9 @@ export function App() {
   const [sawAgents, setSawAgents] = useState(false);
   const [progress, setProgress] = useState<AgentProgress>();
   const [sessionsOpen, setSessionsOpen] = useState(false);
+  // Bumped on a resend/edit (a replay turn): truncating the tail shrinks the transcript,
+  // and the panel releases its height reserve so no blank gap is left behind.
+  const [replaySeq, setReplaySeq] = useState(0);
   const [drawerWidth, setDrawerWidth] = useState(SESSION_DRAWER_DEFAULT);
   const [compact, setCompact] = useState(false);
   // 两个下拉（模式 / 权限）是否已收成纯图标。与 compact 分开：下拉该早收，其余布局不必跟着早改版。
@@ -1753,6 +1756,7 @@ export function App() {
   const startReplayTurn = (source: Session, userIndex: number, user: ChatMessage) => {
     const kept = [...source.messages.slice(0, userIndex), user];
     const prior = source.messages.slice(0, userIndex);
+    setReplaySeq((value) => value + 1);
     pendingRegen.current.set(source.id, {
       text: textOf(user.content),
       attachments: user.attachments ?? [],
@@ -1914,6 +1918,7 @@ export function App() {
               locale={locale}
               hostReady={status === "ready"}
               sessionId={selected.id}
+              replayKey={replaySeq}
               messages={selected.messages}
               contextUsage={contextUsage}
               isRunning={runningIds.includes(selected.id)}

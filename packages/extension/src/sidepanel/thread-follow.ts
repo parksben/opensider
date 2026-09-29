@@ -27,6 +27,7 @@ export function useThreadFollow(
   endRef: RefObject<HTMLElement | null>,
   sessionId: string,
   active: boolean,
+  resetKey = 0,
 ): (smooth?: boolean) => void {
   const forceFollow = useRef(false);
 
@@ -51,7 +52,9 @@ export function useThreadFollow(
     // would otherwise shrink the body and pull the messages above back down. Pin the
     // tallest the body has been so the height never drops. Blank below is fine — the
     // next content fills it and the follow picks up again. A width change reflows the
-    // text, so start the measurement over there.
+    // text, so start the measurement over there. A `resetKey` bump (a resend/edit that
+    // truncates the tail) rebuilds this effect, releasing the reserve so the now-shorter
+    // transcript does not keep a wall of empty height below the last message.
     let peak = 0;
     let width = scroller.clientWidth;
     const reserve = () => {
@@ -146,7 +149,7 @@ export function useThreadFollow(
       scroller.removeEventListener("touchmove", releaseFollow);
       body.style.minHeight = "";
     };
-  }, [active, endRef, listRef, sessionId]);
+  }, [active, endRef, listRef, resetKey, sessionId]);
 
   return stick;
 }
