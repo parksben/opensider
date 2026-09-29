@@ -46,7 +46,7 @@ export function TodoList({ locale, todos }: { locale: Locale; todos: TodoItem[] 
         )}
       </RippleButton>
       {open ? (
-        <ol className="max-h-[9.5lh] space-y-1 overflow-y-auto border-t border-[var(--line)] px-3 py-2">
+        <ol className="cs-list-cap space-y-1 border-t border-[var(--line)] px-3 py-2">
           {todos.map((todo) => {
             const completed = todo.status === "completed";
             const cancelled = todo.status === "cancelled";

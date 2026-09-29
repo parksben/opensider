@@ -67,7 +67,7 @@ export function ArtifactList({
         )}
       </RippleButton>
       {open ? (
-        <ul className="max-h-[9.5lh] overflow-y-auto border-t border-[var(--line)] py-1">
+        <ul className="cs-list-cap border-t border-[var(--line)] py-1">
           {items.map((item) => {
             const Icon = artifactIcon(item);
             return (

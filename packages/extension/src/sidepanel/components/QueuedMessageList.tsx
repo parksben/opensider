@@ -25,7 +25,7 @@ export function QueuedMessageList({
   if (items.length === 0) return null;
 
   return (
-    <ol className="mb-2 max-h-[9.5lh] overflow-y-auto rounded-lg border border-[var(--line)] bg-[var(--panel-2)] py-0.5">
+    <ol className="cs-list-cap mb-2 rounded-lg border border-[var(--line)] bg-[var(--panel-2)] py-0.5">
       {items.map((item, index) => {
         const preview =
           displayMentionText(item.text).replace(/\u200b/g, "").trim() || item.attachments[0]?.name || "";
