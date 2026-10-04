@@ -465,6 +465,20 @@ mark.cs-at-match {
   user-select: text;
 }
 
+/*
+ * 离屏的气泡交给浏览器自己跳过：只算盒子、不渲染内容。一条长会话滚到中间时，
+ * 上下几十条气泡的 markdown / 代码块都在屏幕外，逐个铺开是纯浪费。
+ *
+ * `contain-intrinsic-size` 是占位高度（浏览器跳过渲染时拿它撑盒子）。这里给一个
+ * 略高于普通气泡的值：偏大只是让滚动条长一点，偏小会让滚动位置在滚进出时跳一下。
+ * 最后一条（正在流式输出的那条）自己 opt out（见 ChatPane 的 `cs-thread-live`）——
+ * 它必须实时铺开，否则输出会被内容可视化延后。
+ */
+.cs-thread-bubble {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 160px;
+}
+
 .cs-jump-bottom {
   background: color-mix(in srgb, var(--panel) 62%, transparent);
   box-shadow: 0 2px 10px rgb(0 0 0 / 0.22);

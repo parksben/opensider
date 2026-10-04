@@ -217,7 +217,17 @@ export function ChatPane({
   const listRef = useRef<HTMLDivElement>(null);
   const { tabs: historyTabs } = useComposerHistory();
   const threadEndRef = useRef<HTMLDivElement>(null);
-  const stickToBottom = useThreadFollow(listRef, threadEndRef, sessionId, messages.length > 0, replayKey);
+  // While a turn streams, the transcript keeps the height the live reasoning / tool steps
+  // need, so the messages above never jump. Once it is over those steps fold into one
+  // line and the extra height is given back — that is what `settled` tells the hook.
+  const stickToBottom = useThreadFollow(
+    listRef,
+    threadEndRef,
+    sessionId,
+    messages.length > 0,
+    replayKey,
+    !isRunning,
+  );
   const [handoff, setHandoff] = useState<{ prompt: string; installed: boolean | null } | null>(null);
   const editingRef = useRef<string | undefined>(undefined);
   const editingQueueRef = useRef<string | undefined>(undefined);
@@ -1069,8 +1079,13 @@ const MessageThread = memo(function MessageThread({
     <>
       {messages.map((message, index) => {
         const gap = index === 0 ? "" : message.role === "user" ? "mt-6" : "mt-3";
+        // The streaming bubble is the one the user is watching: it must lay out for real on
+        // every chunk, so it opts out of `content-visibility` (which would throttle its
+        // paint). Everything already on screen above it stays eligible and gets skipped.
+        const live = isRunning && message.durationMs == null && index === messages.length - 1;
+        const offscreen = live ? "" : " cs-thread-bubble";
         return message.role === "user" ? (
-          <div key={message.id} data-thread-anchor="" className={`flex justify-end ${gap}`}>
+          <div key={message.id} data-thread-anchor="" className={`flex justify-end ${gap}${offscreen}`}>
             <div
               role={isRunning ? undefined : "button"}
               tabIndex={isRunning ? undefined : 0}
@@ -1117,7 +1132,7 @@ const MessageThread = memo(function MessageThread({
             locale={locale}
             locked={isRunning}
             hideActions={isRunning && message.id === messages[messages.length - 1]?.id}
-            className={gap}
+            className={`${gap}${offscreen}`}
             modelLabel={
               message.modelName ||
               models.find((item) => item.id === message.modelId)?.name ||
@@ -1668,18 +1683,29 @@ async function writeClipboard(text: string): Promise<void> {
   }
 }
 
-function MessageFrame({
-  locale,
-  locked,
-  hideActions,
-  className = "",
-  modelLabel,
-  replyMarkdown: markdown,
-  onFork,
-  onRegenerate,
-  onContinue,
-  children,
-}: {
+/**
+ * 深比较一条气泡的 props：一次流式输出只会动最后一条消息，整个列表却会跟着重渲染
+ * （`MessageThread` 只做浅比较，`messages` 每个片段都是新数组）。没有这层比较，
+ * markdown 解析、`ToolJsonView` 的 JSON 拆分会把列表里每条历史气泡都跑一遍，正文越长越卡。
+ *
+ * 回调**不进比较**：调用方每次渲染都新建箭头函数（`onFork={() => …}`），比了就永远不等。
+ * 回调只由用户点击触发，晚一拍拿到新闭包没有可感知的后果（MessageThread 本身已经 memo，
+ * props 引用没变时它连渲染都不会发生）。
+ * `children` 是下方那个 `AssistantMessage`（它自己也 memo），引用变了就跟着重渲。
+ */
+function sameMessageFrame(prev: MessageFrameProps, next: MessageFrameProps): boolean {
+  return (
+    prev.locale === next.locale &&
+    prev.locked === next.locked &&
+    prev.hideActions === next.hideActions &&
+    prev.className === next.className &&
+    prev.modelLabel === next.modelLabel &&
+    prev.replyMarkdown === next.replyMarkdown &&
+    prev.children === next.children
+  );
+}
+
+type MessageFrameProps = {
   locale: Locale;
   locked: boolean;
   hideActions?: boolean;
@@ -1690,7 +1716,21 @@ function MessageFrame({
   onRegenerate: () => void;
   onContinue: () => void;
   children: ReactNode;
-}) {
+};
+
+const MessageFrame = memo(
+  function MessageFrame({
+    locale,
+    locked,
+    hideActions,
+    className = "",
+    modelLabel,
+    replyMarkdown: markdown,
+    onFork,
+    onRegenerate,
+    onContinue,
+    children,
+  }: MessageFrameProps) {
   const [copied, setCopied] = useState(false);
   const copiedTimer = useRef<number>(0);
   useEffect(() => () => window.clearTimeout(copiedTimer.current), []);
@@ -1761,7 +1801,9 @@ function MessageFrame({
       )}
     </div>
   );
-}
+  },
+  sameMessageFrame,
+);
 
 function compactReasoning(text: string): string {
   return text
@@ -1844,19 +1886,73 @@ function renderAssistantPart(
   return <ToolCard key={part.toolCallId} locale={locale} part={part} />;
 }
 
-function AssistantMessage({
-  locale,
-  content,
-  page,
-  live,
-  durationMs,
-}: {
-  locale: Locale;
-  content: ChatPart[];
-  page?: CurrentPage;
-  live?: boolean;
-  durationMs?: number;
-}) {
+/**
+ * 同 `MessageFrame`：一条气泡的 props 没变就整段跳过。`content` 是同一个 message 对象
+ * 在流式期间每片段新建的数组引用，浅比较会判「变了」，所以这里逐项比 parts。
+ */
+function sameAssistantContent(a: ChatPart[], b: ChatPart[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let index = 0; index < a.length; index += 1) {
+    const left = a[index];
+    const right = b[index];
+    if (left === right) continue;
+    if (left.type !== right.type) return false;
+    if (left.type === "text" && right.type === "text") {
+      if (left.text !== right.text) return false;
+      continue;
+    }
+    if (left.type === "reasoning" && right.type === "reasoning") {
+      if (left.text !== right.text) return false;
+      continue;
+    }
+    // tool-call：比 Agent 关心的那几个字段（标题 / 参数 / 结果 / 状态）。
+    if (left.type === "tool-call" && right.type === "tool-call") {
+      if (
+        left.toolCallId !== right.toolCallId ||
+        left.toolName !== right.toolName ||
+        left.status !== right.status ||
+        left.primaryArg !== right.primaryArg ||
+        left.kind !== right.kind
+      ) {
+        return false;
+      }
+      if (left.args !== right.args || left.result !== right.result) return false;
+      continue;
+    }
+    return false;
+  }
+  return true;
+}
+
+function sameAssistant(
+  prev: { locale: Locale; content: ChatPart[]; page?: CurrentPage; live?: boolean; durationMs?: number },
+  next: { locale: Locale; content: ChatPart[]; page?: CurrentPage; live?: boolean; durationMs?: number },
+): boolean {
+  return (
+    prev.locale === next.locale &&
+    prev.live === next.live &&
+    prev.durationMs === next.durationMs &&
+    prev.page?.tabId === next.page?.tabId &&
+    prev.page?.url === next.page?.url &&
+    sameAssistantContent(prev.content, next.content)
+  );
+}
+
+const AssistantMessage = memo(
+  function AssistantMessage({
+    locale,
+    content,
+    page,
+    live,
+    durationMs,
+  }: {
+    locale: Locale;
+    content: ChatPart[];
+    page?: CurrentPage;
+    live?: boolean;
+    durationMs?: number;
+  }) {
   if (content.length === 0) {
     return <div className="text-[12px] text-[var(--muted)]">{t(locale, "waiting")}</div>;
   }
@@ -1881,4 +1977,6 @@ function AssistantMessage({
       {body.map((part, index) => renderAssistantPart(part, cut + index, locale, page))}
     </div>
   );
-}
+  },
+  sameAssistant,
+);
