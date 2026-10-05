@@ -95,7 +95,7 @@ const chunk = (text) =>
 // 工具调用开始。搜索的真实形态是「先说一段我先去搜一下 → 调工具 → 才给结论」，Host 那边
 // 就靠这条更新把前面的过程叙述作废（见 internal/host 的 absorbSelectionUpdate），所以
 // 这里必须真的演出来，否则那条逻辑在测试里永远跑不到。
-const toolCall = (title) =>
+const toolCall = (title, id = `call-${turn}`) =>
   write({
     jsonrpc: "2.0",
     method: "session/update",
@@ -103,7 +103,7 @@ const toolCall = (title) =>
       sessionId,
       update: {
         sessionUpdate: "tool_call",
-        toolCallId: `call-${turn}`,
+        toolCallId: id,
         title,
         kind: "fetch",
         status: "in_progress",
@@ -406,10 +406,10 @@ async function runSteps(id, label) {
   }
 
   if (cancelled()) return finish("cancelled");
-  toolCall("read: thread-follow.ts");
+  toolCall("read: thread-follow.ts", `call-${turn}-1`);
   await sleep(stepMs * 4);
   if (cancelled()) return finish("cancelled");
-  toolUpdate(`call-${turn}`, {
+  toolUpdate(`call-${turn}-1`, {
     status: "completed",
     rawOutput: [
       "export function useThreadFollow(listRef, endRef, sessionId, active, ...) {",
@@ -441,13 +441,35 @@ async function runSteps(id, label) {
   }
 
   if (cancelled()) return finish("cancelled");
-  toolCall("run: node --test thread-follow.test.ts");
+  toolCall("run: node --test thread-follow.test.ts", `call-${turn}-2`);
   await sleep(stepMs * 5);
   if (cancelled()) return finish("cancelled");
   // 后一个工具已经宣告，前一个却迟迟不回来——真实 CLI 里这样「无输出完成」很常见，
   // 靠后续 tool_call 的先后顺序才能判定它真的结束了。
-  toolUpdate(`call-${turn}`, { status: "in_progress" });
+  toolUpdate(`call-${turn}-2`, { status: "in_progress" });
   await sleep(stepMs * 3);
+
+  // 第三个工具：把整轮内容抬高到确实把最早那些步骤挤出视口上面（收起棘轮的触发条件）。
+  if (cancelled()) return finish("cancelled");
+  toolCall("search: sandbox probe", `call-${turn}-3`);
+  await sleep(stepMs * 4);
+  if (cancelled()) return finish("cancelled");
+  toolUpdate(`call-${turn}-3`, {
+    status: "completed",
+    rawOutput: [
+      "browser/commands/cc109.json: 693 B",
+      "browser/commands/cc110.json: 1.0 KB",
+      "browser/commands/cc111.json: 1.0 KB",
+      "browser/commands/cc112.json: 1.1 KB",
+      "browser/commands/cc113.json: 1.5 KB",
+      "browser/commands/cc114.json: 1.8 KB",
+      "browser/results/cs1.json: 204 B",
+      "browser/results/cs2.json: 188 B",
+      "browser/results/cs3.json: 176 B",
+      "done — 5 matches in 4 files",
+    ].join("\n"),
+  });
+  await sleep(stepMs * 2);
 
   const replyTwo = [
     "So the fix is to make the running turn grow-only: nothing that has ",

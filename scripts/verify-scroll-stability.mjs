@@ -59,7 +59,7 @@ const waitForTurnEnd = async (turn, timeout) => {
   return false;
 };
 
-/** Jumps that moved content DOWN while the reader was pinned at the bottom, and scroll yanks. */
+/** Jumps that moved VISIBLE content down while the reader was pinned, and scroll yanks. */
 function analyze(samples, from, to) {
   const back = [];
   const yanks = [];
@@ -69,7 +69,10 @@ function analyze(samples, from, to) {
     if (prev && typeof sample.ut === "number" && typeof prev.ut === "number") {
       const dut = sample.ut - prev.ut;
       const dst = sample.st - prev.st;
-      if (dut > 6 && Math.abs(dst) < 6) back.push({ t: Math.round(sample.t - from), dut: +dut.toFixed(1), st: sample.st });
+      // Only movement the reader can actually see counts as jitter: a block folding away
+      // entirely above the scrollport is invisible housekeeping (see usePassedAway).
+      const visible = sample.ut < sample.vh && sample.ut + (sample.uh ?? 0) > 0;
+      if (dut > 6 && Math.abs(dst) < 6 && visible) back.push({ t: Math.round(sample.t - from), dut: +dut.toFixed(1), st: sample.st });
       if (Math.abs(dst) >= 6) yanks.push({ t: Math.round(sample.t - from), dst: +dst.toFixed(1), st: sample.st });
     }
     prev = sample;
@@ -173,6 +176,21 @@ try {
   const composer = panel.locator('[contenteditable="true"]');
   await composer.waitFor({ state: "visible", timeout: 40_000 });
 
+  // Wait for the agent runtime before typing. The panel auto-connects once on load; if the
+  // storage seed lands after that moment it sits idle forever, so one reload re-runs it.
+  const hostLog = join(sandbox.home, ".opensider", "host.log");
+  const runtimeReady = () => existsSync(hostLog) && readFileSync(hostLog, "utf8").includes("acp runtime ready");
+  const waitReady = async (ms) => {
+    const from = Date.now();
+    while (!runtimeReady() && Date.now() - from < ms) await sleep(400);
+    return runtimeReady();
+  };
+  if (!(await waitReady(25_000))) {
+    await panel.reload();
+    await composer.waitFor({ state: "visible", timeout: 30_000 });
+  }
+  ok("the agent runtime came up", await waitReady(60_000));
+
   // Diagnostic A/B: `NO_CV=1` turns content-visibility off to expose how much of the
   // residual movement comes from skip/restore toggling rather than from appends.
   if (process.env.NO_CV === "1") {
@@ -233,8 +251,12 @@ try {
           wall: Date.now(),
           st: scroller.scrollTop,
           ut: user ? Math.round(user.getBoundingClientRect().top * 10) / 10 : null,
+          uh: user ? user.offsetHeight : null,
           lt: live ? Math.round(live.getBoundingClientRect().top) : null,
+          lb: live ? Math.round(live.getBoundingClientRect().bottom) : null,
           bh: body ? body.offsetHeight : null,
+          panes: scroller.querySelectorAll(".cs-fold-scroll").length,
+          vh: window.innerHeight,
           running: Boolean(document.querySelector(".cs-composer.is-running")),
         });
       }
@@ -248,6 +270,8 @@ try {
   await panel.keyboard.type("Why does the transcript still jitter while a turn runs?");
   const sentA = Date.now();
   await panel.keyboard.press("Enter");
+  await sleep(2600); // roughly two thirds into the scripted turn: a look at the live state
+  await panel.screenshot({ path: join(root, ".tmp-probe", "scroll-midturn.png") });
   ok("turn A ran", await waitForTurnEnd(1, 60_000), `trace: ${JSON.stringify(trace().at(-1) ?? {})}`);
   await sleep(1500);
 
@@ -284,8 +308,40 @@ try {
   for (const jump of turnA.back.slice(0, 8)) {
     for (const line of mutationsAround(events, windowAStart + jump.t)) console.log(`      near: ${line}`);
   }
-  ok("A: nothing above the output moved down during the turn", turnA.back.length === 0, `max backward jump ${turnA.backMax}px`);
+  ok("A: nothing visible moved down during the turn", turnA.back.length === 0, `max visible backward jump ${turnA.backMax}px`);
   ok("A: the scroll offset held still during the turn", turnA.yankMax < 6, `max yank ${turnA.yankMax}px`);
+
+  // The newest output must stay pinned to the bottom edge while the reader follows (the
+  // block collapses above the viewport must not nudge it).
+  const pinnedSamples = samples.filter(
+    (sample) => sample.running && sample.st === 0 && sample.t >= windowAStart + 300 && sample.t <= windowAEnd && typeof sample.lb === "number",
+  );
+  let maxPinnedStep = 0;
+  let prevLb = null;
+  for (const sample of pinnedSamples) {
+    if (prevLb != null) maxPinnedStep = Math.max(maxPinnedStep, Math.abs(sample.lb - prevLb));
+    prevLb = sample.lb;
+  }
+  ok("A: the newest content stayed pinned to the bottom edge", maxPinnedStep <= 6, `max per-frame move ${maxPinnedStep}px`);
+
+  // The pass-away ratchet: finished steps must fold to their line while the turn runs —
+  // the panes count has to come down at some point — and the end-of-turn fold must close
+  // everything (no open panes left once the turn is over).
+  const runPanes = samples.filter((sample) => sample.running && sample.t >= windowAStart && sample.t <= windowAEnd).map((sample) => sample.panes);
+  const panesMax = Math.max(0, ...runPanes);
+  let panesMin = panesMax;
+  let ratcheted = false;
+  let seen = 0;
+  for (const count of runPanes) {
+    if (typeof count === "number") {
+      if (count < seen) ratcheted = true;
+      seen = Math.max(seen, count);
+      panesMin = Math.min(panesMin, count);
+    }
+  }
+  ok("A: a finished step folded away while the turn ran", ratcheted, `open panes max ${panesMax}, min ${panesMin}`);
+  const postTurn = samples.find((sample) => sample.t >= windowAEnd + 800);
+  ok("A: the turn folded into one line when it ended", postTurn?.panes === 0, `open panes after turn: ${postTurn?.panes}`);
 
   // One big move is expected as the turn closes: the whole process folds into a single
   // line, so everything above it comes down. Informational only — it is the accepted end
