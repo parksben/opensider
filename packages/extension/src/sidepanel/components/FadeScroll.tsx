@@ -14,8 +14,8 @@ function edgesOf(node: HTMLElement): { top: boolean; bottom: boolean } {
  *
  * A running tool call prints its result line by line and a thinking block streams its
  * reasoning; both must be followed without the user scrolling by hand. Scrolling up
- * releases the follow (they are reading what just went past), and coming back within
- * `PANE_STICKY_PX` of the bottom picks it up again.
+ * releases the follow (they are reading what just went past), and only coming back to the
+ * exact bottom picks it up again.
  *
  * `active` is off for panes that only ever show settled content: those open where they
  * were left instead of jumping to the end.

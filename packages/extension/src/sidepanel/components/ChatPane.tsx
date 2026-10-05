@@ -217,17 +217,12 @@ export function ChatPane({
   const listRef = useRef<HTMLDivElement>(null);
   const { tabs: historyTabs } = useComposerHistory();
   const threadEndRef = useRef<HTMLDivElement>(null);
-  // While a turn streams, the transcript keeps the height the live reasoning / tool steps
-  // need, so the messages above never jump. Once it is over those steps fold into one
-  // line and the extra height is given back — that is what `settled` tells the hook.
-  const stickToBottom = useThreadFollow(
-    listRef,
-    threadEndRef,
-    sessionId,
-    messages.length > 0,
-    replayKey,
-    !isRunning,
-  );
+  // While a turn runs the transcript is grow-only (see `AssistantMessage`), and the
+  // browser itself pins a `column-reverse` pile to its bottom edge, so following needs no
+  // per-frame work from us. This hook owns one rule — the moment the reader leaves the
+  // bottom, nothing may pull them back — plus the three forced jumps (send, session
+  // switch, the button).
+  const stickToBottom = useThreadFollow(listRef, sessionId, messages.length > 0, replayKey);
   const [handoff, setHandoff] = useState<{ prompt: string; installed: boolean | null } | null>(null);
   const editingRef = useRef<string | undefined>(undefined);
   const editingQueueRef = useRef<string | undefined>(undefined);
@@ -1079,13 +1074,8 @@ const MessageThread = memo(function MessageThread({
     <>
       {messages.map((message, index) => {
         const gap = index === 0 ? "" : message.role === "user" ? "mt-6" : "mt-3";
-        // The streaming bubble is the one the user is watching: it must lay out for real on
-        // every chunk, so it opts out of `content-visibility` (which would throttle its
-        // paint). Everything already on screen above it stays eligible and gets skipped.
-        const live = isRunning && message.durationMs == null && index === messages.length - 1;
-        const offscreen = live ? "" : " cs-thread-bubble";
         return message.role === "user" ? (
-          <div key={message.id} data-thread-anchor="" className={`flex justify-end ${gap}${offscreen}`}>
+          <div key={message.id} data-thread-anchor="" className={`flex justify-end ${gap}`}>
             <div
               role={isRunning ? undefined : "button"}
               tabIndex={isRunning ? undefined : 0}
@@ -1132,7 +1122,7 @@ const MessageThread = memo(function MessageThread({
             locale={locale}
             locked={isRunning}
             hideActions={isRunning && message.id === messages[messages.length - 1]?.id}
-            className={`${gap}${offscreen}`}
+            className={gap}
             modelLabel={
               message.modelName ||
               models.find((item) => item.id === message.modelId)?.name ||
@@ -1873,7 +1863,10 @@ function renderAssistantPart(
         key={index}
         label={t(locale, "thinking")}
         paneClass="cs-fold-scroll"
-        open={thinking ? true : undefined}
+        // Grow-only while the turn runs: a block that opened to show its stream keeps its
+        // height when it stops writing, so it never yanks the content below it. Only the
+        // block being written right now follows its stream.
+        open={live ? true : undefined}
         follow={thinking}
         icon={
           <span className="inline-flex shrink-0 text-[var(--muted)]">
@@ -1974,25 +1967,16 @@ const AssistantMessage = memo(
   const fold = !live && process.length > 0;
   const lastIndex = content.length - 1;
   if (!fold) {
-    // Running with no reply text yet: every step gets its own line, so the user watches the
-    // reasoning and each tool call as it happens. The card that is running is the open one;
-    // the ones before it collapse to their title line.
-    //
-    // Once prose starts, everything before it gets out of the way and stays that way: only
-    // the newest reply text and the steps that came after it are on screen. A long turn's
-    // process is dozens of lines and the text is what the user actually asked for — burying
-    // it under everything it took to get there is unreadable. Nothing is lost: the fold at
-    // the end of the turn brings the whole process back as one expandable line, and
-    // `hasToolCallAfter` keeps the running card honest in the meantime.
-    const lastText = lastTextIndex(content);
-    const items = content
-      .map((part, index) => ({ part, index }))
-      // Nothing above the newest reply text survives; the text itself and everything the
-      // agent is doing after it stay.
-      .filter(({ part, index }) => lastText < 0 || part.type === "text" || index > lastText);
+    // Running turns are grow-only. Every step that has appeared stays exactly where it
+    // showed up — a tool card keeps its height when it finishes, a reasoning block keeps
+    // it when it stops writing, nothing is swapped out when the next reply text arrives.
+    // Removing height from under the reader is what "jitter" is: measured on the real
+    // panel, the old filter that made the reply take the screen on its own shoved the
+    // transcript down 125px in a single frame. The end-of-turn fold below is the one
+    // moment the transcript is allowed to give space back.
     return (
       <div className="space-y-1">
-        {items.map(({ part, index }) =>
+        {content.map((part, index) =>
           renderAssistantPart(part, index, locale, page, live, lastIndex, hasToolCallAfter(content, index)),
         )}
       </div>

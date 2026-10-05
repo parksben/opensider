@@ -1,140 +1,114 @@
 import { useCallback, useEffect, useRef, type RefObject } from "react";
 
-/** How close to the bottom (px) still counts as "following" the stream. */
+/** Sub-pixel slack around the bottom, and nothing more. */
+export const FOLLOW_EPSILON_PX = 2;
+
+/** How close to the bottom the "jump to bottom" affordance stays hidden (panel margin). */
 export const STICKY_PX = 96;
 
 /**
- * Whether the transcript should still be pinned to its bottom.
+ * Whether the offset sits at the bottom of a `column-reverse` transcript — `0` is the
+ * bottom there, so this is just `|scrollTop| <= epsilon`.
  *
- * Read off `scrollTop`, not off geometry: `scrollTop === 0` *is* the bottom in a
- * `column-reverse` box, so "within STICKY_PX of it" is simply `|scrollTop| <= STICKY_PX`.
- *
- * This used to measure the sentinel's `getBoundingClientRect()` against the scrollport's
- * bottom, which was wrong in a specific and painful way. The transcript used to carry a
- * `min-height` taller than its content, which pushed the sentinel far above the scrollport;
- * the moment the user scrolled up by less than that overshoot the sentinel came back into
- * range and the transcript snapped them to the bottom again — a tug-of-war they had to fight
- * through to read anything.
- *
- * `maxScrollUp` is `-(scrollHeight - clientHeight)`, the furthest up the user can go. Being
- * pinned there counts as following too: there is nothing more to show, and no reason to stop
- * them scrolling back down. It is `null` when the caller has no range to report, which must
- * *not* read as "at the end" — an unmeasured limit makes every position look like the end,
- * which is the same snap-back wearing a different hat.
+ * The epsilon is sub-pixel slack and nothing else, because the rule this file grew around
+ * is that the reader's wheel wins: once they are off the bottom they are reading, and
+ * nothing may pull them back. An earlier version followed everything within 96px of the
+ * bottom, and another counted "pinned at the far end of the scrollback" as following —
+ * both snapped readers back mid-read (measured on the real panel: a reader at -241px
+ * dragged to 0 by a single content change). Careful with geometry too: measuring a sentinel
+ * against the scrollport's edge went wrong the moment the transcript's height changed,
+ * which is why this reads the number that *is* the definition of the bottom.
  */
-export function threadFollowsBottom(
-  scrollTop: number,
-  maxScrollUp: number | null = null,
-  sticky: number = STICKY_PX,
-): boolean {
-  if (Math.abs(scrollTop) <= sticky) return true;
-  if (maxScrollUp == null || maxScrollUp === 0) return false;
-  return scrollTop <= maxScrollUp;
+export function atThreadBottom(scrollTop: number, epsilon: number = FOLLOW_EPSILON_PX): boolean {
+  return Math.abs(scrollTop) <= epsilon;
 }
 
 /**
- * Follow the bottom while the user is near it. Once they scroll up to read, streaming
- * growth does not move what they are looking at.
- * Returns the function that jumps back to the bottom (send, session switch, the button).
+ * Hold the transcript still while a turn runs, and jump it back on request.
+ * Returns the function that jumps to the bottom (send, session switch, the button).
  *
- * Two mechanisms, and it matters which one does what:
+ * Three rules, in the order they matter:
  *
- *   - **Holding still while the user reads** is the browser's job, not ours. The transcript
- *     keeps the default `overflow-anchor: auto`, so when content above, below or inside the
- *     viewport changes size — a tool result streaming in, a step folding away — Chromium
- *     adjusts the scroll offset to keep the anchored element exactly where it was. Measured
- *     over a stream-and-fold sequence, the user's message did not move a single pixel with
- *     this on, and moved 140px with it off. That is the whole of "no jitter".
- *     (It was off for a while, with a hand-rolled `scrollTop` compensation in its place,
- *     which measured as doing nothing at all: appends, removals and folds all leave
- *     `scrollTop` alone, so there was never a shift to compensate for.)
+ *   - **Staying put at the bottom is the browser's job.** A `column-reverse` box at
+ *     `scrollTop === 0` pins the pile to its bottom edge, and appends, removals and
+ *     resizes there all leave the offset alone (measured: zero displacement for each), so
+ *     following needs no per-frame `scrollTo` from us.
+ *   - **The reader wins.** The moment the offset leaves the bottom — any wheel, touch, or
+ *     keyboard scroll — it is theirs until they come back to it or press the button.
+ *     Growth never drags them back; the `ResizeObserver` below only smooths sub-pixel
+ *     wobble and serves the forced jumps.
+ *   - **`stick()` is the only forced move**, and it stays forced until the offset lands at
+ *     the bottom, so the animation it starts is not mistaken for the user scrolling.
  *
- *   - **Following the newest output while the user is at the bottom** is what this hook
- *     does. A `ResizeObserver` on the transcript snaps to the bottom whenever it grows and
- *     the user is inside the sticky band. Scrolling up on wheel or touch releases the
- *     follow, so reading is never interrupted.
+ * Why the strictness: the previous version re-armed the follow while the reader was
+ * within a 96px band of the bottom, and treated "pinned at the far end of the scrollback"
+ * as following too. Frame-by-frame on the real panel that pulled a reader 241px up back
+ * to the bottom on the next chunk. Handing control back requires "following" to mean
+ * exactly "still at the bottom".
  */
 export function useThreadFollow(
   listRef: RefObject<HTMLElement | null>,
-  endRef: RefObject<HTMLElement | null>,
   sessionId: string,
   active: boolean,
   resetKey = 0,
-  settled = true,
 ): (smooth?: boolean) => void {
   const forceFollow = useRef(false);
+  const suspended = useRef(false);
 
   const stick = useCallback((smooth = false) => {
-    forceFollow.current = true;
     const node = listRef.current;
+    suspended.current = false;
     if (!node) return;
+    if (node.scrollTop === 0) {
+      forceFollow.current = false;
+      return;
+    }
+    forceFollow.current = true;
     node.scrollTo({ top: 0, behavior: smooth ? "smooth" : "auto" });
-    if (!smooth && node.scrollTop === 0) forceFollow.current = false;
   }, [listRef]);
-
-  const settledRef = useRef(settled);
-  useEffect(() => {
-    // Watched for its transitions, but it changes nothing: the height below is not pinned
-    // any more, so a turn ending has nothing to release. Kept as a parameter because
-    // callers read naturally as "following while this turn runs", and the reserve it used
-    // to drive is documented in TECH_DESIGN as removed.
-    settledRef.current = settled;
-  }, [settled]);
 
   useEffect(() => {
     if (!active) return;
     const scroller = listRef.current;
-    const end = endRef.current;
-    if (!scroller || !end) return;
-
-    const following = () => {
-      if (forceFollow.current) return true;
-      const range = scroller.scrollHeight - scroller.clientHeight;
-      // A pane with nothing to scroll has no "up" to be pinned against; its only position
-      // is the bottom, which the sticky band already covers.
-      const maxUp = range > 0 ? -range : null;
-      if (threadFollowsBottom(scroller.scrollTop, maxUp)) return true;
-      // The sentinel is the fallback for the one case the number cannot see: the user
-      // scrolled up while the transcript was shorter than the viewport, so `scrollTop` was
-      // pinned at 0 by the lack of range, and content has since grown past it.
-      const root = scroller.getBoundingClientRect();
-      return end.getBoundingClientRect().top <= root.bottom + STICKY_PX;
-    };
+    if (!scroller) return;
+    suspended.current = false;
 
     const apply = () => {
-      if (!following()) return;
-      forceFollow.current = false;
-      if (scroller.scrollTop === 0) return;
-      scroller.scrollTop = 0;
+      const top = scroller.scrollTop;
+      if (forceFollow.current) {
+        if (top !== 0) scroller.scrollTop = 0;
+        return;
+      }
+      // The reader owns any real offset; only sub-pixel wobble is ours to fix.
+      if (suspended.current) return;
+      if (!atThreadBottom(top)) return;
+      if (top !== 0) scroller.scrollTop = 0;
     };
 
     // Everything that can make the transcript taller. `ResizeObserver` on the body covers
-    // reflows of any kind — a tool result arriving, a markdown table finishing its layout —
+    // reflows of any kind — a markdown table finishing its layout, a code block opening —
     // where a MutationObserver would hear about the DOM change but not the height.
     const body = scroller.querySelector<HTMLElement>("[data-thread-body]");
     const observer = new ResizeObserver(apply);
     if (body) observer.observe(body);
 
     const onScroll = () => {
-      if (scroller.scrollTop === 0) forceFollow.current = false;
-    };
-
-    const releaseFollow = () => {
-      // Wheel / touch are the user telling us they want to look at something else. Without
-      // this, the next growth would yank them back to the bottom mid-read.
-      forceFollow.current = false;
+      if (atThreadBottom(scroller.scrollTop)) {
+        suspended.current = false;
+        forceFollow.current = false;
+        return;
+      }
+      // A `stick()` animation in flight is us, not the reader.
+      if (forceFollow.current) return;
+      suspended.current = true;
     };
 
     scroller.addEventListener("scroll", onScroll, { passive: true });
-    scroller.addEventListener("wheel", releaseFollow, { passive: true });
-    scroller.addEventListener("touchmove", releaseFollow, { passive: true });
     return () => {
       observer.disconnect();
       scroller.removeEventListener("scroll", onScroll);
-      scroller.removeEventListener("wheel", releaseFollow);
-      scroller.removeEventListener("touchmove", releaseFollow);
     };
-  }, [active, endRef, listRef, resetKey, sessionId]);
+  }, [active, listRef, resetKey, sessionId]);
 
   return stick;
 }

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { PANE_STICKY_PX, paneFollowsBottom } from "./pane-follow.ts";
+import { PANE_BOTTOM_EPSILON_PX, paneFollowsBottom } from "./pane-follow.ts";
 
 describe("paneFollowsBottom", () => {
   it("follows a pane that has nothing to scroll", () => {
@@ -15,30 +15,31 @@ describe("paneFollowsBottom", () => {
     assert.equal(paneFollowsBottom(900, 400, 499), true);
   });
 
-  it("releases the follow once the user scrolls up to read", () => {
-    // Far more than PANE_STICKY_PX above the bottom: they went back to read.
+  it("releases the follow the moment the user scrolls up to read", () => {
+    // The old 32px band re-armed while they were still inside it, so the next streamed
+    // line dragged them back down. Any real offset means they are reading.
+    assert.equal(paneFollowsBottom(900, 400, 497), false);
     assert.equal(paneFollowsBottom(900, 400, 100), false);
     assert.equal(paneFollowsBottom(900, 400, 0), false);
   });
 
-  it("picks the follow back up when they return near the bottom", () => {
-    const bottom = 500;
-    const back = bottom - 20;
-    assert.equal(paneFollowsBottom(900, 400, back), true);
+  it("picks the follow back up only at the exact bottom", () => {
+    assert.equal(paneFollowsBottom(900, 400, 500), true);
+    assert.equal(paneFollowsBottom(900, 400, 470), false);
   });
 
-  it("keeps the sticky band small enough not to swallow a short pane", () => {
-    // These panes are ~10 lines tall. 96px (the transcript's band) would cover most of
-    // one, so a nudge of the scrollbar would snap straight back down.
-    assert.ok(PANE_STICKY_PX < 48);
+  it("keeps the resumption tolerance at sub-pixel scale", () => {
+    // These panes print a line every few hundred milliseconds; anything wider is a tug of
+    // war with the reader.
+    assert.ok(PANE_BOTTOM_EPSILON_PX <= 2);
   });
 
-  it("honours a caller-supplied band", () => {
-    // distance from the bottom is 100 in both cases; only the band decides.
+  it("honours a caller-supplied epsilon", () => {
+    // distance from the bottom is 100 in all of these; only the epsilon decides.
     assert.equal(paneFollowsBottom(900, 400, 400, 200), true);
     assert.equal(paneFollowsBottom(900, 400, 400, 100), true);
     assert.equal(paneFollowsBottom(900, 400, 400, 50), false);
-    // 100 away with the default 32px band: released.
+    // 100 away with the default epsilon: released.
     assert.equal(paneFollowsBottom(900, 400, 400), false);
   });
 

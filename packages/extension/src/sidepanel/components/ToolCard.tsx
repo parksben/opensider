@@ -62,9 +62,11 @@ export function ToolCard({
     if (running) setPinned(false);
   }, [running]);
 
-  // While the turn is over the card is settled: the user's own choice stands, so opening one
-  // by hand keeps it open for reading.
-  const open = running || pinned ? true : undefined;
+  // Grow-only while the turn runs: a card opened when it started running keeps its height
+  // when it finishes, because collapsing here pulls everything the reader is looking at
+  // down the screen. The end-of-turn fold is what gives the height back. A settled card
+  // (inside the fold) keeps whatever the user chose by hand, as before.
+  const open = live || pinned ? true : undefined;
   // Only the card that is running streams its result; the ones before it in the same turn
   // hold still, and yanking them to the bottom would hide their arguments.
   const follow = running;
