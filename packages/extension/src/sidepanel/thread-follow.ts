@@ -4,12 +4,11 @@ import { useCallback, useEffect, useRef, type RefObject } from "react";
 export const STICKY_PX = 96;
 
 /**
- * The thread is `flex-direction: column-reverse`, so `scrollTop === 0` is the
- * bottom and scrolling up makes `scrollTop` negative. Keeping that value while
- * the transcript grows preserves the distance *from the bottom*, which pushes
- * whatever the user is reading upward. When they are not following, add the
- * anchor's on-screen shift back onto `scrollTop` so that line stays put.
- * When they are following, snap to `0`.
+ * The thread is `flex-direction: column-reverse`, so `scrollTop === 0` is the bottom and
+ * scrolling up makes `scrollTop` negative. Keeping that value while the transcript grows
+ * preserves the distance *from the bottom*, which pushes whatever the user is reading
+ * upward. When they are not following, add the anchor's on-screen shift back onto
+ * `scrollTop` so that line stays put. When they are following, snap to `0`.
  */
 export function nextThreadScroll(following: boolean, scrollTop: number, shift: number): number | null {
   if (following) return scrollTop === 0 ? null : 0;
@@ -18,43 +17,44 @@ export function nextThreadScroll(following: boolean, scrollTop: number, shift: n
 }
 
 /**
- * What the body's pinned height should become after measuring it at `height`, and
- * whether the pin should be on at all.
+ * Whether the transcript should still be pinned to its bottom.
  *
- * The transcript is pinned to the tallest it has been so streaming growth cannot pull the
- * messages above back down. That pin has to come off when the body legitimately shrinks —
- * the fold at the end of a turn (every reasoning / tool step collapses into one line) is
- * a shrink of hundreds of pixels, and a pin left at the old height is the blank gap the
- * user sees below the finished reply.
+ * Read off `scrollTop`, not off geometry: `scrollTop === 0` *is* the bottom in a
+ * `column-reverse` box, so "within STICKY_PX of it" is simply `|scrollTop| <= STICKY_PX`.
  *
- * Returns `null` for "no pin". That is the answer for a settled shrink, and it is not the
- * same as re-pinning to the new (smaller) height: the body is measured with
- * `content-visibility` in the ancestry, so a height taken while some ancestor is skipping
- * its subtree can read high, and writing *that* back would put the same blank gap there.
- * Dropping the pin lets the natural height decide; the next growth pins again.
+ * This used to measure the sentinel's `getBoundingClientRect()` against the scrollport's
+ * bottom, which was wrong in a specific and painful way. While a turn ran the transcript
+ * carried a `min-height` taller than its content, which pushed the sentinel far above the
+ * scrollport while `scrollTop` was still 0; the moment the user scrolled up by less than
+ * that overshoot the sentinel came back into range and the transcript snapped them to the
+ * bottom again — a tug-of-war they had to fight through to read anything.
  *
- * - Growing (or no pin yet): raise the pin, so the reserve covers the new content.
- * - Shrinking while a turn still runs: keep the pin. The transcript only grows mid-turn,
- *   so a shrink there is a half-applied repaint; the next measurement puts it back.
+ * `maxScrollUp` is `-(scrollHeight - clientHeight)`, the furthest up the user can go. Being
+ * pinned there counts as following too: there is nothing more to show, and no reason to
+ * stop them scrolling back down.
  */
-export function nextBodyPin(pin: number | null, height: number, settled: boolean): number | null {
-  // A zero-height body (an empty session, or one that has not laid out yet) is never worth
-  // a pin: there is nothing to hold open, and a `min-height: 0` writes a style for no
-  // reason.
-  if (height <= 0) return null;
-  if (pin === null || height > pin) return height;
-  if (!settled) return pin;
-  return null;
+export function threadFollowsBottom(
+  scrollTop: number,
+  maxScrollUp: number | null = null,
+  sticky: number = STICKY_PX,
+): boolean {
+  if (Math.abs(scrollTop) <= sticky) return true;
+  // Only when a real limit is supplied. `null` (or a limit that is still 0 because the
+  // caller has not measured) must not read as "pinned to the end": an unmeasured limit
+  // makes every position look like the end, which re-creates the snap-back the sticky band
+  // exists to avoid.
+  if (maxScrollUp == null || maxScrollUp === 0) return false;
+  return scrollTop <= maxScrollUp;
 }
 
 /**
- * Follow the bottom while the user is near it. Once they scroll up to read,
- * pin the first visible message so streaming growth does not move it.
+ * Follow the bottom while the user is near it. Once they scroll up to read, pin the first
+ * visible message so streaming growth does not move it.
  * Returns the function that jumps back to the bottom (send, session switch, the button).
  *
  * `settled` is the running state of the conversation on screen: `false` while a turn
- * streams, `true` once it is over. The flip from one to the other is where the pinned
- * height below is let go — see the effect inside.
+ * streams, `true` once it is over. It no longer changes any height — the reserve that used
+ * to be pinned around it is gone, see below.
  */
 export function useThreadFollow(
   listRef: RefObject<HTMLElement | null>,
@@ -65,8 +65,6 @@ export function useThreadFollow(
   settled = true,
 ): (smooth?: boolean) => void {
   const forceFollow = useRef(false);
-  /** The pinned body height, and whether a pin is on at all (`null` = no `min-height`). */
-  const peakRef = useRef<number | null>(null);
 
   const stick = useCallback((smooth = false) => {
     forceFollow.current = true;
@@ -77,79 +75,57 @@ export function useThreadFollow(
   }, [listRef]);
 
   /**
-   * `settled` flips once per turn: `false` the moment the user sends, `true` when the
-   * answer is done. Watched here rather than inside the reserve below because the
-   * reserve is a ResizeObserver callback — it only hears about height *changes*, and a
-   * turn that begins while the body is already at its tallest would never be told.
+   * `settled` is watched for its transitions and no longer touches the height.
    *
-   * Either direction forgets the pin. Starting a turn measures it from scratch instead of
-   * being capped by the previous one's peak; ending a turn drops it so nothing keeps a wall
-   * of blank height below the last reply. (Re-pinning to a height measured right after a
-   * shrink is how the blank gap got there in the first place.)
+   * It used to pin the body to the tallest it had been, so a turn's streaming tool steps
+   * (replaced in place) and the fold at the end of it (everything becomes one line) could
+   * not shrink the body and drag earlier messages back down. Measured in a real browser,
+   * that pin was the reason scrolling up fought the user: the pinned height lands entirely
+   * *above* the messages, so they scrolled through dead space before reaching anything,
+   * and with a long enough process they could reach the top and see no message at all. It
+   * also pushed the sentinel out of the scrollport, which kept the "am I at the bottom"
+   * test answering yes and snapping them back.
+   *
+   * The DOM needs no such prop. `column-reverse` anchors `scrollTop` to the newest content,
+   * and appending, removing or resizing rows left `scrollTop` alone in measurement, so the
+   * transcript now rides on its own natural height.
    */
   const settledRef = useRef(settled);
   useEffect(() => {
-    const was = settledRef.current;
     settledRef.current = settled;
-    if (settled === was) return;
-    peakRef.current = null;
-    const body = listRef.current?.querySelector<HTMLElement>("[data-thread-body]");
-    if (body) body.style.minHeight = "";
-  }, [settled, listRef]);
+  }, [settled]);
 
   useEffect(() => {
     if (!active) return;
     const scroller = listRef.current;
-    const end = endRef.current;
-    if (!scroller || !end) return;
-    const body = scroller.querySelector<HTMLElement>("[data-thread-body]");
-    if (!body) return;
+    if (!scroller) return;
 
-    // While a turn runs the transcript only grows, but the live step is replaced in place
-    // and the whole process folds at the end of it — both would shrink the body and pull
-    // the messages above back down. So the body is pinned to the tallest it has been.
-    // (What "grow, then let go" means exactly lives in `nextBodyPin`.)
-    //
-    // Start unpinned on every fresh body: a session switch or a resend that truncated the
-    // tail must not inherit the previous transcript's peak. A width change re-measures for
-    // the same reason.
-    peakRef.current = null;
-    body.style.minHeight = "";
-    let width = scroller.clientWidth;
-    const reserve = () => {
-      if (scroller.clientWidth !== width) {
-        // A width change reflows the text, so start the measurement over: the old pin was
-        // measured at the old width and may already be wrong.
-        width = scroller.clientWidth;
-        peakRef.current = null;
-        body.style.minHeight = "";
-      }
-      const pin = nextBodyPin(peakRef.current, body.offsetHeight, settledRef.current);
-      if (pin === null) {
-        // A settled shrink: drop the pin so nothing keeps a wall of blank height below
-        // the last reply.
-        peakRef.current = null;
-        body.style.minHeight = "";
-        return;
-      }
-      if (pin === peakRef.current) return;
-      peakRef.current = pin;
-      body.style.minHeight = `${pin}px`;
+    const following = () => {
+      if (forceFollow.current) return true;
+      const range = scroller.scrollHeight - scroller.clientHeight;
+      // A pane with nothing to scroll has no "up" to be pinned against; its only position
+      // is the bottom, which the sticky band already covers.
+      const maxUp = range > 0 ? -range : null;
+      return threadFollowsBottom(scroller.scrollTop, maxUp);
     };
-    reserve();
 
+    /**
+     * Keep the message under the reader's eyes where it is when the content around it
+     * changes size. Appends, removals and height changes above the reader all held
+     * `scrollTop` by themselves in measurement; what does move is a step that collapses
+     * *below* the reading position, which pulls the following content up and slides the
+     * reader's line down the screen. Correcting by that shift is what makes the fold at the
+     * end of a turn read as "the process above me folded" instead of "I was moved".
+     *
+     * `writing` stops the correction feeding itself: setting `scrollTop` fires `scroll`.
+     */
     let anchor: HTMLElement | null = null;
     let anchorTop = 0;
     let writing = false;
 
-    const following = () => {
-      if (forceFollow.current) return true;
-      const root = scroller.getBoundingClientRect();
-      const sent = end.getBoundingClientRect();
-      return sent.top <= root.bottom + STICKY_PX;
-    };
-
+    const body = scroller.querySelector<HTMLElement>("[data-thread-body]");
     const capture = () => {
+      if (!body) return;
       const root = scroller.getBoundingClientRect();
       anchor = null;
       for (const el of body.querySelectorAll<HTMLElement>("[data-thread-anchor]")) {
@@ -201,11 +177,15 @@ export function useThreadFollow(
       forceFollow.current = false;
     };
 
-    const observer = new ResizeObserver(() => {
-      reserve();
+    // Content changes are what need the anchor correction; a MutationObserver catches every
+    // kind of it (a tool result arriving, a fold, a markdown table finishing its layout)
+    // where a ResizeObserver on the body would only hear about the box resizing.
+    const observer = new MutationObserver(apply);
+    if (body) {
+      observer.observe(body, { childList: true, subtree: true, characterData: true });
+      capture();
       apply();
-    });
-    observer.observe(body);
+    }
     scroller.addEventListener("scroll", onScroll, { passive: true });
     scroller.addEventListener("wheel", releaseFollow, { passive: true });
     scroller.addEventListener("touchmove", releaseFollow, { passive: true });
@@ -214,9 +194,8 @@ export function useThreadFollow(
       scroller.removeEventListener("scroll", onScroll);
       scroller.removeEventListener("wheel", releaseFollow);
       scroller.removeEventListener("touchmove", releaseFollow);
-      body.style.minHeight = "";
     };
-  }, [active, endRef, listRef, resetKey, sessionId]);
+  }, [active, resetKey, sessionId]);
 
   return stick;
 }

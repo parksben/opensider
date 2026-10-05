@@ -25,18 +25,31 @@ const kindIcon = {
  * to be running at once. The finished ones stay on screen as single lines; the whole run
  * folds into one line when the turn ends.
  *
- * `live` is only the turn's running state, and it is what allows a card to auto-open. The
- * card's own state comes from `toolFinished` rather than `part.status`, which agents
- * frequently never fill in (see `toolFinished`).
+ * "Running" is answered two ways, because no single one is trustworthy:
+ *   - `toolFinished`: it has a result (an agent cannot produce one before the tool returns).
+ *   - `superseded`: a later tool call was already announced after it. ACP runs tools one at
+ *     a time, so that proves this one returned — which is what catches a tool that produced
+ *     no output at all (no result, no status, but it did finish).
  *
- * `pinned` remembers that the user opened a card by hand, so their reading position
- * survives the run and the fold at the end of it. It is reset whenever this card becomes
- * the running one again: a fresh execution starts from the default, open.
+ * `live` is only the turn's running state, and it is what allows a card to auto-open at
+ * all. `pinned` remembers that the user opened a card by hand, so their reading position
+ * survives the run and the fold at the end of it; it is reset whenever this card becomes
+ * the running one again, so a fresh execution starts from the default, open.
  */
-export function ToolCard({ locale, part, live }: { locale: Locale; part: ToolPart; live?: boolean }) {
+export function ToolCard({
+  locale,
+  part,
+  live,
+  superseded,
+}: {
+  locale: Locale;
+  part: ToolPart;
+  live?: boolean;
+  superseded?: boolean;
+}) {
   const Icon = kindIcon[(part.kind as keyof typeof kindIcon) ?? "other"] ?? Wrench;
   const finished = toolFinished(part);
-  const running = Boolean(live) && !finished;
+  const running = Boolean(live) && !finished && !superseded;
   const title = toolLiveHeadline(locale, part);
   const hasArgs = part.args != null && part.args !== "";
   const hasResult = part.result != null && part.result !== "";
