@@ -13,6 +13,7 @@ import { composerHasContent, stripAttachmentMentions } from "../mentions";
 import { buildHandoffPrompt, EDITOR_REPO, handoffCutoff } from "../handoff";
 import { groupModelsByPrefix, modelGroupLabel, modelShortName } from "../model-groups";
 import { STICKY_PX, useThreadFollow } from "../thread-follow";
+import { usePassedAway } from "../use-passed-away";
 import {
   composerCarryMatches,
   decodeComposerCarry,
@@ -1851,33 +1852,14 @@ function renderAssistantPart(
 ) {
   if (part.type === "text") return <Markdown key={index} text={part.text} page={page} />;
   if (part.type === "reasoning") {
-    // The block being written right now expands so the reasoning can be read as it
-    // streams, and follows its own stream. Everything else stays a single line.
-    //
-    // The icon is always there — a spinner while it is being written, `Brain` once it is
-    // done. Without it a collapsed reasoning line sat among the tool cards with nothing
-    // marking what it was, which read as an orphan row.
-    const thinking = Boolean(live && lastIndex != null && index === lastIndex);
     return (
-      <TextFold
+      <ReasoningRow
         key={index}
-        label={t(locale, "thinking")}
-        paneClass="cs-fold-scroll"
-        // Grow-only while the turn runs: a block that opened to show its stream keeps its
-        // height when it stops writing, so it never yanks the content below it. Only the
-        // block being written right now follows its stream.
-        open={live ? true : undefined}
-        follow={thinking}
-        icon={
-          <span className="inline-flex shrink-0 text-[var(--muted)]">
-            {thinking ? <LoaderCircle size={12} className="animate-spin" /> : <Lightbulb size={12} strokeWidth={1.75} />}
-          </span>
-        }
-      >
-        <div className="whitespace-pre-wrap text-[11px] leading-relaxed text-[var(--muted)]">
-          {compactReasoning(part.text)}
-        </div>
-      </TextFold>
+        locale={locale}
+        text={part.text}
+        live={live}
+        thinking={Boolean(live && lastIndex != null && index === lastIndex)}
+      />
     );
   }
   return (
@@ -1888,6 +1870,46 @@ function renderAssistantPart(
       live={live}
       superseded={superseded}
     />
+  );
+}
+
+/**
+ * One reasoning block. While the turn runs it keeps its height until the reader has
+ * watched it leave through the top edge, then collapses to the lightbulb line — off
+ * screen, so nothing visible moves (see `usePassedAway`); only the block being written
+ * right now follows its stream. A settled block (inside the end-of-turn fold) is a single
+ * line, the way it always was.
+ */
+function ReasoningRow({
+  locale,
+  text,
+  live,
+  thinking,
+}: {
+  locale: Locale;
+  text: string;
+  live?: boolean;
+  thinking: boolean;
+}) {
+  const { ref, passed } = usePassedAway(Boolean(live));
+  return (
+    <div ref={ref}>
+      <TextFold
+        label={t(locale, "thinking")}
+        paneClass="cs-fold-scroll"
+        open={live && !passed ? true : undefined}
+        follow={thinking}
+        icon={
+          <span className="inline-flex shrink-0 text-[var(--muted)]">
+            {thinking ? <LoaderCircle size={12} className="animate-spin" /> : <Lightbulb size={12} strokeWidth={1.75} />}
+          </span>
+        }
+      >
+        <div className="whitespace-pre-wrap text-[11px] leading-relaxed text-[var(--muted)]">
+          {compactReasoning(text)}
+        </div>
+      </TextFold>
+    </div>
   );
 }
 
