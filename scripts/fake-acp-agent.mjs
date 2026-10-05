@@ -10,6 +10,15 @@
 //   FAKE_ACP_IGNORE_CANCEL_MS  keep running this long after session/cancel (default 0)
 //   FAKE_ACP_TRACE             append a JSON line per prompt/cancel/end to this file
 //
+// Steps mode (used by scripts/verify-scroll-stability.mjs): a scripted turn shaped like a
+// real agent's — thinking, a tool call that runs and completes, reply text, a second tool
+// call that completes (announced late, no result), then more text. It exists so render
+// stability can be measured against the exact sequence that moves a real transcript:
+// the thinking block collapsing when a tool starts, the tool card collapsing when it
+// finishes, and the earlier process scrolling away when the next text arrives.
+//   FAKE_ACP_STEPS=1           stream the scripted multi-step turn instead of raw chunks
+//   FAKE_ACP_STEP_MS           delay between steps in ms (default 90)
+//
 // Agent-mode advertising (used by scripts/verify-agent-modes.mjs). These decide what
 // `session/new|load|fork` advertises so one fake agent can stand in for the three real
 // CLI shapes we measured. Field names are copied verbatim from those CLIs — do not rename.
@@ -54,6 +63,8 @@ const modesShape = process.env.FAKE_MODES ?? "none";
 const modeUrlIds = process.env.FAKE_MODE_URL_IDS === "1";
 const modeSwitchOnPrompt = process.env.FAKE_MODE_SWITCH_ON_PROMPT ?? "";
 const optionsShape = process.env.FAKE_OPTIONS ?? "none";
+const stepsMode = process.env.FAKE_ACP_STEPS === "1";
+const stepMs = Number(process.env.FAKE_ACP_STEP_MS ?? 90);
 
 // The bridge also runs the CLI once as `<cli> models` before opening a session (see
 // internal/models). Answering that here matters: without it the bridge waits out its own
@@ -98,6 +109,24 @@ const toolCall = (title) =>
         status: "in_progress",
       },
     },
+  });
+// 思考（reasoning）流。与 agent_message_chunk 同构，只是 sessionUpdate 换成
+// agent_thought_chunk——面板据此把它渲染成「思考」折叠块。
+const thought = (text) =>
+  write({
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: {
+      sessionId,
+      update: { sessionUpdate: "agent_thought_chunk", content: { type: "text", text } },
+    },
+  });
+// 工具调用状态更新：中间态只带 status（无输出，卡片一直转），结束态带 rawOutput。
+const toolUpdate = (toolCallId, patch) =>
+  write({
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: { sessionId, update: { sessionUpdate: "tool_call_update", toolCallId, ...patch } },
   });
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const trace = (entry) => {
@@ -346,6 +375,96 @@ async function streamSelectionReply(id, kind, input) {
   reply(id, { stopReason: "end_turn" });
 }
 
+/**
+ * 脚本化的一轮：思考 → 工具 1（中途完成）→ 正文 → 工具 2（声明很久后才完成）→ 正文。
+ * 顺序故意选成最折腾渲染的那种：每个转折都恰好会触发面板的收起 / 删除动作——
+ * 思考结束收起、工具完成收起、下一段正文出现时把前面过程换掉。
+ */
+async function runSteps(id, label) {
+  const cancelled = () => cancelledAt && Date.now() - cancelledAt >= ignoreCancelMs;
+  const finish = (stopReason) => {
+    trace({ event: "end", turn: label, stopReason });
+    reply(id, { stopReason });
+  };
+
+  const dig = [
+    "The user is asking about the scroll behaviour of the transcript. ",
+    "Let me re-read how the live region tracks its bottom: scrollTop === 0 ",
+    "is the bottom in a column-reverse box, and any growth while the view ",
+    "is pinned there should leave the offset alone... ",
+    "But a tool card that collapses right at the bottom edge would move ",
+    "everything above it, because the freed height sits below the reader. ",
+    "That is the jitter they keep reporting. I should confirm with a probe ",
+    "that measures the user bubble position frame by frame while a turn ",
+    "streams, then decide what to keep open and what to fold. ",
+    "First, let me look at the tool status helper and the card itself.\n",
+  ];
+  for (const piece of dig) {
+    if (cancelled()) return finish("cancelled");
+    thought(piece);
+    await sleep(stepMs);
+  }
+
+  if (cancelled()) return finish("cancelled");
+  toolCall("read: thread-follow.ts");
+  await sleep(stepMs * 4);
+  if (cancelled()) return finish("cancelled");
+  toolUpdate(`call-${turn}`, {
+    status: "completed",
+    rawOutput: [
+      "export function useThreadFollow(listRef, endRef, sessionId, active, ...) {",
+      "  const forceFollow = useRef(false);",
+      "  const stick = useCallback((smooth = false) => {",
+      "    forceFollow.current = true;",
+      "    node.scrollTo({ top: 0, behavior: smooth ? 'smooth' : 'auto' });",
+      "  }, [listRef]);",
+      "  // ... 12 more lines of the hook, including the observers it wires up",
+      "  // ... and the effects that keep them pointed at the live body",
+      "}",
+      "// 180 lines of the file follow, quoted here so the card has real height",
+      "// to lose when it folds, the way a real read of this file would.",
+    ].join("\n"),
+  });
+  await sleep(stepMs * 2);
+
+  const replyOne = [
+    "The transcript uses scrollTop as the source of truth: zero is the ",
+    "bottom, and the browser's scroll anchoring holds whatever is on ",
+    "screen while new output arrives. What still moves the reader is ",
+    "anything that shrinks *below* the text they are watching — a card ",
+    "folding up at the bottom edge pulls the whole column down.\n",
+  ];
+  for (const piece of replyOne) {
+    if (cancelled()) return finish("cancelled");
+    chunk(piece);
+    await sleep(stepMs);
+  }
+
+  if (cancelled()) return finish("cancelled");
+  toolCall("run: node --test thread-follow.test.ts");
+  await sleep(stepMs * 5);
+  if (cancelled()) return finish("cancelled");
+  // 后一个工具已经宣告，前一个却迟迟不回来——真实 CLI 里这样「无输出完成」很常见，
+  // 靠后续 tool_call 的先后顺序才能判定它真的结束了。
+  toolUpdate(`call-${turn}`, { status: "in_progress" });
+  await sleep(stepMs * 3);
+
+  const replyTwo = [
+    "So the fix is to make the running turn grow-only: nothing that has ",
+    "already been shown to the reader may shrink or disappear while the ",
+    "turn is still running. Cards stay at their height once they finish, ",
+    "and the fold at the end of the turn is the one moment the transcript ",
+    "is allowed to give the space back.\n",
+  ];
+  for (const piece of replyTwo) {
+    if (cancelled()) return finish("cancelled");
+    chunk(piece);
+    await sleep(stepMs);
+  }
+  if (cancelled()) return finish("cancelled");
+  finish("end_turn");
+}
+
 async function runPrompt(id, text) {
   turn += 1;
   const label = turn;
@@ -379,6 +498,10 @@ async function runPrompt(id, text) {
       },
     });
     trace({ event: "current_mode_update", turn: label, currentModeId: target });
+  }
+  if (stepsMode) {
+    await runSteps(id, label);
+    return;
   }
   for (let i = 0; i < chunks; i += 1) {
     if (cancelledAt && Date.now() - cancelledAt >= ignoreCancelMs) {
