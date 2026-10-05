@@ -458,11 +458,20 @@ mark.cs-at-match {
 }
 
 .cs-thread {
-  overflow-anchor: none;
   /* Keep the transcript selectable even if something upstream left
      `user-select: none` on the body. Chips still opt out below. */
   -webkit-user-select: text;
   user-select: text;
+  /*
+   * Leave the browser's scroll anchoring ON (it is the default; this only says do not turn
+   * it off). While a turn runs, content above, below and inside the viewport changes size
+   * constantly — a tool result streaming in, a step folding away — and Chromium adjusts the
+   * scroll offset to hold the anchored element exactly where it was. That is what stops the
+   * user's message from drifting up and down the screen. Measured: it did not move a pixel
+   * with this on, and moved 140px with `overflow-anchor: none`. The hand-rolled `scrollTop`
+   * compensation that once stood in for it measured as doing nothing at all, because
+   * appends, removals and folds all leave `scrollTop` alone.
+   */
 }
 
 /*

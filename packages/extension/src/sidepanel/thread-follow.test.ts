@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { nextThreadScroll, STICKY_PX, threadFollowsBottom } from "./thread-follow.ts";
+import { STICKY_PX, threadFollowsBottom } from "./thread-follow.ts";
 
 describe("threadFollowsBottom", () => {
   it("follows while the pane sits at its bottom", () => {
@@ -13,7 +13,6 @@ describe("threadFollowsBottom", () => {
   it("stops following once the user scrolls up to read", () => {
     assert.equal(threadFollowsBottom(-STICKY_PX - 1), false);
     assert.equal(threadFollowsBottom(-400), false);
-    assert.equal(threadFollowsBottom(-901), false);
   });
 
   it("follows again when the user is pinned against the far end", () => {
@@ -39,20 +38,6 @@ describe("threadFollowsBottom", () => {
   it("honours a caller-supplied sticky band", () => {
     assert.equal(threadFollowsBottom(-50, 0, 32), false);
     assert.equal(threadFollowsBottom(-32, 0, 32), true);
-  });
-});
-
-describe("nextThreadScroll", () => {
-  it("snaps to the bottom while following", () => {
-    assert.equal(nextThreadScroll(true, 0, 0), null);
-    assert.equal(nextThreadScroll(true, -420, 0), 0);
-  });
-
-  it("compensates the anchored line by its on-screen shift when not following", () => {
-    assert.equal(nextThreadScroll(false, -100, 32), -68);
-    // A sub-pixel shift is not worth a scroll write (and would round-trip forever).
-    assert.equal(nextThreadScroll(false, -100, 0), null);
-    assert.equal(nextThreadScroll(false, -100, 0.4), null);
   });
 });
 

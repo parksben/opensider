@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { buildHandoffPrompt, handoffCutoff } from "./handoff.ts";
 import { groupModelsByPrefix, modelShortName } from "./model-groups.ts";
-import { nextThreadScroll } from "./thread-follow.ts";
 
 describe("model groups", () => {
   it("turns the text before / into a heading and keeps the rest as the label", () => {
@@ -47,14 +46,5 @@ describe("handoff prompt", () => {
     assert.match(prompt, /只看第 2 轮之前/);
     assert.doesNotMatch(prompt, /在 sessions 里找/);
     assert.doesNotMatch(prompt, /User: /);
-  });
-});
-
-describe("thread scroll", () => {
-  it("stays at the bottom while following and pins the anchor once the user has scrolled up", () => {
-    assert.equal(nextThreadScroll(true, 0, -40), null);
-    assert.equal(nextThreadScroll(true, -20, -40), 0);
-    assert.equal(nextThreadScroll(false, -200, -40), -240);
-    assert.equal(nextThreadScroll(false, -200, 0), null);
   });
 });
