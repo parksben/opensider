@@ -1,5 +1,5 @@
 import type { AgentModeOption, AgentModel, AgentOption, AttachmentItem, ContextUsage as ContextUsageValue, CurrentPage, FsPickMode, SkillItem } from "@shared";
-import { ArrowDown, AtSign, Check, ChevronDown, ChevronRight, Code, Copy, File, FileDown, Folder, FolderPen, GitFork, LoaderCircle, MousePointer2, Paperclip, Plus, RefreshCw, Send, Shield, Slash, Square, TriangleAlert, Unlock, X, Zap } from "lucide-react";
+import { ArrowDown, AtSign, Check, ChevronDown, ChevronRight, Code, Copy, File, FileDown, Folder, FolderPen, GitFork, Lightbulb, LoaderCircle, MousePointer2, Paperclip, Plus, RefreshCw, Send, Shield, Slash, Square, TriangleAlert, Unlock, X, Zap } from "lucide-react";
 import logoUrl from "../../../assets/icon.svg?url";
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from "react";
 import type { ChatMessage, ChatPart, TodoItem } from "../chat-types";
@@ -1861,9 +1861,12 @@ function renderAssistantPart(
 ) {
   if (part.type === "text") return <Markdown key={index} text={part.text} page={page} />;
   if (part.type === "reasoning") {
-    // The block that is being written right now expands so the reasoning can be read as
-    // it streams, and follows its own stream; every earlier block in the same turn stays
-    // collapsed until the turn ends, then folds away with the rest of the process.
+    // The block being written right now expands so the reasoning can be read as it
+    // streams, and follows its own stream. Everything else stays a single line.
+    //
+    // The icon is always there — a spinner while it is being written, `Brain` once it is
+    // done. Without it a collapsed reasoning line sat among the tool cards with nothing
+    // marking what it was, which read as an orphan row.
     const thinking = Boolean(live && lastIndex != null && index === lastIndex);
     return (
       <TextFold
@@ -1873,11 +1876,9 @@ function renderAssistantPart(
         open={thinking ? true : undefined}
         follow={thinking}
         icon={
-          thinking ? (
-            <span className="inline-flex shrink-0 text-[var(--muted)]">
-              <LoaderCircle size={12} className="animate-spin" />
-            </span>
-          ) : undefined
+          <span className="inline-flex shrink-0 text-[var(--muted)]">
+            {thinking ? <LoaderCircle size={12} className="animate-spin" /> : <Lightbulb size={12} strokeWidth={1.75} />}
+          </span>
         }
       >
         <div className="whitespace-pre-wrap text-[11px] leading-relaxed text-[var(--muted)]">
@@ -1973,13 +1974,22 @@ const AssistantMessage = memo(
   const fold = !live && process.length > 0;
   const lastIndex = content.length - 1;
   if (!fold) {
-    // Running: every step gets its own line and its own open card. The old
-    // `liveVisibleParts` collapse kept only the last of a run of reasoning / tool steps,
-    // which made a long turn read as "one step at a time" — you could not see what had
-    // already happened, and the steps that finished disappeared from the screen entirely.
-    // Now they stack up while the turn runs, and the whole stack folds into one line when
-    // it ends (the `fold` branch below).
-    const items = content.map((part, index) => ({ part, index }));
+    // Running with no reply text yet: every step gets its own line, so the user watches the
+    // reasoning and each tool call as it happens. The card that is running is the open one;
+    // the ones before it collapse to their title line.
+    //
+    // Once prose starts, everything before it gets out of the way and stays that way: only
+    // the newest reply text and the steps that came after it are on screen. A long turn's
+    // process is dozens of lines and the text is what the user actually asked for — burying
+    // it under everything it took to get there is unreadable. Nothing is lost: the fold at
+    // the end of the turn brings the whole process back as one expandable line, and
+    // `hasToolCallAfter` keeps the running card honest in the meantime.
+    const lastText = lastTextIndex(content);
+    const items = content
+      .map((part, index) => ({ part, index }))
+      // Nothing above the newest reply text survives; the text itself and everything the
+      // agent is doing after it stay.
+      .filter(({ part, index }) => lastText < 0 || part.type === "text" || index > lastText);
     return (
       <div className="space-y-1">
         {items.map(({ part, index }) =>
