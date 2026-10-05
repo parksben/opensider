@@ -3,9 +3,13 @@ import { describe, it } from "node:test";
 import { nextBodyPin, nextThreadScroll, STICKY_PX } from "./thread-follow.ts";
 
 describe("nextBodyPin", () => {
-  it("raises the pin as the transcript grows", () => {
-    assert.equal(nextBodyPin(200, 500, true), 500);
-    assert.equal(nextBodyPin(500, 620, false), 620);
+  it("pins the body on the first measurement and raises the pin as it grows", () => {
+    // No pin yet: this measurement becomes the pin, whatever it says.
+    assert.equal(nextBodyPin(null, 200, true), 200);
+    assert.equal(nextBodyPin(null, 200, false), 200);
+    // Growing mid-turn raises the pin, so the reserve covers the new content.
+    assert.equal(nextBodyPin(200, 500, false), 500);
+    assert.equal(nextBodyPin(500, 620, true), 620);
   });
 
   it("keeps a shrink to itself mid-turn, so a half-applied repaint cannot lose the reserve", () => {
@@ -14,22 +18,20 @@ describe("nextBodyPin", () => {
     assert.equal(nextBodyPin(800, 799, false), 800);
   });
 
-  it("releases the pin once the turn is over, so the fold leaves no blank gap", () => {
+  it("drops the pin entirely once the turn is over, so the fold leaves no blank gap", () => {
     // The turn ended and every reasoning / tool step collapsed into one line: the body is
-    // now much shorter and the pin has to follow it, or the list ends with empty space.
-    assert.equal(nextBodyPin(1200, 340, true), 340);
-    assert.equal(nextBodyPin(1200, 1200, true), 1200);
+    // now much shorter. Dropping the pin (not re-pinning to the smaller height) is what
+    // keeps the list from ending in empty space — the measured height comes from a
+    // subtree `content-visibility` may still be skipping, so it can read high.
+    assert.equal(nextBodyPin(1200, 340, true), null);
+    assert.equal(nextBodyPin(1200, 1200, true), null);
+    assert.equal(nextBodyPin(1200, 0, true), null);
   });
 
-  it("drops the pin entirely when the body is gone", () => {
-    assert.equal(nextBodyPin(1200, 0, true), 0);
-    // Nothing pinned yet: a zero measurement must not start a pin of its own.
-    assert.equal(nextBodyPin(0, 0, true), 0);
-    assert.equal(nextBodyPin(0, 0, false), 0);
-  });
-
-  it("keeps a shrink from an unpinned body unpinned", () => {
-    assert.equal(nextBodyPin(0, 400, true), 400);
+  it("stays unpinned when the body is gone or has not laid out", () => {
+    assert.equal(nextBodyPin(null, 0, true), null);
+    assert.equal(nextBodyPin(null, 0, false), null);
+    assert.equal(nextBodyPin(400, 0, true), null);
   });
 });
 

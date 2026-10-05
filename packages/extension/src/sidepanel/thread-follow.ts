@@ -18,24 +18,33 @@ export function nextThreadScroll(following: boolean, scrollTop: number, shift: n
 }
 
 /**
- * What the body's pinned height should become after measuring it at `height`.
+ * What the body's pinned height should become after measuring it at `height`, and
+ * whether the pin should be on at all.
  *
  * The transcript is pinned to the tallest it has been so streaming growth cannot pull the
- * messages above back down. That pin has to follow the body when the body legitimately
- * shrinks — the fold at the end of a turn (every reasoning / tool step collapses into one
- * line) is a shrink of hundreds of pixels, and a pin left at the old height is the blank
- * gap the user sees below the finished reply.
+ * messages above back down. That pin has to come off when the body legitimately shrinks —
+ * the fold at the end of a turn (every reasoning / tool step collapses into one line) is
+ * a shrink of hundreds of pixels, and a pin left at the old height is the blank gap the
+ * user sees below the finished reply.
  *
- * - Growing: raise the pin, so the reserve covers the new content.
+ * Returns `null` for "no pin". That is the answer for a settled shrink, and it is not the
+ * same as re-pinning to the new (smaller) height: the body is measured with
+ * `content-visibility` in the ancestry, so a height taken while some ancestor is skipping
+ * its subtree can read high, and writing *that* back would put the same blank gap there.
+ * Dropping the pin lets the natural height decide; the next growth pins again.
+ *
+ * - Growing (or no pin yet): raise the pin, so the reserve covers the new content.
  * - Shrinking while a turn still runs: keep the pin. The transcript only grows mid-turn,
  *   so a shrink there is a half-applied repaint; the next measurement puts it back.
- * - Shrinking once the turn is over (or a resend truncated the tail): rebase onto the real
- *   height. Zero means the body is gone (empty session), which is "no pin at all".
  */
-export function nextBodyPin(pin: number, height: number, settled: boolean): number {
-  if (height > pin) return height;
-  if (!settled || pin === 0) return pin;
-  return Math.max(0, height);
+export function nextBodyPin(pin: number | null, height: number, settled: boolean): number | null {
+  // A zero-height body (an empty session, or one that has not laid out yet) is never worth
+  // a pin: there is nothing to hold open, and a `min-height: 0` writes a style for no
+  // reason.
+  if (height <= 0) return null;
+  if (pin === null || height > pin) return height;
+  if (!settled) return pin;
+  return null;
 }
 
 /**
@@ -56,8 +65,8 @@ export function useThreadFollow(
   settled = true,
 ): (smooth?: boolean) => void {
   const forceFollow = useRef(false);
-  /** The pinned body height. Lives in a ref so the release below can rebase it. */
-  const peakRef = useRef(0);
+  /** The pinned body height, and whether a pin is on at all (`null` = no `min-height`). */
+  const peakRef = useRef<number | null>(null);
 
   const stick = useCallback((smooth = false) => {
     forceFollow.current = true;
@@ -73,30 +82,19 @@ export function useThreadFollow(
    * reserve is a ResizeObserver callback — it only hears about height *changes*, and a
    * turn that begins while the body is already at its tallest would never be told.
    *
-   * Starting a turn: forget the pin so this turn is measured from scratch instead of
-   * being capped by the peak of the previous one.
-   * Ending a turn: the fold has already landed by then in practice (React repaints the
-   * assistant message before the parent drops `isRunning`), so the body is at its real
-   * height — rebase the pin onto it. If the fold lands one frame later, the reserve's
-   * shrink branch does the same rebase, so both orderings converge.
+   * Either direction forgets the pin. Starting a turn measures it from scratch instead of
+   * being capped by the previous one's peak; ending a turn drops it so nothing keeps a wall
+   * of blank height below the last reply. (Re-pinning to a height measured right after a
+   * shrink is how the blank gap got there in the first place.)
    */
   const settledRef = useRef(settled);
   useEffect(() => {
     const was = settledRef.current;
     settledRef.current = settled;
     if (settled === was) return;
+    peakRef.current = null;
     const body = listRef.current?.querySelector<HTMLElement>("[data-thread-body]");
-    if (!body) return;
-    if (settled) {
-      // Release the pin and let the body be exactly as tall as it is now. The next turn
-      // pins again from here, so the empty gap below the last reply never survives a
-      // finished turn.
-      body.style.minHeight = "";
-      peakRef.current = body.offsetHeight;
-    } else {
-      body.style.minHeight = "";
-      peakRef.current = 0;
-    }
+    if (body) body.style.minHeight = "";
   }, [settled, listRef]);
 
   useEffect(() => {
@@ -107,18 +105,15 @@ export function useThreadFollow(
     const body = scroller.querySelector<HTMLElement>("[data-thread-body]");
     if (!body) return;
 
-    // The transcript only ever grows: while a tool call streams, its live step is
-    // replaced in place (and the whole process folds at the end of the turn), which
-    // would otherwise shrink the body and pull the messages above back down. Pin the
-    // tallest the body has been so the height never drops. Blank below is fine — the
-    // next content fills it and the follow picks up again. A width change reflows the
-    // text, so start the measurement over there. A `resetKey` bump (a resend/edit that
-    // truncates the tail) rebuilds this effect, releasing the reserve so the now-shorter
-    // transcript does not keep a wall of empty height below the last message.
-    // A fresh body (session switch, a resend that truncated the tail, or the reserve
-    // coming back from a width change): start the measurement over rather than pin the
-    // new transcript to whatever the previous one reached.
-    peakRef.current = 0;
+    // While a turn runs the transcript only grows, but the live step is replaced in place
+    // and the whole process folds at the end of it — both would shrink the body and pull
+    // the messages above back down. So the body is pinned to the tallest it has been.
+    // (What "grow, then let go" means exactly lives in `nextBodyPin`.)
+    //
+    // Start unpinned on every fresh body: a session switch or a resend that truncated the
+    // tail must not inherit the previous transcript's peak. A width change re-measures for
+    // the same reason.
+    peakRef.current = null;
     body.style.minHeight = "";
     let width = scroller.clientWidth;
     const reserve = () => {
@@ -126,13 +121,20 @@ export function useThreadFollow(
         // A width change reflows the text, so start the measurement over: the old pin was
         // measured at the old width and may already be wrong.
         width = scroller.clientWidth;
-        peakRef.current = 0;
+        peakRef.current = null;
         body.style.minHeight = "";
       }
       const pin = nextBodyPin(peakRef.current, body.offsetHeight, settledRef.current);
+      if (pin === null) {
+        // A settled shrink: drop the pin so nothing keeps a wall of blank height below
+        // the last reply.
+        peakRef.current = null;
+        body.style.minHeight = "";
+        return;
+      }
       if (pin === peakRef.current) return;
       peakRef.current = pin;
-      body.style.minHeight = pin > 0 ? `${pin}px` : "";
+      body.style.minHeight = `${pin}px`;
     };
     reserve();
 
