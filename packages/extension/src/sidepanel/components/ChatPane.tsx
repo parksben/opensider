@@ -45,7 +45,6 @@ import { IconButton } from "./IconButton";
 import { kindIcon, UserRichText } from "./MentionChip";
 import { Markdown } from "./Markdown";
 import { ImagePreview } from "./ImagePreview";
-import { LiveStep } from "./LiveStep";
 import { QueuedMessageList } from "./QueuedMessageList";
 import { RippleButton } from "./RippleButton";
 import { TextFold } from "./TextFold";
@@ -1876,8 +1875,8 @@ function renderAssistantPart(
 
 /**
  * One reasoning block. Only the block being written is ever on screen while the turn runs
- * (once anything after it arrives, `LiveStep` hides it); inside the end-of-turn fold it is
- * a collapsed single line, the way it always was.
+ * (once anything after it arrives, the live branch drops it); inside the end-of-turn fold
+ * it is a collapsed single line, the way it always was.
  */
 function ReasoningRow({
   locale,
@@ -1987,11 +1986,12 @@ const AssistantMessage = memo(
   if (!fold) {
     // While the turn runs the message shows only what is happening right now: the reply
     // text written so far, and the single step currently on — the block being written, the
-    // tool call in flight. A step that finishes is hidden on the spot; `LiveStep` keeps its
-    // box so nothing the reader is on moves, and that box is released off screen once it
-    // scrolls away. A finished step is not reviewable until the turn ends, when the whole
-    // run — every step in order, plus the text between them — comes back behind the
-    // worked-for fold.
+    // tool call in flight. A step that finishes leaves the page entirely — no title row,
+    // and deliberately no reserved box either: a withheld height reads as a blank patch
+    // between steps, which is worse than the settling it would avoid. One consequence is
+    // spoken for: when a step goes, the content above it settles down by that height (the
+    // text streaming below does not move). The whole run — every step in order, plus the
+    // text between them — comes back behind the worked-for fold once the turn ends.
     const last = content[lastIndex];
     const lastBusy = last.type !== "tool-call" || !toolFinished(last);
     return (
@@ -2000,10 +2000,11 @@ const AssistantMessage = memo(
           if (part.type === "text") {
             return renderAssistantPart(part, index, locale, page, live, lastIndex, false);
           }
+          if (index !== lastIndex || !lastBusy) return null;
           return (
-            <LiveStep key={index} visible={index === lastIndex && lastBusy}>
+            <div key={index} data-live-step="visible">
               {renderAssistantPart(part, index, locale, page, live, lastIndex, hasToolCallAfter(content, index))}
-            </LiveStep>
+            </div>
           );
         })}
         {last.type === "tool-call" && toolFinished(last) ? (

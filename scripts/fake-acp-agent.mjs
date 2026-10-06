@@ -95,7 +95,7 @@ const chunk = (text) =>
 // 工具调用开始。搜索的真实形态是「先说一段我先去搜一下 → 调工具 → 才给结论」，Host 那边
 // 就靠这条更新把前面的过程叙述作废（见 internal/host 的 absorbSelectionUpdate），所以
 // 这里必须真的演出来，否则那条逻辑在测试里永远跑不到。
-const toolCall = (title, id = `call-${turn}`) =>
+const toolCall = (title, id = `call-${turn}`, kind = "fetch") =>
   write({
     jsonrpc: "2.0",
     method: "session/update",
@@ -105,7 +105,7 @@ const toolCall = (title, id = `call-${turn}`) =>
         sessionUpdate: "tool_call",
         toolCallId: id,
         title,
-        kind: "fetch",
+        kind,
         status: "in_progress",
       },
     },
@@ -406,7 +406,7 @@ async function runSteps(id, label) {
   }
 
   if (cancelled()) return finish("cancelled");
-  toolCall("read: thread-follow.ts", `call-${turn}-1`);
+  toolCall("read: thread-follow.ts", `call-${turn}-1`, "read");
   await sleep(stepMs * 4);
   if (cancelled()) return finish("cancelled");
   toolUpdate(`call-${turn}-1`, {
@@ -441,7 +441,7 @@ async function runSteps(id, label) {
   }
 
   if (cancelled()) return finish("cancelled");
-  toolCall("run: node --test thread-follow.test.ts", `call-${turn}-2`);
+  toolCall("run: node --test thread-follow.test.ts", `call-${turn}-2`, "execute");
   await sleep(stepMs * 5);
   if (cancelled()) return finish("cancelled");
   // 后一个工具已经宣告，前一个却迟迟不回来——真实 CLI 里这样「无输出完成」很常见，
@@ -451,7 +451,7 @@ async function runSteps(id, label) {
 
   // 第三个工具：把整轮内容抬高到确实把最早那些步骤挤出视口上面（收起棘轮的触发条件）。
   if (cancelled()) return finish("cancelled");
-  toolCall("search: sandbox probe", `call-${turn}-3`);
+  toolCall("search: sandbox probe", `call-${turn}-3`, "search");
   await sleep(stepMs * 4);
   if (cancelled()) return finish("cancelled");
   toolUpdate(`call-${turn}-3`, {

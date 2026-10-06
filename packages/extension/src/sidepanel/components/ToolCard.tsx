@@ -62,11 +62,9 @@ export function ToolCard({
     if (running) setPinned(false);
   }, [running]);
 
-  // While the turn runs the card stays open: `LiveStep` hides a finished step but keeps its
-  // box on purpose, and that box is the card's expanded height — folding the card itself
-  // would change the layout the box was meant to preserve. A card the user opened by hand
-  // (pinned) stays open after the turn too; one shown inside the end-of-turn fold keeps
-  // its one-line default.
+  // While the turn runs the card is only ever rendered while it is the running step (the
+  // live branch drops it the moment it finishes), and it stays open so its stream is
+  // visible. `pinned` is what keeps a card open for good inside the end-of-turn fold.
   const open = live || pinned ? true : undefined;
   // Only the card that is running streams its result; the ones before it in the same turn
   // hold still, and yanking them to the bottom would hide their arguments.
