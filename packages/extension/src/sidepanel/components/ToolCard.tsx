@@ -4,7 +4,6 @@ import type { ToolPart } from "../chat-types";
 import type { Locale } from "../i18n";
 import { toolLiveHeadline } from "../tool-label";
 import { toolFinished } from "../tool-status";
-import { usePassedAway } from "../use-passed-away";
 import { TextFold } from "./TextFold";
 import { ToolJsonView } from "./ToolJsonView";
 
@@ -55,10 +54,6 @@ export function ToolCard({
   const hasArgs = part.args != null && part.args !== "";
   const hasResult = part.result != null && part.result !== "";
   const [pinned, setPinned] = useState(false);
-  // Collapse to the title line once the card has left through the top of the transcript —
-  // never while it is still on screen (that is the measured 125px jitter). See
-  // `usePassedAway`.
-  const { ref: passedRef, passed } = usePassedAway(Boolean(live));
 
   // This card started running: drop whatever the user pinned and show it open, the way a
   // freshly executed tool should look. Without this, a card the user collapsed stays
@@ -67,34 +62,33 @@ export function ToolCard({
     if (running) setPinned(false);
   }, [running]);
 
-  // While the turn runs: open from the moment it starts until the reader has watched it
-  // pass; a hand-opened card (pinned) stays open. A finished card therefore keeps its
-  // height while it is in view — no movement — and becomes its one line only off screen.
-  // A settled card (inside the end-of-turn fold) keeps whatever the user chose by hand.
-  const open = running || pinned || (live && !passed) ? true : undefined;
+  // While the turn runs the card stays open: `LiveStep` hides a finished step but keeps its
+  // box on purpose, and that box is the card's expanded height — folding the card itself
+  // would change the layout the box was meant to preserve. A card the user opened by hand
+  // (pinned) stays open after the turn too; one shown inside the end-of-turn fold keeps
+  // its one-line default.
+  const open = live || pinned ? true : undefined;
   // Only the card that is running streams its result; the ones before it in the same turn
   // hold still, and yanking them to the bottom would hide their arguments.
   const follow = running;
 
   return (
-    <div ref={passedRef}>
-      <TextFold
-        label={title}
-        paneClass="cs-fold-scroll"
-        open={open}
-        onOpenChange={setPinned}
-        follow={follow}
-        icon={
-          <span className="inline-flex shrink-0 text-[var(--muted)]">
-            {running ? <LoaderCircle size={12} className="animate-spin" /> : <Icon size={12} strokeWidth={1.75} />}
-          </span>
-        }
-      >
-        <div className="space-y-2 text-[11px] leading-relaxed text-[var(--muted)]">
-          {hasArgs ? <ToolJsonView value={part.args} /> : null}
-          {hasResult ? <ToolJsonView value={part.result} /> : null}
-        </div>
-      </TextFold>
-    </div>
+    <TextFold
+      label={title}
+      paneClass="cs-fold-scroll"
+      open={open}
+      onOpenChange={setPinned}
+      follow={follow}
+      icon={
+        <span className="inline-flex shrink-0 text-[var(--muted)]">
+          {running ? <LoaderCircle size={12} className="animate-spin" /> : <Icon size={12} strokeWidth={1.75} />}
+        </span>
+      }
+    >
+      <div className="space-y-2 text-[11px] leading-relaxed text-[var(--muted)]">
+        {hasArgs ? <ToolJsonView value={part.args} /> : null}
+        {hasResult ? <ToolJsonView value={part.result} /> : null}
+      </div>
+    </TextFold>
   );
 }

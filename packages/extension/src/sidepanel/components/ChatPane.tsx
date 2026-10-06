@@ -13,7 +13,7 @@ import { composerHasContent, stripAttachmentMentions } from "../mentions";
 import { buildHandoffPrompt, EDITOR_REPO, handoffCutoff } from "../handoff";
 import { groupModelsByPrefix, modelGroupLabel, modelShortName } from "../model-groups";
 import { STICKY_PX, useThreadFollow } from "../thread-follow";
-import { usePassedAway } from "../use-passed-away";
+import { toolFinished } from "../tool-status";
 import {
   composerCarryMatches,
   decodeComposerCarry,
@@ -45,6 +45,7 @@ import { IconButton } from "./IconButton";
 import { kindIcon, UserRichText } from "./MentionChip";
 import { Markdown } from "./Markdown";
 import { ImagePreview } from "./ImagePreview";
+import { LiveStep } from "./LiveStep";
 import { QueuedMessageList } from "./QueuedMessageList";
 import { RippleButton } from "./RippleButton";
 import { TextFold } from "./TextFold";
@@ -1874,11 +1875,9 @@ function renderAssistantPart(
 }
 
 /**
- * One reasoning block. While the turn runs it keeps its height until the reader has
- * watched it leave through the top edge, then collapses to the lightbulb line — off
- * screen, so nothing visible moves (see `usePassedAway`); only the block being written
- * right now follows its stream. A settled block (inside the end-of-turn fold) is a single
- * line, the way it always was.
+ * One reasoning block. Only the block being written is ever on screen while the turn runs
+ * (once anything after it arrives, `LiveStep` hides it); inside the end-of-turn fold it is
+ * a collapsed single line, the way it always was.
  */
 function ReasoningRow({
   locale,
@@ -1891,25 +1890,22 @@ function ReasoningRow({
   live?: boolean;
   thinking: boolean;
 }) {
-  const { ref, passed } = usePassedAway(Boolean(live));
   return (
-    <div ref={ref}>
-      <TextFold
-        label={t(locale, "thinking")}
-        paneClass="cs-fold-scroll"
-        open={live && !passed ? true : undefined}
-        follow={thinking}
-        icon={
-          <span className="inline-flex shrink-0 text-[var(--muted)]">
-            {thinking ? <LoaderCircle size={12} className="animate-spin" /> : <Lightbulb size={12} strokeWidth={1.75} />}
-          </span>
-        }
-      >
-        <div className="whitespace-pre-wrap text-[11px] leading-relaxed text-[var(--muted)]">
-          {compactReasoning(text)}
-        </div>
-      </TextFold>
-    </div>
+    <TextFold
+      label={t(locale, "thinking")}
+      paneClass="cs-fold-scroll"
+      open={live ? true : undefined}
+      follow={thinking}
+      icon={
+        <span className="inline-flex shrink-0 text-[var(--muted)]">
+          {thinking ? <LoaderCircle size={12} className="animate-spin" /> : <Lightbulb size={12} strokeWidth={1.75} />}
+        </span>
+      }
+    >
+      <div className="whitespace-pre-wrap text-[11px] leading-relaxed text-[var(--muted)]">
+        {compactReasoning(text)}
+      </div>
+    </TextFold>
   );
 }
 
@@ -1989,18 +1985,30 @@ const AssistantMessage = memo(
   const fold = !live && process.length > 0;
   const lastIndex = content.length - 1;
   if (!fold) {
-    // Running turns are grow-only. Every step that has appeared stays exactly where it
-    // showed up — a tool card keeps its height when it finishes, a reasoning block keeps
-    // it when it stops writing, nothing is swapped out when the next reply text arrives.
-    // Removing height from under the reader is what "jitter" is: measured on the real
-    // panel, the old filter that made the reply take the screen on its own shoved the
-    // transcript down 125px in a single frame. The end-of-turn fold below is the one
-    // moment the transcript is allowed to give space back.
+    // While the turn runs the message shows only what is happening right now: the reply
+    // text written so far, and the single step currently on — the block being written, the
+    // tool call in flight. A step that finishes is hidden on the spot; `LiveStep` keeps its
+    // box so nothing the reader is on moves, and that box is released off screen once it
+    // scrolls away. A finished step is not reviewable until the turn ends, when the whole
+    // run — every step in order, plus the text between them — comes back behind the
+    // worked-for fold.
+    const last = content[lastIndex];
+    const lastBusy = last.type !== "tool-call" || !toolFinished(last);
     return (
       <div className="space-y-1">
-        {content.map((part, index) =>
-          renderAssistantPart(part, index, locale, page, live, lastIndex, hasToolCallAfter(content, index)),
-        )}
+        {content.map((part, index) => {
+          if (part.type === "text") {
+            return renderAssistantPart(part, index, locale, page, live, lastIndex, false);
+          }
+          return (
+            <LiveStep key={index} visible={index === lastIndex && lastBusy}>
+              {renderAssistantPart(part, index, locale, page, live, lastIndex, hasToolCallAfter(content, index))}
+            </LiveStep>
+          );
+        })}
+        {last.type === "tool-call" && toolFinished(last) ? (
+          <div className="text-[12px] text-[var(--muted)]">{t(locale, "waiting")}</div>
+        ) : null}
       </div>
     );
   }
