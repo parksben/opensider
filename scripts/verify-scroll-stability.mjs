@@ -256,6 +256,8 @@ try {
           lb: live ? Math.round(live.getBoundingClientRect().bottom) : null,
           bh: body ? body.offsetHeight : null,
           panes: scroller.querySelectorAll(".cs-fold-scroll").length,
+          stepsVisible: scroller.querySelectorAll('[data-live-step="visible"]').length,
+          stepsHidden: scroller.querySelectorAll('[data-live-step="hidden"]').length,
           vh: window.innerHeight,
           running: Boolean(document.querySelector(".cs-composer.is-running")),
         });
@@ -324,22 +326,14 @@ try {
   }
   ok("A: the newest content stayed pinned to the bottom edge", maxPinnedStep <= 6, `max per-frame move ${maxPinnedStep}px`);
 
-  // The pass-away ratchet: finished steps must fold to their line while the turn runs —
-  // the panes count has to come down at some point — and the end-of-turn fold must close
-  // everything (no open panes left once the turn is over).
-  const runPanes = samples.filter((sample) => sample.running && sample.t >= windowAStart && sample.t <= windowAEnd).map((sample) => sample.panes);
-  const panesMax = Math.max(0, ...runPanes);
-  let panesMin = panesMax;
-  let ratcheted = false;
-  let seen = 0;
-  for (const count of runPanes) {
-    if (typeof count === "number") {
-      if (count < seen) ratcheted = true;
-      seen = Math.max(seen, count);
-      panesMin = Math.min(panesMin, count);
-    }
-  }
-  ok("A: a finished step folded away while the turn ran", ratcheted, `open panes max ${panesMax}, min ${panesMin}`);
+  // The live-turn rule: exactly one step is ever on screen (the one running); finished
+  // steps are hidden the moment they close; the end-of-turn fold closes everything.
+  const runSamplesA = samples.filter((sample) => sample.running && sample.t >= windowAStart && sample.t <= windowAEnd);
+  const visibleMax = Math.max(0, ...runSamplesA.map((sample) => sample.stepsVisible ?? 0));
+  const hiddenMax = Math.max(0, ...runSamplesA.map((sample) => sample.stepsHidden ?? 0));
+  const hiddenAtEnd = runSamplesA.at(-1)?.stepsHidden ?? 0;
+  ok("A: only the current step is visible while the turn runs", visibleMax <= 1, `max visible steps ${visibleMax}`);
+  ok("A: finished steps were hidden while the turn ran", hiddenMax >= 1 && hiddenAtEnd >= 1, `max hidden ${hiddenMax}, at turn end ${hiddenAtEnd}`);
   const postTurn = samples.find((sample) => sample.t >= windowAEnd + 800);
   ok("A: the turn folded into one line when it ended", postTurn?.panes === 0, `open panes after turn: ${postTurn?.panes}`);
 
