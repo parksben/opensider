@@ -943,6 +943,22 @@ async function releaseControlFor(sessionId: string | undefined): Promise<void> {
 }
 
 /**
+ * One row of the side panel's control list: give back just that tab. Same hygiene as the
+ * session-wide take-back (badge off, autoDiscardable back, no cooldown) — the only
+ * difference is that every other row keeps its hold. The tab's memories go with it, so a
+ * later write to the same tab goes through the gate again.
+ */
+async function releaseControlTab(tabId: number): Promise<void> {
+  if (!Number.isInteger(tabId)) return;
+  await loadControlState();
+  if (!releaseTab(controlState, tabId)) return;
+  persistControl();
+  void chrome.tabs.update(tabId, { autoDiscardable: true }).catch(() => undefined);
+  void pushControlBadge(tabId, false);
+  void publishControl();
+}
+
+/**
  * The turn is over: give the held tabs back (badges off, banner clears) while keeping the
  * memories — tabs the session opened and tabs the user already approved stay free to
  * re-enter without a new card.
@@ -2225,6 +2241,10 @@ function handleControlMessage(msg: ExtToHost): boolean {
   }
   if (msg.type === "control.release") {
     void releaseControlFor(msg.sessionId);
+    return true;
+  }
+  if (msg.type === "control.releaseTab") {
+    void releaseControlTab(msg.tabId);
     return true;
   }
   if (msg.type === "control.grant") {

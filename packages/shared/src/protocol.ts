@@ -503,6 +503,7 @@ export type ExtToHost =
   | { type: "page.pick.cancel"; requestId?: string }
   | { type: "control.anchor"; sessionId?: string; tabId?: number }
   | { type: "control.release"; sessionId?: string }
+  | { type: "control.releaseTab"; tabId: number }
   /** `auto` marks a grant that came from the permission mode, not from a click: it must not
    * be remembered as a user approval (`trusted`). */
   | { type: "control.grant"; requestId: string; allow: boolean; auto?: boolean }

@@ -11,6 +11,8 @@
 //   another user tab    -> borrow_required -> allow / deny / borrow_pending / borrow_held
 //   answering the card  -> the side panel itself nudges the Agent to carry on
 //   control card        -> renders above the composer, no status prefix in its title
+//   control list        -> one row per held page, header counts them
+//   row take-back       -> releases exactly that page, the others keep their hold
 //   self-opened tab     -> writable without a gate
 //   workspace files     -> tabs.json `control` and current.json `target` track the hold
 //   turn ends           -> holds are parked (marks off), memories keep re-entry silent
@@ -559,6 +561,39 @@ try {
   );
   check("a granted tab re-enters silently", reTrusted?.ok === true, reTrusted?.error);
   check("no card was raised for it either", (await controlState()).pending === null);
+
+  // 7d-bis. The control card is a list (2026-10-07): one row per held page under a header
+  // that counts them, and a row's own take-back gives back exactly that page. (Checked
+  // here: the borrow card below takes the card's place, so the rows are only on screen
+  // while no request is waiting.)
+  const rowsUp = await waitFor(
+    async () => (await panel.evaluate(() => document.querySelectorAll("[data-control-row]").length)) === 2,
+    true,
+  );
+  check("the card lists one row per held tab", rowsUp.ok, `rows=${rowsUp.last}`);
+  const headText = await panel.evaluate(() => document.querySelector("[data-control-head]")?.innerText ?? "");
+  check("the card header carries the held count", /2/.test(headText), JSON.stringify(headText));
+  const rowText = await panel.evaluate(() =>
+    Array.from(document.querySelectorAll("[data-control-row]")).map((row) => row.innerText),
+  );
+  check("every row names its page", rowText.length === 2 && rowText.every((text) => text.trim().length > 0), JSON.stringify(rowText));
+
+  await panel.locator(`[data-control-row="${tabH}"] button`).click({ timeout: 5_000 });
+  const afterRowRelease = await controlState();
+  check(
+    "the row's take-back releases exactly that page",
+    afterRowRelease.entries.some((entry) => entry.tabId === created && entry.sessionId === "verify-s1") &&
+      !afterRowRelease.entries.some((entry) => entry.tabId === tabH),
+    JSON.stringify(afterRowRelease.entries),
+  );
+  const markHOff = await waitFor(async () => !(await marked(tabH)), true);
+  check("the released row's mark goes off", markHOff.ok, `title=${markHOff.last}`);
+  check("the other row keeps its hold", await marked(created));
+  const rowsAfter = await waitFor(
+    async () => (await panel.evaluate(() => document.querySelectorAll("[data-control-row]").length)) === 1,
+    true,
+  );
+  check("the released row leaves the card", rowsAfter.ok);
 
   // 7e. A user tab that was never approved still asks.
   const askAgain = await dispatch(

@@ -145,7 +145,10 @@ func writeSplit(statePath string, state map[string]any, prev map[string]string) 
 			continue
 		}
 		meta, body := splitSession(session)
-		raw, err := json.MarshalIndent(body, "", "  ")
+		// Session bodies are machine-written and machine-read (the index stays indented
+		// for a human eye): compact JSON keeps a 30MB state from writing 40MB every
+		// time — same bytes the panel sent, hashed and stored as-is.
+		raw, err := json.Marshal(body)
 		if err != nil {
 			return err
 		}
