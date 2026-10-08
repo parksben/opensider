@@ -958,7 +958,7 @@ Release 正文是**发版时手写的 2–3 行英文摘要**，讲清这一版�
 | 风险 | 处理 |
 |---|---|
 | Native Messaging 环境 PATH 很瘦 | Host 自己扫 nvm / npm-global / bun / `~/.opencode/bin` 等 bin；子进程 PATH 带上 CLI 所在目录。Cursor 仍默认同 `~/.local/bin/agent` |
-| macOS 切 Agent 弹 Gatekeeper（`.xxxx.node`） | Chrome Native Host 拉起的子进程每次把 Bun/npm addon 解到新的 `$TMPDIR` 路径，Gatekeeper 就当成新文件连弹。Host 把 `TMPDIR`/`TMP`/`BUN_TMPDIR` 钉到 `~/.opensider/runtime/natives/<agent>/`，启动后轮询该目录和 CLI 旁的 `node_modules`，对 ≤8MB 的 `.node`/`.dylib` 清 quarantine 并 `codesign --sign -`。不改 CLI 本体。**OpenCode** 官方二进制仍是 adhoc/linker-signed，官方重装不能公证，但稳定路径 + 预签名后不应再连弹。**Gemini** / **Claude ACP** npm addon、**Copilot** npm 版同样走这套；官方 cask `copilot-cli` 已公证。若仍弹一次：点「完成」，不要「移到废纸篓」 |
+| macOS 切 Agent 弹 Gatekeeper（`.xxxx.node`） | Chrome Native Host 拉起的子进程每次把 Bun/npm addon 解到新的 `$TMPDIR` 路径，Gatekeeper 就当成新文件连弹。Host 把 `TMPDIR`/`TMP`/`BUN_TMPDIR` 钉到 `~/.opensider/runtime/natives/<agent>/`，启动后先把各 root 整目录 `xattr -cr` 一遍（`opensider-art/ocr`、Python `.so` 这类按扩展名和体积挑不到的也要覆盖），再轮询该目录和 CLI 旁的 `node_modules`，对 ≤8MB 的 `.node`/`.dylib` **先 `codesign --sign -`、后 `xattr -cr`**——顺序不能反：创建者的启动链带隔离时（Chrome 装的应用及其所有子孙进程），`codesign` 重写 Mach-O 会把 `com.apple.quarantine` 重新盖上，先清后签等于没清，每开一次会话就留一个隔离的 Mach-O，dlopen 时继续弹。OpenCode profile 额外注入 `OPENCODE_DISABLE_FFF=true`，让它走内置实现、从源头不再解压内嵌的 fff 原生库。不改 CLI 本体。**OpenCode** 官方二进制仍是 adhoc/linker-signed，官方重装不能公证，但稳定路径 + 预签名后不应再连弹。**Gemini** / **Claude ACP** npm addon、**Copilot** npm 版同样走这套；官方 cask `copilot-cli` 已公证。若仍弹一次：点「完成」，不要「移到废纸篓」 |
 | 探测卡住 starting | 探测后台化 + 总时限；ProbeACP 不继承 Host stdio、杀进程组；SW 10s 看门狗 |
 | 换 Agent 卡在鉴权 / 握手 | 进度条右侧取消；Host 先握手新进程再停旧进程，取消回上一份 ready 或 idle |
 | 旧 `~/.opensider` 混着 Node Host 残留 | skill 的 doctor 识别后先备份、再重建 runtime / workspace；开发机 `pnpm install-host` |
