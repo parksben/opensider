@@ -67,10 +67,16 @@ func Profiles() []AgentProfile {
 			LoginHint:      "Run `agent login` in a terminal, then retry.",
 		},
 		{
-			ID:           "opencode",
-			Name:         "OpenCode",
-			Mark:         "opencode",
-			Launches:     []Launch{{Command: "opencode", Args: []string{"acp"}}},
+			ID:       "opencode",
+			Name:     "OpenCode",
+			Mark:     "opencode",
+			Launches: []Launch{{Command: "opencode", Args: []string{"acp"}}},
+			// opencode 启动时会把内嵌的 fff 原生库解压到 TMPDIR，而 TMPDIR 是
+			// Chrome 拉起的 Host 建的，解压出来的 dylib 会带上
+			// com.apple.quarantine。每开一次会话就多一个隔离的 Mach-O，dlopen
+			// 时 Gatekeeper 就弹一次「无法验证开发者」。让它走内置实现，从源头
+			// 上不再产出隔离文件。
+			Env:          map[string]string{"OPENCODE_DISABLE_FFF": "true"},
 			Auth:         AuthKind{Type: "none"},
 			ContextFiles: []string{"AGENTS.md"},
 			ListModels:   "opencode-models",
