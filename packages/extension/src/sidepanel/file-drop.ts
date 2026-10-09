@@ -170,13 +170,22 @@ export function fileFromEntry(
   });
 }
 
-/** Reads a directory entry recursively, bounded by `MAX_DROP_FILES`. */
+/**
+ * Reads a directory entry recursively, bounded by `MAX_DROP_FILES`.
+ *
+ * `name` on every collected file is its path **inside** the dropped folder (`src/a.ts`),
+ * so the host can rebuild the same tree under `uploads/<folder>/`; flattening nested
+ * folders used to collide with same-named files next to them. `prefix` is the path of
+ * `entry` relative to the dropped folder: `null` for the folder itself (its name is
+ * already in `dir`), "" for its direct children, and the folder chain below that.
+ */
 export async function walkEntry(
   entry: FileSystemEntry,
   dir: string | undefined,
   out: DroppedFile[],
   skipped: DropSkips,
   fallback: File | null = null,
+  prefix: string | null = null,
 ): Promise<void> {
   if (out.length >= MAX_DROP_FILES) {
     skipped.tooMany += 1;
@@ -192,7 +201,7 @@ export async function walkEntry(
       skipped.tooLarge += 1;
       return;
     }
-    out.push({ name: entry.name, dir, file });
+    out.push({ name: prefix ? `${prefix}/${entry.name}` : entry.name, dir, file });
     return;
   }
   if (!entry.isDirectory) {
@@ -200,11 +209,12 @@ export async function walkEntry(
     return;
   }
   const reader = (entry as FileSystemDirectoryEntry).createReader();
+  const base = prefix === null ? "" : prefix ? `${prefix}/${entry.name}` : entry.name;
   for (;;) {
     const batch = await readBatch(reader);
     if (batch.length === 0) break;
     for (const child of batch) {
-      await walkEntry(child, dir ?? entry.name, out, skipped);
+      await walkEntry(child, dir ?? entry.name, out, skipped, null, base);
     }
   }
 }

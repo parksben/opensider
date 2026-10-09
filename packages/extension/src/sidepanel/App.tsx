@@ -38,6 +38,7 @@ import { UninstallDialog } from "./components/UninstallDialog";
 import { applyLocale, detectBrowserLocale, readCachedLocale, t, type Locale } from "./i18n";
 import { requestPeerProbe, settlePeerProbe } from "./peer-probe";
 import { BindRegistry, findSessionIdByAcpId } from "./session-bind";
+import { adoptableCurrentId, modelForSession, withSessionModel } from "./model-memory";
 import { displayVersion, isNewer, type ReleaseCheckState } from "./version";
 import {
   applyResolvedTheme,
@@ -273,7 +274,15 @@ export function App() {
     setTheme(state.theme);
     setSessions(nextSessions);
     setSelectedId(nextSelectedId);
-    setSelectedModelId(state.selectedModelId);
+    // 选中态跟着「这条会话 × 这个 Agent」的记忆走，而不是拿全局那份 last-picked。
+    setSelectedModelId(
+      modelForSession(
+        nextSessions.find((session) => session.id === nextSelectedId) ?? nextSessions[0],
+        state.selectedProviderId,
+        state.selectedModelByProvider,
+        state.selectedModelId,
+      ),
+    );
     setSelectedModelByProvider(state.selectedModelByProvider);
     setAgentMode(state.agentMode);
     setAgentModeByProvider(state.agentModeByProvider);
@@ -381,7 +390,12 @@ export function App() {
     pendingConnectRef.current = providerId;
     setSelectedProviderId(providerId);
     setSessions((list) => applyProviderBinding(list, providerId));
-    setSelectedModelId(selectedModelByProviderRef.current[providerId] || "");
+    // 换 Agent：选中模型从「当前会话 × 新 Agent」的记忆里推（推不出来才是空 / 等新家
+    // 广告回来定），绝不能把上一家选过的那个带过来。
+    const currentSession = sessionsRef.current.find((item) => item.id === selectedIdRef.current);
+    setSelectedModelId(
+      modelForSession(currentSession, providerId, selectedModelByProviderRef.current),
+    );
     // 模式集合是上一家的，先清空；记住的选择留在 storage 里等新家广告回来再认。
     setAgentModes([]);
     setAgentModeId("");
@@ -871,16 +885,38 @@ export function App() {
         return;
       }
       setModels(incoming);
-      const desired = selectedModelRef.current;
+      // 选中态按「这条会话 × 这个 Agent」的记忆推：Host 每次开/切会话都补发一条
+      // `models`，所以切回某条会话时这里会把引擎纠回那条会话的模型（desired ≠ currentId
+      // 才发 `model.set`）。
+      const session = sessionsRef.current.find((item) => item.id === selectedIdRef.current);
+      const desired = modelForSession(
+        session,
+        selectedProviderRef.current,
+        selectedModelByProviderRef.current,
+        selectedModelRef.current,
+      );
       const autoId = incoming.find((model) => model.id === "auto")?.id;
       const known = incoming.some((model) => model.id === desired);
       if (desired && desired !== "auto" && known) {
+        if (selectedModelRef.current !== desired) setSelectedModelId(desired);
         if (desired !== msg.currentId && desired !== appliedModelRef.current) {
           appliedModelRef.current = desired;
-          sendRef.current({ type: "model.set", modelId: desired });
+          // 必须带当前会话的 ACP id：Host 找不到「持有该会话的进程」时只会记 pendingModelID
+          // 并回一条 models（引擎不会真切）。切会话后的这句纠偏要落到那条会话上。
+          sendRef.current({
+            type: "model.set",
+            modelId: desired,
+            sessionId: (session && boundAcpId(session, selectedProviderRef.current)) ?? "",
+          });
         }
       } else {
-        setSelectedModelId(autoId || msg.currentId || incoming[0]?.id || "");
+        // `currentId` 不在这次广告的列表里就不能当选中态：换 Agent / 切会话后它可能还是
+        // 上一个状态残留的 id（把上一个 Agent 的选中态带过来正是用户报的隔离缺失）。
+        const current = adoptableCurrentId(
+          msg.currentId,
+          incoming.map((model) => model.id),
+        );
+        setSelectedModelId(autoId || current || incoming[0]?.id || "");
       }
       return;
     }
@@ -1309,6 +1345,19 @@ export function App() {
     if (hydrated) tryBindCurrent();
   }, [hydrated, selectedId]);
 
+  // 切会话（含删除后自动切换、新建、Fork、镜像灌回）：模型选择跟着这条会话走——粒度是
+  // 「会话 × Agent」，切回 A 会话时回到 A 当时选的模型，不再沿用最后一次选中的那个。
+  // 同一拍里把「已发过 model.set」的守卫清掉：引擎的当前模型是全局的，同一个模型在另一
+  // 条会话里仍要重新下发一次（见 models 分支）。
+  useEffect(() => {
+    appliedModelRef.current = "";
+    const session = sessionsRef.current.find((item) => item.id === selectedId);
+    if (!session) return;
+    setSelectedModelId(
+      modelForSession(session, selectedProviderRef.current, selectedModelByProviderRef.current),
+    );
+  }, [selectedId]);
+
   // 自动连接：判定会因为「快照里的四种料」变化而重判——hydration 完成、引导状态与记得的
   // Agent 被 Host 镜像灌进来、Host 报出 agents / 状态变化，都在这些 state 上。
   //
@@ -1638,7 +1687,10 @@ export function App() {
           setNotice(t(localeRef.current, "hostTimeout"));
           continue;
         }
-        items.push(...saved);
+        // 拖进来的是一整个文件夹：内容只是搬运（浏览器不给本机路径，Agent 读的是
+        // uploads/ 下这份副本），附件栏里只挂「文件夹本身」那一条，里面的文件不再各挂
+        // 一条芯片（2026-10-09 用户报：拖文件夹会瞬间插入它下面所有文件）。
+        items.push(...(dropped.dir ? saved.filter((item) => item.kind === "folder") : saved));
         setNotice(undefined);
       } catch (error) {
         setNotice(error instanceof Error ? error.message : t(localeRef.current, "uploadFailed"));
@@ -1720,6 +1772,10 @@ export function App() {
       setSelectedModelByProvider((current) => ({ ...current, [providerId]: modelId }));
     }
     const session = sessionsRef.current.find((item) => item.id === selectedIdRef.current);
+    // 记到会话上：切走再切回来时选中态还是这次选的（会话 × Agent 粒度）。
+    if (session && providerId) {
+      patchSession(session.id, (item) => withSessionModel(item, providerId, modelId));
+    }
     if (statusRef.current === "ready" && modelId !== "auto") {
       sendRef.current({ type: "model.set", modelId, sessionId: session?.acpSessionId });
     }

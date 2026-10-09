@@ -87,4 +87,12 @@ test("merging keeps order and never duplicates a path", () => {
   const merged = mergeAttachmentItems(current, [item("/tmp/b"), item("/tmp/c")]);
   assert.deepEqual(merged.map((entry) => entry.path), ["/tmp/a", "/tmp/b", "/tmp/c"]);
   assert.deepEqual(mergeAttachmentItems(current, []), current);
+  // A dropped folder repeats its folder item in one batch (every file's response): the
+  // batch itself must be deduped too, not just against what is already attached.
+  assert.deepEqual(
+    mergeAttachmentItems([], [item("/tmp/folder/ba"), item("/tmp/folder/ba"), item("/tmp/folder/ba")]).map(
+      (entry) => entry.path,
+    ),
+    ["/tmp/folder/ba"],
+  );
 });

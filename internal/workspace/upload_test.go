@@ -35,7 +35,7 @@ func TestSaveUploadedPlainFile(t *testing.T) {
 	}
 }
 
-func TestSaveUploadedFolderFileReturnsFolderOnce(t *testing.T) {
+func TestSaveUploadedFolderFileCarriesFolderItem(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
@@ -57,8 +57,10 @@ func TestSaveUploadedFolderFileReturnsFolderOnce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SaveUploaded: %v", err)
 	}
-	if len(second) != 1 || second[0].Kind != "file" {
-		t.Fatalf("expected just the file the second time, got %+v", second)
+	// 文件夹项每次都要带：目录已经存在时（第二次拖同一个文件夹）侧栏仍要靠它把「文件夹
+	// 本身」挂上去；侧栏按 path 去重，重复无害（见「拖文件夹只挂文件夹本身」）。
+	if len(second) != 2 || second[0].Kind != "folder" || second[1].Kind != "file" {
+		t.Fatalf("expected folder + file on every folder write, got %+v", second)
 	}
 }
 

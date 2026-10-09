@@ -569,11 +569,13 @@ async function handle(msg) {
     }
     setExtraOption(params?.configId, params?.value, params?.type);
     // type 也 trace：布尔项必须带 "boolean"，那是规范要求、也是这条链上最容易漏的一环。
+    // sessionId 同样记上：模型按会话隔离的验证要靠它区分是给哪条会话切的。
     trace({
       event: "set_config_option",
       configId: params?.configId,
       value: params?.value,
       type: params?.type ?? "",
+      sessionId,
     });
     reply(id, { configOptions: configOptions() });
     return;

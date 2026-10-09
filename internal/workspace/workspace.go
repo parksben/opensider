@@ -132,6 +132,9 @@ var errPastedTooLarge = pastedError("pasted image is empty or too large")
 //   - 文件夹里的文件：`dir` 是拖进来的文件夹名，`name` 是该文件夹内的相对路径，
 //     例如 `dir=proj` + `name=src/a.ts` 写成 `uploads/proj/src/a.ts`。
 //
+// 返回项：文件一条；`dir` 非空时**每次**都另带一条顶层文件夹（侧栏只挂它那一条，
+// 内容搬运不算附件）。
+//
 // `dir` / `name` 逐段 sanitize，拒绝空段、`.`、`..` 与绝对路径；同名文件加时间戳后缀，
 // 不覆盖之前的。
 func SaveUploaded(name, dir, encoded string) ([]protocol.AttachmentItem, error) {
@@ -149,13 +152,6 @@ func SaveUploaded(name, dir, encoded string) ([]protocol.AttachmentItem, error) 
 	if !strings.HasPrefix(target, root+string(os.PathSeparator)) {
 		return nil, errUploadPath
 	}
-	created := false
-	if dir != "" {
-		folder := filepath.Join(root, sanitizeSegment(dir))
-		if _, statErr := os.Stat(folder); statErr != nil {
-			created = true
-		}
-	}
 	if mkErr := os.MkdirAll(filepath.Dir(target), 0o755); mkErr != nil {
 		return nil, mkErr
 	}
@@ -172,9 +168,11 @@ func SaveUploaded(name, dir, encoded string) ([]protocol.AttachmentItem, error) 
 		return nil, err
 	}
 	items := make([]protocol.AttachmentItem, 0, 2)
-	// 文件夹只在这次真的建出来时带一条：侧栏按 path 去重，多报也无害，但少报会让
-	// 用户看不到那个文件夹附件。
-	if dir != "" && created {
+	// A dropped folder is attached as the folder itself (the files inside are only how the
+	// content gets here — see docs/TECH_DESIGN.md), so every response for a `dir` upload
+	// carries the folder item: the second drop of the same folder must still be able to
+	// attach it (the side panel dedupes by path, so repeats are harmless).
+	if dir != "" {
 		folder := filepath.Join(root, sanitizeSegment(dir))
 		items = append(items, protocol.AttachmentItem{
 			Path: folder,

@@ -102,7 +102,15 @@ export function mergeAttachmentItems(
   incoming: AttachmentItem[],
 ): AttachmentItem[] {
   const seen = new Set(current.map((item) => item.path));
-  return [...current, ...incoming.filter((item) => !seen.has(item.path))];
+  const added: AttachmentItem[] = [];
+  for (const item of incoming) {
+    // Within one batch too: a dropped folder carries its folder item on every file's
+    // response, so the same path arrives several times in a single merge.
+    if (seen.has(item.path)) continue;
+    seen.add(item.path);
+    added.push(item);
+  }
+  return [...current, ...added];
 }
 
 /**

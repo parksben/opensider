@@ -105,11 +105,13 @@ const walk = (entry: FakeEntry, dir?: string, fallback?: unknown) => {
 test("a dropped folder walks nested files and keeps the folder name", async () => {
   const tree = fakeDir("proj", [fakeFile("README.md"), fakeDir("src", [fakeFile("a.ts")])]);
   const { out } = await walk(tree);
+  // Nested folders keep their path inside the dropped folder (`src/a.ts`, not `a.ts`):
+  // the host rebuilds that tree, otherwise a nested name collides with its neighbour.
   assert.deepEqual(
     out.map((item) => [item.dir, item.name]).sort(),
     [
       ["proj", "README.md"],
-      ["proj", "a.ts"],
+      ["proj", "src/a.ts"],
     ],
   );
 });

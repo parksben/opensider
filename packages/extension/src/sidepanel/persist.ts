@@ -23,6 +23,8 @@ export type Session = {
   id: string;
   acpSessionId?: string;
   acpByProvider?: Record<string, string>;
+  /** 这条会话在每个 Agent 下选的模型（会话 × Agent 粒度，见「模型选择」）。 */
+  modelByProvider?: Record<string, string>;
   title: string;
   titleManual?: boolean;
   createdAt: string;

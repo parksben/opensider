@@ -319,8 +319,8 @@ chrome.storage.local 与 ~/.opensider/ui-state.json（同形）
 | `update` / `turn.end` / `permission` / `cursor` 带 `sessionId` | 侧栏按 ACP id 精确映射到本地会话，**不按当前选中项；映射不到就丢弃**（不允许落到「当前选中」，那是串戏的主要通道）。`turn.end` 在 `stopReason=error` 时带 `error` 原文（Host 已改写成可执行的登录提示），侧栏顶栏直接显示，不要换成一句笼统的「这一轮以错误结束」 |
 | `fs.pick` | Host 弹出本机选文件/文件夹对话框，回 `fs.picked`（绝对路径 + kind） |
 | `fs.save` | Host 把侧栏压好的 JPEG 写到 `browser/pasted/`，回 `fs.saved`（绝对路径 + kind=image） |
-| `fs.upload` + `name` + `dir?` + `base64` | 拖进来的文件：Host 校验并写到 `browser/uploads/<dir?>/<name>`（逐段 sanitize，不许 `..` / 绝对路径），回 `fs.uploaded`；`dir` 是拖进来的文件夹名时同时带回顶层文件夹项（新增的目录才带，便于侧栏只挂一次） |
-| `fs.uploaded`（Host → 侧栏） | 拖入的文件 / 文件夹写盘结果：`items`（绝对路径 + kind，文件夹那张只在新建了目录时带）+ 可选 `error`；侧栏按 `path` 去重合并进输入框附件栏 |
+| `fs.upload` + `name` + `dir?` + `base64` | 拖进来的文件：Host 校验并写到 `browser/uploads/<dir?>/<name>`（逐段 sanitize，不许 `..` / 绝对路径），回 `fs.uploaded`；`dir` 非空时**每次**响应都带回顶层文件夹项（侧栏只收它那一条，见下文「拖文件夹」） |
+| `fs.uploaded`（Host → 侧栏） | 拖入的文件 / 文件夹写盘结果：`items`（绝对路径 + kind，`dir` 非空时含文件夹那张）+ 可选 `error`；侧栏按 `path` 去重合并进输入框附件栏 |
 | `fs.reveal` + `path` | Host 打开系统文件管理器并选中该文件；路径不存在则回 `fs.revealed`（`missing: true` + error），其它失败也回 error 但不标 missing；成功不回 |
 | `fs.revealed`（Host → 侧栏） | reveal 失败时带 `path` / `error` / 可选 `missing`；侧栏只在 `missing` 时按 path 把该条产物标失效并持久化 |
 | `fs.preview` + `path` + `requestId` | Host 读本机图片（绝对路径、常规文件、图像类型、上限 32MB），按 512KiB 原文分片 base64 回多条 `fs.previewed` |
@@ -382,6 +382,7 @@ Chrome 的文件选择器不会给出本机绝对路径。加号发给 Host `fs.
 - 面板根部（`ChatPane`）挂一个 `dropTarget`：`dragenter` / `dragover` 上判断 `dataTransfer.types` 是否含 `Files`，含就 `preventDefault`（这一步是基础——不做的话浏览器会直接导航/打开那个文件，就是用户看到的现象），并显示盖满整屏的提示层；`dragleave`（计数归零）/ `drop` 收掉。不带 `Files` 的拖拽（文本、面板内 `draggable`）一概不碰。
 - `drop` 里先同步抓 `dataTransfer.items` 的 entry（异步之后 `items` 就失效了），用 `webkitGetAsEntry()` 区分文件 / 文件夹：文件直接用 `File`，文件夹递归读子树（上限：单文件 ≤ 480KiB 原文、整次拖拽 ≤ 200 个文件，超了报错并提示改用回形针，那条走系统选择器直接拿路径、无大小限制）。符号链接 / 读不出来的项跳过。
 - 每个文件读成 base64（分块 `btoa`，别用 `String.fromCharCode(...bytes)` 爆栈），发 `{ type: "fs.upload", requestId, name, dir?, base64 }`（`dir` 为拖进来的文件夹名，文件在子目录时带上相对路径）。Host 写 `browser/uploads/`，回 `fs.uploaded`，侧栏 `mergeAttachments` 去重后落进输入框附件栏。进行中同样可拖（跟附件栏其它入口一致）。
+- **拖文件夹只挂文件夹本身（2026-10-09 用户报后定型）**：内容是必要的（浏览器不给本机路径，Agent 读到的就是 `browser/uploads/<文件夹>/` 这份副本），但附件栏里只出现**文件夹那一条**——`dir` 非空的上传响应里，侧栏只收 `kind: folder` 的项，文件项丢弃（它们只是搬运过程）；Host 对 `dir` 非空的每次响应都回一条文件夹项（不再只在「本次新建了目录」时回——目录已存在时也要能挂上；侧栏 `mergeAttachmentItems` 按 path 去重，重复无害）。
 - 限制在两侧都做：侧栏先拦（超限不上传、给文案），Host 复核（base64 长度、段级 sanitize、`..` 与绝对路径一律拒），不信任侧栏。
 
 剪切 / 复制整个输入框时把附件栏一起带走（跨会话搬草稿不用重上传）：
@@ -472,7 +473,8 @@ The user explicitly asked to use these skills. Read each skill's SKILL.md and fo
 3. `session/new|load|fork` 合并模型来源：`configOptions` 里 `category/id/configId` 为 `model` 的选项，以及 ACP `models.availableModels`（Copilot 用 `modelId`）。之后的 `config_option_update` 同样合并。OpenCode 现代版会在 `session/new|load` 同步带回 `id=model` 的 `configOptions`，但 provider 快照有时仍空；旧版可能完全不带。会话起来后若目录仍空：再等约 1.2s 收迟到的 `config_option_update`，并再跑一次该 CLI 的 list 命令。Copilot 1.0.x 在 CAPI `/models` 为空时 `session/new` 只回 mode / allow_all，不带 model 选项；`session/set_model` 仍可用。此时 Host 用 Copilot CLI 内置公开模型表（`auto` + sonnet/opus/gpt 等）兜底，好让侧栏画出下拉。**确认**没有模型列表才不画下拉。
 4. 换 Agent 时立刻清空 Host catalog，但**不要**在握手前推一条空 `models`（否则 SW `lastModels` 和侧栏会把「还在加载」当成空名单）。握手后、`ready` 之前先跑 list 命令再 `sendModels`。侧栏 `hello` 且已 `ready` 时 Host 再推一次当前 catalog，避免 SW 重挂丢掉列表。侧栏在 `status !== ready` 时忽略空 `models`，避免把连接中的空槽当成最终态。
 5. 用户改模型：`session/set_config_option`（发现的 `configId`，通常是 `model`）；失败则 `session/set_model`。`auto` / 空不是合法 ACP 值，跳过 RPC。
-6. 侧栏只在 `status === ready` 且列表非空时渲染下拉。连上后若列表含 `auto` 且用户没有已记住的具体模型，选中态为 `auto`。`selectedModelId` 写入 `chrome.storage.local`；仅当选的是具体模型时再 `model.set`。
+6. 侧栏只在 `status === ready` 且列表非空时渲染下拉。连上后若列表含 `auto` 且用户没有已记住的具体模型，选中态为 `auto`。仅当选的是具体模型时再 `model.set`。
+6b. **记忆粒度是「会话 × Agent」（2026-10-09 用户报隔离缺失后定型）**：会话对象新增 `modelByProvider: Record<providerId, modelId>`（随会话持久化）。选模型时同时写三处：`selectedModelId`（当前显示）、`selectedModelByProvider[providerId]`（该 Agent 的默认，新建会话用）、`session.modelByProvider[providerId]`（这条会话的选择）。取选中态时按「会话记录 → 该 Agent 默认 → 当前值」的链推（`modelForSession`）：切会话（`switchSession`）与换 Agent（`requestConnect`）都立即用这条链更新下拉；`applyLoaded` 同理。`models` 消息的 `desired` 也从这条链取——Host 每次 `session/new|load|fork` 后都补发一条 `models`，所以「切回 A 会话」会自动把引擎纠回 A 的模型（desired ≠ `currentId` 时发 `model.set`）；反过来若 `currentId` 不在新列表里（上个 Agent / 上个会话残留），**不得**把它当选中态（只认列表内的 id）；换 Agent 时 `setModels([])` 清掉旧列表。`appliedModelRef` 的「发过就不再发」守卫在切会话时要清掉（同一模型在另一个会话里仍需重发）。
 7. 下拉外壳不滚：顶部是固定筛选 `input`（无边框 / outline / ring），`open` 后 `focus()`；下面才是 `overflow-y-auto` 的条目。筛选只对已加载的 `models` 做 `name` / `id` 的 `toLowerCase().includes`，不另发请求。关掉下拉清空关键词。`ArrowDown` / `ArrowUp` 在 `visible` 上取模换 `highlightId`（打开时落在当前模型），`scrollIntoView({ block: "nearest" })` 跟滚；`Enter` 对高亮项 `onModel` 并关下拉。中文 placeholder 为「筛选...」。
 
 ## 上下文用量环

@@ -12,7 +12,7 @@
 //
 // It prints one line per check and exits non-zero on the first failure.
 import { createServer } from "node:http";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -143,6 +143,44 @@ try {
     "the real drag landed in the workspace",
     existsSync(realUploaded) && readFileSync(realUploaded, "utf8") === REAL_CONTENT,
     realUploaded,
+  );
+
+  // 2c. A real OS drag of a FOLDER attaches the folder itself — not every file inside it
+  // (2026-10-09). The contents are still copied so the Agent can read them.
+  const FOLDER_NAME = "dropped-folder";
+  const folderPath = join(sandbox.dir, FOLDER_NAME);
+  mkdirSync(join(folderPath, "sub"), { recursive: true });
+  writeFileSync(join(folderPath, "a.txt"), "alpha");
+  writeFileSync(join(folderPath, "sub", "b.txt"), "beta");
+  const folderDrag = { items: [], files: [folderPath], dragOperationsMask: 1 };
+  for (const type of ["dragEnter", "dragOver", "drop"]) {
+    await client.send("Input.dispatchDragEvent", { type, ...point, data: folderDrag });
+  }
+  let folderChipped = false;
+  for (let attempt = 0; attempt < 40 && !folderChipped; attempt += 1) {
+    await panel.waitForTimeout(250);
+    folderChipped = (await bodyText()).includes(FOLDER_NAME);
+  }
+  ok("dropping a folder attaches the folder itself", folderChipped);
+  const folderBody = await bodyText();
+  ok(
+    "...and not every file inside it",
+    !folderBody.includes("a.txt") && !folderBody.includes("b.txt"),
+    folderBody.slice(0, 400),
+  );
+  // The chip carries the folder's absolute path in its title: exactly one chip must have it
+  // (the files are carried only as content).
+  const folderUploadPath = join(sandbox.uploads, FOLDER_NAME);
+  const chipTitles = await panel.evaluate(() =>
+    Array.from(document.querySelectorAll("span[title]")).map((node) => node.getAttribute("title")),
+  );
+  const folderChips = chipTitles.filter((value) => value === folderUploadPath).length;
+  ok("the folder shows as exactly one chip", folderChips === 1, `chips=${JSON.stringify(chipTitles.slice(-5))}`);
+  ok(
+    "the folder's contents were copied for the Agent",
+    existsSync(join(sandbox.uploads, FOLDER_NAME, "a.txt")) &&
+      existsSync(join(sandbox.uploads, FOLDER_NAME, "sub", "b.txt")),
+    join(sandbox.uploads, FOLDER_NAME),
   );
 
   // 3. The host wrote the copy the Agent will read.
