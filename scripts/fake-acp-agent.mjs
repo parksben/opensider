@@ -9,6 +9,10 @@
 //   FAKE_ACP_CHUNK_MS          delay between chunks in ms (default 300)
 //   FAKE_ACP_IGNORE_CANCEL_MS  keep running this long after session/cancel (default 0)
 //   FAKE_ACP_TRACE             append a JSON line per prompt/cancel/end to this file
+//   FAKE_ACP_PERMISSION=1       prompts whose text mentions "permission" wait 1.5s, then
+//                              send a session/request_permission and only continue once
+//                              the client answers (scripts/verify-background-task.mjs: the
+//                              request lands while the panel is closed)
 //
 // Steps mode (used by scripts/verify-scroll-stability.mjs): a scripted turn shaped like a
 // real agent's — thinking, a tool call that runs and completes, reply text, a second tool
@@ -56,6 +60,7 @@ import { createInterface } from "node:readline";
 const chunks = Number(process.env.FAKE_ACP_CHUNKS ?? 20);
 const chunkMs = Number(process.env.FAKE_ACP_CHUNK_MS ?? 300);
 const ignoreCancelMs = Number(process.env.FAKE_ACP_IGNORE_CANCEL_MS ?? 0);
+const permissionMode = process.env.FAKE_ACP_PERMISSION === "1";
 const tracePath = process.env.FAKE_ACP_TRACE ?? "";
 // 默认只 trace 前 200 字符（够看开头）；要断言整段提示词时设 FAKE_ACP_TRACE_FULL=1。
 const traceFull = process.env.FAKE_ACP_TRACE_FULL === "1";
@@ -80,6 +85,28 @@ if (process.argv.includes("models")) {
 let sessionId = "";
 let turn = 0;
 let cancelledAt = 0;
+// 服务端→客户端的请求（权限卡）：id 用一个大数段，避开客户端自己的小整数 id。
+// Host 侧用 asInt 解析，字符串 id 收不到（会直接丢掉这张卡）。
+let permissionSeq = 0;
+const pendingPermissions = new Map();
+
+const requestPermission = (title) => {
+  const id = 900000 + (permissionSeq += 1);
+  write({
+    jsonrpc: "2.0",
+    id,
+    method: "session/request_permission",
+    params: {
+      sessionId,
+      toolCall: { toolCallId: `permission-call-${permissionSeq}`, title, kind: "execute" },
+      options: [
+        { optionId: "allow-once", name: "Allow once", kind: "allow_once" },
+        { optionId: "reject-once", name: "Reject", kind: "reject_once" },
+      ],
+    },
+  });
+  return new Promise((resolve) => pendingPermissions.set(id, resolve));
+};
 
 const write = (obj) => process.stdout.write(`${JSON.stringify(obj)}\n`);
 const reply = (id, result) => write({ jsonrpc: "2.0", id, result });
@@ -521,6 +548,14 @@ async function runPrompt(id, text) {
     });
     trace({ event: "current_mode_update", turn: label, currentModeId: target });
   }
+  if (permissionMode && /permission/i.test(text)) {
+    // 真实形态：动手前先要权限，拿到答复才继续这一轮。晚 1.5s 再发，让测试有机会先关掉
+    // 面板——「请求到达时面板已经关了」正是要验的场景（后台任务卡在权限卡上）。
+    await sleep(1500);
+    trace({ event: "permission_requested", turn: label });
+    const outcome = await requestPermission("Run the risky tool");
+    trace({ event: "permission_outcome", turn: label, outcome });
+  }
   if (stepsMode) {
     await runSteps(id, label);
     return;
@@ -540,6 +575,15 @@ async function runPrompt(id, text) {
 
 async function handle(msg) {
   const { id, method, params } = msg;
+  // 我们自己发出的权限请求的回执（id 落在 900000+ 段）：解析等待中的那个 promise，
+  // 千万别落到文件末尾的 `reply(id, {})`——那会给「回执」再回一条回执，流就乱了。
+  if (id !== undefined && pendingPermissions.has(id)) {
+    const resolve = pendingPermissions.get(id);
+    pendingPermissions.delete(id);
+    trace({ event: "permission_answered", id, result: msg.result ?? msg.error ?? null });
+    resolve(msg.result);
+    return;
+  }
   if (method === "initialize") {
     reply(id, { protocolVersion: 1, agentCapabilities: {} });
     return;

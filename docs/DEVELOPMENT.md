@@ -109,8 +109,9 @@ skills/opensider      安装 / 更新 / 卸载 / 体检测 skill（README 的提
 scripts/dev-host.mjs  开发用：编二进制 + 拷扩展 + 注册桥接（= pnpm install-host）
 scripts/pack-extension.mjs  扩展 zip 打包
 scripts/verify-native-ui.mjs  原生 UI shim 的端到端验证（真 Chromium + 已构建扩展）
-scripts/verify-page-activity.mjs  页面活动态（面板开着强制可见 / 关掉还原）的端到端验证
-scripts/verify-tab-control.mjs  标签接管（借用 / 收回 / 后台操作 / quiet openTab）的端到端验证
+scripts/verify-page-activity.mjs  页面活动态（面板开着强制可见 / 后台任务期间保持武装 / 收工后才还原）的端到端验证
+scripts/verify-background-task.mjs  后台任务（关 UI 不打断 / 徽标 / 重开侧栏补发实况与权限卡）的端到端验证
+scripts/verify-tab-control.mjs  标签接管（借用 / 收回 / 行操作 / Stop 即释放 / quiet openTab）的端到端验证
 scripts/verify-page-tamper.mjs  主世界钩子「不留痕」的端到端验证（未触碰页面必须与干净 Chromium 一致）
 scripts/verify-queue-send-now.mjs  消息队列「立即发送」的端到端验证
 scripts/verify-file-drop.mjs  拖文件到侧栏 → 变附件的端到端验证
@@ -121,12 +122,12 @@ scripts/verify-state-mirror.mjs  状态镜像（>1MB 分片推送 / 上传、超
 scripts/verify-first-connect.mjs  首次打开侧栏要自己连上（`SCENARIO=local` 扩展重载 / `SCENARIO=mirror` 卸载重装）的端到端验证
 scripts/verify-held-send.mjs  连接未就绪时发消息（草稿按住、就绪后补发，不吞消息）的端到端验证
 scripts/verify-selection.mjs  划词隐藏通道（不进侧栏 / 独立会话 / 取消恢复）的帧级验证
-scripts/verify-selection-ui.mjs  划词工具条（门控 / 结构 / 定位 / 层级 / 结果层 / 引文芯片）的端到端验证
+scripts/verify-selection-ui.mjs  划词工具条（门控与展示前复核 / 结构 / 定位 / 层级 / 结果层 / 引文芯片）的端到端验证
 scripts/verify-skill-menu.mjs  `/` skill 探测菜单（列表 / 搜索 / 详情面板 / 芯片落位 / 发出的提示词）的端到端验证
 scripts/verify-agent-switch-guard.mjs  有任务在跑时切 Agent（确认弹窗 / 取消不切 / 确认才切）的端到端验证
 scripts/lib/sandbox.mjs  上面几个脚本共用的沙箱（临时 HOME / 现编 Host / 假 Agent / profile 内桥接清单）
 scripts/fixtures/player-check.html  模拟「站点自己做环境自检就拒绝播」的假播放器（人工验收用）
-scripts/fake-acp-agent.mjs  假 ACP Agent（e2e 用，按行 JSON，可控分片/是否响应 cancel；另答 `<cli> models`）
+scripts/fake-acp-agent.mjs  假 ACP Agent（e2e 用，按行 JSON，可控分片/是否响应 cancel/是否发权限请求；另答 `<cli> models`）
 scripts/install       已删除（用户侧不再有壳脚本）
 .github/workflows     推 v* tag 发 Release
 ```
@@ -160,13 +161,20 @@ bin 目录冒充 `copilot`，并把本机桥接清单写进临时 profile 的 `N
 就绪」那个窗口里；断言草稿还在、没报离线错、也没先把气泡上屏，然后就绪后那条 prompt 真的
 到达假 Agent（trace 里有且只有一条），正文照常流回来。
 
-页面活动态（面板开着时把 Agent 在动的标签强制成「可见 + 有焦点」，关掉侧栏还原）分两层验：
+页面活动态（面板开着时把 Agent 在动的标签强制成「可见 + 有焦点」，收工后还原）分两层验：
 核心机制（`packages/extension/src/activity-shim.ts` 的可见性 / 焦点改写、事件静音、rAF 回退、
 TTL 过期、解除还原）跑 `node --test 'packages/extension/src/**/*.test.ts'` 里的单测，用最小的假 DOM；
-接线与生命周期跑 `node scripts/verify-page-activity.mjs`（7 项检查），它用扩展自己的 `switchTab`
-把页面变成当前标签、再用主世界的 `chrome.scripting.executeScript` 看页面自己读到什么，
-最后关掉侧栏验证还原。**注意它测不了「真的被隐藏」**：Playwright 的 Chromium 自己开着焦点模拟，
-页面永远是 visible，所以那部分只能在单测里用假环境覆盖，脚本注释里写明了这个边界。
+接线与生命周期跑 `node scripts/verify-page-activity.mjs`（10 项检查），它用扩展自己的 `switchTab`
+把页面变成当前标签、再用主世界的 `chrome.scripting.executeScript` 看页面自己读到什么；
+还验后台任务的生命周期：`__opensiderTurnStart` 标一轮在跑 → 关侧栏（标签**保持**武装）→
+`__opensiderTurnEnd`（面板仍关着）→ 标签还原，中途顺带断言徽标与 tooltip。**注意它测不了「真的被隐藏」**：
+Playwright 的 Chromium 自己开着焦点模拟，页面永远是 visible，所以那部分只能在单测里用假环境覆盖，
+脚本注释里写明了这个边界。
+
+后台任务（关 UI 不打断、徽标、重开侧栏看实况）跑 `node scripts/verify-background-task.mjs`（18 项）：
+真 Chromium + 真 Host + 假 Agent（`FAKE_ACP_PERMISSION=1` 让 prompt 含 "permission" 的那轮先等答复），
+覆盖：面板关着时一轮跑完（trace 里有 `end`）且徽标从 1 变回空、重开面板能补出整轮内容（最后一片也到）、
+中途重开会被认成进行中且后续分片继续流入、面板关着到达的权限卡重开后仍在、允许后这一轮继续跑完。
 
 主世界钩子只在「面板开着 + Agent 触及该标签页」时注入（原因与做法见 TECH_DESIGN 的
 「主世界钩子的注入时机」），所以「没在用的页面一点都不该被改动」这件事单独验：

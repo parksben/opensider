@@ -12,7 +12,11 @@
 //   answering the card  -> the side panel itself nudges the Agent to carry on
 //   control card        -> renders above the composer, no status prefix in its title
 //   control list        -> one row per held page, header counts them
-//   row take-back       -> releases exactly that page, the others keep their hold
+//   row actions         -> each row offers focus / take-back icon buttons; focus brings the
+//                          tab to the front without touching the hold; take-back asks in an
+//                          in-place popover (Esc cancels, confirming releases the row)
+//   stop (cancel)       -> the session's holds are parked right away and the marks go off,
+//                          without waiting for a turn.end
 //   self-opened tab     -> writable without a gate
 //   workspace files     -> tabs.json `control` and current.json `target` track the hold
 //   turn ends           -> holds are parked (marks off), memories keep re-entry silent
@@ -563,9 +567,10 @@ try {
   check("no card was raised for it either", (await controlState()).pending === null);
 
   // 7d-bis. The control card is a list (2026-10-07): one row per held page under a header
-  // that counts them, and a row's own take-back gives back exactly that page. (Checked
-  // here: the borrow card below takes the card's place, so the rows are only on screen
-  // while no request is waiting.)
+  // that counts them. Each row offers its own actions on hover (2026-10-13): focus and
+  // take-back — the latter asks once more in an in-place popover. (Checked here: the
+  // borrow card below takes the card's place, so the rows are only on screen while no
+  // request is waiting.)
   const rowsUp = await waitFor(
     async () => (await panel.evaluate(() => document.querySelectorAll("[data-control-row]").length)) === 2,
     true,
@@ -578,7 +583,43 @@ try {
   );
   check("every row names its page", rowText.length === 2 && rowText.every((text) => text.trim().length > 0), JSON.stringify(rowText));
 
-  await panel.locator(`[data-control-row="${tabH}"] button`).click({ timeout: 5_000 });
+  const rowLabels = await panel.evaluate((tabId) =>
+    Array.from(document.querySelectorAll(`[data-control-row="${tabId}"] button`)).map((button) =>
+      button.getAttribute("aria-label"),
+    ), tabH);
+  check(
+    "every row offers focus and take-back actions",
+    rowLabels.length === 2 && /Focus|聚焦/.test(rowLabels[0] ?? "") && /Take back|收回/.test(rowLabels[1] ?? ""),
+    JSON.stringify(rowLabels),
+  );
+
+  // Focus shows the tab without touching the control state (the user was looking at B).
+  await activate(tabB);
+  await panel.locator(`[data-control-row="${tabH}"] button`).first().click({ timeout: 5_000 });
+  const focused = await waitFor(activeTab, tabH);
+  check("the row's focus action brings the tab to the front", focused.ok, `active=${focused.last} expected=${tabH}`);
+  const focusState = await controlState();
+  check(
+    "focusing does not change the holds",
+    focusState.entries.some((entry) => entry.tabId === tabH && entry.sessionId === "verify-s1"),
+    JSON.stringify(focusState.entries),
+  );
+
+  // Take-back asks first; cancelling leaves the hold alone.
+  const dialog = panel.locator('[role="dialog"][aria-modal="false"]');
+  await panel.locator(`[data-control-row="${tabH}"] button`).nth(1).click({ timeout: 5_000 });
+  const popoverUp = await waitFor(async () => (await dialog.count()) > 0, true);
+  check("the row's take-back asks for confirmation", popoverUp.ok);
+  await panel.keyboard.press("Escape");
+  await waitFor(async () => (await dialog.count()) === 0, true);
+  check(
+    "cancelling the confirmation keeps the hold",
+    (await controlState()).entries.some((entry) => entry.tabId === tabH),
+  );
+
+  // …and confirming it releases exactly that page.
+  await panel.locator(`[data-control-row="${tabH}"] button`).nth(1).click({ timeout: 5_000 });
+  await dialog.getByRole("button", { name: /^(Take back|收回)$/ }).click({ timeout: 5_000 });
   const afterRowRelease = await controlState();
   check(
     "the row's take-back releases exactly that page",
@@ -594,6 +635,29 @@ try {
     true,
   );
   check("the released row leaves the card", rowsAfter.ok);
+
+  // 7d-ter. Stop (cancel): the session's holds are parked right away and the title marks
+  // come off, without waiting for a turn.end the (missing) host would never send.
+  const cancelVia = await panel.evaluate(
+    (sid) =>
+      new Promise((resolve) => {
+        const port = chrome.runtime.connect({ name: "sidebar" });
+        setTimeout(() => {
+          port.postMessage({ type: "cancel", sessionId: sid });
+          resolve("sent");
+        }, 200);
+        setTimeout(() => port.disconnect(), 3000);
+      }),
+    "verify-s1",
+  );
+  check("the stop message goes through the real sidebar port", cancelVia === "sent");
+  const stopped = await waitFor(async () => {
+    const state = await controlState();
+    return !state.entries.some((entry) => entry.sessionId === "verify-s1");
+  }, true);
+  check("stop parks every hold right away", stopped.ok, JSON.stringify((await controlState()).entries));
+  const createdMarkOff = await waitFor(async () => !(await marked(created)), true);
+  check("stop clears the title marks", createdMarkOff.ok, `title=${createdMarkOff.last}`);
 
   // 7e. A user tab that was never approved still asks.
   const askAgain = await dispatch(

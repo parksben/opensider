@@ -3,11 +3,15 @@
 //
 //   open the side panel -> the tab the Agent works with gets armed (it stops hearing the
 //   "you are hidden" events; it reads as visible and focused; frames keep flowing)
-//   close the panel -> the tab is released and hears its own events again
+//   close the panel     -> with a background turn still in flight the tab STAYS armed
+//   turn ends           -> the last turn releases the tab even though the panel is closed
+//   toolbar icon        -> shows a green badge + "Task running" while a turn is live, and
+//                          clears both once it ends
 //
 // Everything is driven through the extension's own paths: `switchTab` (the command the
 // Agent uses) to make a tab current, and `chrome.scripting.executeScript` in the page's
-// MAIN world to look at what the page itself sees.
+// MAIN world to look at what the page itself sees. The background-turn lifetime uses the
+// SW test seams (`__opensiderTurnStart` / `__opensiderTurnEnd`) instead of a real prompt.
 //
 // Scope note: Playwright's Chromium always reports pages as visible and focused (it turns
 // on focus emulation itself) and hides nothing, so a tab cannot be made *really* hidden
@@ -219,8 +223,31 @@ try {
   );
   check("animation frames keep flowing on the armed tab", (state?.frames ?? 0) >= 5, `${state?.frames} frames`);
 
-  // Closing the panel has to hand the tab back to the browser. There is no panel left to
-  // ask through, so this probe runs in the page's own world instead.
+  // A background turn is in flight: the badge and the tooltip must say so. The tooltip
+  // language follows the panel's UI locale (the sandbox browser may run either language).
+  await sw.evaluate(() => globalThis.__opensiderTurnStart("verify-bg"));
+  const badgeOk = await (async () => {
+    const deadline = Date.now() + 5000;
+    let last = null;
+    while (Date.now() < deadline) {
+      last = await sw.evaluate(async () => ({
+        text: await chrome.action.getBadgeText({}),
+        title: await chrome.action.getTitle({}),
+      }));
+      if (last?.text === "1" && /Task running|任务运行中/.test(last?.title ?? "")) return { ok: true, last };
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+    return { ok: false, last };
+  })();
+  check(
+    "a live turn puts a badge and the running tooltip on the icon",
+    badgeOk.ok,
+    JSON.stringify(badgeOk.last),
+  );
+
+  // Closing the panel with a task still running must NOT hand the tab back (the Agent may
+  // still be working in it). There is no panel left to ask through, so the probe runs in
+  // the page's own world instead.
   await panel.close();
   const pageProbe = () =>
     fixture.evaluate(() => {
@@ -231,8 +258,28 @@ try {
       document.dispatchEvent(new Event("visibilitychange"));
       return heard;
     });
+  await new Promise((resolve) => setTimeout(resolve, 1200));
+  const stillArmed = await pageProbe();
+  check(
+    "closing the panel keeps the tab armed while a task runs in the background",
+    stillArmed === 0,
+    stillArmed === 0 ? "" : "the tab was released mid-task",
+  );
+
+  // The last turn ends with the panel still closed: now the tab goes back.
+  await sw.evaluate(() => globalThis.__opensiderTurnEnd("verify-bg"));
   const released = await waitFor(pageProbe, 1, 10_000);
-  check("closing the panel releases the tab", released.ok, released.ok ? "" : "events still muted");
+  check("the finished background turn releases the tab", released.ok, released.ok ? "" : "events still muted");
+
+  const cleared = await sw.evaluate(async () => ({
+    text: await chrome.action.getBadgeText({}),
+    title: await chrome.action.getTitle({}),
+  }));
+  check(
+    "the badge clears when the last turn ends",
+    cleared?.text === "" && cleared?.title === "OpenSider",
+    JSON.stringify(cleared),
+  );
 
   const failed = results.filter((result) => !result.ok);
   console.log(`\n${results.length - failed.length}/${results.length} checks passed`);

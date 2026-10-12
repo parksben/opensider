@@ -661,6 +661,48 @@ try {
       (await toolbar(fixture).count()) === 1,
     backIn ? `y=${Math.round(backIn.y)} 之前=${Math.round(visibleBefore.y)}` : "没有工具条",
   );
+
+  // 门控（2026-10-13）：UI 一关，已弹出的工具条立刻收掉；而且「展示前现场复核」要挡住
+  // 一条陈旧缓存——推送丢了 / SW 被回收重建 / 标签页当时没收到，缓存里的 true 不作数。
+  await fixture.bringToFront();
+  await fixture.evaluate(() => window.scrollTo(0, 0));
+  await selectText(fixture, "target");
+  await sleep(600);
+  const upBeforeClose = await toolbar(fixture).count();
+  await panel.close();
+  let hiddenAfterClose = false;
+  for (let i = 0; i < 20 && !hiddenAfterClose; i += 1) {
+    await sleep(250);
+    hiddenAfterClose = (await toolbar(fixture).count()) === 0;
+  }
+  ok(
+    "关掉侧栏后已弹出的工具条立刻收掉",
+    upBeforeClose > 0 && hiddenAfterClose,
+    `before=${upBeforeClose} after=${await toolbar(fixture).count()}`,
+  );
+
+  // 绕过门控推送，直接把 enabled=true 塞进内容脚本（等价于「上次推送说可用、之后没有
+  // 任何东西把它纠正回来」的陈旧缓存）。展示前的现场复核必须让工具条仍然不出现。
+  const fixtureTabId = await worker.evaluate(
+    (pattern) =>
+      chrome.tabs
+        .query({})
+        .then((tabs) => tabs.find((tab) => (tab.url ?? "").includes(pattern))?.id ?? null),
+    `127.0.0.1:${port}`,
+  );
+  await worker.evaluate(
+    (id) => chrome.tabs.sendMessage(id, { type: "selection.gate", enabled: true }, { frameId: 0 }),
+    fixtureTabId,
+  );
+  await sleep(200);
+  await fixture.bringToFront();
+  await selectText(fixture, "target");
+  await sleep(900);
+  ok(
+    "陈旧缓存说可用也不行：UI 关着时划词仍然不出现",
+    (await toolbar(fixture).count()) === 0,
+    `${await toolbar(fixture).count()} 个 host`,
+  );
 } catch (error) {
   ok("verification ran to completion", false, String(error?.message ?? error).slice(0, 200));
 } finally {
