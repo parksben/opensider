@@ -485,7 +485,11 @@ function sendNative(msg: ExtToHost): void {
   if (msg.type === "prompt") trackTurnStart(msg.sessionId);
   connectNative();
   if (!nativePort) {
-    if (statusForced) return;
+    if (statusForced) {
+      // 测试态里这条 prompt 根本没出去：别把在跑集合留成幽灵项。
+      if (msg.type === "prompt") trackTurnEnd(msg.sessionId, false);
+      return;
+    }
     const missing = lastStatus.type === "status" && lastStatus.state === "missing";
     if (missing) {
       reportMissing("Native host is not connected.");
