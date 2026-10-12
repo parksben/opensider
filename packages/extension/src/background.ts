@@ -131,9 +131,19 @@ const INSTALL_HINT = "Send the prompt shown in the side panel to your local AI A
   await loadControlState();
   return { snapshot: await collectTabsSnapshot(), target: await currentControlTarget() };
 };
-// Simulates the host's turn.end for `scripts/verify-tab-control.mjs`.
-(globalThis as unknown as Record<string, unknown>)["__opensiderTurnEnd"] = (sessionId?: string) =>
-  parkControlFor(sessionId);
+// Simulates the host's turn.end for `scripts/verify-tab-control.mjs`, and (with
+// `__opensiderTurnStart`) drives the background-task lifecycle in
+// `scripts/verify-page-activity.mjs` without a real prompt.
+(globalThis as unknown as Record<string, unknown>)["__opensiderTurnEnd"] = (sessionId?: string) => {
+  trackTurnEnd(sessionId, false);
+  return parkControlFor(sessionId);
+};
+// Marks a session as having a turn in flight (test seam, see __opensiderTurnEnd); returns
+// the live set so tests can assert what the worker actually tracks.
+(globalThis as unknown as Record<string, unknown>)["__opensiderTurnStart"] = (sessionId: string) => {
+  trackTurnStart(sessionId);
+  return [...liveTurns];
+};
 // The last outbound host messages. `scripts/verify-tab-control.mjs` reads them to check that
 // answering a borrow request really nudged the Agent, without a real host in the loop.
 const outboundLog: ExtToHost[] = [];
@@ -220,6 +230,7 @@ function remember(msg: HostToExt): void {
     }
   }
   if (msg.type === "status") {
+    const previous = lastStatus;
     lastStatus = msg;
     queueSelectionGatePublish();
     if (msg.state === "starting") {
@@ -227,8 +238,10 @@ function remember(msg: HostToExt): void {
     } else {
       clearStartingWatchdog();
     }
-    // 后台任务：状态离开 ready（宿主重启 / 换 Agent / 出错）后不可能还有轮次在跑。
-    if (msg.state !== "ready") clearLiveTracking();
+    // 后台任务：只有「真的离开 ready」才算任务被判死（宿主重启 / 换 Agent / 出错）。
+    // 重复的同一状态（比如宿主没装时的 missing 重试）不是转换，不能拿来清在跑集合。
+    const leftReady = previous.type === "status" && previous.state === "ready" && msg.state !== "ready";
+    if (leftReady) clearLiveTracking();
     if (msg.state === "idle" || msg.state === "connecting" || msg.state === "missing") {
       lastSession = undefined;
       lastModels = undefined;
@@ -421,13 +434,15 @@ function connectNative(force = false): void {
       return;
     }
     clearStartingWatchdog();
-    // 宿主没了，在跑的一轮也随之消失；别把徽标与补发缓存留在那儿。
-    clearLiveTracking();
     const error = chrome.runtime.lastError?.message ?? "Native host disconnected.";
     if (isHostMissingError(error)) {
+      // 宿主压根没装：这条端口从来没真正连上过，重试循环也不是「任务掉了」的证据，
+      // 不能拿它清在跑集合（否则徽标会和重试一起闪烁）。
       reportMissing(error);
       return;
     }
+    // 宿主真的断开：在跑的一轮随之消失，别把徽标与补发缓存留在那儿。
+    clearLiveTracking();
     broadcast({
       type: "status",
       state: "error",
