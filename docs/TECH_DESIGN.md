@@ -75,6 +75,18 @@ Cursor Agent 在 ACP 模式下仍然自己执行本地工具（读文件、写�
 - 点击工具栏图标打开 Side Panel（`setPanelBehavior({ openPanelOnActionClick: true })`）。manifest **没有** `default_popup`：工具栏点击不会弹出独立 action 窗，侧栏画在当前浏览器窗口里。录演示时禁止把 Side Panel 拖出窗口。
 - Go Host 一启动就往 `~/.opensider/host.log` 打一行，便于判断 Chrome 有没有真正拉起 Host（该文件按大小与日期轮转，见下）
 
+### 后台任务（侧栏关闭后任务继续跑）
+
+关 UI ≠ 取消任务：侧栏收起后，正在执行的一轮要继续跑到完成。四件事各就各位：
+
+- **SW 生命周期**：`chrome.runtime.connectNative` 的端口本身就让 MV3 SW 保活（Chrome 105+ 明确：连接原生消息宿主期间 SW 不会被回收），所以只要 Host 还在，SW 不会因空闲被拆、Native 端口不会掉、Host 也不会因 stdin EOF 退出——**不需要心跳探活**。真正的断点只有 Host 自己崩：`onDisconnect` → 广播 `error`，并一并清空在跑集合与徽标。
+- **在跑集合与图标状态**（`background.ts`）：SW 按 ACP `sessionId` 维护 `liveTurns`——发出 `prompt` 加入；收到 `turn.end` 移除（`interrupted:true` 不算结束，新一轮已经接上）；`status` 离开 `ready` 或 Native 端口断开时清空（此时任务已不可能还在跑）。集合变化时广播 `{type:"turns.running", sessionIds}`（`replay` 也带，供重开的面板对齐进行中状态），并按集合更新工具栏：>0 时绿底徽标（数字，>9 显示 `9+`）+ 标题「OpenSider - 任务运行中 / Task running」，空时清徽标、恢复标题；语言跟 `chrome.storage` 里的界面语言（`opensider/state.locale`，存储变化即时跟）。
+- **重开侧栏看实况**：面板关着时消息只发给零个端口，全丢——SW 做两层补发：
+  - `update` 在「无面板 + 该会话在跑」时按会话按序缓存（约 4MB 上限），首个面板连上后作为**一条** `{type:"turn.replay", sessionId, updates}` 补发（面板侧整批 `applyAcpUpdate`，绕过「只有进行中才收增量」的门；usage 只更新上下文环，不落成消息），补发一次即清。
+  - 待答的 `permission` / `cursor`（带 `id` 的）按 `id` 常驻一个小表（不论面板在不在都记），任何面板连上都重发**尚未回执**的那些；回执经过 SW（`permission.reply` / `cursor.reply`）、该会话 `turn.end`、或状态清空时删掉——后台任务卡在权限卡上时，重开面板就能接着答。
+  - 面板侧对「还没 hydration 完就先到的会话消息」（`update` / `turn.end` / `turns.running` / `turn.replay` / `permission` / `cursor` / `browser.command` / `browser.result` / `artifacts`）做一次性暂存（按 ACP id 入队、上限保护），hydration 完成后按序重放，仍映射不到才丢弃——否则打开面板的头几百毫秒里到达的补发会因 `localIdForAcp` 还是空被丢掉。
+- **页面能力不停**：活动态武装与两个主世界钩子的注入门控从「`sidebars.size > 0`」放宽为「`sidebars.size > 0 || liveTurns.size > 0`」；最后一个面板断开时若还有任务在跑就**不**执行 `releaseActivity()`，等最后一轮 `turn.end` 且面板仍关着时再释放——与「侧栏一关就还原」的承诺只差「任务收工后」这一拍，页面最终照样回到原生行为。
+
 ### Content Script
 
 运行在隔离世界，不往页面 `window` 挂 API，也不执行任意 JS。模块加载后把 `__opensiderPage` 挂到隔离世界 `globalThis`：`ping` / `startPick` / `stopPick` / `snapshot` / `viewport` / `measure` / `runCommand`。SW 用 `executeScript` 调这些方法，不依赖 `onMessage` 是否已经挂上。元素定位优先级：`args.index`（`interactive.md` 里从 1 起的编号）→ `args.label` / `args.name`（对到控件本身，不是 label 节点）→ `args.selector`（CSS）→ `args.text`（先按控件标签 / placeholder / name 匹配，再退回可见文本包含），可选 `args.nth`。侧栏发起 `page.pick` 时进入拾取：悬停高亮、点击生成全局唯一 CSS selector（id 优先，否则 `tag:nth-of-type` 路径，并校验 `querySelectorAll` 唯一），Esc 取消。拾取层挂 closed Shadow + 尽量 `popover` 进顶层，避免压在 YouTube `#movie_player` 下面；遮罩自己吃指针（再 `elementsFromPoint` 看底下节点），忽略开拾取后约 200ms 内的残留 pointerdown，并在 `yt-navigate-*` / `fullscreenchange` 时把层补回去。预渲染文档上的 `startPick` 直接 return。
@@ -244,11 +256,11 @@ reveal 的平台实现分在 `internal/reveal/reveal_{darwin,linux,windows}.go`�
 **主世界钩子的注入时机（native UI 与页面活动态共用）**：这两层都必须改**页面自己的 JS 世界**（主世界）里的原生 API，而主世界一旦被动过，页面就能探测到——`Function.prototype.toString` 不再是 `[native code]`、`HTMLDocument.prototype` 上多出自有的 `hidden` / `visibilityState` / `hasFocus`、`window` 上多出 `__opensiderNativeUi` / `__opensiderActivity` 两个不可配置全局。实测（`scripts/verify-page-tamper.mjs`，干净 Chromium vs. 装了扩展的 Chromium 逐项对比）这就是 11 个非原生入口 + 2 个全局的「篡改指纹」，而抖音这类站点在加载期做环境自检、判定环境脏就拒绝初始化自己的播放器。所以：
 
 - **不声明成常驻 `content_scripts`，也不交给 CRXJS 的 ESM loader**。两个钩子由 `packages/extension/scripts/build-page-hooks.mjs` 单独编成**经典脚本**（IIFE、无 import/export、固定名 `page-hooks/native-ui-hook.js` / `page-hooks/activity-hook.js`）。为什么非得这样：CRXJS 给内容脚本生成的是 `assets/xxx-loader-*.js` + `await import("…")`，而**同一个模块在同一个文档里只会求值一次**——面板关掉我们卸载钩子之后，再注入就是空转，Agent 在页面刷新前一直失明（实测：`getNativeUi` 直接报「could not be installed」）；loader 还是异步的，`executeScript` 返回时钩子尚未在听，紧接着的那次调用会把钩子装成「没有 caller token」的状态。经典脚本两个问题一起没了（固定名也顺带干掉了原来那条「登记进 manifest 只为回读 hash 文件名」的 `exclude_matches` 写法）。
-- **按需注入**：`background.ts` 的 `injectPageHook(tabId, name)` 用 `chrome.scripting.executeScript({ target: { tabId, allFrames: true }, world: "MAIN", files: ["page-hooks/…js"] })` 注入，经典脚本在 `executeScript` resolve 时就已落位；钩子自身的 `if (host[KEY]) return` 保证重复注入幂等。触发点是「侧栏开着 + Agent 触及该标签」：`port.onConnect`（面板打开时的活动标签）、`dispatchCommand`（每条命令都先 `armActivity`，读完原生 UI 事件后按需补注入 native UI 钩子）、`runNativeUiMethod`（`getNativeUi` / `setDialogPolicy` 不再报「reload the tab」，而是先补注入再重试）。
+- **按需注入**：`background.ts` 的 `injectPageHook(tabId, name)` 用 `chrome.scripting.executeScript({ target: { tabId, allFrames: true }, world: "MAIN", files: ["page-hooks/…js"] })` 注入，经典脚本在 `executeScript` resolve 时就已落位；钩子自身的 `if (host[KEY]) return` 保证重复注入幂等。触发点是「侧栏开着（或该标签正被一个后台任务使用）+ Agent 触及该标签」：`port.onConnect`（面板打开时的活动标签）、`dispatchCommand`（每条命令都先 `armActivity`，读完原生 UI 事件后按需补注入 native UI 钩子）、`runNativeUiMethod`（`getNativeUi` / `setDialogPolicy` 不再报「reload the tab」，而是先补注入再重试）。
 - **为什么不再靠 `run_at: document_start`**：内容脚本是经典脚本，CRXJS 会把它们编成 loader + `await import("…")`，真正的代码要等模块 fetch + 编译。实测（改之前）页面自身首个 `<script>` 已经在 ~18ms 跑完，钩子到 ~39ms 才落地，等于在页面初始化**进行到一半**时把 API 换掉，比 `document_start` 更糟。按需注入没有这个尴尬：装上时页面早就初始化完了，我们只在「Agent 要动手」的语义下改环境。现在钩子是经典脚本，真要回到早注入也已经能真「早」了。
 - **感知不受影响**：`browser/tabs.json` / `current.json` / 「当前活动标签」全部来自 SW 的 `chrome.tabs` / `chrome.windows`，以及隔离世界的内容脚本；主世界注入范围收窄不会动到它们。
 - **未触及的页面必须逐项一致**：`scripts/verify-page-tamper.mjs` 把「什么都别动」变成 CI 能查的断言（未触碰页面 0 个非原生入口 / 0 个全局 / `Object.getOwnPropertyNames(HTMLDocument.prototype) === ["constructor"]`；触及后钩子到位；释放后还原到与未触碰时**完全一致**；再触及能第二次装上；页面抢走钩子时扩展自愈）。
-- **释放即卸载**：`releaseActivity()`（侧栏收起 / 最后一个面板端口断开 / 扩展重置）除了解除武装，还会调 `releasePageHooks()`：两个钩子把包过的入口换回捕获到的原函数、`EventTarget.prototype` 与 `document` 原型上的补丁移除、并把各自挂在 `window` 上的全局删掉（所以是 `configurable: true`）。因为钩子是经典脚本，之后再次触及会**重新执行**并重新装上。
+- **释放即卸载**：`releaseActivity()`（侧栏收起且任务已收工 / 最后一个面板端口断开且无后台任务 / 扩展重置）除了解除武装，还会调 `releasePageHooks()`：两个钩子把包过的入口换回捕获到的原函数、`EventTarget.prototype` 与 `document` 原型上的补丁移除、并把各自挂在 `window` 上的全局删掉（所以是 `configurable: true`）。因为钩子是经典脚本，之后再次触及会**重新执行**并重新装上。
 - **caller token 与自愈**：钩子里的 token 认领逻辑收在 `packages/extension/src/hook-caller.ts`（单测覆盖）——`handshake` 把「没装」「被页面拿了」「就是你」三件事分清楚（第一个长得像 token 的调用者拿到它；`release` 永远不认领）。SW 每次调用前先 `handshake`，拿到 `authorized: false` 就知道页面抢了钩子，于是 `reseatPageHook()`：删掉旧实例 + 重新注入，下一次调用即可认领（有界：每次调用最多重新装一回，不会被来回拖住）。代价写在明处：页面抢走的那一层包装会留在页面上（原函数在它的闭包里，我们无法替它还原），行为仍是透传；活动态那层补丁属于我们持有的实例，照旧能还原。
 - **已知代价**：注入之前（页面刚打开、Agent 还没碰过）弹的原生对话框不会被记录、也不会被代答；`file-chooser` 拦截同理。这是「不给没在用的页面留痕」换来的，写进 `REQUIREMENTS.md` 第 15 条的边界与 `agents.md`。
 
@@ -616,13 +628,15 @@ Host 是通用 ACP Client + 数据驱动 `AgentProfile`（启动命令、鉴权�
 
 **档位放行（借用闸门的策略分支）**：侧栏把当前权限档位存在 `chrome.storage.local[opensider/state].agentMode`；SW 在模块启动时读一次、并用 `chrome.storage.onChanged` 跟住。策略为 `auto` / `unattended` 时，`resolveCommandTab` 不调 `requestBorrow`，而是直接 `adoptTab`（不建 pending、不广播卡片、**不写 `trusted` 记忆**）；「拒绝」的冷却（`blocked`）与「别的会话持有」仍分别返回 `borrow_denied` / `borrow_held`（显式意图优先于档位）。档位从侧栏读取而不是走消息通道，是为了即使没有消息往来（SW 刚启动、命令先到）也能生效。
 
-**回合结束（`turn.end`）**：SW 在转发 Host 消息的同一路挂勾——park 掉该会话的持有（徽标 / banner 收起、`autoDiscardable` 复位），保留访问记忆与待答卡片；下一次写命令对记忆内标签静默再接管。`openTab` 自建的记入 `origins`，用户批准借用时记入 `trusted`；标签关闭 / `onReplaced` 同步清理。用户收回与会话删除则连访问记忆一起清空。
+**回合结束（`turn.end`）**：SW 在转发 Host 消息的同一路挂勾——park 掉该会话的持有（徽标 / banner 收起、`autoDiscardable` 复位），保留访问记忆与待答卡片；下一次写命令对记忆内标签静默再接管。**用户主动终止也算「回合结束」的立即版**：侧栏发 `cancel` 时 SW 先转发给 Host，随即就地 `parkControlFor(sessionId)`——不依赖 Agent 愿不愿意/何时回 `turn.end`（旧实现只靠 turn.end，遇到不响应取消的 CLI 时接管态与标题前缀会一直挂着，用户报过）；取消路上 Agent 若还有命令到达，park 过的标签会走「锚点 / 记忆」路径静默再接管，不受影响。`openTab` 自建的记入 `origins`，用户批准借用时记入 `trusted`；标签关闭 / `onReplaced` 同步清理。用户收回与会话删除则连访问记忆一起清空。
 
 **答卡续跑（侧栏侧）**：用户点「允许 / 拒绝」后，侧栏除了回 `control.grant`，还给该请求归属的会话发一条**通道消息**（`i18n.controlContinueAllowed` / `controlContinueDenied`，带 `[OpenSider]` 前缀与标签标题）把 Agent 带回正轨——不等用户再打一条，也不进本地消息记录：`sendPrompt(..., { anchor: false })`，不过 `updateSessionMessages` / `wrapUserPrompt`，重新生成 / Fork 的「上一条用户消息」不被污染（Agent 自己的会话历史里保留这条）。会话正在跑时带 `interrupt: true`：Host 先停旧一轮并等它收尾（`turn.end{interrupted}` 走 `settleSupersededTurn`），新一轮接上——**不再进待发队列**，用户点了卡就是最高优先级。档位切到 `auto` / `unattended` 时若还有未答卡片，侧栏按「允许」走同一条路径，但 `control.grant` 带 `auto:true`，`resolveBorrow` 据此跳过 `rememberTrusted`（策略放行不等于用户批准）。
 
-**状态 UI（侧栏）**：状态面板与借用卡同为 `ControlBanner` 组件，插在 `ChatPane` 输入区堆叠的顶部（`control` 属性，渲染在 `<TodoList>` 之前），用统一的卡片族样式（`mb-2 rounded-lg border border-[var(--line)] bg-[var(--panel-2)]`），不再占用 header 下方那条横带。持有状态是一个**列表面板**：表头（状态点 + 「正在操作 / 已接管」+ 数量 + 「全部收回」）下面**每个被接管的标签一行**（行内状态点 + 标题 + 域名 + 行内「收回」），列表套 `cs-list-cap`（max-height 30vh、内部滚动）——标签多时逐行可认、逐行可收（2026-10-07 用户要求，之前的单行摘要看不出有哪些网页、只能一把全收）。被接管标签的状态由 SW 广播，卡片在渲染时读快照里的标题——新开（自建）标签被接管那一刻通常还没加载完、标题为空，所以 `tabs.onUpdated` 对「已持有标签」的 `status/title/url` 变化会防抖重广播（`publishControlIfHeld` → `scheduleControlPublish`，150ms），卡片随页面标题自动更新；实在没有标题时兜底显示域名。
+**状态 UI（侧栏）**：状态面板与借用卡同为 `ControlBanner` 组件，插在 `ChatPane` 输入区堆叠的顶部（`control` 属性，渲染在 `<TodoList>` 之前），用统一的卡片族样式（`mb-2 rounded-lg border border-[var(--line)] bg-[var(--panel-2)]`），不再占用 header 下方那条横带。持有状态是一个**列表面板**：表头（状态点 + 「正在操作 / 已接管」+ 数量 + 「全部收回」）下面**每个被接管的标签一行**（行内状态点 + 标题 + 域名），行尾两个 **hover（或键盘聚焦）才出现**的 icon 按钮（`opacity-0 group-hover:opacity-100 group-focus-within:opacity-100`，与产物列表同族）：**聚焦**（Lucide `LocateFixed`，把该标签切到前台并聚焦其窗口）与**收回**（Lucide `Undo2`）。列表套 `cs-list-cap`（max-height 30vh、内部滚动）——标签多时逐行可认、逐行可聚焦 / 收回（2026-10-07 用户要求列表化；2026-10-13 用户要求改 hover icon 并加聚焦）。被接管标签的状态由 SW 广播，卡片在渲染时读快照里的标题——新开（自建）标签被接管那一刻通常还没加载完、标题为空，所以 `tabs.onUpdated` 对「已持有标签」的 `status/title/url` 变化会防抖重广播（`publishControlIfHeld` → `scheduleControlPublish`，150ms），卡片随页面标题自动更新；实在没有标题时兜底显示域名。
 
-**收回（`control.release` / `control.releaseTab`）**：`control.release` 释放该会话全部接管（连同锚点、路由目标与访问记忆），广播状态、撤徽标；侧栏在会话删除时也发这条。`control.releaseTab`（2026-10-07 新增）只释放一个标签：`releaseTab(controlState, tabId)` 清掉该标签的持有、目标、锚点与记忆，`autoDiscardable` 复位、徽标撤下、广播新快照，其余标签不受影响——对应状态面板里那一行的「收回」。**收回不写 `blocked`**：下次进入该标签照常走闸门（询问档弹卡、自动档放行）——`blocked` 只由「拒绝」写入（静默拒绝一段时间，防止弹卡骚扰）。已派发的动作不回滚。
+**聚焦（`control.focusTab`）**：侧栏行的「聚焦」发 `control.focusTab{tabId}`（新增的侧栏 → SW 控制消息），SW `chrome.tabs.update(tabId,{active:true})` + `chrome.windows.update(windowId,{focused:true})`——这是**展示**语义（与 `switchTab` 一致），不改接管、不写目标、不动记忆；标签已关就静默失败（列表随下一次 `control` 广播刷新）。
+
+**收回（`control.release` / `control.releaseTab`）**：`control.release` 释放该会话全部接管（连同锚点、路由目标与访问记忆），广播状态、撤徽标；侧栏在会话删除时也发这条。`control.releaseTab`（2026-10-07 新增）只释放一个标签：`releaseTab(controlState, tabId)` 清掉该标签的持有、目标、锚点与记忆，`autoDiscardable` 复位、徽标撤下、广播新快照，其余标签不受影响。**两个收回都走就地 popover 二次确认**（2026-10-13 新增，复用 `ConfirmPopover`，锚在对应按钮旁；Esc / 点外面取消，只有点确认才真发消息）——单行确认标题「收回这个网页？」、表头「全部收回」确认标题「收回全部网页？」，正文都说明「Agent 会立即停止操作，之后需要时会重新向你申请」，避免误触。**收回不写 `blocked`**：下次进入该标签照常走闸门（询问档弹卡、自动档放行）——`blocked` 只由「拒绝」写入（静默拒绝一段时间，防止弹卡骚扰）。已派发的动作不回滚。
 
 **窗口方法**：`openTab` 改为 `active:false` + 不聚焦窗口 + 开在目标标签旁（拿不到目标则焦点窗口），成功后自动接管（自建）；`switchTab` 保留原语义，只当展示动作（`agents.md` 写明不要用它选工作对象）；`closeTab` 目标是未接管的用户标签 → `borrow_required`（未保存拦截照旧）。
 
@@ -632,7 +646,7 @@ Host 是通用 ACP Client + 数据驱动 `AgentProfile`（启动命令、鉴权�
 
 **互不影响的前置修复**：`agent-cursor` 的逐帧动画在后台标签会**永久挂起**——activity shim 是主世界补丁，盖不到隔离世界。做法：`document.visibilityState === "hidden"` 时走瞬移（与 `REDUCED` 同路径），并给 `moveTo` 加兜底计时器（动画中途被隐藏也能 resolve）。命令 in-flight 置 `acting` 标记，供 banner 区分「正在操作」与「已接管」。
 
-**工作区文件**：`current.json`（`CurrentPage`）新增 `target`（当前命令路由目标，可能不同于用户视点）；`tabs.json`（`TabRecord`）新增 `control: "user" | "agent"`；`BrowserResult` 新增 `reason` / `hint`（Host 原样透传进结果文件）。`tools.json` version 11 → 12；`agents.md` 写清路由规则、`borrow_required` 后的做法（提醒用户看侧栏卡片、允许后重试一次、被拒绝就停）与 `switchTab` / `openTab` 新语义。
+**工作区文件**：`current.json`（`CurrentPage`）新增 `target`（当前命令路由目标，可能不同于用户视点）；`tabs.json`（`TabRecord`）新增 `control: "user" | "agent"`；`BrowserResult` 新增 `reason` / `hint`（Host 原样透传进结果文件）。`tools.json` version 11 → 12；`agents.md` 写清路由规则、`borrow_required` 后的做法（提醒用户看侧栏卡片、允许后重试一次、被拒绝就停）与 `switchTab` / `openTab` 新语义；**收尾规则（2026-10-13）**：任务结束时用 `closeTab` 关掉只作临时查看 / 中转的标签，用户可能要看的保留并简短说明——「临时标签由 Agent 自己收尾」的实现就是这条（用户明确选择只做 AGENTS.md 约定，不加自动补消息）。
 
 **侧栏**：`ControlBanner`（Header 之下）从 SW 广播 `control` 取状态（按选中会话的 acpId 匹配），带「收回」；借用请求卡在同一区域渲染（`control.request` → 允许 / 拒绝 → `control.grant`）。`sendPrompt` 时上报锚点；会话删除时发 `control.release`。
 
@@ -649,7 +663,7 @@ Host 是通用 ACP Client + 数据驱动 `AgentProfile`（启动命令、鉴权�
 | 侧栏已展开 | `sidebars.size > 0`（侧栏的 `chrome.runtime.connect({name:"sidebar"})` 长连接，SW 已在用这个集合做「最后一个面板关掉就释放页面活性」） |
 | Agent 已就绪 | SW 缓存的 `lastStatus.state === "ready"` |
 
-任一变化就向所有 http(s) 标签页推 `selection.gate{enabled}`（界面语言的来源是页面自己读 `chrome.storage` 里的面板状态，推送里不带）；内容脚本缓存它，并在**真正要显示工具条前**复核一次，避免两种不对称的窗口：推送没到（页面早于侧栏打开、service worker 刚被回收又醒来）和推送说可用但实际已经断了。**门控由关转开时还要补一次判定**——用户可能正选着一段文字（甚至从侧栏还没连上时就选着了），不补的话他得再划一次才看得见。门控转关时页面侧立即拆除工具条与结果层，并取消在飞请求。
+任一变化就向所有 http(s) 标签页推 `selection.gate{enabled}`（界面语言的来源是页面自己读 `chrome.storage` 里的面板状态，推送里不带）；推送**只负责把已经弹出的收掉**（转关时页面侧立即拆工具条与结果层、取消在飞请求），**不负责允许展示**：内容脚本每次「即将展示」前都要现场 `selection.gate.get` 复核一次（带序号防串台；复核是异步的，回来要重读一次选区，变了/没了就不展示）——缓存说可用不算数，推送丢了、SW 被回收重建、标签页当时没收到这三类窗口都会让缓存里的 `true` 变成谎言（2026-10-13 用户报「UI 关了划词还出组件」，根因就是旧实现只在**缓存为 false** 时才复核）。SW 侧的推送也无序化防护：`publishSelectionGate` 串成 promise 链，避免开着 / 关着两次并发推送在标签页那头颠倒到达。**门控由关转开时还要补一次判定**——用户可能正选着一段文字（甚至从侧栏还没连上时就选着了），不补的话他得再划一次才看得见。
 
 ### 页面内的注入
 
