@@ -92,6 +92,24 @@ const CHECK_WATCHDOG_MS = 8000;
  * CPU 从「每字一遍」降到「每 500ms 一遍」。
  */
 const PERSIST_DEBOUNCE_MS = 500;
+/**
+ * 会话相关消息：hydration 完成前先暂存、完成后按序重放。打开面板的头几百毫秒里，后台
+ * 任务的补发（`turns.running` / `turn.replay` / 未答交互卡）可能先于本地状态就绪到达
+ * ——这些消息都靠 `localIdForAcp` 找归属，提前丢弃就是「重开侧栏看不到实况」。
+ */
+const SESSION_SCOPED_TYPES: ReadonlySet<string> = new Set([
+  "update",
+  "turn.replay",
+  "turns.running",
+  "turn.end",
+  "permission",
+  "cursor",
+  "browser.command",
+  "browser.result",
+  "artifacts",
+]);
+/** 暂存上限，防止畸形流量把内存撑爆。 */
+const MAX_DEFERRED_MESSAGES = 3000;
 
 export function App() {
   const [hydrated, setHydrated] = useState(false);
@@ -644,7 +662,15 @@ export function App() {
     for (const id of [...runningIdsRef.current]) finishTurn(id);
   };
 
+  /** hydration 完成前到达的会话消息先存这儿，见 SESSION_SCOPED_TYPES。 */
+  const deferredRef = useRef<HostToExt[]>([]);
+
   const handleHost = (msg: HostToExt) => {
+    // 本地状态（含会话到 ACP 的绑定）还没读完：会话相关消息先攒着，hydration 后按序重放。
+    if (!hydratedRef.current && SESSION_SCOPED_TYPES.has(msg.type)) {
+      if (deferredRef.current.length < MAX_DEFERRED_MESSAGES) deferredRef.current.push(msg);
+      return;
+    }
     if (msg.type === "peer.probed") {
       settlePeerProbe(msg.requestId, msg.installed);
       return;
@@ -1041,6 +1067,46 @@ export function App() {
       updateSessionMessages(localId, (current) => applyAcpUpdate(current, msg.update, { modelId, modelName }));
       return;
     }
+    if (msg.type === "turns.running") {
+      // 后台任务：面板打开时对齐「哪些会话正在跑」。只补不删——移除交给 turn.end
+      // （本地自己发起的轮次在 SW 眼里可能差一拍，这里不抢它的判断）。
+      const next = new Set(runningIdsRef.current);
+      let changed = false;
+      for (const acpId of msg.sessionIds) {
+        const localId = localIdForAcp(acpId);
+        if (localId && !next.has(localId)) {
+          next.add(localId);
+          changed = true;
+        }
+      }
+      if (changed) syncRunning(next);
+      return;
+    }
+    if (msg.type === "turn.replay") {
+      // 面板关着时跑出来的整轮内容（SW 攒下的增量批次）：按顺序补进这条会话。
+      const localId = localIdForAcp(msg.sessionId);
+      if (!localId) return;
+      const modelId = selectedModelRef.current;
+      const modelName =
+        models.find((item) => item.id === modelId)?.name ||
+        (!modelId || modelId === "auto" ? "Auto" : modelId);
+      let usage: ReturnType<typeof usageFromUpdate>;
+      for (const item of msg.updates) {
+        const parsed = usageFromUpdate(item.update);
+        if (parsed) usage = parsed;
+      }
+      updateSessionMessages(localId, (current) => {
+        let next = current;
+        for (const item of msg.updates) {
+          if (usageFromUpdate(item.update)) continue;
+          next = applyAcpUpdate(next, item.update, { modelId, modelName });
+        }
+        return next;
+      });
+      if (usage) setContextUsage(usage);
+      for (const item of msg.messages ?? []) handleHostRef.current(item);
+      return;
+    }
     if (msg.type === "turn.end") {
       const localId = localIdForAcp(msg.sessionId);
       if (!localId) return;
@@ -1166,6 +1232,16 @@ export function App() {
       setHydrated(true);
     });
   }, []);
+
+  // hydration 之后按序重放暂存的会话消息：后台任务的补发与本地状态就绪是赛跑，
+  // 先到的那些不能丢（见 SESSION_SCOPED_TYPES）。
+  useEffect(() => {
+    if (!hydrated) return;
+    const deferred = deferredRef.current;
+    if (deferred.length === 0) return;
+    deferredRef.current = [];
+    for (const msg of deferred) handleHostRef.current(msg);
+  }, [hydrated]);
 
   useLayoutEffect(() => {
     applyLocale(locale);
@@ -2151,6 +2227,7 @@ export function App() {
                     if (selectedAcpId) sendRef.current({ type: "control.release", sessionId: selectedAcpId });
                   }}
                   onReleaseTab={(tabId) => sendRef.current({ type: "control.releaseTab", tabId })}
+                  onFocusTab={(tabId) => sendRef.current({ type: "control.focusTab", tabId })}
                   onGrant={(requestId, allow) => {
                     const request = visibleBorrowRequest;
                     sendRef.current({ type: "control.grant", requestId, allow });

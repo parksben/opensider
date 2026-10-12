@@ -504,6 +504,8 @@ export type ExtToHost =
   | { type: "control.anchor"; sessionId?: string; tabId?: number }
   | { type: "control.release"; sessionId?: string }
   | { type: "control.releaseTab"; tabId: number }
+  /** 把某个被接管的标签切到前台并聚焦其窗口（展示语义，不改接管状态）。 */
+  | { type: "control.focusTab"; tabId: number }
   /** `auto` marks a grant that came from the permission mode, not from a click: it must not
    * be remembered as a user approval (`trusted`). */
   | { type: "control.grant"; requestId: string; allow: boolean; auto?: boolean }
@@ -529,6 +531,9 @@ export type HostStatusState = "starting" | "idle" | "connecting" | "ready" | "er
 
 export type FsPickMode = "mixed" | "files" | "folders";
 
+/** 一条 ACP 会话增量（`session/update` 原样转发）。单独取名字是为了 `turn.replay` 能引用它。 */
+export type AcpUpdateMessage = { type: "update"; update: Record<string, unknown>; sessionId?: string };
+
 export type HostToExt =
   | { type: "hello"; workspace: string; agentPath: string; providerId?: string; version?: string }
   | { type: "ui.state"; state: Record<string, unknown> | null }
@@ -538,7 +543,11 @@ export type HostToExt =
   | { type: "agents"; agents: AgentInfo[]; selectedId?: string }
   | { type: "agent.progress"; progress: AgentProgress }
   | { type: "session"; sessionId: string; replay?: boolean; created?: boolean; forked?: boolean; requestId?: string }
-  | { type: "update"; update: Record<string, unknown>; sessionId?: string }
+  | AcpUpdateMessage
+  /** 侧栏关闭期间跑出的增量：SW 缓存后并成一条补发给新连接的面板（见 background.ts）。 */
+  | { type: "turn.replay"; sessionId: string; updates: AcpUpdateMessage[]; messages?: HostToExt[] }
+  /** 当前有轮次在飞的会话（ACP sessionId 列表）；用于徽标与重开面板的进行中状态对齐。 */
+  | { type: "turns.running"; sessionIds: string[] }
   | { type: "permission"; id: number; params: Record<string, unknown>; sessionId?: string }
   | { type: "cursor"; id?: number; method: string; params: Record<string, unknown>; sessionId?: string }
   | { type: "turn.end"; stopReason: string; sessionId?: string; error?: string; interrupted?: boolean }

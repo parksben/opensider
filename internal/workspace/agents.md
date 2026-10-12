@@ -104,6 +104,13 @@ Read `browser/tabs.json` for every normal Chrome window and tab (`tabId`, `windo
 
 Do not invent tab IDs. To work in a tab, pass its `tabId` on the command itself (`args.tabId`) — it runs in the background and never moves the user's view; a tab you do not hold first goes through the borrow gate (see «Tab control»). `switchTab` is only for showing a tab to the user. To open a site without replacing anything, call `openTab` with `args.url` (http(s) only) — it opens in the background and becomes yours. To close a tab, call `closeTab` with `args.tabId` (tabs you hold, or the anchor). To pull one or more tabs into their own window, call `moveTabsToWindow` with `args.tabIds` — that one does move what the user sees, so use it only when asked. Pass `args.windowId` to move them into an existing window instead of creating one.
 
+**Clean up the tabs you opened.** Finish every task by reviewing the tabs you opened with
+`openTab`: the ones you only needed to read or copy from have served their purpose — close
+them with `closeTab` before you stop. Keep the tabs the user will want (a result or deliverable
+page they should look at, a page they explicitly asked you to open) and say in one short line
+which ones you kept and why. Never close tabs you did not open. This also keeps the user's
+browser from filling up with research tabs you no longer need.
+
 `restricted: true` means chrome://, edge://, brave://, chrome-extension://, or a browser store page. You may `switchTab` to those, but do not run page read / act / screenshot on them.
 
 ### Native dialogs and other browser UI a page can pop up

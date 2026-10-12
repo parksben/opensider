@@ -1,4 +1,5 @@
 import type {
+  AcpUpdateMessage,
   AttachmentItem,
   BrowserCommand,
   BrowserResult,
@@ -86,6 +87,7 @@ let lastAgents: HostToExt | undefined;
 let lastProgress: HostToExt | undefined;
 let lastUiState: HostToExt | undefined;
 let lastRelease: HostToExt | undefined;
+let lastTurnsRunning: HostToExt | undefined;
 // 宿主镜像超过 Native Messaging 单帧上限时会分片发来（见 state-transfer.ts）；
 // 拼成完整一条才 broadcast / 进回放缓存，侧栏那边完全无感。
 const uiStateSink = new StateChunkSink();
@@ -219,12 +221,14 @@ function remember(msg: HostToExt): void {
   }
   if (msg.type === "status") {
     lastStatus = msg;
-    void publishSelectionGate();
+    queueSelectionGatePublish();
     if (msg.state === "starting") {
       armStartingWatchdog();
     } else {
       clearStartingWatchdog();
     }
+    // 后台任务：状态离开 ready（宿主重启 / 换 Agent / 出错）后不可能还有轮次在跑。
+    if (msg.state !== "ready") clearLiveTracking();
     if (msg.state === "idle" || msg.state === "connecting" || msg.state === "missing") {
       lastSession = undefined;
       lastModels = undefined;
@@ -264,6 +268,10 @@ function replay(port: chrome.runtime.Port): void {
     if (lastRelease) port.postMessage(lastRelease);
     if (lastUiState) port.postMessage(lastUiState);
     if (lastControl) port.postMessage(lastControl);
+    // 后台任务的两块补发（见「background tasks」小节）：进行中集合，以及面板关闭期间
+    // 跑出来的增量与仍在等回答的交互卡。
+    if (lastTurnsRunning) port.postMessage(lastTurnsRunning);
+    replayMissedTurn(port);
   } catch {
     sidebars.delete(port);
   }
@@ -298,6 +306,17 @@ async function publishSelectionGate(): Promise<void> {
     if (tab.id === undefined) continue;
     void chrome.tabs.sendMessage(tab.id, { type: "selection.gate", enabled }, { frameId: 0 }).catch(() => undefined);
   }
+}
+
+/**
+ * 门控推送的串行化入口。推送本身是 async 的（先 query 再逐个 sendMessage），开着 / 关着
+ * 两次并发调用时到达顺序可能颠倒——标签页最后收到哪条就成了它的缓存值。串成 promise 链
+ * 后每次执行都重新取当前门控值，链尾一定是最新状态。推送丢了的那些标签页由内容脚本在
+ * 展示前现场复核兜底（见 selection-toolbar.ts），这里只是让「立刻收掉」尽快到位。
+ */
+let gatePublishChain: Promise<void> = Promise.resolve();
+function queueSelectionGatePublish(): void {
+  gatePublishChain = gatePublishChain.then(publishSelectionGate).catch(() => undefined);
 }
 
 /** 替某个标签页取消在飞的划词请求（导航、关闭时用）。 */
@@ -372,6 +391,25 @@ function connectNative(force = false): void {
     if (msg.type === "turn.end" && msg.sessionId) {
       // The turn is over: hand the tabs back, keep the memories (see parkControlFor).
       void parkControlFor(msg.sessionId);
+      // 后台任务的在跑集合：interrupted 的那一轮不算结束（新一轮已经接上，见 trackTurnEnd）。
+      trackTurnEnd(msg.sessionId, msg.interrupted === true);
+      // 该轮的交互卡不会再有回音；已结束的轮次不重发。
+      for (const [id, pending] of pendingHitl) {
+        if ((pending as { sessionId?: string }).sessionId === msg.sessionId) pendingHitl.delete(id);
+      }
+    }
+    // 面板不在时没人看得到的东西先存着，等面板连上再一次补发（见 replayMissedTurn）：
+    // 流式增量 / 会改变会话侧状态的消息（如 todo），以及还没回答的交互卡。
+    if (
+      sidebars.size === 0 &&
+      (msg.type === "update" || (msg.type === "cursor" && typeof msg.id !== "number")) &&
+      msg.sessionId &&
+      liveTurns.has(msg.sessionId)
+    ) {
+      rememberMissed(msg);
+    }
+    if ((msg.type === "permission" || msg.type === "cursor") && typeof msg.id === "number") {
+      pendingHitl.set(msg.id, msg);
     }
     broadcast(msg);
   });
@@ -383,6 +421,8 @@ function connectNative(force = false): void {
       return;
     }
     clearStartingWatchdog();
+    // 宿主没了，在跑的一轮也随之消失；别把徽标与补发缓存留在那儿。
+    clearLiveTracking();
     const error = chrome.runtime.lastError?.message ?? "Native host disconnected.";
     if (isHostMissingError(error)) {
       reportMissing(error);
@@ -426,6 +466,8 @@ function sendNative(msg: ExtToHost): void {
     promptLog.push({ text: msg.text, interrupt: msg.interrupt === true });
     if (promptLog.length > 10) promptLog.shift();
   }
+  // 后台任务的在跑集合（见 background tasks 小节）：prompt 发出即算在跑，turn.end 才结束。
+  if (msg.type === "prompt") trackTurnStart(msg.sessionId);
   connectNative();
   if (!nativePort) {
     if (statusForced) return;
@@ -439,7 +481,10 @@ function sendNative(msg: ExtToHost): void {
         error: nativeError(`Native host is not connected. ${INSTALL_HINT}`),
       });
     }
-    if (msg.type === "prompt") broadcast({ type: "turn.end", stopReason: "error" });
+    if (msg.type === "prompt") {
+      trackTurnEnd(msg.sessionId, false);
+      broadcast({ type: "turn.end", stopReason: "error" });
+    }
     return;
   }
   try {
@@ -457,7 +502,10 @@ function sendNative(msg: ExtToHost): void {
     nativePort.postMessage(msg);
   } catch (error) {
     broadcast({ type: "status", state: "error", error: String(error) });
-    if (msg.type === "prompt") broadcast({ type: "turn.end", stopReason: "error" });
+    if (msg.type === "prompt") {
+      trackTurnEnd(msg.sessionId, false);
+      broadcast({ type: "turn.end", stopReason: "error" });
+    }
   }
 }
 
@@ -570,9 +618,154 @@ async function loadControlPolicy(): Promise<void> {
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "local" || !changes[SIDEBAR_STATE_KEY]) return;
-  const next = changes[SIDEBAR_STATE_KEY].newValue as { agentMode?: unknown } | undefined;
+  const next = changes[SIDEBAR_STATE_KEY].newValue as { agentMode?: unknown; locale?: unknown } | undefined;
   controlPolicy = typeof next?.agentMode === "string" ? next.agentMode : undefined;
+  actionLocale = next?.locale === "zh" ? "zh" : "en";
+  updateActionBadge();
 });
+
+// --- background tasks (a turn keeps running after the side panel closes) ---------------
+//
+// The native messaging port is what keeps this service worker alive (Chrome 105+: an
+// active `connectNative` port extends the SW lifetime), so a running turn is not tied to
+// the panel. `liveTurns` tracks which ACP sessions have a turn in flight; it drives the
+// toolbar badge, the replay to panels that open later, the buffering of output while no
+// panel is listening, and how long the touched pages stay armed.
+
+const liveTurns = new Set<string>();
+/** Toolbar state currently painted, so the same badge / title is not re-set needlessly. */
+let lastActionState: { count: number; locale: "zh" | "en" } | undefined;
+let actionLocale: "zh" | "en" = "en";
+/** What arrived while no panel was connected, per ACP session (see replayMissedTurn). */
+const missedTurns = new Map<string, { updates: AcpUpdateMessage[]; messages: HostToExt[]; bytes: number }>();
+/** Anything above this is not worth holding in the worker's memory; new items stop piling. */
+const MISSED_MAX_BYTES = 4 * 1024 * 1024;
+/** permission / cursor requests still waiting for an answer, by ACP request id. */
+const pendingHitl = new Map<number, HostToExt>();
+
+async function loadActionLocale(): Promise<void> {
+  try {
+    const raw = (await chrome.storage.local.get(SIDEBAR_STATE_KEY))?.[SIDEBAR_STATE_KEY] as
+      | { locale?: unknown }
+      | undefined;
+    actionLocale = raw?.locale === "zh" ? "zh" : "en";
+  } catch {
+    actionLocale = "en";
+  }
+  updateActionBadge(true);
+}
+
+/** Paint the toolbar badge / tooltip from `liveTurns` (see REQUIREMENTS «后台任务»). */
+function updateActionBadge(force = false): void {
+  const count = liveTurns.size;
+  if (!force && lastActionState?.count === count && lastActionState.locale === actionLocale) return;
+  lastActionState = { count, locale: actionLocale };
+  const running = count > 0;
+  const title = running
+    ? actionLocale === "zh"
+      ? "OpenSider - 任务运行中"
+      : "OpenSider - Task running"
+    : "OpenSider";
+  try {
+    void chrome.action.setTitle({ title });
+    if (running) {
+      void chrome.action.setBadgeBackgroundColor({ color: "#34A853" });
+      void chrome.action.setBadgeText({ text: count > 9 ? "9+" : String(count) });
+    } else {
+      void chrome.action.setBadgeText({ text: "" });
+    }
+  } catch {
+    // action API unavailable (unit contexts) — the badge is cosmetic
+  }
+}
+
+function turnsRunningMessage(): HostToExt {
+  return { type: "turns.running", sessionIds: [...liveTurns] };
+}
+
+function publishTurnsRunning(): void {
+  lastTurnsRunning = turnsRunningMessage();
+  broadcast(lastTurnsRunning);
+  updateActionBadge();
+  // The pages were kept armed for the background task; with everything finished and the
+  // panel still closed, now is the time to put them back (see releaseActivity).
+  if (liveTurns.size === 0 && sidebars.size === 0) void releaseActivity();
+}
+
+function trackTurnStart(sessionId: string | undefined): void {
+  if (!sessionId || liveTurns.has(sessionId)) return;
+  liveTurns.add(sessionId);
+  publishTurnsRunning();
+}
+
+function trackTurnEnd(sessionId: string | undefined, interrupted: boolean): void {
+  // An interrupted turn's session is already running the next one — it stays live.
+  if (!sessionId || interrupted) return;
+  if (liveTurns.delete(sessionId)) publishTurnsRunning();
+}
+
+/** The host is gone or switching: no turn can still be alive; drop every trace of them. */
+function clearLiveTracking(): void {
+  const had = liveTurns.size > 0 || missedTurns.size > 0 || pendingHitl.size > 0;
+  liveTurns.clear();
+  missedTurns.clear();
+  pendingHitl.clear();
+  if (had) publishTurnsRunning();
+}
+
+function rememberMissed(msg: HostToExt): void {
+  const sessionId = (msg as { sessionId?: unknown }).sessionId;
+  if (typeof sessionId !== "string" || !sessionId) return;
+  let bucket = missedTurns.get(sessionId);
+  if (!bucket) {
+    bucket = { updates: [], messages: [], bytes: 0 };
+    missedTurns.set(sessionId, bucket);
+  }
+  if (bucket.bytes >= MISSED_MAX_BYTES) return;
+  if (msg.type === "update") {
+    bucket.updates.push(msg as AcpUpdateMessage);
+    bucket.bytes += JSON.stringify((msg as AcpUpdateMessage).update ?? {}).length;
+    return;
+  }
+  bucket.messages.push(msg);
+  bucket.bytes += JSON.stringify(msg).length;
+}
+
+/** Hand a newly-connected panel what it missed while none was listening, once. */
+function replayMissedTurn(port: chrome.runtime.Port): void {
+  for (const [sessionId, bucket] of missedTurns) {
+    if (bucket.updates.length > 0 || bucket.messages.length > 0) {
+      port.postMessage({
+        type: "turn.replay",
+        sessionId,
+        updates: bucket.updates,
+        ...(bucket.messages.length > 0 ? { messages: bucket.messages } : {}),
+      } satisfies HostToExt);
+    }
+    missedTurns.delete(sessionId);
+  }
+  for (const msg of pendingHitl.values()) port.postMessage(msg);
+}
+
+/** The user pressed Stop: to them that turn is over, so hand the tabs back right away
+ * instead of waiting for a `turn.end` some agents never send after a cancel. */
+function handleTurnCancel(sessionId: string | undefined): void {
+  if (!sessionId) return;
+  void parkControlFor(sessionId);
+}
+
+/** 「聚焦」 from a takeover row: show the tab without touching the control state. */
+async function focusControlTab(tabId: number): Promise<void> {
+  if (!Number.isInteger(tabId)) return;
+  try {
+    const tab = await chrome.tabs.update(tabId, { active: true });
+    if (tab?.windowId != null) await chrome.windows.update(tab.windowId, { focused: true });
+  } catch {
+    // tab is gone; the next control broadcast drops its row
+  }
+}
+
+void loadActionLocale();
 
 async function buildControlStates(): Promise<TabControlState[]> {
   const sessions = new Map<string, TabControlState>();
@@ -1637,11 +1830,11 @@ async function callNativeUi<T>(
   try {
     let frames = framesOf(await run());
     // The hook is injected per tab on demand, so the first call on a tab finds nothing:
-    // put it in and ask again. Only while the panel is open — the Agent's commands are the
-    // only thing that reads these events, and a closed panel means no injection anywhere.
+    // put it in and ask again. While the panel is open — or a background task is still
+    // running — the Agent's commands are the only thing that reads these events.
     if (
       inject &&
-      sidebars.size > 0 &&
+      (sidebars.size > 0 || liveTurns.size > 0) &&
       !frames.some((frame) => frame.ok) &&
       (await injectPageHook(tabId, "native-ui-hook"))
     ) {
@@ -1844,9 +2037,10 @@ async function callActivity(tabId: number, enabled: boolean, inject: boolean): P
   }
 }
 
-/** Arm the shim on a tab the Agent is about to work with. No-op while the panel is shut. */
+/** Arm the shim on a tab the Agent is about to work with. No-op while neither the panel
+ * is open nor a background task is running (see the requirement on release). */
 async function armActivity(tabId: number): Promise<void> {
-  if (sidebars.size === 0) return;
+  if (sidebars.size === 0 && liveTurns.size === 0) return;
   // Re-armed (and thus refreshed) on every touch: arming carries a TTL so a panel that
   // disappears without us noticing cannot leave pages faking visibility forever.
   const armed = await callActivity(tabId, true, true);
@@ -2251,6 +2445,18 @@ function handleControlMessage(msg: ExtToHost): boolean {
     void resolveBorrow(msg.requestId, msg.allow, msg.auto !== true);
     return true;
   }
+  if (msg.type === "control.focusTab") {
+    void focusControlTab(msg.tabId);
+    return true;
+  }
+  // 用户按了停止（或删掉了在跑的会话）：停止只是打断这一轮，不是收回接管——接管会在
+  // turn.end 那一拍归还。但有的 Agent 收到取消后不会好好收尾，所以这里不等它：直接
+  // park（标题前缀收起、banner 清空），之后迟到的 turn.end 再 park 一遍是幂等的。
+  if (msg.type === "cancel") {
+    sendNative(msg);
+    handleTurnCancel(msg.sessionId);
+    return true;
+  }
   return false;
 }
 
@@ -2260,7 +2466,7 @@ chrome.runtime.onConnect.addListener((port) => {
   replay(port);
   connectNative();
   // 面板打开/关闭直接决定划词工具条能不能出现（另一条是 Agent 是否就绪）。
-  void publishSelectionGate();
+  queueSelectionGatePublish();
   // A panel just opened: its tab-control banner should be current, not a stale replay.
   void publishControl();
   // A panel just opened: the tab it will work with has to start reading as visible even
@@ -2275,14 +2481,19 @@ chrome.runtime.onConnect.addListener((port) => {
       void cancelPagePick();
       return;
     }
+    // 回执已给出，缓存里那份未答交互卡不再重发（见 pendingHitl）。
+    if ((msg.type === "permission.reply" || msg.type === "cursor.reply") && typeof msg.id === "number") {
+      pendingHitl.delete(msg.id);
+    }
     if (handleControlMessage(msg)) return;
     sendNative(msg);
   });
   port.onDisconnect.addListener(() => {
     sidebars.delete(port);
-    void publishSelectionGate();
-    // Last panel gone: the pages should stop pretending to be visible.
-    if (sidebars.size === 0) void releaseActivity();
+    queueSelectionGatePublish();
+    // Last panel gone: the pages should stop pretending to be visible — unless a task is
+    // still running in the background, in which case they stay armed until it finishes.
+    if (sidebars.size === 0 && liveTurns.size === 0) void releaseActivity();
   });
 });
 
