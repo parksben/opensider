@@ -56,6 +56,8 @@ let activeRequest = "";
 let activeMode: SelectionMode | "quote" | "" = "";
 let resultHeight = RESULT_LOADING_HEIGHT;
 let copiedTimer = 0;
+/** 展示前复核门控的序号：每次 hide / 新复核都自增，删掉过期的异步回包。 */
+let gateAskSeq = 0;
 
 // ------------------------------------------------------------------ 选区的读取与判断
 
@@ -372,6 +374,8 @@ function show(): void {
 }
 
 function hide(): void {
+  // 在飞的复核一并作废：hide 之后的回包不该把工具条又拉回来。
+  gateAskSeq += 1;
   window.clearTimeout(showTimer);
   showTimer = 0;
   if (activeRequest) {
@@ -406,22 +410,39 @@ function schedule(): void {
       hide();
       return;
     }
-    if (!gate.enabled) {
-      // 缓存说「不可用」，但推送可能根本没到（页面早于侧栏打开、service worker 刚被唤醒）。
-      // 就地复核一次，免得工具条在最该出现的时候消失——复核结果仍由 SW 说了算。
-      void chrome.runtime
-        .sendMessage({ type: "selection.gate.get" })
-        .then((reply: { enabled?: boolean } | undefined) => {
-          if (reply?.enabled !== true) return;
-          setSelectionGate(true);
-          schedule();
-        })
-        .catch(() => undefined);
+    // 展示前**一律**现场复核门控，缓存里的 `enabled: true` 不算数：推送只负责把已经
+    // 弹出的收掉，而推送可能根本没到（页面早于侧栏打开、service worker 被回收又唤醒、
+    // 标签页当时没收到）——「UI 关了划词还弹组件」就是从这条缝里漏出来的。
+    // 复核是异步的：回来时选区可能变了/没了，要重读一次再决定展不展示。
+    const seq = ++gateAskSeq;
+    let asked: Promise<{ enabled?: boolean } | undefined>;
+    try {
+      asked = chrome.runtime.sendMessage({ type: "selection.gate.get" });
+    } catch {
+      // 扩展上下文已失效（重载 / 卸载）：当作不可用。
+      gate = { enabled: false };
+      hide();
       return;
     }
-    selectedText = found.text;
-    anchor = found.rect;
-    show();
+    void asked
+      .then((reply) => {
+        if (seq !== gateAskSeq) return;
+        gate = { enabled: reply?.enabled === true };
+        if (!gate.enabled) {
+          hide();
+          return;
+        }
+        const again = readSelection();
+        if (!again || again.text !== found.text) return;
+        selectedText = again.text;
+        anchor = again.rect;
+        show();
+      })
+      .catch(() => {
+        if (seq !== gateAskSeq) return;
+        gate = { enabled: false };
+        hide();
+      });
   }, SHOW_DELAY_MS);
 }
 
@@ -587,11 +608,13 @@ export function setSelectionGate(enabled: boolean): void {
   const wasEnabled = gate.enabled;
   gate = { enabled };
   if (!enabled) {
+    // 推送说不可用：立即拆除工具条与结果层，取消在飞请求（这是推送的主职责）。
     hide();
     return;
   }
   // 刚变可用：用户可能正选着一段文字（甚至从侧栏还没连上时就选着了）。补一次判定，
   // 别让他白等下一次划词——service worker 被回收再唤醒、面板刚连上都会走到这里。
+  // 注意这里仍然只是「触发复核」：能不能展示由复核结果决定。
   if (!wasEnabled) schedule();
 }
 
