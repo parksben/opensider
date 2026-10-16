@@ -1006,6 +1006,7 @@ Release 正文是**发版时手写的 2–3 行英文摘要**，讲清这一版�
 | 截图超过 Native Messaging 1MB | JPEG + 最长边 1280 + 质量下调；只传 base64，落盘后再给 Agent 路径 |
 | 扩展页 `<img src="file://…">` 被 Chrome 拦 | 不再走 `file://`；Host 分片回传，侧栏 `blob:` |
 | 预览图超过 Native Messaging 1MB | 512KiB 原文分片；单文件上限 32MB，超限回 i18n 失败文案 |
+| Agent 单行 ACP 消息巨大（读图后 `tool_call_update` 内联整张 base64，实测近 10MB） | 读 stdout 不用 `bufio.Scanner`（超行上限即停读，Agent 卡在写管道，`session/load` / `prompt` 永不返回，侧栏一直 running），改 `bufio.Reader.ReadBytes` 不设行长上限；`session/update` 转发前把超过 64KB 的字符串截到 8KB 前缀 + 截断标记，单条更新不再超 Native Messaging 1MB |
 | 元素截图像素比不对 | 用 `devicePixelRatio` 把 CSS 盒映射到截图像素 |
 | 扩展选文件没有真路径 | Host 用 `PickFiles.app`（`open -W`）弹出访达多选，回绝对路径 |
 | Chrome 子进程弹不出 NSOpenPanel | 直接 exec `PickFiles`（regular 激活）到前台；空退则访达 `choose file` |

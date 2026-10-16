@@ -2,6 +2,7 @@ package acp
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -160,20 +161,22 @@ func (c *Client) Start() error {
 		}
 	}()
 	go func() {
-		sc := bufio.NewScanner(stdout)
-		sc.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
-		for sc.Scan() {
-			line := strings.TrimSpace(sc.Text())
-			if line == "" {
-				continue
+		// 不能用 bufio.Scanner：它遇到超长行会直接停读，而 Agent 进程还活着（卡在写管道上），
+		// cmd.Wait 永远等不到，挂起的 session/load / prompt 也就永远不返回——侧栏一直 running。
+		// 2026-10-16 事故：OpenCode 回放一个读过 PNG 的会话，单条 tool_call_update 带 ~10MB
+		// base64，超过旧的 4MB 行上限。
+		readLines(stdout, func(line []byte) {
+			line = bytes.TrimSpace(line)
+			if len(line) == 0 {
+				return
 			}
 			var msg map[string]any
-			if err := json.Unmarshal([]byte(line), &msg); err != nil {
-				log.Log("unparsable agent line: " + trim(line, 200))
-				continue
+			if err := json.Unmarshal(line, &msg); err != nil {
+				log.Log("unparsable agent line: " + trim(string(line), 200))
+				return
 			}
 			c.handleMessage(msg)
-		}
+		})
 		_ = cmd.Wait()
 		log.Log("agent exited")
 		c.failAll(errors.New("agent process exited"))
@@ -423,6 +426,7 @@ func (c *Client) handleMessage(msg map[string]any) {
 			log.Log("dropped Cursor stream-close update")
 			return
 		}
+		slimUpdate(update)
 		// 先记下 Agent 自己报的模式 / 配置变化，再往外发：侧栏拿到的快照必须是新的。
 		c.noteModeUpdate(update)
 		c.noteTurnUpdate(update)
