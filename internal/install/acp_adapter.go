@@ -72,9 +72,13 @@ func adapterArgs(manager, pkg, dest string) []string {
 	}
 }
 
+// findHostCLI 在用户自己的目录里找 CLI 本体（ResolveHostCLI，不含 OpenSider 的
+// 适配器 prefix）：codex-acp 的 node_modules 内嵌着一份 `codex`，用 ResolveOnPath
+// 会把「已卸载」当成「还在」，于是本体没了还会被判定为 acpPresent。口径与探测
+// （detect.hostCLIPresent）保持一致。
 func findHostCLI(spec acpAdapterSpec) string {
 	for _, name := range spec.cliNames {
-		if p := detect.ResolveOnPath(name); p != "" {
+		if p := detect.ResolveHostCLI(name); p != "" {
 			return p
 		}
 	}

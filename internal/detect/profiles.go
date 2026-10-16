@@ -19,9 +19,15 @@ type Launch struct {
 }
 
 type AgentProfile struct {
-	ID             string
-	Name           string
-	Mark           protocol.AgentMark
+	ID   string
+	Name string
+	Mark protocol.AgentMark
+	// CLINames 是这家 agent「本体」的可执行名（与 install 的 cliNames 同一套口径）。
+	// 探测先核实本体还在用户自己的目录里（paths.HostSearchDirs），再谈适配器：
+	// Claude / Codex 靠 runtime 里的适配器拉起，但「适配器在」不等于「CLI 还装着」——
+	// 用户卸载 CLI 后这一家要从名单里消失（见 hostCLIPresent）。本体即启动命令的
+	// 那几家不用填，ResolveOnPath 天然兜住。
+	CLINames       []string
 	Launches       []Launch
 	Env            map[string]string
 	Auth           AuthKind
@@ -112,6 +118,8 @@ func Profiles() []AgentProfile {
 			ID:   "claude",
 			Name: "Claude Code",
 			Mark: "claude",
+			// 本体是交互式 `claude`；探测列表里列的是适配器，但只有本体还在时才列。
+			CLINames: []string{"claude"},
 			Launches: []Launch{
 				{Command: filepath.Join(paths.ClaudeACPBinDir(), "claude-agent-acp"), Args: nil},
 				{Command: filepath.Join(paths.ClaudeACPBinDir(), "claude-code-acp"), Args: nil},
@@ -129,6 +137,9 @@ func Profiles() []AgentProfile {
 			ID:   "codex",
 			Name: "Codex",
 			Mark: "codex",
+			// 本体是 `codex`；codex-acp 的 node_modules 里内嵌着一份 `codex`，
+			// 不能用 ResolveOnPath 判断本体在不在。
+			CLINames: []string{"codex"},
 			Launches: []Launch{
 				{Command: filepath.Join(paths.CodexACPBinDir(), "codex-acp"), Args: nil},
 				{Command: "codex-acp", Args: nil},

@@ -274,14 +274,31 @@ func versionManagerBins() []string {
 	return dirs
 }
 
+// HostSearchDirs 是「用户自己的」可执行目录：版本管理器目录 + 进程 PATH，**不含**
+// OpenSider 自有的适配器 prefix。判断某家 CLI 的「本体」是否还装在本机必须用它
+// （见 detect.ResolveHostCLI）：适配器里可能内嵌着引擎副本（codex-acp 就带一份
+// `codex`），用 AgentSearchDirs 会把「已卸载」误判成「还在」，死入口就一直留在
+// 切换列表里。
+func HostSearchDirs() []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, dir := range append(versionManagerBins(), filepath.SplitList(os.Getenv("PATH"))...) {
+		if dir == "" || seen[dir] {
+			continue
+		}
+		seen[dir] = true
+		out = append(out, dir)
+	}
+	return out
+}
+
 func AgentSearchDirs() []string {
-	fromEnv := filepath.SplitList(os.Getenv("PATH"))
 	seen := map[string]bool{}
 	var out []string
 	// Always include the OpenSider-owned ACP prefixes so detect finds the
 	// adapters even if the directory was just created (considerDir would skip it).
 	ours := []string{ClaudeACPBinDir(), CodexACPBinDir()}
-	for _, dir := range append(ours, append(versionManagerBins(), fromEnv...)...) {
+	for _, dir := range append(ours, HostSearchDirs()...) {
 		if dir == "" || seen[dir] {
 			continue
 		}

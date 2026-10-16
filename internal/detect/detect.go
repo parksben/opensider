@@ -26,6 +26,17 @@ type ResolvedAgent struct {
 }
 
 func ResolveOnPath(command string) string {
+	return resolveOn(command, paths.AgentSearchDirs())
+}
+
+// ResolveHostCLI 只在用户自己的目录里找这家 CLI 的「本体」（不含 OpenSider 的
+// 适配器 prefix）。适配器还在不代表 CLI 还装着：codex-acp 的 node_modules 里就
+// 内嵌了一份 `codex`，用它判断会把已经卸载的 Codex 一直列在切换列表里。
+func ResolveHostCLI(command string) string {
+	return resolveOn(command, paths.HostSearchDirs())
+}
+
+func resolveOn(command string, dirs []string) string {
 	if command == "" {
 		return ""
 	}
@@ -35,7 +46,7 @@ func ResolveOnPath(command string) string {
 		}
 		return ""
 	}
-	for _, dir := range paths.AgentSearchDirs() {
+	for _, dir := range dirs {
 		if found := resolveInDir(dir, command); found != "" {
 			return found
 		}
@@ -183,6 +194,10 @@ func finishCmd(cmd *exec.Cmd) {
 }
 
 func resolveLaunch(profile AgentProfile, _ time.Duration, seen map[string]bool) *ResolvedAgent {
+	if !hostCLIPresent(profile) {
+		log.Log("detect " + profile.ID + " miss (host cli not found)")
+		return nil
+	}
 	for _, launch := range profile.Launches {
 		command := ResolveOnPath(launch.Command)
 		if command == "" || seen[command] {
@@ -194,6 +209,22 @@ func resolveLaunch(profile AgentProfile, _ time.Duration, seen map[string]bool) 
 	}
 	log.Log("detect " + profile.ID + " miss")
 	return nil
+}
+
+// hostCLIPresent 核实这家 agent 的 CLI「本体」还在用户自己的目录里（至少命中一个
+// CLINames）。像 Claude / Codex 这样靠 OpenSider 装的适配器拉起、而适配器里还内嵌
+// 着引擎副本的，适配器在 != CLI 还装着；本体被卸载后这一家就不再列出，免得留下点了
+// 也没用的死入口。没声明 CLINames 的（本体即启动命令）由 ResolveOnPath 天然兜住。
+func hostCLIPresent(profile AgentProfile) bool {
+	if len(profile.CLINames) == 0 {
+		return true
+	}
+	for _, name := range profile.CLINames {
+		if ResolveHostCLI(name) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 type registryAgent struct {
