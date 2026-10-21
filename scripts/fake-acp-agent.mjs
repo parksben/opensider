@@ -69,6 +69,9 @@ const modeUrlIds = process.env.FAKE_MODE_URL_IDS === "1";
 const modeSwitchOnPrompt = process.env.FAKE_MODE_SWITCH_ON_PROMPT ?? "";
 const optionsShape = process.env.FAKE_OPTIONS ?? "none";
 const stepsMode = process.env.FAKE_ACP_STEPS === "1";
+// 让 session/load / session/fork 直接失败：用来验证宿主回退到 session/new 时，侧栏会
+// 把本地历史补成 pendingForkContext（否则重开侧栏续聊会断片）。
+const failLoad = process.env.FAKE_ACP_FAIL_LOAD === "1";
 const stepMs = Number(process.env.FAKE_ACP_STEP_MS ?? 90);
 
 // The bridge also runs the CLI once as `<cli> models` before opening a session (see
@@ -164,6 +167,8 @@ const trace = (entry) => {
     // Tracing is best effort; never break the agent over it.
   }
 };
+
+trace({ event: "start", pid: process.pid, argv: process.argv.slice(2), path: process.env.PATH ?? "" });
 
 // -------------------------------------------------------------------- agent modes
 // modeConfigId 是 mode 配置项的 configId：既真实（OpenCode 用 "mode"），也让
@@ -585,6 +590,7 @@ async function handle(msg) {
     return;
   }
   if (method === "initialize") {
+    trace({ event: "initialize" });
     reply(id, { protocolVersion: 1, agentCapabilities: {} });
     return;
   }
@@ -594,6 +600,11 @@ async function handle(msg) {
     return;
   }
   if (method === "session/load" || method === "session/fork") {
+    if (failLoad) {
+      trace({ event: "load_failed", method, sessionId: params?.sessionId ?? "" });
+      reply(id, undefined, { code: -32601, message: "session/load is not supported" });
+      return;
+    }
     sessionId = params?.sessionId || sessionId || `fake-${Date.now().toString(36)}`;
     reply(id, sessionResult(sessionId));
     return;

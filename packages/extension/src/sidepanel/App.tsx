@@ -339,9 +339,10 @@ export function App() {
     interrupt = false,
     anchor = true,
     skillPrefix = "",
+    meta?: { messageId?: string; userText?: string; userAttachments?: AttachmentItem[] },
   ) => {
     const requestId = crypto.randomUUID();
-    bindRegistry.current.add(requestId, localId, "prompt");
+    bindRegistry.current.add(requestId, localId, "prompt", meta);
     // Anchor the turn to the tab the user is on: the Agent's first write takes that tab
     // over, and a later tab switch by the user will not drag the work somewhere else.
     // Bridge messages (see `sendNudge`) skip this: they are not a new user message.
@@ -779,13 +780,24 @@ export function App() {
       // 一律不改动本地绑定（错位配对会把旧任务的内容串进新会话）。
       const ticket = bindRegistry.current.take(msg.requestId);
       if (!ticket) return;
+      // fork 失败、以及 use/prompt 走到「session/load 失败 → 新建会话」时，Agent 侧是
+      // 空的：不补前文就会断片。新建（kind=new）在发之前就设过 pendingForkContext，不动它。
+      const lostHistory =
+        (ticket.kind === "fork" && msg.forked === false) ||
+        ((ticket.kind === "use" || ticket.kind === "prompt") && msg.created === true);
       patchSession(ticket.localId, (session) => ({
         ...bindAcpSession(session, selectedProviderRef.current, msg.sessionId),
-        pendingForkContext:
-          ticket.kind === "fork" && msg.forked === false
-            ? (session.pendingForkContext ?? buildForkContext(session.messages))
-            : session.pendingForkContext,
+        pendingForkContext: lostHistory
+          ? (session.pendingForkContext ??
+            (session.messages.length > 0 ? buildForkContext(session.messages) : undefined))
+          : session.pendingForkContext,
       }));
+      // Host 说这条会话正在跑（session.use 命中在跑的进程）：补上在跑状态，输入走队列。
+      if (msg.running === true && !runningIdsRef.current.has(ticket.localId)) {
+        const next = new Set(runningIdsRef.current);
+        next.add(ticket.localId);
+        syncRunning(next);
+      }
       const regen = pendingRegen.current.get(ticket.localId);
       if (regen && ticket.kind === "new") {
         pendingRegen.current.delete(ticket.localId);
@@ -1122,6 +1134,34 @@ export function App() {
       }
       if (msg.stopReason === "error" && !msg.interrupted && localId === selectedIdRef.current) {
         setError(msg.error?.trim() || t(localeRef.current, "turnError"));
+      }
+      return;
+    }
+    if (msg.type === "prompt.busy") {
+      // 宿主拒绝这条 prompt：该会话已经有一轮在跑（典型来源是重开面板后本地还没
+      // 认定 running，用户直接发了消息）。把刚上屏的用户消息收回队列、保持 running，
+      // 等那一轮 turn.end 后按排队顺序再发——不能静默丢消息，否则旧一轮的迟到输出
+      // 会落在新消息下面，看起来就是「串戏 / 断片」。
+      const ticket = bindRegistry.current.take(msg.requestId);
+      if (!ticket || ticket.kind !== "prompt") return;
+      const localId = ticket.localId;
+      if (!runningIdsRef.current.has(localId)) {
+        const next = new Set(runningIdsRef.current);
+        next.add(localId);
+        syncRunning(next);
+      }
+      const meta = ticket.meta;
+      if (!meta?.messageId) return;
+      const session = sessionsRef.current.find((item) => item.id === localId);
+      if (!session?.messages.some((item) => item.id === meta.messageId)) return;
+      updateSessionMessages(localId, (current) => current.filter((item) => item.id !== meta.messageId));
+      if (typeof meta.userText === "string") {
+        const item: QueuedMessage = {
+          id: crypto.randomUUID(),
+          text: meta.userText,
+          attachments: meta.userAttachments ?? [],
+        };
+        setSessionQueue(localId, [...(queuesRef.current[localId] ?? []), item]);
       }
       return;
     }
@@ -1490,6 +1530,7 @@ export function App() {
       options.interrupt,
       true,
       skillPrefix,
+      { messageId: user.id, userText: text, userAttachments: attachments },
     );
   };
 

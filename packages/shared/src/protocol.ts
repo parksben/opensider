@@ -542,7 +542,7 @@ export type HostToExt =
   | { type: "status"; state: HostStatusState; error?: string }
   | { type: "agents"; agents: AgentInfo[]; selectedId?: string }
   | { type: "agent.progress"; progress: AgentProgress }
-  | { type: "session"; sessionId: string; replay?: boolean; created?: boolean; forked?: boolean; requestId?: string }
+  | { type: "session"; sessionId: string; replay?: boolean; created?: boolean; forked?: boolean; running?: boolean; requestId?: string }
   | AcpUpdateMessage
   /** 侧栏关闭期间跑出的增量：SW 缓存后并成一条补发给新连接的面板（见 background.ts）。 */
   | { type: "turn.replay"; sessionId: string; updates: AcpUpdateMessage[]; messages?: HostToExt[] }
@@ -551,6 +551,8 @@ export type HostToExt =
   | { type: "permission"; id: number; params: Record<string, unknown>; sessionId?: string }
   | { type: "cursor"; id?: number; method: string; params: Record<string, unknown>; sessionId?: string }
   | { type: "turn.end"; stopReason: string; sessionId?: string; error?: string; interrupted?: boolean }
+  /** 宿主没有接受这条 prompt：该会话已经有一轮在跑。面板据此把消息收回队列。 */
+  | { type: "prompt.busy"; requestId: string; sessionId?: string }
   | { type: "page"; page: CurrentPage }
   | { type: "control"; sessions: TabControlState[] }
   | {

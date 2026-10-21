@@ -9,17 +9,30 @@
  * 一一配对；配不上的回执（SW 重连回放、Host 自发消息）不改动任何绑定。
  */
 
+import type { AttachmentItem } from "@shared";
+
 export type BindKind = "new" | "use" | "fork" | "prompt";
 
-export type BindTicket = { localId: string; kind: BindKind };
+/**
+ * prompt 被宿主拒绝（该会话已经在跑）时，面板要把刚上屏的消息原样收回队列，
+ * 所以票据上带一份「上屏时的那条消息」：messageId 用来从消息流里精确摘掉，
+ * userText / userAttachments 用来重新入队。
+ */
+export type BindMeta = {
+  messageId?: string;
+  userText?: string;
+  userAttachments?: AttachmentItem[];
+};
+
+export type BindTicket = { localId: string; kind: BindKind; meta?: BindMeta };
 
 export class BindRegistry {
   private items = new Map<string, BindTicket>();
 
   /** 登记一个待回执的请求。同一会话的新 prompt 会顶掉旧的 prompt 悬挂项。 */
-  add(requestId: string, localId: string, kind: BindKind): void {
+  add(requestId: string, localId: string, kind: BindKind, meta?: BindMeta): void {
     if (kind === "prompt") this.dropPrompts(localId);
-    this.items.set(requestId, { localId, kind });
+    this.items.set(requestId, { localId, kind, meta });
   }
 
   /** 按 requestId 取回执的归属；取不到（不存在 / 已清理）返回 undefined。 */

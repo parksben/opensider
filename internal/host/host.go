@@ -841,6 +841,17 @@ func (h *Host) runtimeBySession(sessionID string) *acpRuntime {
 	return nil
 }
 
+// isPrompting 在锁内读一轮是否在跑：endPrompt 由 prompt goroutine 在别处调用，
+// 裸读 runtime.prompting 会和数据竞争，也可能把刚结束的一轮误判成 still running。
+func (h *Host) isPrompting(runtime *acpRuntime) bool {
+	if runtime == nil {
+		return false
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return runtime.prompting
+}
+
 func (h *Host) acquireRuntime(preferSessionID string) (*acpRuntime, error) {
 	if owned := h.runtimeBySession(preferSessionID); owned != nil && !owned.prompting {
 		return owned, nil
@@ -1095,8 +1106,11 @@ func (h *Host) dispatch(typ string, msg map[string]any) error {
 		sessionID := str(msg["sessionId"])
 		requestID := str(msg["requestId"])
 		return h.enqueueSessionOp(func() error {
-			if running := h.runtimeBySession(sessionID); running != nil && running.prompting {
-				h.send(map[string]any{"type": "session", "sessionId": sessionID, "replay": true, "requestId": requestID})
+			if running := h.runtimeBySession(sessionID); h.isPrompting(running) {
+				// running:true 是面板重开后认定「在跑」的第二条独立来源（第一条是 SW 的
+				// turns.running）。少了它，本地绑定晚到的面板会把在跑会话当空闲，用户发的
+				// 消息会被下面的 prompt.busy 挡回来——这正是「重开侧栏后任务像没在跑」的来源。
+				h.send(map[string]any{"type": "session", "sessionId": sessionID, "replay": true, "running": true, "requestId": requestID})
 				return nil
 			}
 			runtime, err := h.acquireRuntime(sessionID)
@@ -1299,8 +1313,11 @@ func (h *Host) handlePrompt(msg map[string]any) error {
 	err := h.enqueueSessionOp(func() error {
 		if sessionID != "" {
 			owned := h.runtimeBySession(sessionID)
-			if owned != nil && owned.prompting {
-				log.Log("prompt ignored, session already running " + sessionID)
+			if h.isPrompting(owned) {
+				// 不静默吞掉：回执让面板把这条消息收回队列，等这一轮结束再发。否则用户
+				// 看到的是「消息没了」，随后旧一轮的迟到输出还会落在新消息下面（串戏）。
+				log.Log("prompt rejected, session already running " + sessionID)
+				h.send(map[string]any{"type": "prompt.busy", "requestId": requestID, "sessionId": sessionID})
 				return nil
 			}
 			next := owned

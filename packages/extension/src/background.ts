@@ -652,6 +652,29 @@ chrome.storage.onChanged.addListener((changes, area) => {
 // panel is listening, and how long the touched pages stay armed.
 
 const liveTurns = new Set<string>();
+/**
+ * A turn can outlive the side panel, so the service worker has to stay up for its whole
+ * duration. An open native port usually keeps an MV3 worker alive, but that is a Chrome
+ * implementation detail, not a promise — if the worker is reclaimed the port closes, the
+ * host exits on stdin EOF and the task is cut in half. While `liveTurns` is non-empty we
+ * therefore touch a cheap extension API every 20s; the idle timer never reaches 30s. The
+ * timer stops as soon as the last turn ends, so an idle extension still sleeps normally.
+ */
+const KEEPALIVE_MS = 20_000;
+let keepAliveTimer = 0;
+
+function syncKeepAlive(): void {
+  if (liveTurns.size > 0) {
+    if (keepAliveTimer) return;
+    keepAliveTimer = setInterval(() => {
+      void chrome.runtime.getPlatformInfo().catch(() => undefined);
+    }, KEEPALIVE_MS) as unknown as number;
+    return;
+  }
+  if (!keepAliveTimer) return;
+  clearInterval(keepAliveTimer);
+  keepAliveTimer = 0;
+}
 /** Toolbar state currently painted, so the same badge / title is not re-set needlessly. */
 let lastActionState: { count: number; locale: "zh" | "en" } | undefined;
 let actionLocale: "zh" | "en" = "en";
@@ -705,6 +728,7 @@ function turnsRunningMessage(): HostToExt {
 function publishTurnsRunning(): void {
   lastTurnsRunning = turnsRunningMessage();
   broadcast(lastTurnsRunning);
+  syncKeepAlive();
   updateActionBadge();
   // The pages were kept armed for the background task; with everything finished and the
   // panel still closed, now is the time to put them back (see releaseActivity).

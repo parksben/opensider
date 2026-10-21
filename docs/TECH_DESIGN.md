@@ -79,12 +79,14 @@ Cursor Agent 在 ACP 模式下仍然自己执行本地工具（读文件、写�
 
 关 UI ≠ 取消任务：侧栏收起后，正在执行的一轮要继续跑到完成。四件事各就各位：
 
-- **SW 生命周期**：`chrome.runtime.connectNative` 的端口本身就让 MV3 SW 保活（Chrome 105+ 明确：连接原生消息宿主期间 SW 不会被回收），所以只要 Host 还在，SW 不会因空闲被拆、Native 端口不会掉、Host 也不会因 stdin EOF 退出——**不需要心跳探活**。真正的断点只有 Host 自己崩：`onDisconnect` → 广播 `error`，并一并清空在跑集合与徽标。
+- **SW 生命周期**：`chrome.runtime.connectNative` 的端口在很多 Chrome 版本上确实会让 MV3 SW 保活（Chrome 105+ 曾明确：连接原生消息宿主期间 SW 不会被回收），但**不能把它当唯一保证**：不同版本 / 打包策略下 SW 仍可能被空闲回收，而 SW 一挂 Native 端口就断、Host 因 stdin EOF 退出、正在跑的任务随之腰斩。所以 `liveTurns` 非空时 SW 自己起一个 20s 的轻量心跳（`chrome.runtime.getPlatformInfo()`，纯扩展 API、不发网络请求），集合清空即停——只在真有任务在跑时保活，空闲不占资源。Host 自己崩仍走 `onDisconnect` → 广播 `error`，并一并清空在跑集合与徽标。
 - **在跑集合与图标状态**（`background.ts`）：SW 按 ACP `sessionId` 维护 `liveTurns`——发出 `prompt` 加入；收到 `turn.end` 移除（`interrupted:true` 不算结束，新一轮已经接上）；`status` 离开 `ready` 或 Native 端口断开时清空（此时任务已不可能还在跑）。集合变化时广播 `{type:"turns.running", sessionIds}`（`replay` 也带，供重开的面板对齐进行中状态），并按集合更新工具栏：>0 时绿底徽标（数字，>9 显示 `9+`）+ 标题「OpenSider - 任务运行中 / Task running」，空时清徽标、恢复标题；语言跟 `chrome.storage` 里的界面语言（`opensider/state.locale`，存储变化即时跟）。
 - **重开侧栏看实况**：面板关着时消息只发给零个端口，全丢——SW 做两层补发：
   - `update` 在「无面板 + 该会话在跑」时按会话按序缓存（约 4MB 上限），首个面板连上后作为**一条** `{type:"turn.replay", sessionId, updates}` 补发（面板侧整批 `applyAcpUpdate`，绕过「只有进行中才收增量」的门；usage 只更新上下文环，不落成消息），补发一次即清。
   - 待答的 `permission` / `cursor`（带 `id` 的）按 `id` 常驻一个小表（不论面板在不在都记），任何面板连上都重发**尚未回执**的那些；回执经过 SW（`permission.reply` / `cursor.reply`）、该会话 `turn.end`、或状态清空时删掉——后台任务卡在权限卡上时，重开面板就能接着答。
   - 面板侧对「还没 hydration 完就先到的会话消息」（`update` / `turn.end` / `turns.running` / `turn.replay` / `permission` / `cursor` / `browser.command` / `browser.result` / `artifacts`）做一次性暂存（按 ACP id 入队、上限保护），hydration 完成后按序重放，仍映射不到才丢弃——否则打开面板的头几百毫秒里到达的补发会因 `localIdForAcp` 还是空被丢掉。
+  - **在跑状态的双保险**：`turns.running` 是按 ACP id 的集合，只能覆盖「面板本地绑定已经指向同一个 ACP id」的情况；重开后本地绑定晚到、或宿主刚把会话换到新 id 时会漏。于是 `session.use` 命中「已在跑」时回执里额外带 `running: true`，面板收到就直接把该本地会话标成在跑（显示停止钮、输入走队列）。两者都是「加」不是「减」，`turn.end` 才清。
+- **在跑时新消息不丢**：面板把自己的 ACP id 发给宿主 prompt 后，宿主发现该会话已经在跑（典型来源：重开面板时本地还没认定 running，用户直接发了消息）时，不再 `log("prompt ignored")` 了事，而是回 `{type:"prompt.busy", requestId, sessionId}`。面板按 `requestId` 找到刚才登记的 prompt 票据，把那条用户消息从消息流里收回、放进该会话的 `queues`，并保持 running；宿主那一轮 `turn.end` 到达时 `flushQueue` 按顺序把它发出去。这样用户看到的是「消息在队列里等」，而不是「消息消失、Agent 随后莫名其妙串戏」。
 - **页面能力不停**：活动态武装与两个主世界钩子的注入门控从「`sidebars.size > 0`」放宽为「`sidebars.size > 0 || liveTurns.size > 0`」；最后一个面板断开时若还有任务在跑就**不**执行 `releaseActivity()`，等最后一轮 `turn.end` 且面板仍关着时再释放——与「侧栏一关就还原」的承诺只差「任务收工后」这一拍，页面最终照样回到原生行为。
 
 ### Content Script
@@ -323,9 +325,9 @@ chrome.storage.local 与 ~/.opensider/ui-state.json（同形）
 | `agent.connect` | 按 `providerId` 拉起对应 ACP：先握手新进程，成功后再停旧 runtime；进行中报 `connecting` + `agent.progress` |
 | `agent.cancelConnect` | 取消进行中的 `agent.connect`（`ready` 时空操作）。杀掉正在握手的新进程，不拆已 ready 的旧 runtime；有旧 runtime 则恢复 `currentAgent` 并报 `ready`，否则回 `idle`。用 `connectSeq` 作废进行中的 connect，避免取消后迟到的 `ready` |
 | `session.new` + `requestId` | 在空闲（或新开的）ACP 进程上 `session/new`，回 `session` 时原样带回 `requestId`。不打断正在跑的进程 |
-| `session.use` + `sessionId` + `requestId` | 该会话已在某进程上且正在跑则只回 `session`（replay，带 `requestId`），不 `session/load`；否则在空闲进程上 `session/load`，失败则 `session/new`（回执带新 id + `requestId`） |
+| `session.use` + `sessionId` + `requestId` | 该会话已在某进程上且正在跑则只回 `session`（replay，带 `requestId` + **`running: true`**），不 `session/load`；否则在空闲进程上 `session/load`，失败则 `session/new`（回执带新 id + `requestId` + `created: true`）。**面板看到 `created: true` 必须把本地历史写成 `pendingForkContext`**（同 fork 失败那条路），否则下一条消息不带前文，Agent 会「断片」 |
 | `session.fork` + `sessionId` + `requestId` | 在空闲进程上先试不稳定的 `session/fork`（整段历史）；失败则 `session/new`；回执带 `requestId` |
-| `prompt` 可带 `sessionId` + `requestId` | 绑到已持有该会话的进程，或空闲进程 `session/load` 后再 prompt。同一会话已有一轮在跑则拒绝；不同会话并行。若 `session/load` 失败被迫换新会话，用带该 `requestId` 的 `session` 回执通知侧栏更新绑定 |
+| `prompt` 可带 `sessionId` + `requestId` | 绑到已持有该会话的进程，或空闲进程 `session/load` 后再 prompt。同一会话已有一轮在跑则拒绝；不同会话并行。**拒绝不得静默**：回 `{type:"prompt.busy", requestId, sessionId}`，面板据此把刚上屏的那条用户消息收回队列、保持 running，等 `turn.end` 后按排队顺序再发（见「后台任务」）。若 `session/load` 失败被迫换新会话，用带该 `requestId` 的 `session` 回执（`created: true`）通知侧栏更新绑定并补前文 |
 | `prompt` + `interrupt: true` | 「立即发送」专用：该会话正在跑时，Host 先对它在跑的 runtime 发 `session/cancel`，**等那一轮 return**（有上限，超时就照样往下走）再开始新的一轮；被顶掉那轮结束时 `turn.end` 带 `interrupted: true`，侧栏只结算时长与内容、**不清 running、不 flush 队列**（新一轮已经在跑）。不这么做就会变成「侧栏自己计时 + 等 `turn.end` 再发」，而 `turn.end` 只要没到（cancel 打空、ACP 会话 id 漂了）消息就静默丢掉 |
 | `cancel` 可带 `sessionId` | 只取消该 ACP 会话所在进程的一轮；**找不到该会话就不动手**（早期会「随便挑一个 prompting 的进程」取消，导致 B 的停止杀掉 A 的任务） |
 | `update` / `turn.end` / `permission` / `cursor` 带 `sessionId` | 侧栏按 ACP id 精确映射到本地会话，**不按当前选中项；映射不到就丢弃**（不允许落到「当前选中」，那是串戏的主要通道）。`turn.end` 在 `stopReason=error` 时带 `error` 原文（Host 已改写成可执行的登录提示），侧栏顶栏直接显示，不要换成一句笼统的「这一轮以错误结束」 |
