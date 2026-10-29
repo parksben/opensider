@@ -7,6 +7,7 @@ import type {
   CurrentPage,
   DialogPolicy,
   ExtToHost,
+  FormField,
   HostStatusState,
   HostToExt,
   NativeUiEvent,
@@ -88,6 +89,9 @@ let lastProgress: HostToExt | undefined;
 let lastUiState: HostToExt | undefined;
 let lastRelease: HostToExt | undefined;
 let lastTurnsRunning: HostToExt | undefined;
+/** 面板重开时要补发的接手卡 / 待填表单（否则卡片一刷新就没了，Agent 却还在等）。 */
+let lastTakeover: HostToExt | undefined;
+let lastFormRequest: HostToExt | undefined;
 // 宿主镜像超过 Native Messaging 单帧上限时会分片发来（见 state-transfer.ts）；
 // 拼成完整一条才 broadcast / 进回放缓存，侧栏那边完全无感。
 const uiStateSink = new StateChunkSink();
@@ -281,6 +285,8 @@ function replay(port: chrome.runtime.Port): void {
     if (lastRelease) port.postMessage(lastRelease);
     if (lastUiState) port.postMessage(lastUiState);
     if (lastControl) port.postMessage(lastControl);
+    if (lastTakeover) port.postMessage(lastTakeover);
+    if (lastFormRequest) port.postMessage(lastFormRequest);
     // 后台任务的两块补发（见「background tasks」小节）：进行中集合，以及面板关闭期间
     // 跑出来的增量与仍在等回答的交互卡。
     if (lastTurnsRunning) port.postMessage(lastTurnsRunning);
@@ -388,14 +394,29 @@ function connectNative(force = false): void {
     }
     if (
       msg.type === "selection.delta" ||
+      msg.type === "selection.activity" ||
       msg.type === "selection.done" ||
       msg.type === "selection.failed"
     ) {
       // 划词结果只回发起请求的那个标签页：这条链上侧栏完全不需要知道。
-      if (msg.type !== "selection.delta") selectionRequests.delete(msg.tabId);
+      if (msg.type === "selection.done" || msg.type === "selection.failed") selectionRequests.delete(msg.tabId);
       void chrome.tabs
         .sendMessage(msg.tabId, msg, { frameId: 0 })
         .catch(() => undefined);
+      return;
+    }
+    if (msg.type === "takeover") {
+      void handleUserTakeover(msg);
+      return;
+    }
+    if (msg.type === "form.request") {
+      pendingForms.set(msg.requestId, {
+        requestId: msg.requestId,
+        sessionId: msg.sessionId,
+        fields: Array.isArray(msg.fields) ? msg.fields : [],
+      });
+      lastFormRequest = msg;
+      broadcast(msg);
       return;
     }
     if (msg.type === "browser.command") {
@@ -1158,6 +1179,127 @@ async function recordAnchor(sessionId: string | undefined, tabId: number | undef
     setTarget(controlState, sessionId, id);
     persistControl();
   }
+}
+
+/** 等用户填写 / 已提交的表单（不进 Host：值只在扩展内部走一趟）。 */
+type PendingForm = { requestId: string; sessionId?: string; fields: FormField[] };
+const pendingForms = new Map<string, PendingForm>();
+
+/**
+ * Agent 主动交还接管（登录 / 验证码 / 必须本人操作）：先把该会话的标签接管释放掉，用户才能
+ * 真的去点那一页；然后把卡片推给侧栏。顺序不能反——握着标签页让用户去点，是点不动的。
+ */
+async function handleUserTakeover(msg: { requestId: string; sessionId?: string }): Promise<void> {
+  if (msg.sessionId) await releaseControlFor(msg.sessionId);
+  lastTakeover = msg as unknown as HostToExt;
+  broadcast(lastTakeover);
+}
+
+/** 表单要填到哪一页：该会话正在操作的那一页优先，其次当前活动标签。 */
+async function formTargetTab(sessionId?: string): Promise<number | undefined> {
+  if (sessionId) {
+    await loadControlState();
+    const target = targetFor(controlState, sessionId) ?? primaryTabFor(controlState, sessionId);
+    if (target != null) return target;
+  }
+  return (await activeHttpTab())?.id;
+}
+
+/**
+ * 提交表单：**值由这里直接写进页面**（走 runContentMethod → 页面里的 fillForm 通路），
+ * 之后只把「填了哪几个字段」回给 Host。值不出扩展，也不进日志。
+ */
+async function submitForm(requestId: string, values: Record<string, string>): Promise<void> {
+  const pending = pendingForms.get(requestId);
+  if (!pending) return;
+  pendingForms.delete(requestId);
+  try {
+    await fillFormFields(requestId, pending, values);
+  } catch (error) {
+    // 填值失败也必须收尾：不然 Agent 会一直等这张表单，用户却看到卡片已经没了。
+    void finishForm(
+      requestId,
+      false,
+      [],
+      pending.fields.map((field) => field.label),
+      error instanceof Error ? error.message : String(error),
+      false,
+    );
+  }
+}
+
+async function fillFormFields(
+  requestId: string,
+  pending: PendingForm,
+  values: Record<string, string>,
+): Promise<void> {
+  const tabId = await formTargetTab(pending.sessionId);
+  if (!tabId) {
+    void finishForm(requestId, false, [], pending.fields.map((field) => field.label), "no usable tab", false);
+    return;
+  }
+  const fields: { index?: number; selector?: string; label?: string; value: string }[] = [];
+  const filled: string[] = [];
+  const empty: FormField[] = [];
+  for (const field of pending.fields) {
+    const value = values[field.key] ?? "";
+    if (value === "") {
+      if (field.required) empty.push(field);
+      continue;
+    }
+    fields.push({
+      ...(field.index ? { index: field.index } : {}),
+      ...(field.selector ? { selector: field.selector } : {}),
+      ...(field.targetLabel ? { label: field.targetLabel } : {}),
+      value,
+    });
+    filled.push(field.label);
+  }
+  let error = "";
+  if (fields.length > 0) {
+    const command: BrowserCommand = {
+      id: requestId,
+      method: "fillForm",
+      args: { fields, tabId },
+    };
+    const result = await runContentMethod(tabId, command);
+    if (!result.ok) {
+      error = result.error ?? "fill failed";
+      filled.length = 0;
+    }
+  }
+  const missing = empty.map((field) => field.label);
+  const ok = error === "" && missing.length === 0;
+  void finishForm(requestId, ok, filled, missing, error, false);
+}
+
+/** 取消表单：用户不想填了 / 面板关了。同样只回字段名。 */
+function cancelForm(requestId: string): void {
+  const pending = pendingForms.get(requestId);
+  if (!pending) return;
+  pendingForms.delete(requestId);
+  void finishForm(requestId, false, [], pending.fields.map((field) => field.label), "", true);
+}
+
+async function finishForm(
+  requestId: string,
+  ok: boolean,
+  filled: string[],
+  missing: string[],
+  error: string,
+  cancelled: boolean,
+): Promise<void> {
+  if (lastFormRequest && (lastFormRequest as { requestId?: string }).requestId === requestId) lastFormRequest = undefined;
+  broadcast({ type: "form.done", requestId, ok, filled, missing, cancelled } as unknown as HostToExt);
+  sendNative({
+    type: "form.result",
+    requestId,
+    ok,
+    filled,
+    missing,
+    ...(cancelled ? { cancelled } : {}),
+    ...(error ? { error } : {}),
+  } as ExtToHost);
 }
 
 /**
@@ -2486,6 +2628,16 @@ function handleControlMessage(msg: ExtToHost): boolean {
   }
   if (msg.type === "control.grant") {
     void resolveBorrow(msg.requestId, msg.allow, msg.auto !== true);
+    return true;
+  }
+  // 表单提交只在本进程里处理：这条消息**带着用户输入的值**，绝不能落到 `sendNative`
+  // 的兜底分支上去（那会把密码送到 Host，再顺着进程边界散出去）。
+  if (msg.type === "form.submit") {
+    void submitForm(msg.requestId, msg.values ?? {});
+    return true;
+  }
+  if (msg.type === "form.cancel") {
+    cancelForm(msg.requestId);
     return true;
   }
   if (msg.type === "control.focusTab") {

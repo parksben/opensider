@@ -17,11 +17,20 @@ import (
 const pageCommandTimeout = 30 * time.Second
 
 func (h *Host) handleWorkspaceCommand(command protocol.BrowserCommand) {
+	sessionID := h.commandSessionID(command)
+	if command.Method == "requestUserTakeover" {
+		h.handleUserTakeover(command, sessionID)
+		return
+	}
+	if command.Method == "requestUserInput" {
+		h.handleUserInput(command, sessionID)
+		return
+	}
 	if command.Method != "reportArtifacts" {
 		h.armPageCommandTimeout(command)
 		msg := map[string]any{"type": "browser.command", "command": command}
-		if sid := h.commandSessionID(); sid != "" {
-			msg["sessionId"] = sid
+		if sessionID != "" {
+			msg["sessionId"] = sessionID
 		}
 		h.send(msg)
 		return
@@ -46,8 +55,8 @@ func (h *Host) handleWorkspaceCommand(command protocol.BrowserCommand) {
 		log.Log("reportArtifacts result: " + writeErr.Error())
 	}
 	msg := map[string]any{"type": "artifacts", "items": items}
-	if sid := h.commandSessionID(); sid != "" {
-		msg["sessionId"] = sid
+	if sessionID != "" {
+		msg["sessionId"] = sessionID
 	}
 	h.send(msg)
 	if errText != "" {
@@ -107,10 +116,22 @@ func (h *Host) settlePageCommand(id string) bool {
 }
 
 // commandSessionID 为工作区命令（browser 工具与 reportArtifacts）推断来源会话：
-// 恰好一个进程在跑一轮时就是它；都没有在跑时，如果只有一个进程持有会话，
-// 也认作它（收尾阶段的工具）。两个以上候选（多会话并行）或无法判断时返回空——
-// 侧栏对空标注只会退回「选中 / 唯一运行中」启发式，标错会直接把内容串给别的会话。
-func (h *Host) commandSessionID() string {
+//
+//  1. 先看命令 id：Agent 写命令文件时，id 就在它的工具调用里（title 的文件路径或
+//     rawInput 的正文）。多会话并行时这是唯一可靠的线索——两个进程都在跑，光看
+//     「谁在跑」根本分不出来，用户报过的「B 会话的产物进了 A 会话」就是这么来的。
+//  2. 再退一步看谁最近碰过 `browser/commands`（Agent 可能用 shell heredoc 写文件）。
+//  3. 都认不出时回到旧口径：恰好一个进程在跑一轮就是它；都没有在跑时，如果只有一个
+//     进程持有会话，也认作它（收尾阶段的工具）。两个以上候选或无法判断时返回空——
+//     侧栏对空标注只会退回「唯一运行中」启发式（见 App.tsx 的 artifacts 分支），
+//     宁可丢也不标错。
+func (h *Host) commandSessionID(command protocol.BrowserCommand) string {
+	if sid, ok := h.runtimeMentioning([]string{strings.ToLower(command.ID)}, commandIDTrailTTL); ok {
+		return sid
+	}
+	if sid, ok := h.runtimeMentioning([]string{"browser/commands"}, commandIDTrailTTL); ok {
+		return sid
+	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	running := ""

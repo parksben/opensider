@@ -209,6 +209,16 @@ Host 是一份 Go 二进制（`cmd/opensider` + `internal/`）。`browser/tools.
   host.log                   # 正在写的那份；历史片是同目录的 host.log.<YYYYMMDD-HHMMSS>
 ```
 
+### `opensider result <id>`（阻塞等结果）
+
+Agent 写完 `browser/commands/<id>.json` 后要等结果。过去只能靠提示词里的「文件还没出来就等一下再读」，实际表现就是 Agent 手写 `sleep 5; cat ...` 轮询，一个简单任务也要等上十几秒。现在二进制多一个子命令：
+
+```
+opensider result <id> [--timeout 120]
+```
+
+它在进程内等 `browser/results/<id>.json` 出现（150ms 一次，默认超时 120s，超时退出码 64 并打印一行错误），出现就把文件原样打到 stdout。Agent 用一条命令就能「写命令 → 拿到结果」，不必再拼 sleep 轮询；`AGENTS.md` 里明确要求这样做，并禁止 `sleep` 等等待写法。它只读文件、不碰 Host，也不改变命令协议。
+
 解压后的扩展**不在** `~/.opensider` 下：它的位置由用户在安装时选定（skill 先问，建议 `~/OpenSider`，`paths.DefaultExtensionDir()` 只在没读过记录时兜底），并记在 `~/.opensider/extension-path`（`opensider extension-dir` 读写）。不默认放下载目录：那是「清理下载」和清理工具的常客，删了扩展就一直失效到重新加载。点目录在系统文件选择器里默认不可见，而「加载已解压的扩展程序」是用户手动的一步，放在看得见的地方才做得下去。
 
 侧栏状态（语言、会话目录、消息、选中项、权限模式、模型、抽屉）写两份：`chrome.storage.local` key `opensider/state` 是热缓存；权威副本是 `~/.opensider/ui-state.json`（不进 workspace，免得和 Agent 文件混在一起）。Host `hello` 之后发 `{ type: "ui.state", state }`（没有文件则 `state: null`）。侧栏 `ui.state.set` 把同一份 JSON 交给 Host 落盘，带 `savedAt`。扩展存储为空或 `savedAt` 更旧时用 Host 灌回；**空会话表不得覆盖已有镜像**（避免重装后首帧空态把历史写丢）。Host 只另记 ACP `sessionId` 到 `session.json`，方便 `session/load`。
@@ -294,6 +304,15 @@ reveal 的平台实现分在 `internal/reveal/reveal_{darwin,linux,windows}.go`�
 ## 多会话与 fork
 
 工作区仍是一个。ACP 会话可以有多条，侧栏用本地 `id` 和 `acpSessionId` 对应。
+
+**列表排序按 `createdAt` 倒序**（置顶组按 `pinnedAt`），分组归属也看 `createdAt`，不看 `updatedAt`：多个会话并行时每一轮流式都会刷新 `updatedAt`，按它排序会让列表在会话之间来回换位（用户报的「一直闪动」）。会话卡片上显示的时间仍是 `updatedAt`（「最近用过」才是用户要看的那个时间）。
+
+**工作区命令的会话归属**（`reportArtifacts` / `browser.*`）多会话并行时不能靠「谁在跑」猜：
+
+- 每个 runtime 记一份最近工具调用的文本环形缓冲（`tool_call` / `tool_call_update` 的 `title` + `rawInput`，最多 24 条、5 分钟有效），只在它 `prompting` 时累积；
+- 命令文件到达时，用命令 `id` 在缓冲里找：**只有一个 runtime 提到过这个 id** → 就是它；都没提到就退一步看谁最近碰过 `browser/commands` —— 仍然只有一个 → 就是它；
+- 还是认不出（≥2 个候选）就**不认领**（不推 `sessionId`），侧栏在「只有一个会话在跑」时才兜底，绝不把产物写给当前选中的会话；
+- 认领结果用于 `artifacts` / `browser.command` / `browser.result` 三条消息的 `sessionId`。
 
 ```
 chrome.storage.local 与 ~/.opensider/ui-state.json（同形）
@@ -640,6 +659,8 @@ Host 是通用 ACP Client + 数据驱动 `AgentProfile`（启动命令、鉴权�
 
 **收回（`control.release` / `control.releaseTab`）**：`control.release` 释放该会话全部接管（连同锚点、路由目标与访问记忆），广播状态、撤徽标；侧栏在会话删除时也发这条。`control.releaseTab`（2026-10-07 新增）只释放一个标签：`releaseTab(controlState, tabId)` 清掉该标签的持有、目标、锚点与记忆，`autoDiscardable` 复位、徽标撤下、广播新快照，其余标签不受影响。**两个收回都走就地 popover 二次确认**（2026-10-13 新增，复用 `ConfirmPopover`，锚在对应按钮旁；Esc / 点外面取消，只有点确认才真发消息）——单行确认标题「收回这个网页？」、表头「全部收回」确认标题「收回全部网页？」，正文都说明「Agent 会立即停止操作，之后需要时会重新向你申请」，避免误触。**收回不写 `blocked`**：下次进入该标签照常走闸门（询问档弹卡、自动档放行）——`blocked` 只由「拒绝」写入（静默拒绝一段时间，防止弹卡骚扰）。已派发的动作不回滚。
 
+**Agent 主动交还（`requestUserTakeover`）**：自动化遇到必须人来的环节（登录 / 验证码 / 密码或短信校验 / 必须本人确认的授权），Agent 写一条 `{"method":"requestUserTakeover","args":{"reason":"…","resumeHint":"…"}}`。Host 自己消化这条命令（不过扩展），做三件事：写 `browser/results/<id>.json`（`ok:true`，回 `{released:true}`）、向扩展发 `control.release{sessionId}`（先把接管交还——标题前缀、banner、页面活性一并收回）、再发 `takeover{requestId, sessionId, reason, resumeHint}` 给侧栏。侧栏在输入区上方渲染一张「需要你接手」卡（`ControlBanner` 同一族），用户处理完点「继续」→ 侧栏给该会话发一条通道消息（`[OpenSider]` 前缀，不进本地消息记录）让 Agent 从当前页面状态接着干；点「稍后」只收起卡片。释放走的是现成的 `control.release`，所以 Agent 之后的下一条写命令会重新按借用闸门接管，语义与「回合结束」完全一致。
+
 **窗口方法**：`openTab` 改为 `active:false` + 不聚焦窗口 + 开在目标标签旁（拿不到目标则焦点窗口），成功后自动接管（自建）；`switchTab` 保留原语义，只当展示动作（`agents.md` 写明不要用它选工作对象）；`closeTab` 目标是未接管的用户标签 → `borrow_required`（未保存拦截照旧）。
 
 **截图**：`runCapture` 前守卫式激活——目标窗口最小化 → `needs_visible`；目标已是活动标签 → 直接拍；否则 `tabs.update({active:true})`（不碰窗口焦点）→ 拍 → 仅在活动标签仍是它时还原原活动标签。`captureVisibleTab` 抓的是**窗口的活动标签**，不做这层会拍到用户正看的页；它只认 `<all_urls>` 或 activeTab 授权，所以 `host_permissions` 用 `<all_urls>`（页面能力仍只对 http(s) 下发，代码把关）。
@@ -651,6 +672,18 @@ Host 是通用 ACP Client + 数据驱动 `AgentProfile`（启动命令、鉴权�
 **工作区文件**：`current.json`（`CurrentPage`）新增 `target`（当前命令路由目标，可能不同于用户视点）；`tabs.json`（`TabRecord`）新增 `control: "user" | "agent"`；`BrowserResult` 新增 `reason` / `hint`（Host 原样透传进结果文件）。`tools.json` version 11 → 12；`agents.md` 写清路由规则、`borrow_required` 后的做法（提醒用户看侧栏卡片、允许后重试一次、被拒绝就停）与 `switchTab` / `openTab` 新语义；**收尾规则（2026-10-13）**：任务结束时用 `closeTab` 关掉只作临时查看 / 中转的标签，用户可能要看的保留并简短说明——「临时标签由 Agent 自己收尾」的实现就是这条（用户明确选择只做 AGENTS.md 约定，不加自动补消息）。
 
 **侧栏**：`ControlBanner`（Header 之下）从 SW 广播 `control` 取状态（按选中会话的 acpId 匹配），带「收回」；借用请求卡在同一区域渲染（`control.request` → 允许 / 拒绝 → `control.grant`）。`sendPrompt` 时上报锚点；会话删除时发 `control.release`。
+
+## 表单代填（用户输入不进 Agent）
+
+账号、密码、验证码、支付信息这类值**不许经过 Agent**：Agent 上下文里出现过的秘密等于已经被上传给模型服务商。做法是把「建立映射」和「填值」拆开，Host 只做中转，值走浏览器内部一条独立通路：
+
+1. Agent 发 `requestUserInput`（Host 自己消化，写法同 `reportArtifacts`）：`args{title?, fields:[{index|selector|label, label?, type?, placeholder?, required?, secret?, note?}]}`。字段描述里**只有定位信息与提示**，没有值。
+2. Host 把这条转成 `form.request{requestId, sessionId?, title, fields[]}` 推给侧栏，并登记一个 pending（10 分钟）。同时**先把标签接管保持不动**——用户要看的还是 Agent 正在操作的那一页。
+3. 侧栏在输入区上方渲染表单卡：按字段渲染输入框（`secret` 用密码框 + 显示切换），提交时把 `{requestId, values:{<fieldKey>: <value>}}` 发回 **扩展内部**（`form.submit`，走 `chrome.runtime` 消息，不经过 Host 的 native 端口）。
+4. 扩展拿着 `requestId` → 目标标签页（Host 登记时带上的 tabId 快照，缺省用该会话的路由目标）→ 对每个字段直接调页面 API 的填值通路（与 `fillForm` 同一个函数，`screenshot`/`fill` 同一套原生 setter）。填完把 `{requestId, ok, filled:[labels], missing:[labels]}`（**只有字段名与计数，没有值**）回给侧栏，侧栏再转发 `form.result` 给 Host。
+5. Host 把结果写进 `browser/results/<id>.json`（`ok`、`filled`、`missing`；取消是 `cancelled`），Agent 那边一条命令就拿到了「填了哪几个、还缺哪几个」。值从头到尾没进过 Host 的日志、结果文件和 Agent 上下文。
+
+超时（10 分钟）或用户点取消 → 同样写结果并回 `form.result`，Agent 得到明确的失败，改为提示用户而不是重试填入。侧栏关闭会取消该卡片（Host 侧 pending 到点也会清）。
 
 ## 划词工具条（选中文本的翻译 / 搜索 / 引用）
 
@@ -691,7 +724,7 @@ Host 是通用 ACP Client + 数据驱动 `AgentProfile`（启动命令、鉴权�
 |---|---|
 | 内容脚本 → SW | `selection.run{requestId, mode:"translate"\|"search", text, targetLang?, title?, url?}` / `selection.cancel{requestId}` |
 | SW → Host | 同上（原样转发，Host 是唯一执行者） |
-| Host → SW → 发起标签页 | `selection.delta{requestId, text}`（增量）/ `selection.done{requestId, text, stopReason}` / `selection.failed{requestId, error}` |
+| Host → SW → 发起标签页 | `selection.delta{requestId, text}`（增量）/ `selection.activity{requestId, steps[]}`（过程，见下）/ `selection.done{requestId, text, stopReason}` / `selection.failed{requestId, error}` |
 | SW → 侧栏 | `selection.quote{text, title?, url?, tabId}` |
 | SW → 所有标签页 | `selection.gate{enabled, locale}` |
 
@@ -705,7 +738,9 @@ Host 是通用 ACP Client + 数据驱动 `AgentProfile`（启动命令、鉴权�
 - **每次请求在这个进程上新开一个 ACP 会话**再 prompt，结束即弃：进程复用（不重复起进程）＋上下文干净（这次划词不受上次影响）。用户要求的「固定会话」就是这条固定通道，而不是一个会累积上下文的会话。
 - 它的 `session/update` **一条都不广播**：`OnUpdate` 里按 runtime 分流，utility 的文本只累积进本次请求的缓冲，按增量推给发起标签页；`turn.end` 同样不发侧栏。也不写 `workspace.WriteSessionID`、不进会话列表。
 - 权限：客户端固定用**自动放行**策略（复用现有 `unattended` 语义里「工具权限回 always」的那部分，只作用于这个 runtime）。否则一张无人应答的权限卡会把这一轮永远卡住。它**不 anchor 标签页**，所以扩展那边的浏览器控制闸门天然不放行——它拿不到标签页。
-- 单飞：同时只允许一个 utility 请求；新请求先 `session/cancel` 旧的。取消 / 超时的触发点：用户关工具条、门控转关、**发起页导航走或标签被关**（页面没了就没人收结果，谁也不会再取消，那一轮会白跑到说完；所以 SW 按 tabId 记一份在飞请求，`tabs.onUpdated(loading)` / `onRemoved` 时替它取消）、请求超过 60s。
+- 单飞：同时只允许一个 utility 请求；新请求先 `session/cancel` 旧的。取消 / 超时的触发点：用户关工具条、门控转关、**发起页导航走或标签被关**（页面没了就没人收结果，谁也不会再取消，那一轮会白跑到说完；所以 SW 按 tabId 记一份在飞请求，`tabs.onUpdated(loading)` / `onRemoved` 时替它取消）、请求超过 **180s**（搜索要联网，60s 对慢模型常常不够）。
+- **一定收尾**：超时 / 被取消 / 正文为空这三种情况以前都只是「不发消息」，页面就永远停在「翻译中…」（用户报过「一直出不来内容」）。现在除「发起页自己取消」之外一律发终态：`selection.failed` 带上人话原因（`timed out` / `the agent returned nothing` / CLI 报错原文），`selection.done` 只在真拿到正文时发；`run.cancelled()` 只用来防止重复发送。
+- **过程可见**：等待期间把工具调用推给结果层——每个 `tool_call` / `tool_call_update` 收成一条 `{title, status}`（最多 8 条，`title` 取自 ACP 的 `title` 或 `kind`），合成 `selection.activity{requestId, steps}` 下发（只在条数或状态变化时发，不跟着流式正文刷）。它只用于「让用户知道 Agent 在跑」，**不进**结果正文、不进复制内容；结论到达后前端把过程折起。
 - **只留结论**：过程叙述不该落到结果层。**搜索整轮都不推增量**——Agent 会先说一段「我先去搜一下…」、两次搜索之间还会再插一段中间正文，这些都会先出现、再被最终正文刷掉（用户报过），所以只攒着，这一轮结束时一次性给结论，那段时间结果层老实停在「搜索中」。累积以**工具调用**为界：收到 `tool_call` 就把已累积的正文挪作兜底、清空累积，最后交出去的是最后一次调用之后的正文（工具调用之后一个字都没说的极端情况才退回被清掉的那段，宁可给过程，也别给一层空白）；没有任何工具调用时就整段用，把「只要结论」交给提示词。翻译没工具可调、正文也短，照常逐字流（结果层立刻有反馈）。
 - 模型沿用当前 Agent 默认（不额外配置）。
 

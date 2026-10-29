@@ -22,7 +22,7 @@ var PageMethods = []string{
 	"moveTabsToWindow", "getNativeUi", "setDialogPolicy",
 }
 
-var HostMethods = []string{"reportArtifacts"}
+var HostMethods = []string{"reportArtifacts", "requestUserTakeover", "requestUserInput"}
 
 type AttachmentKind string
 
@@ -207,6 +207,8 @@ var ToolCatalog = []ToolEntry{
 	{Name: "closeTab", Kind: "act", Args: "tabId?, force?", Summary: "close a tab you hold (or the anchor); refused for other user tabs; blocked if unsaved unless force"},
 	{Name: "moveTabsToWindow", Kind: "act", Args: "tabIds, windowId?", Summary: "pull tabs into a new window, or into windowId"},
 	{Name: "setDialogPolicy", Kind: "act", Args: "policy{mode,confirm,promptText,alert,expiresAt}", Summary: "mode=answer returns those values to the page instead of showing JS dialogs (default observe only records them)"},
+	{Name: "requestUserTakeover", Kind: "workspace", Args: "reason, resumeHint?", Summary: "hand the tab back to the user and ask them to do this one step themselves (login, captcha, a confirmation you must not click for them); then stop and wait for their message"},
+	{Name: "requestUserInput", Kind: "workspace", Args: "title?, fields[{index|selector|label|name, label?, type?, placeholder?, required?, secret?, note?}]", Summary: "ask the user for values you must not see (account, password, code, payment): you only map the fields, the user types in the sidebar and the extension fills the page; the result lists which fields were filled, never the values"},
 	{Name: "reportArtifacts", Kind: "workspace", Args: "files[{path, name?}] | paths[] | path", Summary: "replace the sidebar artifact list with these local files after you finish writing outputs; prefer outputs/... paths"},
 }
 

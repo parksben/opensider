@@ -27,8 +27,15 @@ import (
 // 会话的上下文」，一个长期复用的会话迟早会把上一次划词带进来）。
 
 // selectionTimeout 是单次划词请求的上限：超时就取消，别让一个不响应 cancel 的 Agent 把
-// 这条通道占死。
-const selectionTimeout = 60 * time.Second
+// 这条通道占死。搜索要联网、慢模型起进程也慢，60s 太短（用户报过「点了翻译一直出不来」，
+// 表现就是超时后结果层永远停在加载态）。
+const selectionTimeout = 180 * time.Second
+
+// selectionStep 是推给结果层的一条「Agent 正在做什么」。只用于让用户看到进度，不进结果正文。
+type selectionStep struct {
+	Title  string `json:"title"`
+	Status string `json:"status"`
+}
 
 // selectionRun 是一次划词请求（同一个请求的增量都往它身上累积）。
 type selectionRun struct {
@@ -45,6 +52,9 @@ type selectionRun struct {
 	previous string
 	cancel   bool
 	done     bool
+	// settled 标记「已经给结果层发过终态（done / failed）」，超时与正常收尾都靠它去重。
+	settled bool
+	steps   []selectionStep
 }
 
 func (r *selectionRun) attachRuntime(runtime *acpRuntime) {
@@ -122,6 +132,41 @@ func (r *selectionRun) finish() bool {
 	}
 	r.done = true
 	return true
+}
+
+// settle 认领「发终态」这一次权利。谁先拿到谁发，之后一律返回 false——超时和正常收尾会
+// 同时发生（超时函数先取消，Prompt 才返回），没有它就会出现两条终态或一条都没有。
+func (r *selectionRun) settle() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.settled {
+		return false
+	}
+	r.settled = true
+	return true
+}
+
+// noteStep 记一条过程（同一个 title 更新状态而不是重复追加），返回是否值得推送。
+func (r *selectionRun) noteStep(title, status string) ([]selectionStep, bool) {
+	if title == "" {
+		return nil, false
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for i := range r.steps {
+		if r.steps[i].Title == title {
+			if r.steps[i].Status == status {
+				return nil, false
+			}
+			r.steps[i].Status = status
+			return append([]selectionStep{}, r.steps...), true
+		}
+	}
+	r.steps = append(r.steps, selectionStep{Title: title, Status: status})
+	if len(r.steps) > 8 {
+		r.steps = r.steps[len(r.steps)-8:]
+	}
+	return append([]selectionStep{}, r.steps...), true
 }
 
 // runSelection 处理扩展来的 selection.run（翻译 / 搜索）。
@@ -215,6 +260,11 @@ func (h *Host) runSelectionTurn(run *selectionRun, target string) {
 
 	timeout := time.AfterFunc(selectionTimeout, func() {
 		log.Log("selection timed out")
+		// 先给结果层一个终态，再取消这一轮：只取消不发消息的话，页面会永远停在
+		//「翻译中…」（用户报过的现象）。
+		if run.settle() {
+			h.sendSelection("selection.failed", run.requestID, run.tabID, "", fmt.Sprintf("timed out after %ds", int(selectionTimeout.Seconds())))
+		}
 		run.cancelTurn()
 	})
 	stop, err := runtime.client.Prompt(selection.PromptFor(run.mode, run.text, selection.LanguageName(target), run.uiLocale))
@@ -225,7 +275,7 @@ func (h *Host) runSelectionTurn(run *selectionRun, target string) {
 	log.Log("utility session " + opened.SessionID + " finished")
 
 	if err != nil {
-		if !run.cancelled() {
+		if run.settle() {
 			h.sendSelection("selection.failed", run.requestID, run.tabID, "", err.Error())
 		}
 		return
@@ -234,11 +284,20 @@ func (h *Host) runSelectionTurn(run *selectionRun, target string) {
 		log.Log("selection " + run.mode + " stop=" + stop)
 	}
 	if run.cancelled() {
+		// 取消（用户收掉工具条 / 换页 / 新请求顶掉 / 超时）时页面已经没人在等：不发终态。
+		// 超时那一支自己已经先 settle 过了。
 		return
 	}
 	text := run.snapshot()
 	if strings.TrimSpace(text) == "" {
-		h.sendSelection("selection.failed", run.requestID, run.tabID, "", "the agent returned nothing")
+		// 用户自己取消（关工具条 / 换页 / 新请求顶掉）时页面已经没人在等，不必回；其它情况
+		// 必须给终态，否则结果层永远转圈（超时那一支已经先 settle 掉了）。
+		if !run.cancelled() && run.settle() {
+			h.sendSelection("selection.failed", run.requestID, run.tabID, "", "the agent returned nothing")
+		}
+		return
+	}
+	if !run.settle() {
 		return
 	}
 	h.sendSelection("selection.done", run.requestID, run.tabID, text, "")
@@ -253,9 +312,18 @@ func (h *Host) absorbSelectionUpdate(runtime *acpRuntime, update map[string]any)
 		return // 上一轮取消后迟到的增量：丢掉
 	}
 	switch str(update["sessionUpdate"]) {
-	case "tool_call":
+	case "tool_call", "tool_call_update":
 		// 工具调用开始：前面那些「我准备搜索一下…」的过程叙述作废（见 startToolCall）。
 		run.startToolCall()
+		// 让结果层看得到 Agent 在干什么（以前这些全被丢掉，用户只能干等）。
+		title := str(update["title"])
+		if title == "" {
+			title = str(update["kind"])
+		}
+		if steps, changed := run.noteStep(title, str(update["status"])); changed {
+			msg := map[string]any{"type": "selection.activity", "requestId": run.requestID, "tabId": run.tabID, "steps": steps}
+			h.send(msg)
+		}
 		return
 	case "agent_message_chunk":
 	default:

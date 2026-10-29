@@ -223,6 +223,25 @@ export type BrowserCommand = {
   args?: BrowserCommandArgs;
 };
 
+/**
+ * One field of a `requestUserInput` hand-off. The agent only maps the field: the value is
+ * typed by the user in the side panel and filled straight into the page by the extension,
+ * so it never reaches the agent (nor the host).
+ */
+export type FormField = {
+  /** Stable key for the value map (`f0`, `f1`, …). */
+  key: string;
+  label: string;
+  type?: string;
+  placeholder?: string;
+  note?: string;
+  required?: boolean;
+  secret?: boolean;
+  index?: number;
+  selector?: string;
+  targetLabel?: string;
+};
+
 export type BrowserResult = {
   id: string;
   ok: boolean;
@@ -363,6 +382,8 @@ export type SelectionMode = "translate" | "search";
 /** Host → extension, one way or another, for a single selection request. */
 export type SelectionResult =
   | { type: "selection.delta"; requestId: string; tabId: number; text: string }
+  /** Agent 正在做的步骤（工具调用摘要），只用于等待期展示。 */
+  | { type: "selection.activity"; requestId: string; tabId: number; steps: { title: string; status?: string }[] }
   | { type: "selection.done"; requestId: string; tabId: number; text: string }
   | { type: "selection.failed"; requestId: string; tabId: number; error: string };
 
@@ -467,6 +488,16 @@ export type ExtToHost =
       tabId?: number;
     }
   | { type: "selection.cancel"; requestId: string }
+  /** A submitted (or cancelled) form. Only labels and counts — never the values. */
+  | {
+      type: "form.result";
+      requestId: string;
+      ok: boolean;
+      filled: string[];
+      missing: string[];
+      cancelled?: boolean;
+      error?: string;
+    }
   | {
       type: "prompt";
       text: string;
@@ -509,6 +540,12 @@ export type ExtToHost =
   /** `auto` marks a grant that came from the permission mode, not from a click: it must not
    * be remembered as a user approval (`trusted`). */
   | { type: "control.grant"; requestId: string; allow: boolean; auto?: boolean }
+  /**
+   * Values the user typed for a `form.request`. Stays inside the extension: the service
+   * worker fills the page itself and only reports which fields were filled.
+   */
+  | { type: "form.submit"; requestId: string; values: Record<string, string> }
+  | { type: "form.cancel"; requestId: string }
   | { type: "release.check"; announce?: boolean }
   /** 侧栏问本机有没有装上 VS Code 端扩展。旧 Host 会回 `host.unsupported`。 */
   | { type: "peer.probe"; requestId: string; target?: "vscode" }
@@ -615,6 +652,22 @@ export type HostToExt =
       error?: string;
     }
   | { type: "artifacts"; items: AttachmentItem[]; sessionId?: string }
+  /**
+   * The agent asked the user to take over this step. The extension releases the tab hold
+   * first, then the panel shows the card; the user's "continue" sends a message back.
+   */
+  | { type: "takeover"; requestId: string; sessionId?: string; reason: string; resumeHint?: string }
+  /** Field mapping for a user-typed form; values never travel in this direction. */
+  | { type: "form.request"; requestId: string; sessionId?: string; title?: string; fields: FormField[] }
+  /** The form is settled (submitted / cancelled / timed out): the panel drops its card. */
+  | {
+      type: "form.done";
+      requestId: string;
+      ok: boolean;
+      filled: string[];
+      missing: string[];
+      cancelled?: boolean;
+    }
   | { type: "release"; version: string; latest: string; checkedAt?: string; stale?: boolean; announce?: boolean }
   | { type: "peer.probed"; requestId: string; installed: boolean; target?: string }
   | {

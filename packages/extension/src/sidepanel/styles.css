@@ -654,3 +654,64 @@ mark.cs-at-match {
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+/* 等待期的过程清单：一行一条工具调用，灰字、不抢正文的位置。 */
+.cs-selection-busy {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cs-selection-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cs-selection-step {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.cs-selection-step-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cs-selection-step-status {
+  flex: none;
+  color: color-mix(in oklab, var(--muted) 70%, transparent);
+  font-size: 11px;
+}
+
+.cs-selection-failed {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cs-selection-retry {
+  flex: none;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+.cs-selection-retry:hover {
+  color: var(--text);
+  border-color: var(--brass);
+}

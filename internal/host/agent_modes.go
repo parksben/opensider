@@ -1,6 +1,10 @@
 package host
 
 import (
+	"encoding/json"
+	"strings"
+	"time"
+
 	"github.com/parksben/opensider/internal/acp"
 	"github.com/parksben/opensider/internal/log"
 	"github.com/parksben/opensider/internal/modes"
@@ -88,6 +92,8 @@ func (h *Host) adoptPinnedMode(modeID string) {
 // 仓库没人处理，UI 会一直停在旧值。
 func (h *Host) absorbSessionUpdate(update map[string]any, runtime *acpRuntime) {
 	switch str(update["sessionUpdate"]) {
+	case "tool_call", "tool_call_update":
+		h.noteToolCall(runtime, update)
 	case "config_option_update":
 		h.absorbConfigUpdate(update)
 		h.refreshAgentModes(runtime)
@@ -145,4 +151,80 @@ func (h *Host) resetAgentModes() {
 	h.agentModes = modes.Target{}
 	h.hasAgentModes = false
 	h.mu.Unlock()
+}
+
+// noteToolCall 给每个 runtime 留一条「最近碰过什么」的线索，供工作区命令认领使用。
+//
+// 为什么要它：`browser/commands/<id>.json` 由 Agent 在自己进程里写，工作区是所有会话共用
+// 的，文件本身没有任何会话标记。多会话并行时「谁在跑」不足以判断（两个都在跑），只能用
+// Agent 自己报上来的工具调用去对：命令 id 通常就出现在 title（文件路径）或 rawInput
+// （写文件的内容）里。
+func (h *Host) noteToolCall(runtime *acpRuntime, update map[string]any) {
+	if runtime == nil || runtime.utility {
+		return
+	}
+	text := strings.ToLower(str(update["title"]) + " " + str(update["kind"]))
+	if raw, err := json.Marshal(update["rawInput"]); err == nil {
+		text += " " + strings.ToLower(string(raw))
+	}
+	if strings.TrimSpace(text) == "" {
+		return
+	}
+	if len(text) > 8000 {
+		text = text[:8000]
+	}
+	now := time.Now()
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	runtime.toolTrail = append(runtime.toolTrail, toolTrailEntry{text: text, at: now})
+	if len(runtime.toolTrail) > toolTrailMax {
+		runtime.toolTrail = runtime.toolTrail[len(runtime.toolTrail)-toolTrailMax:]
+	}
+	kept := runtime.toolTrail[:0]
+	for _, entry := range runtime.toolTrail {
+		if now.Sub(entry.at) <= toolTrailTTL {
+			kept = append(kept, entry)
+		}
+	}
+	runtime.toolTrail = kept
+}
+
+// runtimeMentioning 在最近 toolTrailTTL 内的工具调用线索里找 mentions 里的任意一个词，
+// 返回命中它的 runtime 与会话 id（同一个 runtime 只算一次，取它最近的一条）。
+func (h *Host) runtimeMentioning(needles []string, ttl time.Duration) (string, bool) {
+	now := time.Now()
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	bestSID := ""
+	bestAt := time.Time{}
+	for _, runtime := range h.runtimes {
+		if runtime.utility || runtime.client == nil {
+			continue
+		}
+		sid := runtime.client.GetSessionID()
+		if sid == "" {
+			continue
+		}
+		for i := len(runtime.toolTrail) - 1; i >= 0; i-- {
+			entry := runtime.toolTrail[i]
+			if now.Sub(entry.at) > ttl {
+				continue
+			}
+			hit := false
+			for _, needle := range needles {
+				if needle != "" && strings.Contains(entry.text, needle) {
+					hit = true
+					break
+				}
+			}
+			if !hit {
+				continue
+			}
+			if entry.at.After(bestAt) {
+				bestAt, bestSID = entry.at, sid
+			}
+			break
+		}
+	}
+	return bestSID, bestSID != ""
 }

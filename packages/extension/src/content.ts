@@ -50,6 +50,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
   if (
     message?.type === "selection.delta" ||
+    message?.type === "selection.activity" ||
     message?.type === "selection.done" ||
     message?.type === "selection.failed"
   ) {

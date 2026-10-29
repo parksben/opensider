@@ -98,6 +98,13 @@ use it only when the user asks to see something, never to choose where you work.
 hold shows `[接管中]` / `[Agent]` in its title so the user can find it; that prefix is
 OpenSider's, and every title OpenSider reports to you (files, `getMeta`, `snapshot`) strips it.
 
+## Working fast without cutting corners
+
+- **No padding.** No `sleep`, no `timeout`-as-a-timer, no "let me wait for it" steps between commands. Every page command already waits for its own effect and returns the new state; read that state instead of guessing at timing.
+- **Batch.** After you understand the page, do bulk work in one `runScript` (or one `fillForm`) instead of a command per row / per field. One round trip beats twenty, and the result is easier to verify.
+- **Parallel where it is genuinely parallel.** If your CLI has subagents, hand **self-contained, read-only or code-only** subtasks to them (research, reading a repo, drafting a file) and keep the browser automation in the main agent: subagents cannot drive this browser tab, and two agents writing the same workspace file will collide. Give each subagent a bounded goal and the exact paths it needs.
+- **Verify before you report.** Re-read the page state (or the file you wrote) after acting, so "done" means observed, not attempted.
+
 ## Open tabs and windows
 
 Read `browser/tabs.json` for every normal Chrome window and tab (`tabId`, `windowId`, `index`, `title`, `url`, `active`, `pinned`, `restricted`). It updates when tabs are created, closed, moved, or when the focused window changes. Call `listTabs` if you need the same list in a command result.
@@ -248,7 +255,15 @@ If the user message includes `[Mentioned attachments]`, those are files / folder
 
 ## Calling page methods
 
-Write a JSON file to `browser/commands/<id>.json`, then read `browser/results/<id>.json`. If the result is not there yet, wait a moment and read again.
+Write a JSON file to `browser/commands/<id>.json`, then **block on the result** with:
+
+```sh
+~/.opensider/runtime/opensider result <id> --timeout 120
+```
+
+It prints `browser/results/<id>.json` as soon as it exists (exit code 64 if it times out). On Windows use `%USERPROFILE%\.opensider\runtime\opensider.exe`.
+
+**Never wait with `sleep`.** Do not write `sleep 5; cat browser/results/<id>.json`, retry loops, or "wait a moment" padding — a page command settles in milliseconds, and every sleep you add is dead time the user sits through. One command + one `opensider result` is the whole loop. The same goes for anything else you wait on: read the file the tool gives you instead of guessing how long it takes.
 
 Find elements with `args.index` (from `interactive.md`), `args.label` / `args.name`, `args.selector` (CSS), `args.text` (label then visible text), and optional `args.nth` (0-based among matches).
 
@@ -319,6 +334,36 @@ Use screenshots when the control list is not enough to understand layout, pick a
 The result JSON has `data.path` (absolute file). **Read that JPEG** to inspect the page visually. Do not expect base64 in the JSON.
 
 Do not invent other methods. After acting or running a script, re-read `browser/current.json`, `browser/interactive.md`, and `browser/tabs.json` if the page or tab set may have changed.
+
+## When a human has to do it (required)
+
+Two commands cover the cases you must not improvise on. Both are written like any other command file.
+
+### Hand the tab back: `requestUserTakeover`
+
+Use it when the next step is genuinely the user's: login / password / SMS or OTP codes, a captcha, a payment confirmation, a consent screen, or any destructive click you were not asked to make. Then **stop** — do not keep clicking around them.
+
+```json
+{"id":"cmd_takeover","method":"requestUserTakeover","args":{"reason":"The page asks for a verification code sent to the user's phone.","resumeHint":"Enter the code, then tell me to continue."}}
+```
+
+It releases the tabs you hold (the user can drive the page again), returns `{released:true}`, and puts a card in the sidebar. The user answers with a normal message when they are done; carry on from the page's **current** state — re-read `browser/interactive.md` first, the page has changed.
+
+### Never ask for secrets in chat: `requestUserInput`
+
+Account names, passwords, verification codes, card numbers and anything else the user must not paste into a chat go through this command. **You only map the fields**; the user types the values in the sidebar and the extension writes them straight into the page. You never see them.
+
+```json
+{"id":"cmd_form","method":"requestUserInput","args":{"title":"Sign in","fields":[{"index":1,"label":"Email","type":"email","required":true},{"index":2,"label":"Password","type":"password","required":true,"secret":true}]}}
+```
+
+Each field takes `index` (from `interactive.md`), `selector`, `label` or `name`, plus optional `label` (what the user sees), `type`, `placeholder`, `required`, `secret`, and `note`. Write the command, then run `opensider result cmd_form --timeout 600`; it settles when the user submits or cancels:
+
+```json
+{"ok":true,"data":{"filled":["Email","Password"],"missing":[],"cancelled":false}}
+```
+
+`ok:false` with `missing` means those fields were left empty or the mapping did not match — fix the mapping and ask again, or use `requestUserTakeover` and let the user type it themselves. Never log, echo, or store what the user typed: you will never receive it.
 
 ## User-facing deliverables (required)
 

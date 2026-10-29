@@ -54,6 +54,8 @@ let showTimer = 0;
 let observer: MutationObserver | undefined;
 let activeRequest = "";
 let activeMode: SelectionMode | "quote" | "" = "";
+/** Host 推来的过程步骤（工具调用摘要）；结论一到就清空，不留在结果里。 */
+let activeSteps: { title: string; status?: string }[] = [];
 let resultHeight = RESULT_LOADING_HEIGHT;
 let copiedTimer = 0;
 /** 展示前复核门控的序号：每次 hide / 新复核都自增，删掉过期的异步回包。 */
@@ -469,6 +471,7 @@ function startRequest(mode: SelectionMode): void {
     else button?.removeAttribute("data-active");
   }
   activeRequest = `sel-${Math.random().toString(36).slice(2, 10)}`;
+  activeSteps = [];
   pushResult({ kind: mode, state: "loading", text: "" });
   chrome.runtime
     .sendMessage({
@@ -503,7 +506,13 @@ function postToFrame(payload: Record<string, unknown>): void {
 }
 
 /** 把状态推给结果层页面（它是侧栏那套 React 渲染，文案与 markdown 都在那边）。 */
-function pushResult(payload: { kind: SelectionMode; state: ResultState; text: string }): void {
+function pushResult(payload: {
+  kind: SelectionMode;
+  state: ResultState;
+  text: string;
+  error?: string;
+  steps?: { title: string; status?: string }[];
+}): void {
   if (!frameWrap || !frame) return;
   frameWrap.setAttribute("data-open", "1");
   restackTopLayer();
@@ -517,6 +526,8 @@ function pushResult(payload: { kind: SelectionMode; state: ResultState; text: st
       kind: payload.kind,
       state: payload.state,
       text: payload.text,
+      error: payload.error ?? "",
+      steps: payload.steps ?? [],
       locale,
       theme: window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light",
     });
@@ -544,6 +555,11 @@ function onResultMessage(event: MessageEvent): void {
     resultHeight = Math.min(Math.round(data.height), maxResultHeight());
     if (frame) frame.style.height = `${resultHeight}px`;
     place();
+    return;
+  }
+  if (data.action === "retry") {
+    // 重试沿用同一次选区与同一个模式，重新发起一条请求（旧请求已经在终态）。
+    if (activeMode === "translate" || activeMode === "search") startRequest(activeMode);
     return;
   }
   if (data.action === "copy") {
@@ -646,20 +662,32 @@ export function acceptSelectionResult(message: {
   requestId?: string;
   text?: string;
   error?: string;
+  steps?: { title: string; status?: string }[];
 }): void {
   if (!activeRequest || message.requestId !== activeRequest) return;
   const kind: SelectionMode = activeMode === "search" ? "search" : "translate";
+  if (message.type === "selection.activity") {
+    // 过程：只在等待期展示。Host 每次给的是累积后的整份列表，直接替换。
+    activeSteps = Array.isArray(message.steps) ? message.steps : activeSteps;
+    pushResult({ kind, state: "loading", text: "", steps: activeSteps });
+    return;
+  }
   if (message.type === "selection.delta") {
+    activeSteps = [];
     pushResult({ kind, state: "ready", text: String(message.text ?? "") });
     return;
   }
   if (message.type === "selection.done") {
     activeRequest = "";
+    activeSteps = [];
     pushResult({ kind, state: "ready", text: String(message.text ?? "") });
     return;
   }
   if (message.type === "selection.failed") {
+    const reason = String(message.error ?? "");
     activeRequest = "";
-    pushResult({ kind, state: "error", text: String(message.error ?? "") });
+    activeSteps = [];
+    // error 只留一行，别把整段 stack 塞进结果层。
+    pushResult({ kind, state: "error", text: "", error: reason.split("\n")[0].slice(0, 200) });
   }
 }

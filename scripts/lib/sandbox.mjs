@@ -40,6 +40,8 @@ export function loadPlaywright() {
 
 /** Playwright's already-cached Chromium build, if there is one. */
 export function cachedChromium() {
+  // 排障用：直接指定一个浏览器可执行文件（见 docs/DEVELOPMENT.md 的验证脚本说明）。
+  if (process.env.PLAYWRIGHT_CHROMIUM) return process.env.PLAYWRIGHT_CHROMIUM;
   const cache = join(homedir(), "Library", "Caches", "ms-playwright");
   if (!existsSync(cache)) return undefined;
   const dir = readdirSync(cache)
@@ -47,8 +49,19 @@ export function cachedChromium() {
     .sort()
     .pop();
   if (!dir) return undefined;
-  const bin = join(cache, dir, "chrome-mac", "Chromium.app", "Contents", "MacOS", "Chromium");
-  return existsSync(bin) ? bin : undefined;
+  // Newer Playwright builds ship arm64 Chrome for Testing instead of Chromium under
+  // chrome-mac; both layouts have to resolve or the harness silently falls back to a
+  // browser that ignores --load-extension.
+  const layouts = [
+    ["chrome-mac-arm64", "Google Chrome for Testing.app", "Google Chrome for Testing"],
+    ["chrome-mac", "Chromium.app", "Chromium"],
+    ["chrome-mac-x64", "Google Chrome for Testing.app", "Google Chrome for Testing"],
+  ];
+  for (const [platform, bundle, binary] of layouts) {
+    const bin = join(cache, dir, platform, bundle, "Contents", "MacOS", binary);
+    if (existsSync(bin)) return bin;
+  }
+  return undefined;
 }
 
 /** The unpacked extension's id, derived from the key in its manifest. */

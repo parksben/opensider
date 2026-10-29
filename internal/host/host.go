@@ -51,7 +51,24 @@ type acpRuntime struct {
 	turnDone chan struct{}
 	// interrupted 标记「这一轮是被立即发送顶掉的」，turn.end 要带上去让侧栏区分处理。
 	interrupted bool
+
+	// toolTrail 是这个进程最近几次工具调用的可搜索文本（title + rawInput），用来把工作区
+	// 命令认领到写它的那个会话（见 artifacts.go commandSessionID）。由 h.mu 保护。
+	toolTrail []toolTrailEntry
 }
+
+// toolTrailEntry 是一次工具调用留下的线索：命令文件是 Agent 在自己进程里写出来的，
+// 而工作区是所有会话共用的，只能靠「谁最近在工具调用里提到过这个 id」认领。
+type toolTrailEntry struct {
+	text string
+	at   time.Time
+}
+
+const (
+	toolTrailMax      = 24
+	toolTrailTTL      = 5 * time.Minute
+	commandIDTrailTTL = 3 * time.Minute
+)
 
 // interruptWait 是「立即发送」等旧一轮收尾的上限：等不到也照样往下走，
 // 否则一个不响应 session/cancel 的 Agent 会把新消息永远卡住。
@@ -94,6 +111,8 @@ type Host struct {
 	// 连的是哪个 Agent 无关，所以不随会话变化清空，只按 skillCacheTTL 过期重扫。
 	skills   []skills.Skill
 	skillsAt time.Time
+	// forms 是等用户填写的表单（requestUserInput），requestID → 待收尾项。由 h.mu 保护。
+	forms map[string]*pendingForm
 }
 
 func Run() {
@@ -1237,6 +1256,10 @@ func (h *Host) dispatch(typ string, msg map[string]any) error {
 		return nil
 	case "selection.cancel":
 		h.cancelSelection(str(msg["requestId"]))
+		return nil
+	case "form.result":
+		// 用户在侧栏提交 / 取消了一张表单：扩展只回字段名与计数，值不进这条消息。
+		h.handleFormResult(msg)
 		return nil
 	case "cancel":
 		sessionID := str(msg["sessionId"])

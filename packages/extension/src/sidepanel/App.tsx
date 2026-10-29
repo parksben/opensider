@@ -29,6 +29,12 @@ import { BridgeSetup } from "./components/BridgeSetup";
 import { ChatPane } from "./components/ChatPane";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { ControlBanner, type BorrowRequest } from "./components/ControlBanner";
+import {
+  FormRequestCard,
+  TakeoverCard,
+  type FormRequestCardData,
+  type TakeoverCardData,
+} from "./components/HumanCards";
 import { Header } from "./components/Header";
 import { COMPACT_MAIN_PX, COMPOSER_ACTION_FLAT_PX, ICON_ONLY_MAIN_PX, MODEL_NARROW_MAIN_PX } from "./layout";
 import { PermissionBar } from "./components/PermissionBar";
@@ -190,6 +196,10 @@ export function App() {
   const [controlSessions, setControlSessions] = useState<TabControlState[]>([]);
   /** A pending borrow request (entering a user tab), shown as a card in the banner. */
   const [borrowRequest, setBorrowRequest] = useState<BorrowRequest>();
+  /** The Agent handed a step back: it already released the tab, now it waits for the user. */
+  const [takeover, setTakeover] = useState<TakeoverCardData>();
+  /** Values the Agent must not see: the user types them here, the SW fills the page. */
+  const [formRequest, setFormRequest] = useState<FormRequestCardData>();
 
   const sendRef = useRef<(msg: ExtToHost) => void>(() => undefined);
   const reconnectRef = useRef<() => void>(() => undefined);
@@ -526,6 +536,16 @@ export function App() {
    */
   const localIdForAcp = (acpId?: string) => findSessionIdByAcpId(sessionsRef.current, acpId);
 
+  /**
+   * 没有会话标注的事件该落到哪：恰好一个会话在跑就是它；一个都没在跑时用选中会话；
+   * 多个在跑返回 undefined（调用方丢弃）。多会话并行时「猜」就是串戏的根源。
+   */
+  const unattributedSessionId = (): string | undefined => {
+    if (runningIdsRef.current.size === 1) return [...runningIdsRef.current][0];
+    if (runningIdsRef.current.size === 0) return selectedIdRef.current;
+    return undefined;
+  };
+
   const clearHitl = (id: string) => {
     setPermissions((current) => {
       if (!(id in current)) return current;
@@ -598,10 +618,9 @@ export function App() {
       localId = localIdForAcp(sessionId);
       if (!localId) return;
     } else {
-      // 没有标注（多会话并行时 Host 无法判断）：退回「选中 / 唯一运行中」启发式。
-      localId = runningIdsRef.current.has(selectedIdRef.current)
-        ? selectedIdRef.current
-        : ([...runningIdsRef.current][0] ?? selectedIdRef.current);
+      // 没有标注（Host 认不出唯一归属）：只在「能确定」时兜底——恰好一个会话在跑就是
+      // 它；一个都没在跑（收尾阶段的命令）才用选中的。两个以上在跑就丢掉，绝不猜。
+      localId = unattributedSessionId();
       if (!localId) return;
     }
     const modelId = selectedModelRef.current;
@@ -836,6 +855,37 @@ export function App() {
       return;
     }
 
+    if (msg.type === "takeover") {
+      setTakeover({
+        requestId: msg.requestId,
+        sessionId: msg.sessionId,
+        reason: msg.reason,
+        resumeHint: msg.resumeHint,
+      });
+      return;
+    }
+
+    if (msg.type === "form.request") {
+      setFormRequest({
+        requestId: msg.requestId,
+        sessionId: msg.sessionId,
+        title: msg.title,
+        fields: Array.isArray(msg.fields) ? msg.fields : [],
+      });
+      return;
+    }
+
+    if (msg.type === "form.done") {
+      setFormRequest((current) => (current?.requestId === msg.requestId ? undefined : current));
+      if (msg.ok) {
+        const count = Array.isArray(msg.filled) ? msg.filled.length : 0;
+        setNotice(t(localeRef.current, "formSubmitted").replace("{count}", String(count)));
+      } else if (!msg.cancelled) {
+        setNotice(t(localeRef.current, "formFailed"));
+      }
+      return;
+    }
+
     if (msg.type === "control.request.done") {
       setBorrowRequest((current) => (current?.requestId === msg.requestId ? undefined : current));
       return;
@@ -1027,7 +1077,9 @@ export function App() {
         localId = localIdForAcp(msg.sessionId);
         if (!localId) return;
       } else {
-        localId = selectedIdRef.current;
+        // 没有标注：同上，只认「唯一能确定」的那个会话。以前这里直接落到选中会话，
+        // 于是并行跑的时候 B 的产物会写进当前 focus 的 A（用户报过）。
+        localId = unattributedSessionId();
       }
       if (!localId) return;
       const items = Array.isArray(msg.items) ? msg.items : [];
@@ -1577,6 +1629,20 @@ export function App() {
     sendNudge(session.id, text);
   };
 
+  /** 用户接手完成：给该会话发一条通道消息，让它从页面当前状态接着干。 */
+  const continueAfterTakeover = (card: TakeoverCardData) => {
+    setTakeover((current) => (current?.requestId === card.requestId ? undefined : current));
+    const session = card.sessionId
+      ? sessionsRef.current.find(
+          (item) =>
+            item.acpSessionId === card.sessionId ||
+            Object.values(item.acpByProvider ?? {}).includes(card.sessionId as string),
+        )
+      : sessionsRef.current.find((item) => item.id === selectedIdRef.current);
+    if (!session) return;
+    sendNudge(session.id, t(localeRef.current, "takeoverContinueMessage"));
+  };
+
   const flushQueue = (sessionId: string) => {
     if (!sessionId || runningIdsRef.current.has(sessionId)) return;
     const list = queuesRef.current[sessionId] ?? [];
@@ -2116,6 +2182,8 @@ export function App() {
   // A borrow request is about a tab, not about a chat: show it whichever conversation
   // is on screen, so an ask from another session cannot sit unseen.
   const visibleBorrowRequest = borrowRequest;
+  // 接手卡与表单卡和借用卡一样，是「有一件事在等你」而不是某段聊天的一部分：不管当前看的是
+  // 哪个会话都要显示，否则 Agent 会一直等一个用户根本看不见的卡片。
 
   const versionInfo = {
     extension: displayVersion(EXTENSION_VERSION) ?? EXTENSION_VERSION,
@@ -2260,22 +2328,40 @@ export function App() {
               onDismissNotice={() => setNotice(undefined)}
               queue={queues[selected.id] ?? []}
               control={
-                <ControlBanner
-                  locale={locale}
-                  tabs={myControlTabs}
+                <>
+                  {takeover ? (
+                    <TakeoverCard
+                      locale={locale}
+                      data={takeover}
+                      onContinue={() => continueAfterTakeover(takeover)}
+                      onLater={() => setTakeover(undefined)}
+                    />
+                  ) : null}
+                  {formRequest ? (
+                    <FormRequestCard
+                      locale={locale}
+                      data={formRequest}
+                      onCancel={(requestId) => sendRef.current({ type: "form.cancel", requestId })}
+                      onSubmit={(requestId, values) => sendRef.current({ type: "form.submit", requestId, values })}
+                    />
+                  ) : null}
+                  <ControlBanner
+                    locale={locale}
+                    tabs={myControlTabs}
                   request={visibleBorrowRequest}
                   onRelease={() => {
                     if (selectedAcpId) sendRef.current({ type: "control.release", sessionId: selectedAcpId });
                   }}
                   onReleaseTab={(tabId) => sendRef.current({ type: "control.releaseTab", tabId })}
                   onFocusTab={(tabId) => sendRef.current({ type: "control.focusTab", tabId })}
-                  onGrant={(requestId, allow) => {
-                    const request = visibleBorrowRequest;
-                    sendRef.current({ type: "control.grant", requestId, allow });
-                    setBorrowRequest(undefined);
-                    if (request) continueAfterBorrow(request, allow);
-                  }}
-                />
+                    onGrant={(requestId, allow) => {
+                      const request = visibleBorrowRequest;
+                      sendRef.current({ type: "control.grant", requestId, allow });
+                      setBorrowRequest(undefined);
+                      if (request) continueAfterBorrow(request, allow);
+                    }}
+                  />
+                </>
               }
               onEnqueue={onEnqueue}
               onUpdateQueued={onUpdateQueued}

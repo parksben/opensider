@@ -21,11 +21,17 @@ import { applyThemePreference, type ThemePreference } from "../sidepanel/theme";
 type Kind = "translate" | "search";
 type State = "loading" | "ready" | "error";
 
+type Step = { title: string; status?: string };
+
 type Payload = {
   source?: string;
   kind?: Kind;
   state?: State;
   text?: string;
+  /** 失败原因（Host 给的一行原文）；没有就用本地化的通用文案。 */
+  error?: string;
+  /** Agent 正在做的步骤（工具调用摘要）。只用于等待期展示，答案到达后收起。 */
+  steps?: Step[];
   locale?: Locale;
   theme?: "dark" | "light";
   copied?: boolean;
@@ -35,6 +41,8 @@ export function SelectionResult() {
   const [kind, setKind] = useState<Kind>("translate");
   const [state, setState] = useState<State>("loading");
   const [text, setText] = useState("");
+  const [error, setError] = useState("");
+  const [steps, setSteps] = useState<Step[]>([]);
   const [locale, setLocale] = useState<Locale>("en");
   const [copied, setCopied] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -52,6 +60,8 @@ export function SelectionResult() {
       if (data.kind) setKind(data.kind);
       if (data.state) setState(data.state);
       if (typeof data.text === "string") setText(data.text);
+      if (typeof data.error === "string") setError(data.error);
+      if (Array.isArray(data.steps)) setSteps(data.steps);
       if (data.locale === "zh" || data.locale === "en") setLocale(data.locale);
       applyThemePreference((data.theme ?? "dark") as ThemePreference);
       applyLocale(data.locale === "zh" ? "zh" : "en");
@@ -111,13 +121,39 @@ export function SelectionResult() {
       <div className="cs-selection-body">
         <div ref={contentRef} className="cs-selection-content">
           {busy ? (
-            <p className="cs-selection-muted">
-              {kind === "search" ? t(locale, "selectionSearching") : t(locale, "selectionTranslating")}
-            </p>
+            <div className="cs-selection-busy">
+              <p className="cs-selection-muted">
+                {kind === "search" ? t(locale, "selectionSearching") : t(locale, "selectionTranslating")}
+              </p>
+              {/* 等待期把 Agent 的过程露出来：以前这些全被丢掉，用户只能干等，遇到慢模型
+                  就以为坏了。答案一到就整块收起，不留在结论里。 */}
+              {steps.length > 0 ? (
+                <ol className="cs-selection-steps">
+                  {steps.map((step, index) => (
+                    <li key={`${step.title}-${index}`} className="cs-selection-step">
+                      <span className="cs-selection-step-title">{step.title}</span>
+                      {step.status && step.status !== "pending" ? (
+                        <span className="cs-selection-step-status">{step.status}</span>
+                      ) : null}
+                    </li>
+                  ))}
+                </ol>
+              ) : null}
+            </div>
           ) : failed ? (
-            <p className="cs-selection-error">
-              {kind === "search" ? t(locale, "selectionSearchFailed") : t(locale, "selectionTranslateFailed")}
-            </p>
+            <div className="cs-selection-failed">
+              <p className="cs-selection-error">
+                {kind === "search" ? t(locale, "selectionSearchFailed") : t(locale, "selectionTranslateFailed")}
+                {error ? ` — ${error}` : ""}
+              </p>
+              <button
+                type="button"
+                className="cs-selection-retry"
+                onClick={() => window.parent.postMessage({ source: "opensider-selection-result", action: "retry" }, "*")}
+              >
+                {t(locale, "selectionRetry")}
+              </button>
+            </div>
           ) : kind === "search" ? (
             <Markdown text={text} />
           ) : (
