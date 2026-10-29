@@ -123,6 +123,7 @@ scripts/verify-first-connect.mjs  首次打开侧栏要自己连上（`SCENARIO=
 scripts/verify-held-send.mjs  连接未就绪时发消息（草稿按住、就绪后补发，不吞消息）的端到端验证
 scripts/verify-selection.mjs  划词隐藏通道（不进侧栏 / 独立会话 / 取消恢复）的帧级验证
 scripts/verify-selection-ui.mjs  划词工具条（门控与展示前复核 / 结构 / 定位 / 层级 / 结果层 / 引文芯片）的端到端验证
+scripts/verify-user-handoff.mjs  接手卡与表单代填（交还接管 / 侧栏填值 / 值不进结果文件、日志与提示词）的端到端验证
 scripts/verify-skill-menu.mjs  `/` skill 探测菜单（列表 / 搜索 / 详情面板 / 芯片落位 / 发出的提示词）的端到端验证
 scripts/verify-agent-switch-guard.mjs  有任务在跑时切 Agent（确认弹窗 / 取消不切 / 确认才切）的端到端验证
 scripts/lib/sandbox.mjs  上面几个脚本共用的沙箱（临时 HOME / 现编 Host / 假 Agent / profile 内桥接清单）
@@ -146,6 +147,11 @@ SW），再由 `packages/extension/scripts/build-page-hooks.mjs` 把两个主世
 `packages/extension/dist`，用两个固定页面（含一个 `script-src 'self'` 的 strict CSP 页面）验证
 「默认只观察、真弹窗照旧且能拿到用户答案」「`answer` 策略下同步代答且不弹窗」「文件选择器不弹」
 「策略过期后回到观察」，共 15 项检查。它依赖全局装的 playwright（`npm i -g playwright`）。
+
+`scripts/lib/sandbox.mjs` 找本机缓存的浏览器时同时认 Playwright 的新旧两种布局
+（`chrome-mac/Chromium.app` 与 `chrome-mac-arm64/Google Chrome for Testing.app`）；都不认就退回
+Playwright 自己的默认浏览器——那个版本忽略 `--load-extension`，扩展根本不会加载（现象是等
+service worker 超时）。排障时可以 `PLAYWRIGHT_CHROMIUM=/path/to/binary node scripts/verify-*.mjs` 直接指定。
 
 消息队列的「立即发送」（打断当前一轮 + 立刻把这条发出去）也靠真浏览器验证：
 `node scripts/verify-queue-send-now.mjs`。它在一个临时沙箱里跑：临时 HOME、现编的 Host
