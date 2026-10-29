@@ -45,6 +45,8 @@ export function SelectionResult() {
   const [steps, setSteps] = useState<Step[]>([]);
   const [locale, setLocale] = useState<Locale>("en");
   const [copied, setCopied] = useState(false);
+  /** 等待中的秒数：让用户看得出「在跑」而不是卡住了。 */
+  const [waited, setWaited] = useState(0);
   const rootRef = useRef<HTMLDivElement>(null);
   const headRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -98,6 +100,19 @@ export function SelectionResult() {
     return () => observer.disconnect();
   }, []);
 
+  // 等待计时：只有加载态在走，结论 / 失败一到就归零。
+  useEffect(() => {
+    if (state !== "loading") {
+      setWaited(0);
+      return;
+    }
+    const started = Date.now();
+    const timer = window.setInterval(() => {
+      setWaited(Math.floor((Date.now() - started) / 1000));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [state, kind]);
+
   const title = kind === "search" ? t(locale, "selectionSearchTitle") : t(locale, "selectionTranslateTitle");
   const busy = state === "loading";
   const failed = state === "error";
@@ -124,6 +139,7 @@ export function SelectionResult() {
             <div className="cs-selection-busy">
               <p className="cs-selection-muted">
                 {kind === "search" ? t(locale, "selectionSearching") : t(locale, "selectionTranslating")}
+                {waited >= 2 ? <span className="cs-selection-elapsed"> {waited}s</span> : null}
               </p>
               {/* 等待期把 Agent 的过程露出来：以前这些全被丢掉，用户只能干等，遇到慢模型
                   就以为坏了。答案一到就整块收起，不留在结论里。 */}

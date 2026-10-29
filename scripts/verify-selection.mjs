@@ -29,39 +29,45 @@ const sandbox = createSandbox({ root, prefix: "opensider-selection-", dist });
 const tracePath = sandbox.tracePath;
 
 // 假引擎不广告模式与配置项：这个脚本关心的是隐藏通道，不是那两块。
-const child = spawn(sandbox.hostBin, [], {
-  env: {
-    ...process.env,
-    HOME: sandbox.home,
-    FAKE_MODES: "none",
-    FAKE_OPTIONS: "none",
-    FAKE_ACP_TRACE: tracePath,
-    FAKE_ACP_CHUNKS: "1",
-    FAKE_ACP_CHUNK_MS: "10",
-  },
-  stdio: ["pipe", "pipe", "pipe"],
-});
+// 可选的额外 env 用于第二阶段（静默看门狗，见文件末尾）。
+function startHost(extraEnv = {}) {
+  const proc = spawn(sandbox.hostBin, [], {
+    env: {
+      ...process.env,
+      HOME: sandbox.home,
+      FAKE_MODES: "none",
+      FAKE_OPTIONS: "none",
+      FAKE_ACP_TRACE: tracePath,
+      FAKE_ACP_CHUNKS: "1",
+      FAKE_ACP_CHUNK_MS: "10",
+      ...extraEnv,
+    },
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  proc.stdout.on("data", (chunk) => {
+    buffer = Buffer.concat([buffer, chunk]);
+    while (buffer.length >= 4) {
+      const length = buffer.readUInt32LE(0);
+      if (buffer.length < 4 + length) break;
+      const body = buffer.subarray(4, 4 + length).toString("utf8");
+      buffer = buffer.subarray(4 + length);
+      try {
+        received.push(JSON.parse(body));
+      } catch {
+        /* non-JSON frame: ignore */
+      }
+    }
+  });
+  proc.stderr.on("data", (chunk) => {
+    stderr += chunk.toString();
+  });
+  return proc;
+}
 
 const received = [];
 let buffer = Buffer.alloc(0);
-child.stdout.on("data", (chunk) => {
-  buffer = Buffer.concat([buffer, chunk]);
-  while (buffer.length >= 4) {
-    const length = buffer.readUInt32LE(0);
-    if (buffer.length < 4 + length) break;
-    const body = buffer.subarray(4, 4 + length).toString("utf8");
-    buffer = buffer.subarray(4 + length);
-    try {
-      received.push(JSON.parse(body));
-    } catch {
-      /* non-JSON frame: ignore */
-    }
-  }
-});
 let stderr = "";
-child.stderr.on("data", (chunk) => {
-  stderr += chunk.toString();
-});
+let child = startHost();
 
 const send = (message) => {
   const body = Buffer.from(JSON.stringify(message), "utf8");
@@ -154,6 +160,12 @@ try {
   const chatSessionId = chat?.sessionId ?? "";
   check("the chat session exists", Boolean(chatSessionId), chatSessionId || "none");
 
+  // 用户选一个模型：真实事故的根因就是隐藏通道吃的是**CLI 默认模型**（opencode 的默认
+  // 模型在这台机器上永不返回），所以它必须跟着用户选的模型走。
+  const chosenModel = "claude-sonnet-4.6";
+  send({ type: "model.set", modelId: chosenModel, sessionId: chatSessionId });
+  await sleep(600);
+
   // ---------------------------------------------------------------- 翻译
   const translate = await runSelection({ mode: "translate", text: "Hello world" });
   check(
@@ -183,6 +195,17 @@ try {
     "the hidden turn runs on its own ACP session",
     Boolean(hiddenSession) && hiddenSession !== chatSessionId,
     `hidden=${hiddenSession || "none"} chat=${chatSessionId}`,
+  );
+
+  // 隐藏通道的会话必须被设成用户选的模型（不是 CLI 默认值）。这条是「翻译永远出不来」
+  // 的直接护栏：默认模型坏了时，只有跟着用户选的模型走才有结果。
+  const modelSets = traceEvents().filter(
+    (entry) => entry.event === "set_config_option" && entry.configId === "model" && entry.value === chosenModel,
+  );
+  check(
+    "the hidden session inherits the model the user picked",
+    modelSets.some((entry) => entry.sessionId === hiddenSession),
+    `sessions=${modelSets.map((entry) => entry.sessionId).join("|") || "none"} hidden=${hiddenSession || "none"}`,
   );
 
   // ---------------------------------------------------------------- 超长 / 空 / 未知
@@ -299,6 +322,36 @@ try {
   check("the chat still works after selection requests", Boolean(chatReply), chatReply ? "" : "no chat update");
   const chatEnd = await waitFor((msg) => msg.type === "turn.end" && msg.sessionId === chatSessionId, 15_000);
   check("the chat turn ends normally", Boolean(chatEnd), chatEnd?.stopReason ?? "none");
+
+  // ---------------------------------------------------------------- 静默看门狗
+  // 真实事故：模型坏了不会报错，只会永远不回（opencode 默认模型 90s 一条 update 都没有），
+  // 结果层就永远停在「翻译中…」。这里用「收下 prompt 但一条 update 都不发」的假引擎复现，
+  // 断言看门狗在限定时间内给出明确的失败，而不是让用户自己点掉。
+  child.kill("SIGKILL");
+  await sleep(300);
+  // 清掉上一轮的帧：`waitFor` 是在整个历史里倒着找的，不清就会匹配到旧进程的 ready。
+  buffer = Buffer.alloc(0);
+  received.length = 0;
+  stderr = "";
+  child = startHost({ FAKE_ACP_SILENT_SELECTION: "1", OPENSIDER_SELECTION_SILENT_MS: "1200" });
+  send({ type: "hello" });
+  await waitFor((msg) => msg.type === "status", 20_000);
+  send({ type: "agent.connect", providerId: "copilot", policy: "ask" });
+  const silentReady = await waitFor((msg) => msg.type === "status" && msg.state === "ready", 40_000);
+  check("the agent reconnects for the watchdog run", Boolean(silentReady), silentReady ? "" : "not ready");
+  const silentStarted = Date.now();
+  const silent = await runSelection({ mode: "translate", text: "Hello world" });
+  const silentElapsed = Date.now() - silentStarted;
+  check(
+    "a silent agent ends the request instead of spinning forever",
+    silent.terminal?.type === "selection.failed" && /sent nothing/.test(String(silent.terminal.error)),
+    `${silent.terminal?.type ?? "none"}: ${String(silent.terminal?.error ?? "").slice(0, 60)} after ${silentElapsed}ms`,
+  );
+  check(
+    "the watchdog fires close to its limit",
+    silentElapsed < 15_000,
+    `${silentElapsed}ms`,
+  );
 } catch (error) {
   check("verification ran to completion", false, String(error?.message ?? error));
 } finally {

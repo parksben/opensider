@@ -523,6 +523,20 @@ async function runPrompt(id, text) {
   turn += 1;
   const label = turn;
   cancelledAt = 0;
+  if (process.env.FAKE_ACP_SILENT_SELECTION === "1" && selectionKind(text)) {
+    // 模拟「模型坏了」的真实形态：收下 prompt，一条 update 都不发，也不返回。
+    // 划词通道的静默看门狗就是为这个场景写的（见 internal/host/selection.go）。
+    trace({ event: "selection_silent", sessionId });
+    await new Promise((resolve) => {
+      const timer = setInterval(() => {
+        if (cancelledAt) {
+          clearInterval(timer);
+          resolve();
+        }
+      }, 100);
+    });
+    return;
+  }
 	  const kind = selectionKind(text);
 	  if (kind) {
 	  	// 隐藏通道：记一笔它在哪个会话上跑（这条正是「不进当前会话」的判据）。

@@ -656,6 +656,11 @@ mark.cs-at-match {
 }
 
 /* 等待期的过程清单：一行一条工具调用，灰字、不抢正文的位置。 */
+.cs-selection-elapsed {
+  color: color-mix(in oklab, var(--muted) 70%, transparent);
+  font-variant-numeric: tabular-nums;
+}
+
 .cs-selection-busy {
   display: flex;
   flex-direction: column;

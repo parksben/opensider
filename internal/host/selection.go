@@ -3,12 +3,15 @@ package host
 import (
 	"errors"
 	"fmt"
+	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/parksben/opensider/internal/log"
+	"github.com/parksben/opensider/internal/models"
 	"github.com/parksben/opensider/internal/protocol"
 	"github.com/parksben/opensider/internal/selection"
 )
@@ -30,6 +33,23 @@ import (
 // 这条通道占死。搜索要联网、慢模型起进程也慢，60s 太短（用户报过「点了翻译一直出不来」，
 // 表现就是超时后结果层永远停在加载态）。
 const selectionTimeout = 180 * time.Second
+
+// selectionSilentTimeout 是「prompt 发出去之后多久还没有任何输出就算死掉」。
+//
+// 为什么需要它：ACP 的 session/prompt 只有 Agent 主动返回才结束，一个坏掉的模型不会报错、
+// 只会永远不回（实测 opencode 的默认模型就是这样，90s 里一条 session/update 都没有）。
+// 没有这道看门狗，结果层就只能一直转圈，用户只能自己点掉。
+const selectionSilentTimeout = 45 * time.Second
+
+// selectionSilentLimit 允许验证脚本把看门狗缩短（其它场景一律用上面的默认值）。
+func selectionSilentLimit() time.Duration {
+	if raw := strings.TrimSpace(os.Getenv("OPENSIDER_SELECTION_SILENT_MS")); raw != "" {
+		if ms, err := strconv.Atoi(raw); err == nil && ms > 0 {
+			return time.Duration(ms) * time.Millisecond
+		}
+	}
+	return selectionSilentTimeout
+}
 
 // selectionStep 是推给结果层的一条「Agent 正在做什么」。只用于让用户看到进度，不进结果正文。
 type selectionStep struct {
@@ -54,7 +74,10 @@ type selectionRun struct {
 	done     bool
 	// settled 标记「已经给结果层发过终态（done / failed）」，超时与正常收尾都靠它去重。
 	settled bool
-	steps   []selectionStep
+	// sawOutput 记录 Agent 是否吐出过任何东西（正文或工具调用）。看门狗靠它区分
+	//「在慢慢想」和「根本没回」。
+	sawOutput bool
+	steps     []selectionStep
 }
 
 func (r *selectionRun) attachRuntime(runtime *acpRuntime) {
@@ -144,6 +167,18 @@ func (r *selectionRun) settle() bool {
 	}
 	r.settled = true
 	return true
+}
+
+func (r *selectionRun) noteOutput() {
+	r.mu.Lock()
+	r.sawOutput = true
+	r.mu.Unlock()
+}
+
+func (r *selectionRun) hasOutput() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.sawOutput
 }
 
 // noteStep 记一条过程（同一个 title 更新状态而不是重复追加），返回是否值得推送。
@@ -257,6 +292,10 @@ func (h *Host) runSelectionTurn(run *selectionRun, target string) {
 	}
 	run.attachRuntime(runtime)
 	runtime.selection = run
+	// 新会话用的是 CLI 的**默认模型**，不是用户当前选的那个。实测 opencode 的默认模型在这
+	// 台机器上一条 session/update 都不吐（90s 无输出），换成用户选的模型 7–16s 就有结果；
+	// 划词必须跟着用户选的模型走。
+	h.applyUtilityModel(runtime)
 
 	timeout := time.AfterFunc(selectionTimeout, func() {
 		log.Log("selection timed out")
@@ -267,8 +306,20 @@ func (h *Host) runSelectionTurn(run *selectionRun, target string) {
 		}
 		run.cancelTurn()
 	})
+	silent := time.AfterFunc(selectionSilentLimit(), func() {
+		if run.hasOutput() {
+			return
+		}
+		log.Log("selection silent timeout")
+		if run.settle() {
+			h.sendSelection("selection.failed", run.requestID, run.tabID, "",
+				fmt.Sprintf("the agent sent nothing for %ds", int(selectionSilentLimit().Seconds())))
+		}
+		run.cancelTurn()
+	})
 	stop, err := runtime.client.Prompt(selection.PromptFor(run.mode, run.text, selection.LanguageName(target), run.uiLocale))
 	timeout.Stop()
+	silent.Stop()
 
 	runtime.selection = nil
 	// ACP 会话用完即弃（下次请求重新 session/new），这里只记一笔便于排查。
@@ -313,6 +364,7 @@ func (h *Host) absorbSelectionUpdate(runtime *acpRuntime, update map[string]any)
 	}
 	switch str(update["sessionUpdate"]) {
 	case "tool_call", "tool_call_update":
+		run.noteOutput()
 		// 工具调用开始：前面那些「我准备搜索一下…」的过程叙述作废（见 startToolCall）。
 		run.startToolCall()
 		// 让结果层看得到 Agent 在干什么（以前这些全被丢掉，用户只能干等）。
@@ -338,6 +390,7 @@ func (h *Host) absorbSelectionUpdate(runtime *acpRuntime, update map[string]any)
 	if chunk == "" {
 		return
 	}
+	run.noteOutput()
 	// 搜索：整轮都不推增量。过程叙述（"我先去搜一下…"）与两次搜索之间的中间正文都会先出现在
 	// 结果层、再被最终正文刷掉（用户报过），所以干脆只攒着，这一轮结束时一次性给结论——
 	// 那段时间结果层就老实停在「搜索中」。翻译没工具可调、正文也短，照常逐字流。
@@ -350,6 +403,26 @@ func (h *Host) absorbSelectionUpdate(runtime *acpRuntime, update map[string]any)
 		return
 	}
 	h.sendSelection("selection.delta", run.requestID, run.tabID, full, "")
+}
+
+// applyUtilityModel 把用户当前选的模型落到这条隐藏通道的会话上。
+//
+// 不做这件事的后果是真实事故：opencode 的默认模型（opencode/big-pickle）在本机不返回任何
+// 内容，划词就永远停在「翻译中…」。这里只设模型，不动全局目录（那是聊天侧的状态）。
+func (h *Host) applyUtilityModel(runtime *acpRuntime) {
+	if runtime == nil || runtime.client == nil {
+		return
+	}
+	h.mu.Lock()
+	modelID := h.catalog.CurrentID
+	configID := h.catalog.ModelConfigID
+	h.mu.Unlock()
+	if models.IsUnsetModel(modelID) {
+		return
+	}
+	if _, err := runtime.client.SetModel(modelID, configID); err != nil {
+		log.Log("selection model " + modelID + " not applied: " + err.Error())
+	}
 }
 
 // utilityRuntime 取（或懒建）隐藏通道的 runtime。按 `utility` 标记在现有列表里找，而不是
