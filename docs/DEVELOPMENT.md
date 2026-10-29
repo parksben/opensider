@@ -27,6 +27,8 @@ pnpm dev
 
 README 截图见 `scripts/shots.mjs`：它起 shots 页面（`packages/extension/src/sidepanel/shots.html`，浏览器窗口 + 真实侧栏），用 Playwright 按场景截图到 `docs/readme/{en,zh}/`。改侧栏后重跑一次即可。不要把侧栏拖成独立窗口。
 
+README 宣传视频见 `scripts/promo.mjs`：同样起 Vite，打开 `promo.html?lang=en|zh` 逐帧截图，用 `scripts/promo-music.py` 合成背景音乐（需要 Python 的 numpy、scipy），再用 ffmpeg 出 `docs/promo/{en,zh}/opensider-promo.mp4` 和 `preview.gif`。`node scripts/promo.mjs [en|zh]`。
+
 ## 工作区
 
 会话 cwd 固定为 `~/.opensider/workspace`。页面快照、命令和截图都在 `workspace/browser/`。用户可见的任务产物约定写在 `workspace/outputs/`（引导，不拦截 Agent 本地工具）。侧栏会话与偏好的权威副本是 `~/.opensider/ui-state.json`（扩展卸载后仍在）。Host 启动时写入 `AGENTS.md` 与 `browser/tools.json`，并确保 `outputs/` 存在。
@@ -108,6 +110,7 @@ packages/extension/scripts/build-page-hooks.mjs  把两个主世界钩子编成�
 skills/opensider      安装 / 更新 / 卸载 / 体检测 skill（README 的提示词指向它）
 scripts/dev-host.mjs  开发用：编二进制 + 拷扩展 + 注册桥接（= pnpm install-host）
 scripts/pack-extension.mjs  扩展 zip 打包
+scripts/promo.mjs     README 宣传视频渲染（promo.html 逐帧截图 + promo-music.py 配乐 + ffmpeg）
 scripts/verify-native-ui.mjs  原生 UI shim 的端到端验证（真 Chromium + 已构建扩展）
 scripts/verify-page-activity.mjs  页面活动态（面板开着强制可见 / 后台任务期间保持武装 / 收工后才还原）的端到端验证
 scripts/verify-background-task.mjs  后台任务（关 UI 不打断 / 徽标 / 重开侧栏补发实况与权限卡）的端到端验证

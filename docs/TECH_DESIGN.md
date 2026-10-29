@@ -915,6 +915,7 @@ docs/DEVELOPMENT.md   开发构建、Host 注册、工作区、打 extension.zip
 docs/logo.svg         品牌图标单图（512，源自 generate_icon；README 顶部已改用 banner，此文件保留备用）
 docs/banner.svg       README banner 概念图（由 scripts/generate_banner.py 生成）
 docs/readme/          README 演示截图（`scripts/shots.mjs` 从 shots 页面截取，`{en,zh}/`）
+docs/promo/           README 宣传视频（`scripts/promo.mjs` 渲染，`{en,zh}/opensider-promo.mp4` + `preview.gif`）
 cmd/opensider       唯一 Go 入口（host / install / pick）
 internal/           Host / install / pick / ACP
 packages/shared     扩展 ↔ Host 消息类型（TS）
@@ -930,6 +931,14 @@ pnpm workspace 只编扩展。Host 用 Go。扩展用 Vite + `@crxjs/vite-plugin
 ## 演示录制
 
 产品侧栏 = Chrome **Side Panel**（manifest `side_panel` + `sidePanel` 权限 + `openPanelOnActionClick`），不是 `default_popup`。README「演示」只写视频在演示什么：OpenSider 会话里让 Agent 提炼网页信息、生成资讯榜单并在浏览器打开。不要把分辨率、加速、IME 等录制规格写进 README。
+
+### 宣传视频
+
+`scripts/promo.mjs` 起 Vite（复用 `vite.shots.config.ts`，root 为 `src/sidepanel`），打开 `promo.html?lang=en|zh`。`promo.tsx` 把整段视频写成「时间 → 画面」的纯函数：页面暴露 `window.__promoSeek(t)`，脚本按 30fps 逐帧 seek + 截图，所以成片与机器快慢无关、可复现。侧栏部分直接渲染真实的 `ChatPane` / 工具卡片，与产品外观一致。
+
+背景音乐由 `scripts/promo-music.py`（numpy + scipy）按同一时间轴合成：120 BPM，段落切换点与场景切换对齐，属原创、无版权问题。ffmpeg 合成 H.264 + AAC 的 MP4（`+faststart`），再从中段截几秒用 palettegen / paletteuse 出 GIF 预览。
+
+为什么 README 用 GIF 链 MP4：GitHub 的 Markdown 只对 `user-attachments` 上传地址内联播放 `<video>`；指向仓库文件、raw、jsDelivr、Release 资产的 `<video>` 都会被过滤成空白。上传地址需要网页登录手动拖拽，不适合脚本化，故用 GIF 预览 + 点击打开仓库内 MP4（GitHub 文件页可直接播放）。
 
 ## 发布与 skill 安装
 
