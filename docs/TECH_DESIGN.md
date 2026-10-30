@@ -914,7 +914,7 @@ docs/TECH_DESIGN.md   本文件：怎么做、为什么选这个方案
 docs/DEVELOPMENT.md   开发构建、Host 注册、工作区、打 extension.zip、tag 发 Release
 docs/logo.svg         品牌图标单图（512，源自 generate_icon；README 顶部已改用 banner，此文件保留备用）
 docs/banner.svg       README banner 概念图（由 scripts/generate_banner.py 生成）
-docs/readme/          README 演示截图（`scripts/shots.mjs` 从 shots 页面截取，`{en,zh}/`）
+docs/readme/          README 演示截图（`scripts/shots.mjs` 从 promo 页面截静帧，`{en,zh}/`）
 docs/promo/           README 宣传视频（`scripts/promo.mjs` 渲染，`{en,zh}/opensider-promo.mp4` + `preview.gif`）
 cmd/opensider       唯一 Go 入口（host / install / pick）
 internal/           Host / install / pick / ACP
@@ -935,6 +935,8 @@ pnpm workspace 只编扩展。Host 用 Go。扩展用 Vite + `@crxjs/vite-plugin
 ### 宣传视频
 
 `scripts/promo.mjs` 起 Vite（复用 `vite.shots.config.ts`，root 为 `src/sidepanel`），打开 `promo.html?lang=en|zh`。`promo.tsx` 把整段视频写成「时间 → 画面」的纯函数：页面暴露 `window.__promoSeek(t)`，脚本按 30fps 逐帧 seek + 截图，所以成片与机器快慢无关、可复现。侧栏部分直接渲染真实的 `ChatPane` / 工具卡片，与产品外观一致。
+
+光标、选区环、划词工具条的位置不写死：场景给目标元素标 `data-a`，`useAnchors` 在每次渲染的 layout effect 里量出相对页面区域的矩形。中英文布局不同，写死坐标必然错位；量取在 `flushSync` 内同步完成，所以逐帧截图拿到的一定是贴合后的画面。
 
 背景音乐由 `scripts/promo-music.py`（numpy + scipy）按同一时间轴合成：120 BPM，段落切换点与场景切换对齐，属原创、无版权问题。ffmpeg 合成 H.264 + AAC 的 MP4（`+faststart`），再从中段截几秒用 palettegen / paletteuse 出 GIF 预览。
 

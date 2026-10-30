@@ -25,7 +25,7 @@ pnpm dev
 
 改扩展后在扩展页点刷新。改 Host 后重新 `pnpm install-host`，再重连侧栏。
 
-README 截图见 `scripts/shots.mjs`：它起 shots 页面（`packages/extension/src/sidepanel/shots.html`，浏览器窗口 + 真实侧栏），用 Playwright 按场景截图到 `docs/readme/{en,zh}/`。改侧栏后重跑一次即可。不要把侧栏拖成独立窗口。
+README 截图见 `scripts/shots.mjs`：它起宣传视频页面（`packages/extension/src/sidepanel/promo.html`），seek 到各场景的指定时刻，用 Playwright 按 2x 截静帧到 `docs/readme/{en,zh}/`。改侧栏后重跑一次即可。不要把侧栏拖成独立窗口。
 
 README 宣传视频见 `scripts/promo.mjs`：同样起 Vite，打开 `promo.html?lang=en|zh` 逐帧截图，用 `scripts/promo-music.py` 合成背景音乐（需要 Python 的 numpy、scipy），再用 ffmpeg 出 `docs/promo/{en,zh}/opensider-promo.mp4` 和 `preview.gif`。`node scripts/promo.mjs [en|zh]`。
 
