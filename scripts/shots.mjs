@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// README screenshots: render the shots page (a browser frame + the real side panel) and
-// capture each scene at 2x. The page is not part of the extension build.
+// README screenshots: stills of the promo video page at 2x, so they share the video's look.
+// The page is not part of the extension build.
 //
 //   node scripts/shots.mjs
 //
@@ -15,8 +15,9 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const ext = join(root, "packages", "extension");
 const outRoot = join(root, "docs", "readme");
 const PORT = 5198;
-const BASE = `http://localhost:${PORT}/shots.html`;
-const SCENES = ["automation", "selection", "pick"];
+const BASE = `http://localhost:${PORT}/promo.html`;
+// Seconds into the promo timeline (see SCENES in promo.tsx).
+const SCENES = { automation: 51.2, selection: 67.5, pick: 79.2 };
 const LANGS = ["en", "zh"];
 
 const server = spawn(
@@ -28,7 +29,7 @@ const server = spawn(
 async function waitForServer() {
   for (let i = 0; i < 80; i += 1) {
     try {
-      const res = await fetch(`${BASE}?scene=automation`);
+      const res = await fetch(BASE);
       if (res.ok) return;
     } catch {
       // not up yet
@@ -53,11 +54,11 @@ try {
   const browser = await launch();
   for (const lang of LANGS) {
     mkdirSync(join(outRoot, lang), { recursive: true });
-    for (const scene of SCENES) {
-      const page = await browser.newPage({ viewport: { width: 1120, height: 700 }, deviceScaleFactor: 2 });
-      await page.goto(`${BASE}?scene=${scene}&lang=${lang}`, { waitUntil: "networkidle" });
-      await page.waitForFunction(() => document.documentElement.dataset.shotReady === "1", undefined, { timeout: 15000 }).catch(() => {});
-      await page.waitForTimeout(400);
+    for (const [scene, time] of Object.entries(SCENES)) {
+      const page = await browser.newPage({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 2, colorScheme: "dark" });
+      await page.goto(`${BASE}?lang=${lang}`, { waitUntil: "networkidle" });
+      await page.waitForFunction(() => document.documentElement.dataset.shotReady === "1", undefined, { timeout: 15000 });
+      await page.evaluate((t) => window.__promoSeek(t), time);
       await page.screenshot({ path: join(outRoot, lang, `${scene}.png`) });
       await page.close();
       console.log(`captured docs/readme/${lang}/${scene}.png`);

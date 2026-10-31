@@ -4,7 +4,7 @@
     python3 scripts/promo-music.py out.wav [seconds]
 
 Needs numpy + scipy. 120 BPM in A minor (Am - F - C - G), arranged around the scene
-cuts in scripts/promo.mjs: intro pad, drums from 0:18, a lighter break for the selection
+cuts in scripts/promo.mjs: intro pad, drums from 0:14, a lighter break for the selection
 scene, then a pad-only outro that rings out.
 """
 import sys
@@ -20,15 +20,15 @@ BAR = BEAT * 4
 rng = np.random.default_rng(7)
 
 out_path = sys.argv[1] if len(sys.argv) > 1 else "promo-music.wav"
-LENGTH = float(sys.argv[2]) if len(sys.argv) > 2 else 116.0
+LENGTH = float(sys.argv[2]) if len(sys.argv) > 2 else 107.0
 N = int(SR * (LENGTH + 2.5))
 L = np.zeros(N)
 R = np.zeros(N)
 
 # Section map (seconds): which layers play when.
-DRUMS = [(18, 64), (78, 106)]
-BREAK = (64, 78)
-OUTRO = 106
+DRUMS = [(14, 60), (74, 102)]
+BREAK = (60, 74)
+OUTRO = 102
 
 
 def within(t, spans):
@@ -105,13 +105,13 @@ for bar in range(bars):
         f = midi(note)
         sl += saw(f * 0.997, n, rng.random()) + saw(f * 1.004, n, rng.random())
         sr += saw(f * 1.002, n, rng.random()) + saw(f * 0.995, n, rng.random())
-    cutoff = 900 if t0 < 8 else 1500
+    cutoff = 900 if t0 < 4 else 1500
     if t0 >= OUTRO:
         cutoff = 1100
     env = adsr(n, 0.35, 0.4, 0.85, 0.6)
     gain = 0.035
-    if t0 < 8:
-        gain *= 0.5 + 0.5 * (t0 / 8)
+    if t0 < 4:
+        gain *= 0.5 + 0.5 * (t0 / 4)
     add(pad_l, pad_r, t0, lowpass(sl, cutoff) * env * gain, lowpass(sr, cutoff) * env * gain)
 
 # --- arpeggio (16ths, two octaves of chord tones) -----------------------------------
@@ -121,7 +121,7 @@ pattern = [0, 1, 2, 3, 2, 1, 3, 2]
 step = BEAT / 4
 for i in range(int(LENGTH / step)):
     t0 = i * step
-    if t0 < 4 or t0 >= LENGTH - 1.5:
+    if t0 < 2 or t0 >= LENGTH - 1.5:
         continue
     bar = int(t0 // BAR)
     chord = CHORDS[bar % 4]
@@ -132,9 +132,9 @@ for i in range(int(LENGTH / step)):
     sig = saw(midi(note), n) * np.exp(-np.arange(n) / SR * 16)
     cutoff = 2600 if not within(t0, [BREAK]) else 1800
     sig = lowpass(sig, cutoff)
-    gain = 0.05 if t0 >= 8 else 0.05 * (t0 - 4) / 4
+    gain = 0.05 if t0 >= 4 else 0.05 * (t0 - 2) / 2
     if t0 >= OUTRO:
-        gain *= max(0.0, 1 - (t0 - OUTRO) / 9)
+        gain *= max(0.0, 1 - (t0 - OUTRO) / 4.5)
     pan = 0.5 + 0.35 * np.sin(i * 0.7)
     add(arp_l, arp_r, t0, sig * gain * (1 - pan) * 1.4, sig * gain * pan * 1.4)
 
@@ -185,7 +185,7 @@ for b in range(int(LENGTH / BEAT)):
 bass = np.zeros(N)
 for i in range(int(LENGTH / (BEAT / 2))):
     t0 = i * BEAT / 2
-    if t0 < 18 or t0 >= OUTRO or within(t0, [BREAK]):
+    if t0 < 14 or t0 >= OUTRO or within(t0, [BREAK]):
         continue
     bar = int(t0 // BAR)
     root = ROOTS[bar % 4]
@@ -200,7 +200,7 @@ for i in range(int(LENGTH / (BEAT / 2))):
 # --- risers & impacts ---------------------------------------------------------------
 fx_l = np.zeros(N)
 fx_r = np.zeros(N)
-for cut in (18, 78):
+for cut in (14, 74):
     n = int(3.5 * SR)
     noise = rng.standard_normal(n)
     out = np.zeros(n)
@@ -211,7 +211,7 @@ for cut in (18, 78):
         out[k : k + chunk] = bandpass(seg, 300 + 6000 * frac**2, 800 + 9000 * frac**2)
     out *= np.linspace(0, 1, n) ** 2 * 0.07
     add(fx_l, fx_r, cut - 3.5, out * 0.9, out * 1.1)
-for cut in (8, 18, 42, 64, 78, 96, 106):
+for cut in (4, 14, 38, 60, 74, 92, 102):
     n = int(1.6 * SR)
     tt = np.arange(n) / SR
     boom = np.sin(2 * np.pi * (38 + 30 * np.exp(-tt * 6)) * tt) * np.exp(-tt * 3.2) * 0.22

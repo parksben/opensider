@@ -21,7 +21,7 @@ const BASE = `http://localhost:${PORT}/promo.html`;
 const FPS = 30;
 const WORKERS = 4;
 // GIF preview: a few seconds of the automation scene.
-const GIF_FROM = 46;
+const GIF_FROM = 42;
 const GIF_LEN = 7;
 const LANGS = process.argv[2] ? [process.argv[2]] : ["en", "zh"];
 
@@ -110,7 +110,7 @@ try {
     ]);
     ffmpeg([
       "-ss", String(GIF_FROM), "-t", String(GIF_LEN), "-i", mp4,
-      "-filter_complex", "fps=12,scale=720:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=128[p];[b][p]paletteuse=dither=bayer:bayer_scale=4",
+      "-filter_complex", "fps=12,scale=960:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=128[p];[b][p]paletteuse=dither=bayer:bayer_scale=4",
       join(out, "preview.gif"),
     ]);
     console.log(`wrote docs/promo/${lang}/opensider-promo.mp4 and preview.gif`);

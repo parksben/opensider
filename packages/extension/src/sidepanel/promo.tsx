@@ -24,7 +24,7 @@ import {
   Star,
   Terminal,
 } from "lucide-react";
-import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
 import type { AgentModeOption, AgentModel, AttachmentItem, CurrentPage, SkillItem } from "@shared";
@@ -41,7 +41,7 @@ const locale: Locale = params.get("lang") === "zh" ? "zh" : "en";
 applyLocale(locale);
 applyThemePreference("dark");
 
-export const DURATION = 116;
+export const DURATION = 107;
 
 // ---------------------------------------------------------------------------------------
 // Timing helpers
@@ -67,6 +67,42 @@ function along(time: number, keys: Key[]): { x: number; y: number } {
     }
   }
   return keys[keys.length - 1];
+}
+
+type Box = { left: number; top: number; width: number; height: number; x: number; y: number };
+const NO_BOX: Box = { left: 0, top: 0, width: 0, height: 0, x: 0, y: 0 };
+
+/**
+ * Measures every `[data-a]` element against the scene root on each render, so the cursor and
+ * highlights land on the real layout in both languages. The state update happens in a layout
+ * effect, so `flushSync` in `__promoSeek` already includes it. `last` is the final line box of
+ * wrapped inline text.
+ */
+function useAnchors(): [RefObject<HTMLDivElement | null>, (key: string) => Box] {
+  const root = useRef<HTMLDivElement>(null);
+  const [boxes, setBoxes] = useState<Record<string, Box>>({});
+  useLayoutEffect(() => {
+    const el = root.current;
+    if (!el) return;
+    const origin = el.getBoundingClientRect();
+    const scale = origin.width / el.offsetWidth || 1;
+    const box = (r: DOMRect): Box => {
+      const left = (r.left - origin.left) / scale;
+      const top = (r.top - origin.top) / scale;
+      const width = r.width / scale;
+      const height = r.height / scale;
+      return { left, top, width, height, x: left + width / 2, y: top + height / 2 };
+    };
+    const next: Record<string, Box> = {};
+    el.querySelectorAll<HTMLElement>("[data-a]").forEach((node) => {
+      const key = node.dataset.a as string;
+      next[key] = box(node.getBoundingClientRect());
+      const lines = [...node.getClientRects()].filter((r) => r.width > 0);
+      if (lines.length) next[`${key}:last`] = box(lines[lines.length - 1]);
+    });
+    setBoxes((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
+  });
+  return [root, (key) => boxes[key] ?? NO_BOX];
 }
 
 // ---------------------------------------------------------------------------------------
@@ -402,13 +438,11 @@ function Stage({ local, children }: { local: number; children: ReactNode }) {
 // ---------------------------------------------------------------------------------------
 
 function IntroScene({ local }: { local: number }) {
-  const logo = easeOut(prog(local, 0.2, 1.6));
-  const word = easeOut(prog(local, 1.2, 2.4));
-  const slogan = easeOut(prog(local, 2.2, 3.4));
+  const logo = easeOut(prog(local, 0.1, 0.8));
+  const word = easeOut(prog(local, 0.6, 1.2));
+  const slogan = easeOut(prog(local, 1.1, 1.7));
   return (
     <div className="pv-center">
-      <div className="pv-orbit" style={{ transform: `rotate(${local * 24}deg)`, opacity: logo }} />
-      <div className="pv-orbit pv-orbit-2" style={{ transform: `rotate(${-local * 16}deg)`, opacity: logo * 0.8 }} />
       <img
         className="pv-hero-logo"
         src={logoUrl}
@@ -558,11 +592,9 @@ const SHOP_PAGE: CurrentPage = {
   updatedAt: D.toISOString(),
 };
 
-// Field centres inside the page area (page area origin = top-left of .pv-page).
-const F = { drink: { x: 330, y: 168 }, milk: { x: 330, y: 238 }, sizeL: { x: 436, y: 306 }, time: { x: 330, y: 376 }, place: { x: 330, y: 452 } };
-
 function AutomationScene({ local }: { local: number }) {
   const T = local;
+  const [pageRef, anchor] = useAnchors();
   const ask = 1.6;
   const s = ask + 1.6; // first action
   const marks = { drink: s + 1.2, milk: s + 4.0, size: s + 7.0, time: s + 9.4, place: s + 13.0 };
@@ -586,22 +618,27 @@ function AutomationScene({ local }: { local: number }) {
     messages.push(assistant("a1", parts, T >= end ? 15600 : undefined));
   }
   const acting = T >= ask + 0.8 && T < end;
+  const at = (key: string) => {
+    const { x, y } = anchor(key);
+    return { x, y };
+  };
   const cursor = along(T, [
     { at: s - 0.4, x: 560, y: 520 },
-    { at: marks.drink - 0.1, ...F.drink },
-    { at: marks.milk - 0.6, ...F.drink },
-    { at: marks.milk - 0.1, ...F.milk },
-    { at: marks.size - 0.6, ...F.milk },
-    { at: marks.size - 0.1, ...F.sizeL },
-    { at: marks.time - 0.6, ...F.sizeL },
-    { at: marks.time - 0.1, ...F.time },
-    { at: marks.place - 0.6, ...F.time },
-    { at: marks.place - 0.1, ...F.place },
+    { at: marks.drink - 0.1, ...at("drink") },
+    { at: marks.milk - 0.6, ...at("drink") },
+    { at: marks.milk - 0.1, ...at("milk") },
+    { at: marks.size - 0.6, ...at("milk") },
+    { at: marks.size - 0.1, ...at("size") },
+    { at: marks.time - 0.6, ...at("size") },
+    { at: marks.time - 0.1, ...at("time") },
+    { at: marks.place - 0.6, ...at("time") },
+    { at: marks.place - 0.1, ...at("place") },
   ]);
-  const ring = (key: keyof typeof marks, w: number, h: number, c: { x: number; y: number }) => {
+  const ring = (key: keyof typeof marks) => {
     const a = marks[key];
-    const on = T >= a - 0.3 && T < a + 2.0;
-    return on ? <div className="pv-ring" style={{ left: c.x - w / 2, top: c.y - h / 2, width: w, height: h }} /> : null;
+    if (T < a - 0.3 || T >= a + 2.0) return null;
+    const b = anchor(key);
+    return <div className="pv-ring" style={{ left: b.left - 4, top: b.top - 4, width: b.width + 8, height: b.height + 8 }} />;
   };
   const drink = T >= marks.drink ? typed(COPY.drinkVal, T, marks.drink, 10) : "";
   const milk = T >= marks.milk + 0.2 ? COPY.milkVal : "—";
@@ -615,7 +652,7 @@ function AutomationScene({ local }: { local: number }) {
         <BrowserFrame
           url={SHOP_PAGE.url}
           page={
-            <div className="pv-shop">
+            <div className="pv-shop" ref={pageRef}>
               <div className="pv-shop-head">
                 <Coffee size={16} /> {COPY.shopName}
                 <span className="pv-shop-user">Alex ▾</span>
@@ -623,26 +660,26 @@ function AutomationScene({ local }: { local: number }) {
               <h1>{COPY.shopHead}</h1>
               <div className="pv-form">
                 <label>{COPY.drink}</label>
-                <div className="pv-input">{drink}</div>
+                <div className="pv-input" data-a="drink">{drink}</div>
                 <label>{COPY.milk}</label>
-                <div className="pv-input pv-select">{milk}</div>
+                <div className="pv-input pv-select" data-a="milk">{milk}</div>
                 <label>{COPY.size}</label>
                 <div className="pv-sizes">
                   {["S", "M", "L"].map((v) => (
-                    <span key={v} className={v === size ? "is-on" : ""}>
+                    <span key={v} data-a={v === "L" ? "size" : undefined} className={v === size ? "is-on" : ""}>
                       {v}
                     </span>
                   ))}
                 </div>
                 <label>{COPY.pickup}</label>
-                <div className="pv-input">{time}</div>
-                <div className={`pv-place ${done ? "is-done" : ""}`}>{COPY.place}</div>
+                <div className="pv-input" data-a="time">{time}</div>
+                <div data-a="place" className={`pv-place ${done ? "is-done" : ""}`}>{COPY.place}</div>
               </div>
-              {ring("drink", 340, 46, F.drink)}
-              {ring("milk", 340, 46, F.milk)}
-              {ring("size", 56, 46, F.sizeL)}
-              {ring("time", 340, 46, F.time)}
-              {ring("place", 340, 50, F.place)}
+              {ring("drink")}
+              {ring("milk")}
+              {ring("size")}
+              {ring("time")}
+              {ring("place")}
               {T >= s - 0.4 && T < end + 0.5 ? (
                 <AgentCursor x={cursor.x} y={cursor.y} time={T} clickAt={Object.values(marks)} />
               ) : null}
@@ -689,6 +726,7 @@ const READ_PAGE: CurrentPage = {
 
 function SelectionScene({ local }: { local: number }) {
   const T = local;
+  const [pageRef, anchor] = useAnchors();
   const selStart = 1.6;
   const selEnd = 3.0;
   const n = Math.round(COPY.selPick.length * easeInOut(prog(T, selStart, selEnd)));
@@ -697,56 +735,64 @@ function SelectionScene({ local }: { local: number }) {
   const result = T >= clickTr + 0.2;
   const resultIn = easeOut(prog(T, clickTr + 0.2, clickTr + 0.8));
   const clickQuote = 10.0;
+  // The caret marker sits right after the highlight, so the cursor drags the real selection end.
+  const caret = anchor("caret");
+  const translateBtn = anchor("btn-translate");
+  const quoteBtn = anchor("btn-quote");
   const cursor = along(T, [
-    { at: selStart - 0.6, x: 150, y: 250 },
-    { at: selStart, x: 150, y: 224 },
-    { at: selEnd, x: 420, y: 224 },
-    { at: clickTr - 0.7, x: 420, y: 230 },
-    { at: clickTr, x: 228, y: 278 },
-    { at: clickQuote - 0.8, x: 228, y: 278 },
-    { at: clickQuote, x: 404, y: 278 },
+    { at: selStart - 0.6, x: caret.x + 30, y: caret.y + 34 },
+    { at: selStart, x: caret.x, y: caret.y },
+    { at: selEnd, x: caret.x, y: caret.y },
+    { at: clickTr - 0.7, x: caret.x, y: caret.y },
+    { at: clickTr, x: translateBtn.x, y: translateBtn.y },
+    { at: clickQuote - 0.8, x: translateBtn.x, y: translateBtn.y },
+    { at: clickQuote, x: quoteBtn.x, y: quoteBtn.y },
   ]);
+  const lastLine = anchor("sel:last");
+  const barLeft = Math.min(lastLine.left, 300);
+  const barTop = lastLine.top + lastLine.height + 8;
   return (
     <>
       <Stage local={local}>
         <BrowserFrame
           url={READ_PAGE.url}
           page={
-            <div className="pv-read">
+            <div className="pv-read" ref={pageRef}>
               <div className="pv-news-head">
                 <Star size={14} /> blog.example.com
               </div>
               <h1>{locale === "zh" ? "Agents in the browser" : "Les agents dans le navigateur"}</h1>
               <p className="pv-para">
                 {COPY.selPara1}
-                <mark className="pv-sel">{COPY.selPick.slice(0, n)}</mark>
-                {COPY.selPick.slice(n)}
+                <span data-a="sel">
+                  <mark className="pv-sel">{COPY.selPick.slice(0, n)}</mark>
+                  <span data-a="caret" />
+                  {COPY.selPick.slice(n)}
+                </span>
                 {COPY.selPara2}
               </p>
-              {bar > 0 ? (
-                <div className="pv-toolbar" style={{ opacity: bar, transform: `translateY(${(1 - bar) * 8}px)` }}>
-                  <img src={logoUrl} alt="" />
-                  <span className={result ? "is-on" : ""}>
-                    <Languages size={14} />
-                    {locale === "zh" ? "翻译" : "Translate"}
-                  </span>
-                  <span>
-                    <Search size={14} />
-                    {locale === "zh" ? "搜索" : "Search"}
-                  </span>
-                  <span className={T >= clickQuote ? "is-on" : ""}>
-                    <Quote size={14} />
-                    {locale === "zh" ? "引用" : "Quote"}
-                  </span>
-                </div>
-              ) : null}
+              <div className="pv-toolbar" style={{ left: barLeft, top: barTop, opacity: bar, transform: `translateY(${(1 - bar) * 8}px)` }}>
+                <img src={logoUrl} alt="" />
+                <span data-a="btn-translate" className={result ? "is-on" : ""}>
+                  <Languages size={14} />
+                  {locale === "zh" ? "翻译" : "Translate"}
+                </span>
+                <span>
+                  <Search size={14} />
+                  {locale === "zh" ? "搜索" : "Search"}
+                </span>
+                <span data-a="btn-quote" className={T >= clickQuote ? "is-on" : ""}>
+                  <Quote size={14} />
+                  {locale === "zh" ? "引用" : "Quote"}
+                </span>
+              </div>
               {result ? (
-                <div className="pv-result" style={{ opacity: resultIn, transform: `translateY(${(1 - resultIn) * 10}px)` }}>
+                <div className="pv-result" style={{ left: barLeft, top: barTop + 46, opacity: resultIn, transform: `translateY(${(1 - resultIn) * 10}px)` }}>
                   <div className="pv-result-title">{tr(locale, "selectionTranslateTitle")}</div>
                   <div className="pv-result-body">{typed(COPY.selResult, T, clickTr + 0.6, 18)}</div>
                 </div>
               ) : null}
-              {T >= selStart - 0.6 ? (
+              {T >= 1.2 ? (
                 <AgentCursor x={cursor.x} y={cursor.y} time={T} clickAt={[clickTr, clickQuote]} />
               ) : null}
             </div>
@@ -776,16 +822,15 @@ const SHOP2_PAGE: CurrentPage = {
 
 function PickScene({ local }: { local: number }) {
   const T = local;
+  const [pageRef, anchor] = useAnchors();
   const pickStart = 1.4;
   const clickAt = 5.4;
   const ask = 6.4;
   const end = ask + 7.6;
-  // Card centres inside the page area.
-  const cards = [
-    { x: 125, y: 270 },
-    { x: 340, y: 270 },
-    { x: 555, y: 270 },
-  ];
+  const cards = [0, 1, 2].map((i) => {
+    const { x, y } = anchor(`card-${i}`);
+    return { x, y };
+  });
   const cursor = along(T, [
     { at: pickStart, x: 300, y: 520 },
     { at: pickStart + 1.0, ...cards[0] },
@@ -817,7 +862,7 @@ function PickScene({ local }: { local: number }) {
         <BrowserFrame
           url={SHOP2_PAGE.url}
           page={
-            <div className="pv-shop2">
+            <div className="pv-shop2" ref={pageRef}>
               <div className="pv-news-head">
                 <Headphones size={14} /> shop.example.com
               </div>
@@ -827,7 +872,7 @@ function PickScene({ local }: { local: number }) {
                   const hot = T >= pickStart && hover === i && (picking || T < clickAt + 0.6);
                   const chosen = T >= clickAt && i === 1;
                   return (
-                    <div key={p.name} className={`pv-card ${hot ? "is-hot" : ""} ${chosen ? "is-chosen" : ""}`}>
+                    <div key={p.name} data-a={`card-${i}`} className={`pv-card ${hot ? "is-hot" : ""} ${chosen ? "is-chosen" : ""}`}>
                       <div className="pv-card-img" style={{ background: `linear-gradient(135deg, hsl(${p.hue} 70% 62%), hsl(${p.hue + 40} 70% 40%))` }}>
                         <Headphones size={54} color="#fff" strokeWidth={1.4} />
                       </div>
@@ -901,12 +946,11 @@ function InstallScene({ local }: { local: number }) {
 }
 
 function OutroScene({ local }: { local: number }) {
-  const a = easeOut(prog(local, 0.2, 1.4));
-  const b = easeOut(prog(local, 1.2, 2.2));
-  const fade = 1 - prog(local, 8.6, 10);
+  const a = easeOut(prog(local, 0.1, 0.7));
+  const b = easeOut(prog(local, 0.6, 1.1));
+  const fade = 1 - prog(local, 4.2, 5);
   return (
     <div className="pv-center" style={{ opacity: fade }}>
-      <div className="pv-orbit" style={{ transform: `rotate(${local * 24}deg)`, opacity: a }} />
       <img className="pv-hero-logo" src={logoUrl} alt="" style={{ opacity: a, transform: `scale(${0.7 + a * 0.3})` }} />
       <div className="pv-wordmark" style={{ opacity: a }}>
         OpenSider
@@ -922,14 +966,14 @@ function OutroScene({ local }: { local: number }) {
 }
 
 const SCENES: Array<{ start: number; end: number; render: (local: number) => ReactNode; key: string }> = [
-  { key: "intro", start: 0, end: 8, render: (l) => <IntroScene local={l} /> },
-  { key: "agents", start: 8, end: 18, render: (l) => <AgentsScene local={l} /> },
-  { key: "context", start: 18, end: 42, render: (l) => <ContextScene local={l} /> },
-  { key: "auto", start: 42, end: 64, render: (l) => <AutomationScene local={l} /> },
-  { key: "sel", start: 64, end: 78, render: (l) => <SelectionScene local={l} /> },
-  { key: "pick", start: 78, end: 96, render: (l) => <PickScene local={l} /> },
-  { key: "install", start: 96, end: 106, render: (l) => <InstallScene local={l} /> },
-  { key: "outro", start: 106, end: DURATION, render: (l) => <OutroScene local={l} /> },
+  { key: "intro", start: 0, end: 4, render: (l) => <IntroScene local={l} /> },
+  { key: "agents", start: 4, end: 14, render: (l) => <AgentsScene local={l} /> },
+  { key: "context", start: 14, end: 38, render: (l) => <ContextScene local={l} /> },
+  { key: "auto", start: 38, end: 60, render: (l) => <AutomationScene local={l} /> },
+  { key: "sel", start: 60, end: 74, render: (l) => <SelectionScene local={l} /> },
+  { key: "pick", start: 74, end: 92, render: (l) => <PickScene local={l} /> },
+  { key: "install", start: 92, end: 102, render: (l) => <InstallScene local={l} /> },
+  { key: "outro", start: 102, end: DURATION, render: (l) => <OutroScene local={l} /> },
 ];
 
 const FADE = 0.5;
@@ -1003,9 +1047,6 @@ const PROMO_CSS = `
 .pv-scene { position: absolute; inset: 0; }
 .pv-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
 .pv-hero-logo { width: 150px; height: 150px; filter: drop-shadow(0 0 40px rgba(212,160,84,.55)); position: relative; z-index: 1; }
-.pv-orbit { position: absolute; width: 300px; height: 300px; top: calc(50% - 230px); border-radius: 50%;
-  border: 1.5px solid transparent; border-top-color: rgba(212,160,84,.8); border-right-color: rgba(57,182,255,.5); }
-.pv-orbit-2 { width: 360px; height: 360px; top: calc(50% - 260px); border-top-color: rgba(189,69,251,.6); border-right-color: transparent; border-bottom-color: rgba(212,160,84,.35); }
 .pv-wordmark { margin-top: 36px; font-size: 76px; font-weight: 600; letter-spacing: -1px;
   background: linear-gradient(90deg, #f3e3bd, #d4a054 45%, #39b6ff 80%, #bd45fb); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .pv-slogan { margin-top: 10px; font-size: 28px; color: #d8d0b8; letter-spacing: .5px; }
@@ -1039,8 +1080,8 @@ const PROMO_CSS = `
 .pv-caption-title { font-size: 34px; font-weight: 600; line-height: 1.2;
   background: linear-gradient(90deg, #fff4d8, #d4a054 60%, #39b6ff); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .pv-caption-sub { margin-top: 4px; font-size: 18px; color: #b7ae94; }
-.pv-cursor { position: absolute; z-index: 20; margin-left: -4px; margin-top: -3px; filter: drop-shadow(0 3px 8px rgba(20,16,40,.45)); pointer-events: none; }
-.pv-ripple { position: absolute; left: -8px; top: -8px; width: 30px; height: 30px; border-radius: 50%; border: 3px solid rgba(57,182,255,.95); }
+.pv-cursor { position: absolute; z-index: 20; margin-left: -6px; margin-top: -2px; filter: drop-shadow(0 3px 8px rgba(20,16,40,.45)); pointer-events: none; }
+.pv-ripple { position: absolute; left: -9px; top: -13px; width: 30px; height: 30px; border-radius: 50%; border: 3px solid rgba(57,182,255,.95); }
 .pv-ring { position: absolute; z-index: 5; border-radius: 9px; border: 2px solid rgba(57,182,255,.95); background: rgba(189,69,251,.08);
   box-shadow: 0 0 0 1px rgba(255,255,255,.4), 0 8px 24px rgba(57,182,255,.3); }
 .pv-news, .pv-read, .pv-shop, .pv-shop2 { position: absolute; inset: 0; padding: 20px 28px; }
@@ -1076,11 +1117,11 @@ const PROMO_CSS = `
 .pv-read { background: #fffdf8; }
 .pv-para { margin: 40px 0 0; font-size: 19px; line-height: 1.75; color: #1d2430; max-width: 600px; }
 .pv-sel { background: rgba(58,109,154,.28); color: inherit; border-radius: 3px; }
-.pv-toolbar { position: absolute; left: 150px; top: 262px; display: flex; align-items: center; gap: 2px; padding: 4px; border-radius: 999px; background: #14160f; border: 1px solid #2c3124; box-shadow: 0 10px 30px rgba(0,0,0,.3); }
+.pv-toolbar { position: absolute; display: flex; align-items: center; gap: 2px; padding: 4px; border-radius: 999px; background: #14160f; border: 1px solid #2c3124; box-shadow: 0 10px 30px rgba(0,0,0,.3); }
 .pv-toolbar img { width: 18px; height: 18px; margin: 0 6px 0 4px; }
 .pv-toolbar span { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px; font-size: 13px; color: #a39b84; }
 .pv-toolbar span.is-on { background: rgba(255,255,255,.15); color: #ece6d4; }
-.pv-result { position: absolute; left: 150px; top: 312px; width: 380px; border-radius: 12px; background: #14160f; border: 1px solid #2c3124; box-shadow: 0 14px 34px rgba(0,0,0,.35); padding: 12px 14px; color: #ece6d4; }
+.pv-result { position: absolute; width: 380px; border-radius: 12px; background: #14160f; border: 1px solid #2c3124; box-shadow: 0 14px 34px rgba(0,0,0,.35); padding: 12px 14px; color: #ece6d4; }
 .pv-result-title { font-size: 12px; color: #a39b84; margin-bottom: 6px; }
 .pv-result-body { font-size: 16px; line-height: 1.5; min-height: 24px; }
 .pv-shop2 { background: #f6f7fb; }
