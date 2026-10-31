@@ -27,9 +27,7 @@ OpenSider drives the local Agent CLIs you already use — Claude Code, Codex, Op
 - **Quote, translate, search.** Select text and use the toolbar; the result comes back in the side panel.
 - **Pick an element.** Point at one element on the page and ask about it.
 
-<a href="https://raw.githubusercontent.com/parksben/opensider/main/docs/promo/en/opensider-promo.mp4"><img src="https://raw.githubusercontent.com/parksben/opensider/main/docs/promo/en/preview.gif" width="100%" alt="OpenSider promo video" /></a>
-
-[Watch the full video (with sound)](https://raw.githubusercontent.com/parksben/opensider/main/docs/promo/en/opensider-promo.mp4)
+<video src="https://github.com/user-attachments/assets/83dbfb27-d602-4a3f-a2d2-d83d3364d35a" controls="controls" muted="muted" style="max-width: 100%;"></video>
 
 ## Demo
 

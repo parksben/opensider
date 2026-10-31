@@ -27,9 +27,7 @@ OpenSider 在浏览器侧边栏里驱动你本机已有的 Agent CLI —— Clau
 - **划词翻译、搜索、引用。** 选中一段文字用工具条处理，结果回到侧边栏。
 - **拾取元素提问。** 指着页面上的某个元素直接提问。
 
-<a href="https://raw.githubusercontent.com/parksben/opensider/main/docs/promo/zh/opensider-promo.mp4"><img src="https://raw.githubusercontent.com/parksben/opensider/main/docs/promo/zh/preview.gif" width="100%" alt="OpenSider 宣传视频" /></a>
-
-[观看完整视频（有声）](https://raw.githubusercontent.com/parksben/opensider/main/docs/promo/zh/opensider-promo.mp4)
+<video src="https://github.com/user-attachments/assets/decf7ef6-38b7-4011-8751-ba3e21541eba" controls="controls" muted="muted" style="max-width: 100%;"></video>
 
 ## 演示
 

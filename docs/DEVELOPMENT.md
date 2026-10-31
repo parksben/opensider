@@ -29,6 +29,8 @@ README 截图见 `scripts/shots.mjs`：它起宣传视频页面（`packages/exte
 
 README 宣传视频见 `scripts/promo.mjs`：同样起 Vite，打开 `promo.html?lang=en|zh` 逐帧截图，用 `scripts/promo-music.py` 合成背景音乐（需要 Python 的 numpy、scipy），再用 ffmpeg 出 `docs/promo/{en,zh}/opensider-promo.mp4` 和 `preview.gif`。`node scripts/promo.mjs [en|zh]`。
 
+README 里的视频通过 GitHub user-attachments 内嵌（GitHub 会过滤指向仓库文件的 `<video>`）：视频更新后要重新上传到 user-attachments，并替换 `README.md` / `README_ZH.md` 里 `<video>` 的 URL。
+
 ## 工作区
 
 会话 cwd 固定为 `~/.opensider/workspace`。页面快照、命令和截图都在 `workspace/browser/`。用户可见的任务产物约定写在 `workspace/outputs/`（引导，不拦截 Agent 本地工具）。侧栏会话与偏好的权威副本是 `~/.opensider/ui-state.json`（扩展卸载后仍在）。Host 启动时写入 `AGENTS.md` 与 `browser/tools.json`，并确保 `outputs/` 存在。
