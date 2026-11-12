@@ -16,6 +16,7 @@ import type {
   SkillItem,
   TabControlState,
 } from "@shared";
+import { HANDOFF_CARD_TTL_MS } from "@shared";
 import { MousePointer2 } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { encodeImageBlob } from "../image-encode";
@@ -1503,6 +1504,17 @@ export function App() {
     },
     [],
   );
+
+  // 一张接手卡放太久就不再是「此刻在等你」：到点和 SW 一样作废，别让用户切回旧会话时
+  // 看到一张几天前的卡（宿主断开、点继续/稍后、发新消息也都会清，见 settleCardsForSession）。
+  useEffect(() => {
+    if (!takeover) return;
+    const timer = window.setTimeout(() => {
+      setTakeover((current) => (current?.requestId === takeover.requestId ? undefined : current));
+      sendRef.current({ type: "takeover.done", requestId: takeover.requestId, dismissed: true });
+    }, HANDOFF_CARD_TTL_MS);
+    return () => window.clearTimeout(timer);
+  }, [takeover]);
 
   // 面板要被收起来（切 tab、关侧栏、锁屏）：合并窗口里那一次可能还没到点，补写一次。
   // 少了它，关面板前 500ms 内的改动只活在内存里，下次打开会看见上一版内容。

@@ -62,6 +62,13 @@ export const WINDOW_METHODS = ["listTabs", "switchTab", "openTab", "closeTab", "
 export const CAPTURE_METHODS = ["screenshot", "screenshotElement"] as const;
 export const SCRIPT_METHODS = ["runScript"] as const;
 
+/**
+ * 接手卡 / 表单卡是「此刻正等你」的提示，不是历史记录。侧栏与 Service Worker 共用
+ * 这个时限：超过之后不再补发，已经开着的那张卡也自己收掉。
+ */
+export const HANDOFF_CARD_TTL_MS = 30 * 60 * 1000;
+export const FORM_CARD_TTL_MS = 15 * 60 * 1000;
+
 export const ACTION_METHODS = [
   "click",
   "dblclick",

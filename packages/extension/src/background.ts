@@ -20,6 +20,8 @@ import type {
   TabsSnapshot,
 } from "@shared";
 import {
+  FORM_CARD_TTL_MS,
+  HANDOFF_CARD_TTL_MS,
   HOST_NAME,
   NATIVE_UI_HOOK_KEY,
   PAGE_ACTIVITY_HOOK_KEY,
@@ -96,8 +98,6 @@ let lastFormRequest: HostToExt | undefined;
  * 这两张卡都是「此刻正等你」的语义，不是历史记录：SW 可能靠 Native 端口活很久，不能把
  * 几天前的卡片一直补发下去。超时、宿主断开、用户发新消息、点了继续/稍后都会清掉。
  */
-const TAKEOVER_TTL_MS = 30 * 60 * 1000;
-const FORM_TTL_MS = 15 * 60 * 1000;
 let lastTakeoverAt = 0;
 let lastFormAt = 0;
 // 宿主镜像超过 Native Messaging 单帧上限时会分片发来（见 state-transfer.ts）；
@@ -294,11 +294,11 @@ function replay(port: chrome.runtime.Port): void {
     if (lastUiState) port.postMessage(lastUiState);
     if (lastControl) port.postMessage(lastControl);
     if (lastTakeover) {
-      if (Date.now() - lastTakeoverAt <= TAKEOVER_TTL_MS) port.postMessage(lastTakeover);
+      if (Date.now() - lastTakeoverAt <= HANDOFF_CARD_TTL_MS) port.postMessage(lastTakeover);
       else lastTakeover = undefined;
     }
     if (lastFormRequest) {
-      if (Date.now() - lastFormAt <= FORM_TTL_MS) port.postMessage(lastFormRequest);
+      if (Date.now() - lastFormAt <= FORM_CARD_TTL_MS) port.postMessage(lastFormRequest);
       else lastFormRequest = undefined;
     }
     // 后台任务的两块补发（见「background tasks」小节）：进行中集合，以及面板关闭期间
