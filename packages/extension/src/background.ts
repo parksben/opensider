@@ -92,6 +92,14 @@ let lastTurnsRunning: HostToExt | undefined;
 /** 面板重开时要补发的接手卡 / 待填表单（否则卡片一刷新就没了，Agent 却还在等）。 */
 let lastTakeover: HostToExt | undefined;
 let lastFormRequest: HostToExt | undefined;
+/**
+ * 这两张卡都是「此刻正等你」的语义，不是历史记录：SW 可能靠 Native 端口活很久，不能把
+ * 几天前的卡片一直补发下去。超时、宿主断开、用户发新消息、点了继续/稍后都会清掉。
+ */
+const TAKEOVER_TTL_MS = 30 * 60 * 1000;
+const FORM_TTL_MS = 15 * 60 * 1000;
+let lastTakeoverAt = 0;
+let lastFormAt = 0;
 // 宿主镜像超过 Native Messaging 单帧上限时会分片发来（见 state-transfer.ts）；
 // 拼成完整一条才 broadcast / 进回放缓存，侧栏那边完全无感。
 const uiStateSink = new StateChunkSink();
@@ -285,8 +293,14 @@ function replay(port: chrome.runtime.Port): void {
     if (lastRelease) port.postMessage(lastRelease);
     if (lastUiState) port.postMessage(lastUiState);
     if (lastControl) port.postMessage(lastControl);
-    if (lastTakeover) port.postMessage(lastTakeover);
-    if (lastFormRequest) port.postMessage(lastFormRequest);
+    if (lastTakeover) {
+      if (Date.now() - lastTakeoverAt <= TAKEOVER_TTL_MS) port.postMessage(lastTakeover);
+      else lastTakeover = undefined;
+    }
+    if (lastFormRequest) {
+      if (Date.now() - lastFormAt <= FORM_TTL_MS) port.postMessage(lastFormRequest);
+      else lastFormRequest = undefined;
+    }
     // 后台任务的两块补发（见「background tasks」小节）：进行中集合，以及面板关闭期间
     // 跑出来的增量与仍在等回答的交互卡。
     if (lastTurnsRunning) port.postMessage(lastTurnsRunning);
@@ -416,8 +430,17 @@ function connectNative(force = false): void {
         fields: Array.isArray(msg.fields) ? msg.fields : [],
       });
       lastFormRequest = msg;
+      lastFormAt = Date.now();
       broadcast(msg);
       return;
+    }
+    if (msg.type === "form.done") {
+      // 超时 / 会话被删时 Host 也会推这条：SW 里那份补发缓存和未完成的表单一起收掉。
+      if (lastFormRequest && (lastFormRequest as { requestId?: string }).requestId === msg.requestId) {
+        lastFormRequest = undefined;
+        lastFormAt = 0;
+      }
+      pendingForms.delete(msg.requestId);
     }
     if (msg.type === "browser.command") {
       void dispatchCommand(msg.command, msg.sessionId);
@@ -503,7 +526,11 @@ function sendNative(msg: ExtToHost): void {
     if (promptLog.length > 10) promptLog.shift();
   }
   // 后台任务的在跑集合（见 background tasks 小节）：prompt 发出即算在跑，turn.end 才结束。
-  if (msg.type === "prompt") trackTurnStart(msg.sessionId);
+  // 新消息也意味着这条会话原来的「等你接手 / 填表」已经翻篇（见 clearHandoffForSession）。
+  if (msg.type === "prompt") {
+    clearHandoffForSession(msg.sessionId);
+    trackTurnStart(msg.sessionId);
+  }
   connectNative();
   if (!nativePort) {
     if (statusForced) {
@@ -774,7 +801,35 @@ function clearLiveTracking(): void {
   liveTurns.clear();
   missedTurns.clear();
   pendingHitl.clear();
+  resetHandoffCards();
   if (had) publishTurnsRunning();
+}
+
+/**
+ * 宿主断开 / 换 Agent：接手卡和表单卡背后的进程已经没了，卡片不能再补发。顺手通知
+ * 还开着的面板收掉，别让它对着一条已经不可能有回应的请求点「继续」。
+ */
+function resetHandoffCards(): void {
+  const takeover = lastTakeover as { requestId?: string } | undefined;
+  if (takeover?.requestId) {
+    broadcast({ type: "takeover.done", requestId: takeover.requestId } as HostToExt);
+    lastTakeover = undefined;
+    lastTakeoverAt = 0;
+  }
+  const form = lastFormRequest as { requestId?: string } | undefined;
+  if (form?.requestId) {
+    broadcast({
+      type: "form.done",
+      requestId: form.requestId,
+      ok: false,
+      filled: [],
+      missing: [],
+      cancelled: true,
+    } as HostToExt);
+    lastFormRequest = undefined;
+    lastFormAt = 0;
+  }
+  pendingForms.clear();
 }
 
 function rememberMissed(msg: HostToExt): void {
@@ -1192,7 +1247,33 @@ const pendingForms = new Map<string, PendingForm>();
 async function handleUserTakeover(msg: { requestId: string; sessionId?: string }): Promise<void> {
   if (msg.sessionId) await releaseControlFor(msg.sessionId);
   lastTakeover = msg as unknown as HostToExt;
+  lastTakeoverAt = Date.now();
   broadcast(lastTakeover);
+}
+
+/**
+ * 用户发了一条新消息：这条会话的「等你接手 / 等你填表」就已经翻篇了。旧卡片既不该继续
+ * 显示，也不该在下一个面板里被补发回来。表单还要给 Host 一个取消结果，免得 Agent 干等。
+ */
+function clearHandoffForSession(sessionId: string | undefined): void {
+  if (!sessionId) return;
+  const takeover = lastTakeover as { requestId?: string; sessionId?: string } | undefined;
+  if (takeover?.requestId && takeover.sessionId === sessionId) {
+    lastTakeover = undefined;
+    lastTakeoverAt = 0;
+    broadcast({ type: "takeover.done", requestId: takeover.requestId } as HostToExt);
+  }
+  for (const [id, entry] of pendingForms) {
+    if (entry.sessionId === sessionId) cancelForm(id);
+  }
+}
+
+/** 侧栏点了「已完成，继续」/「稍后」：这张卡到此为止，重开面板时不再补发。 */
+function settleTakeover(requestId: string): void {
+  const takeover = lastTakeover as { requestId?: string } | undefined;
+  if (!takeover?.requestId || takeover.requestId !== requestId) return;
+  lastTakeover = undefined;
+  lastTakeoverAt = 0;
 }
 
 /** 表单要填到哪一页：该会话正在操作的那一页优先，其次当前活动标签。 */
@@ -1289,7 +1370,10 @@ async function finishForm(
   error: string,
   cancelled: boolean,
 ): Promise<void> {
-  if (lastFormRequest && (lastFormRequest as { requestId?: string }).requestId === requestId) lastFormRequest = undefined;
+  if (lastFormRequest && (lastFormRequest as { requestId?: string }).requestId === requestId) {
+    lastFormRequest = undefined;
+    lastFormAt = 0;
+  }
   broadcast({ type: "form.done", requestId, ok, filled, missing, cancelled } as unknown as HostToExt);
   sendNative({
     type: "form.result",
@@ -2638,6 +2722,12 @@ function handleControlMessage(msg: ExtToHost): boolean {
   }
   if (msg.type === "form.cancel") {
     cancelForm(msg.requestId);
+    return true;
+  }
+  // 用户点了「已完成，继续」或「稍后」：把 SW 里那份补发缓存也撤掉。这条消息只属于
+  // 扩展内部，Host 不需要知道，不能落到 sendNative 的兜底分支。
+  if (msg.type === "takeover.done") {
+    settleTakeover(msg.requestId);
     return true;
   }
   if (msg.type === "control.focusTab") {

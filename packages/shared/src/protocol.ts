@@ -546,6 +546,12 @@ export type ExtToHost =
    */
   | { type: "form.submit"; requestId: string; values: Record<string, string> }
   | { type: "form.cancel"; requestId: string }
+  /**
+   * The panel resolved or dismissed a takeover card. The service worker drops its replay
+   * copy so reopening the panel (or restarting the extension) cannot bring the old card
+   * back for a request the user already handled.
+   */
+  | { type: "takeover.done"; requestId: string; dismissed?: boolean }
   | { type: "release.check"; announce?: boolean }
   /** 侧栏问本机有没有装上 VS Code 端扩展。旧 Host 会回 `host.unsupported`。 */
   | { type: "peer.probe"; requestId: string; target?: "vscode" }
@@ -657,6 +663,8 @@ export type HostToExt =
    * first, then the panel shows the card; the user's "continue" sends a message back.
    */
   | { type: "takeover"; requestId: string; sessionId?: string; reason: string; resumeHint?: string }
+  /** The takeover request is no longer live (resolved / dismissed / host went away). */
+  | { type: "takeover.done"; requestId: string; dismissed?: boolean }
   /** Field mapping for a user-typed form; values never travel in this direction. */
   | { type: "form.request"; requestId: string; sessionId?: string; title?: string; fields: FormField[] }
   /** The form is settled (submitted / cancelled / timed out): the panel drops its card. */

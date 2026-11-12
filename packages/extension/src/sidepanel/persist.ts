@@ -85,15 +85,6 @@ export function applyProviderBinding(sessions: Session[], providerId: string): S
   }));
 }
 
-export function sessionAcpIds(session: Session): string[] {
-  const ids = new Set<string>();
-  if (session.acpSessionId) ids.add(session.acpSessionId);
-  for (const id of Object.values(session.acpByProvider ?? {})) {
-    if (id) ids.add(id);
-  }
-  return [...ids];
-}
-
 export function autoPermissionOptionId(
   options: Array<{ optionId: string; name: string; kind?: string }>,
 ): string | undefined {

@@ -44,6 +44,7 @@ import { UninstallDialog } from "./components/UninstallDialog";
 import { applyLocale, detectBrowserLocale, readCachedLocale, t, type Locale } from "./i18n";
 import { requestPeerProbe, settlePeerProbe } from "./peer-probe";
 import { BindRegistry, findSessionIdByAcpId } from "./session-bind";
+import { cardBelongsToSession, sessionAcpIds } from "./session-ids";
 import { adoptableCurrentId, modelForSession, withSessionModel } from "./model-memory";
 import { displayVersion, isNewer, type ReleaseCheckState } from "./version";
 import {
@@ -200,13 +201,15 @@ export function App() {
   const [takeover, setTakeover] = useState<TakeoverCardData>();
   /** Values the Agent must not see: the user types them here, the SW fills the page. */
   const [formRequest, setFormRequest] = useState<FormRequestCardData>();
-
   const sendRef = useRef<(msg: ExtToHost) => void>(() => undefined);
   const reconnectRef = useRef<() => void>(() => undefined);
   const pageRef = useRef<CurrentPage | undefined>(undefined);
   const statusRef = useRef(status);
   const selectedIdRef = useRef(selectedId);
   const sessionsRef = useRef(sessions);
+  /** 卡片要跟着「该卡片所属的会话」走，发送/删除时按会话收掉（见 settleCardsForSession）。 */
+  const takeoverRef = useRef(takeover);
+  const formRequestRef = useRef(formRequest);
   /** 在飞的会话请求（new/use/fork/prompt）：requestId ↔ 本地会话，回执按 id 精确配对。 */
   const bindRegistry = useRef(new BindRegistry());
   /** 等绑定完成后要发的首条消息（按会话存，避免两个会话互相覆盖）。 */
@@ -279,6 +282,8 @@ export function App() {
   statusRef.current = status;
   selectedIdRef.current = selectedId;
   sessionsRef.current = sessions;
+  takeoverRef.current = takeover;
+  formRequestRef.current = formRequest;
   localeRef.current = locale;
   selectedModelRef.current = selectedModelId;
   selectedModelByProviderRef.current = selectedModelByProvider;
@@ -862,6 +867,11 @@ export function App() {
         reason: msg.reason,
         resumeHint: msg.resumeHint,
       });
+      return;
+    }
+
+    if (msg.type === "takeover.done") {
+      setTakeover((current) => (current?.requestId === msg.requestId ? undefined : current));
       return;
     }
 
@@ -1548,6 +1558,25 @@ export function App() {
     setQueues(next);
   };
 
+  /**
+   * 这条会话发新消息（或要被删掉）：它名下的「等你接手 / 等你填表」已经翻篇。
+   * 卡片按 ACP 会话 id 归属——没有 id 的旧卡片才会在任何会话里被收掉。
+   */
+  const settleCardsForSession = (localId: string) => {
+    const session = sessionsRef.current.find((item) => item.id === localId);
+    const ids = new Set(session ? sessionAcpIds(session) : []);
+    const card = takeoverRef.current;
+    if (card && (!card.sessionId || ids.has(card.sessionId))) {
+      setTakeover((current) => (current?.requestId === card.requestId ? undefined : current));
+      sendRef.current({ type: "takeover.done", requestId: card.requestId });
+    }
+    const form = formRequestRef.current;
+    if (form && (!form.sessionId || ids.has(form.sessionId))) {
+      setFormRequest((current) => (current?.requestId === form.requestId ? undefined : current));
+      sendRef.current({ type: "form.cancel", requestId: form.requestId });
+    }
+  };
+
   const sendToSession = (
     localId: string,
     text: string,
@@ -1555,6 +1584,7 @@ export function App() {
     options: { interrupt?: boolean } = {},
   ) => {
     if (!localId) return;
+    settleCardsForSession(localId);
     const session = sessionsRef.current.find((item) => item.id === localId);
     const user = createUserMessage(text, attachments);
     updateSessionMessages(localId, (current) => [...current, user]);
@@ -1632,15 +1662,19 @@ export function App() {
   /** 用户接手完成：给该会话发一条通道消息，让它从页面当前状态接着干。 */
   const continueAfterTakeover = (card: TakeoverCardData) => {
     setTakeover((current) => (current?.requestId === card.requestId ? undefined : current));
+    // 这张卡已经用掉，通知 SW 撤掉补发缓存：重开面板 / 重启扩展都不该再弹回来。
+    sendRef.current({ type: "takeover.done", requestId: card.requestId });
     const session = card.sessionId
-      ? sessionsRef.current.find(
-          (item) =>
-            item.acpSessionId === card.sessionId ||
-            Object.values(item.acpByProvider ?? {}).includes(card.sessionId as string),
-        )
+      ? sessionsRef.current.find((item) => sessionAcpIds(item).includes(card.sessionId as string))
       : sessionsRef.current.find((item) => item.id === selectedIdRef.current);
     if (!session) return;
     sendNudge(session.id, t(localeRef.current, "takeoverContinueMessage"));
+  };
+
+  /** 「稍后」：只收卡片，但也要让 SW 忘掉它，否则下次重开面板会再弹一遍。 */
+  const dismissTakeover = (card: TakeoverCardData) => {
+    setTakeover((current) => (current?.requestId === card.requestId ? undefined : current));
+    sendRef.current({ type: "takeover.done", requestId: card.requestId, dismissed: true });
   };
 
   const flushQueue = (sessionId: string) => {
@@ -2015,6 +2049,8 @@ export function App() {
       finishTurn(id);
     }
     clearHitl(id);
+    // The conversation (and its ACP session) is going away: its handoff / form cards die too.
+    settleCardsForSession(id);
     // Drop any tab the Agent was holding for this conversation.
     const releasedAcpId = doomed
       ? boundAcpId(doomed, selectedProviderRef.current) ?? doomed.acpSessionId
@@ -2182,8 +2218,14 @@ export function App() {
   // A borrow request is about a tab, not about a chat: show it whichever conversation
   // is on screen, so an ask from another session cannot sit unseen.
   const visibleBorrowRequest = borrowRequest;
-  // 接手卡与表单卡和借用卡一样，是「有一件事在等你」而不是某段聊天的一部分：不管当前看的是
-  // 哪个会话都要显示，否则 Agent 会一直等一个用户根本看不见的卡片。
+  // 接手卡 / 表单卡属于**某一条会话**：只在该会话被选中时显示。卡片留在 SW 缓存里，
+  // 切回那条会话还能看到；但一张后台会话的卡不能跳到前台会话里，那会让用户以为
+  // 当前这条会话在等他做登录之类的事（真实报过）。没有 sessionId 的旧消息才按当前
+  // 会话兜底显示。
+  const visibleTakeover =
+    takeover && cardBelongsToSession(selected, takeover.sessionId) ? takeover : undefined;
+  const visibleFormRequest =
+    formRequest && cardBelongsToSession(selected, formRequest.sessionId) ? formRequest : undefined;
 
   const versionInfo = {
     extension: displayVersion(EXTENSION_VERSION) ?? EXTENSION_VERSION,
@@ -2329,18 +2371,18 @@ export function App() {
               queue={queues[selected.id] ?? []}
               control={
                 <>
-                  {takeover ? (
+                  {visibleTakeover ? (
                     <TakeoverCard
                       locale={locale}
-                      data={takeover}
-                      onContinue={() => continueAfterTakeover(takeover)}
-                      onLater={() => setTakeover(undefined)}
+                      data={visibleTakeover}
+                      onContinue={() => continueAfterTakeover(visibleTakeover)}
+                      onLater={() => dismissTakeover(visibleTakeover)}
                     />
                   ) : null}
-                  {formRequest ? (
+                  {visibleFormRequest ? (
                     <FormRequestCard
                       locale={locale}
-                      data={formRequest}
+                      data={visibleFormRequest}
                       onCancel={(requestId) => sendRef.current({ type: "form.cancel", requestId })}
                       onSubmit={(requestId, values) => sendRef.current({ type: "form.submit", requestId, values })}
                     />
