@@ -330,12 +330,24 @@ chrome.storage.local 与 ~/.opensider/ui-state.json（同形）
   sessions[]:
     id, acpSessionId?, title, titleManual?, createdAt, updatedAt
     pinnedAt?                  # ISO；有值即置顶
+    archivedAt?                # ISO；有值即已归档，正文在 sessions/<id>.json
     artifacts[]?               # reportArtifacts 覆盖写入 {path,name,kind,missing?}；missing 在 reveal 找不到文件后写入，下次 report 整表覆盖会清掉
     parentId?, forkedFromMessageId?
     pendingForkContext?        # 下一条 prompt 要带的节点前文
     acpByProvider?             # { [providerId]: acpSessionId }；换 Agent 不丢本地消息
     messages[]               # assistant 带 modelId / modelName，首段流式写入时盖上；结束时写 durationMs
 ```
+
+### 会话归档（状态体积的硬上限）
+
+侧栏状态是「全部会话正文」一份 JSON，历史越长越危险：它既在面板内存里，也要经扩展端口发给 Service Worker（单条消息上限 64MiB），再分片镜像到 `~/.opensider/ui-state.json`。2026-11 的真实事故就是状态涨到 60MB+ 后端口发送失败，旧端口没拆，整轮回复被重复渲染。归档解决的是**体积**，不是删除：
+
+- **触发**：面板 hydration 且 Host 镜像就绪后 3 秒、以及之后每 30 分钟检查一次（`ARCHIVE_CHECK_MS`），一轮在跑时跳过。候选 = 非置顶、非当前选中、非在跑、且正文非空的会话。
+  - 先归档 `updatedAt` 超过 30 天的（`ARCHIVE_AFTER_MS`）；
+  - 再按 `updatedAt` 从老到新归档，直到整份状态估算体积 ≤ `ARCHIVE_TARGET_BYTES`（12MB）；只有估算 > `ARCHIVE_BUDGET_BYTES`（16MB）才触发这一步。体积按每条消息的文本 / 工具参数 / 结果长度估算，不为了量体积去 `JSON.stringify` 整份状态。
+- **归档动作**：面板先把当前状态 flush 一份，等 Host 的 `ui.state.saved` 回执确认这份状态的正文已经落盘，再发 `session.archive{requestId,ids}`。Host 只在 `sessions/<id>.json` 确实存在时才给该会话写 `archivedAt`、把 `messages` / `todos` / `artifacts` / `pendingForkContext` 从索引里清空（正文仍在 `sessions/<id>.json`，`writeSplit` 对 `archivedAt` 非空的会话**跳过正文写入并保留旧文件**，`hydrate` 也**不**把旧正文灌回侧栏），并回 `session.archived{requestId,archivedAt,ids,skipped}`；面板按 `ids` 清空自己的正文。没有正文文件的会话进 `skipped`，面板**不清**（宁可这一轮不归档，也不能丢正文）。会话元数据留在列表里，侧栏抽屉底部出现「已归档」分组（默认折叠）。
+- **恢复**：侧栏发 `session.restore{requestId,id}`；Host 从 `sessions/<id>.json` 读回正文，按 256KB 分片回 `session.restore{requestId,index,total,data}`（沿用 `ui.state` 的分片切法，Host→扩展单帧 1MB 限制下也安全）；面板用 `StateChunkSink` 重组、`hydrateSession` 解析后写回会话，清掉 `archivedAt`，`updatedAt` 置为当前时间（避免下一轮检查立刻又把它归档）。恢复失败（文件丢了）显示一条 i18n 提示，会话保持归档。
+- **不变式**：归档不删除任何文件；置顶 / 当前选中 / 在跑的会话永远不会被自动归档；归档后的会话仍可删除（删除时才随索引移除而清理正文文件）。恢复是显式用户动作，不自动发生。
 
 协议：
 
@@ -346,6 +358,7 @@ chrome.storage.local 与 ~/.opensider/ui-state.json（同形）
 | `session.new` + `requestId` | 在空闲（或新开的）ACP 进程上 `session/new`，回 `session` 时原样带回 `requestId`。不打断正在跑的进程 |
 | `session.use` + `sessionId` + `requestId` | 该会话已在某进程上且正在跑则只回 `session`（replay，带 `requestId` + **`running: true`**），不 `session/load`；否则在空闲进程上 `session/load`，失败则 `session/new`（回执带新 id + `requestId` + `created: true`）。**面板看到 `created: true` 必须把本地历史写成 `pendingForkContext`**（同 fork 失败那条路），否则下一条消息不带前文，Agent 会「断片」 |
 | `session.fork` + `sessionId` + `requestId` | 在空闲进程上先试不稳定的 `session/fork`（整段历史）；失败则 `session/new`；回执带 `requestId` |
+| `session.archive` + `requestId` + `ids` | 逐条确认 `sessions/<id>.json` 存在后写 `archivedAt` 并清空索引正文，回 `session.archived{requestId,archivedAt,ids,skipped}`。文件不在的 id 进 `skipped`，绝不归档 |
 | `prompt` 可带 `sessionId` + `requestId` | 绑到已持有该会话的进程，或空闲进程 `session/load` 后再 prompt。同一会话已有一轮在跑则拒绝；不同会话并行。**拒绝不得静默**：回 `{type:"prompt.busy", requestId, sessionId}`，面板据此把刚上屏的那条用户消息收回队列、保持 running，等 `turn.end` 后按排队顺序再发（见「后台任务」）。若 `session/load` 失败被迫换新会话，用带该 `requestId` 的 `session` 回执（`created: true`）通知侧栏更新绑定并补前文 |
 | `prompt` + `interrupt: true` | 「立即发送」专用：该会话正在跑时，Host 先对它在跑的 runtime 发 `session/cancel`，**等那一轮 return**（有上限，超时就照样往下走）再开始新的一轮；被顶掉那轮结束时 `turn.end` 带 `interrupted: true`，侧栏只结算时长与内容、**不清 running、不 flush 队列**（新一轮已经在跑）。不这么做就会变成「侧栏自己计时 + 等 `turn.end` 再发」，而 `turn.end` 只要没到（cancel 打空、ACP 会话 id 漂了）消息就静默丢掉 |
 | `cancel` 可带 `sessionId` | 只取消该 ACP 会话所在进程的一轮；**找不到该会话就不动手**（早期会「随便挑一个 prompting 的进程」取消，导致 B 的停止杀掉 A 的任务） |
