@@ -26,19 +26,37 @@ function emit(msg: HostToExt): void {
   for (const listener of shared.listeners) listener(msg);
 }
 
-function safePost(port: chrome.runtime.Port | null, msg: ExtToHost): boolean {
-  if (!port) return false;
+/**
+ * Ports we dropped ourselves. A rejected `postMessage` does not disconnect the port: the
+ * service worker keeps it in `sidebars` and every later broadcast reaches this page again.
+ * That is how one streaming turn used to be rendered N times (each token repeated ~N
+ * times) after a few oversized `ui.state.set` sends. Retired ports must stay silent even
+ * if Chrome delivers something before the disconnect lands.
+ */
+const retiredPorts = new WeakSet<chrome.runtime.Port>();
+const TOO_LARGE = /maximum allowed size|message length exceeded/i;
+
+type PostResult = { ok: true } | { ok: false; error: string; tooLarge: boolean };
+
+function retirePort(port: chrome.runtime.Port): void {
+  if (shared.port === port) shared.port = null;
+  retiredPorts.add(port);
+  try {
+    port.disconnect();
+  } catch {
+    // already gone
+  }
+}
+
+function postTo(port: chrome.runtime.Port | null, msg: ExtToHost): PostResult {
+  if (!port || retiredPorts.has(port)) return { ok: false, error: "", tooLarge: false };
   try {
     port.postMessage(msg);
-    return true;
+    return { ok: true };
   } catch (error) {
-    shared.port = null;
-    emit({
-      type: "status",
-      state: "error",
-      error: error instanceof Error ? error.message : String(error),
-    });
-    return false;
+    const detail = error instanceof Error ? error.message : String(error);
+    retirePort(port);
+    return { ok: false, error: detail, tooLarge: TOO_LARGE.test(detail) };
   }
 }
 
@@ -74,10 +92,12 @@ async function attach(): Promise<void> {
     const port = chrome.runtime.connect({ name: "sidebar" });
     shared.port = port;
     port.onMessage.addListener((msg: HostToExt) => {
+      if (retiredPorts.has(port)) return;
       shared.attempts = 0;
       emit(msg);
     });
     port.onDisconnect.addListener(() => {
+      if (retiredPorts.has(port)) return;
       const wasCurrent = shared.port === port;
       if (wasCurrent) shared.port = null;
       if (!wasCurrent || shared.closedByUs || !shared.alive) return;
@@ -109,11 +129,7 @@ function teardown(): void {
   }
   const port = shared.port;
   shared.port = null;
-  try {
-    port?.disconnect();
-  } catch {
-    // already gone
-  }
+  if (port) retirePort(port);
 }
 
 function connectNativeHost(): void {
@@ -153,11 +169,25 @@ export function connectSidebar(onMessage: Listener): {
 
   return {
     send: (msg) => {
-      if (!safePost(shared.port, msg)) {
-        void attach().then(() => {
-          safePost(shared.port, msg);
-        });
+      const first = postTo(shared.port, msg);
+      if (first.ok) return;
+      if (first.tooLarge) {
+        // This payload (usually a whole `ui.state.set` for a very large history) can never
+        // fit the 64MiB port limit. Reconnecting and retrying would fail the same way and
+        // leak one more port, so keep the channel alive and drop just this message.
+        console.warn("opensider: dropped an oversized panel message", first.error);
+        if (shared.alive && !shared.port) void attach();
+        return;
       }
+      if (first.error) {
+        emit({ type: "status", state: "error", error: first.error });
+      }
+      void attach().then(() => {
+        const retry = postTo(shared.port, msg);
+        if (!retry.ok && retry.error && !retry.tooLarge) {
+          emit({ type: "status", state: "error", error: retry.error });
+        }
+      });
     },
     reconnect: () => {
       shared.alive = true;
