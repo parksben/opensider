@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronRight, GitFork, MessageSquare, Monitor, Moon, Pencil, Pin, Plus, Settings, Sun, Trash2, type LucideIcon } from "lucide-react";
+import { Archive, ArchiveRestore, ChevronDown, ChevronRight, GitFork, MessageSquare, Monitor, Moon, Pencil, Pin, Plus, Settings, Sun, Trash2, type LucideIcon } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import type { Locale, MessageKey } from "../i18n";
 import { t } from "../i18n";
@@ -17,6 +17,7 @@ const GROUP_KEYS = {
   today: "sessionGroupToday",
   lastSevenDays: "sessionGroupLastSevenDays",
   older: "sessionGroupOlder",
+  archived: "sessionGroupArchived",
 } as const satisfies Record<SessionGroupId, MessageKey>;
 
 /** Undo the body-level styles the resize drag sets, so they cannot outlive it. */
@@ -64,6 +65,7 @@ export function SessionDrawer({
   onRename,
   onDelete,
   onPin,
+  onRestore,
   onNewSession,
   onClose,
   onLocale,
@@ -84,6 +86,7 @@ export function SessionDrawer({
   onRename: (id: string, title: string) => void;
   onDelete: (id: string) => void;
   onPin: (id: string) => void;
+  onRestore: (id: string) => void;
   onNewSession: () => void;
   onClose: () => void;
   onLocale: (locale: Locale) => void;
@@ -102,7 +105,9 @@ export function SessionDrawer({
   const [highlightId, setHighlightId] = useState(selectedId);
   const [editingId, setEditingId] = useState<string>();
   const [dragging, setDragging] = useState(false);
-  const [collapsed, setCollapsed] = useState<ReadonlySet<SessionGroupId>>(() => new Set());
+  const [collapsed, setCollapsed] = useState<ReadonlySet<SessionGroupId>>(
+    () => new Set<SessionGroupId>(["archived"]),
+  );
   const [confirmDelete, setConfirmDelete] = useState<{ id: string; title: string }>();
   const filterRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -413,6 +418,7 @@ export function SessionDrawer({
                   const editing = editingId === session.id;
                   const running = runningIds.includes(session.id);
                   const pinned = Boolean(session.pinnedAt);
+                  const archived = Boolean(session.archivedAt);
                   return (
                     <li key={session.id} className="group/session" data-session-id={session.id}>
                       <div
@@ -424,6 +430,8 @@ export function SessionDrawer({
                         <span className="flex h-6 w-3.5 shrink-0 items-center justify-center">
                           {running ? (
                             <span className="cs-braille-spin" aria-label={label("sessionRunning")} />
+                          ) : archived ? (
+                            <Archive size={11} className="text-[var(--muted)]" aria-label={label("sessionGroupArchived")} />
                           ) : (
                             <span
                               className={`h-1.5 w-1.5 rounded-full ${
@@ -449,7 +457,7 @@ export function SessionDrawer({
                             <div className="flex min-w-0 items-start">
                               <button
                                 type="button"
-                                onClick={() => onSelect(session.id)}
+                                onClick={() => (archived ? onRestore(session.id) : onSelect(session.id))}
                                 title={displayTitle(session, locale)}
                                 className="min-w-0 flex-1 text-left"
                               >
@@ -463,22 +471,35 @@ export function SessionDrawer({
                                   confirmDelete?.id === session.id ? "flex" : "hidden group-hover/session:flex"
                                 }`}
                               >
-                                <IconButton
-                                  side="top"
-                                  label={pinned ? label("unpinSession") : label("pinSession")}
-                                  onClick={() => onPin(session.id)}
-                                  className="flex h-6 w-6 items-center justify-center rounded-full text-[var(--muted)] disabled:opacity-40"
-                                >
-                                  <Pin size={12} className={pinned ? "fill-current" : undefined} />
-                                </IconButton>
-                                <IconButton
-                                  side="top"
-                                  label={label("rename")}
-                                  onClick={() => setEditingId(session.id)}
-                                  className="flex h-6 w-6 items-center justify-center rounded-full text-[var(--muted)] disabled:opacity-40"
-                                >
-                                  <Pencil size={12} />
-                                </IconButton>
+                                {archived ? (
+                                  <IconButton
+                                    side="top"
+                                    label={label("restoreSession")}
+                                    onClick={() => onRestore(session.id)}
+                                    className="flex h-6 w-6 items-center justify-center rounded-full text-[var(--muted)] disabled:opacity-40"
+                                  >
+                                    <ArchiveRestore size={12} />
+                                  </IconButton>
+                                ) : (
+                                  <>
+                                    <IconButton
+                                      side="top"
+                                      label={pinned ? label("unpinSession") : label("pinSession")}
+                                      onClick={() => onPin(session.id)}
+                                      className="flex h-6 w-6 items-center justify-center rounded-full text-[var(--muted)] disabled:opacity-40"
+                                    >
+                                      <Pin size={12} className={pinned ? "fill-current" : undefined} />
+                                    </IconButton>
+                                    <IconButton
+                                      side="top"
+                                      label={label("rename")}
+                                      onClick={() => setEditingId(session.id)}
+                                      className="flex h-6 w-6 items-center justify-center rounded-full text-[var(--muted)] disabled:opacity-40"
+                                    >
+                                      <Pencil size={12} />
+                                    </IconButton>
+                                  </>
+                                )}
                                 <span data-delete-anchor={session.id}>
                                   <IconButton
                                     side="top"

@@ -1,6 +1,6 @@
 import type { Session } from "./persist";
 
-export type SessionGroupId = "pinned" | "today" | "lastSevenDays" | "older";
+export type SessionGroupId = "pinned" | "today" | "lastSevenDays" | "older" | "archived";
 
 export type SessionGroup = {
   id: SessionGroupId;
@@ -39,9 +39,14 @@ export function groupSessions(sessions: Session[], now = Date.now()): SessionGro
     today: [],
     lastSevenDays: [],
     older: [],
+    archived: [],
   };
 
   for (const session of sessions) {
+    if (session.archivedAt) {
+      buckets.archived.push(session);
+      continue;
+    }
     if (session.pinnedAt) {
       buckets.pinned.push(session);
       continue;
@@ -59,8 +64,9 @@ export function groupSessions(sessions: Session[], now = Date.now()): SessionGro
   buckets.today.sort(byCreatedDesc);
   buckets.lastSevenDays.sort(byCreatedDesc);
   buckets.older.sort(byCreatedDesc);
+  buckets.archived.sort(byCreatedDesc);
 
-  return (["pinned", "today", "lastSevenDays", "older"] as const)
+  return (["pinned", "today", "lastSevenDays", "older", "archived"] as const)
     .map((id) => ({ id, sessions: buckets[id] }))
     .filter((group) => group.sessions.length > 0);
 }

@@ -30,6 +30,8 @@ export type Session = {
   createdAt: string;
   updatedAt: string;
   pinnedAt?: string;
+  /** 已归档：正文在 Host 的 sessions/<id>.json，状态里只留元数据。 */
+  archivedAt?: string;
   parentId?: string;
   forkedFromMessageId?: string;
   pendingForkContext?: string;
@@ -282,6 +284,25 @@ export function hydrateSession(session: PersistedState["sessions"][number]): Ses
     todos: session.todos ?? [],
     artifacts: Array.isArray(session.artifacts) ? session.artifacts : [],
   };
+}
+
+/** 归档会话从 Host 取回的正文；字段都按可选处理，坏文件不至于把面板打崩。 */
+export type ArchivedSessionBody = {
+  messages?: StoredMessage[];
+  todos?: TodoItem[];
+  artifacts?: AttachmentItem[];
+  pendingForkContext?: string;
+};
+
+export function restoreSessionBody(session: Session, body: ArchivedSessionBody): Session {
+  const restored = hydrateSession({
+    ...session,
+    messages: Array.isArray(body.messages) ? body.messages : [],
+    todos: Array.isArray(body.todos) ? body.todos : [],
+    artifacts: Array.isArray(body.artifacts) ? body.artifacts : [],
+    pendingForkContext: typeof body.pendingForkContext === "string" ? body.pendingForkContext : undefined,
+  });
+  return { ...restored, archivedAt: undefined };
 }
 
 export function emptySession(partial?: Partial<Session>): Session {
