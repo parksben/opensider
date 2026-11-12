@@ -129,6 +129,7 @@ scripts/verify-held-send.mjs  连接未就绪时发消息（草稿按住、就�
 scripts/verify-selection.mjs  划词隐藏通道（不进侧栏 / 独立会话 / 取消恢复）的帧级验证
 scripts/verify-selection-ui.mjs  划词工具条（门控与展示前复核 / 结构 / 定位 / 层级 / 结果层 / 引文芯片）的端到端验证
 scripts/verify-user-handoff.mjs  接手卡与表单代填（交还接管 / 侧栏填值 / 值不进结果文件、日志与提示词）的端到端验证
+scripts/verify-archive.mjs  会话归档（自动归档 / 正文留在磁盘 / 重开面板不灌回 / 恢复正文）的端到端验证
 scripts/verify-skill-menu.mjs  `/` skill 探测菜单（列表 / 搜索 / 详情面板 / 芯片落位 / 发出的提示词）的端到端验证
 scripts/verify-agent-switch-guard.mjs  有任务在跑时切 Agent（确认弹窗 / 取消不切 / 确认才切）的端到端验证
 scripts/lib/sandbox.mjs  上面几个脚本共用的沙箱（临时 HOME / 现编 Host / 假 Agent / profile 内桥接清单）
