@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/parksben/opensider/internal/log"
+	"github.com/parksben/opensider/internal/paths"
 )
 
 // bodyKeys are the bulky per-session fields. They live in sessions/<id>.json.
@@ -81,6 +82,10 @@ func bodyPresent(session map[string]any) bool {
 	return false
 }
 
+func archived(session map[string]any) bool {
+	return str(session["archivedAt"]) != ""
+}
+
 func sessionList(raw any) []map[string]any {
 	items, ok := raw.([]any)
 	if !ok {
@@ -112,6 +117,16 @@ func indexHashes(state map[string]any) map[string]string {
 
 func hydrate(statePath string, state map[string]any) {
 	for _, session := range sessionList(state["sessions"]) {
+		if archived(session) {
+			// 正文留在 sessions/<id>.json 里就是归档件；不要自动灌回侧栏，否则体积预算
+			// 立刻失效（归档后第一次打开面板就把老会话又全量拉进内存）。
+			session["messages"] = []any{}
+			session["todos"] = []any{}
+			session["artifacts"] = []any{}
+			delete(session, "pendingForkContext")
+			delete(session, "bodyHash")
+			continue
+		}
 		if file, ok := sessionFile(statePath, str(session["id"])); ok {
 			if body, ok := readMap(file); ok {
 				for _, key := range bodyKeys {
@@ -145,6 +160,20 @@ func writeSplit(statePath string, state map[string]any, prev map[string]string) 
 			continue
 		}
 		meta, body := splitSession(session)
+		if archived(session) {
+			// 归档会话的正文就是磁盘上的旧文件。侧栏送来的已经是空 body，绝不能拿它覆盖；
+			// 保留旧 hash 并让 removeOrphans 留下这个文件，恢复时再读回来。
+			if prevHash := prev[id]; prevHash != "" {
+				meta["bodyHash"] = prevHash
+			}
+			slim = append(slim, meta)
+			if file, ok := sessionFile(statePath, id); ok {
+				if _, err := os.Stat(file); err == nil {
+					keep[filepath.Base(file)] = true
+				}
+			}
+			continue
+		}
 		// Session bodies are machine-written and machine-read (the index stays indented
 		// for a human eye): compact JSON keeps a 30MB state from writing 40MB every
 		// time — same bytes the panel sent, hashed and stored as-is.
@@ -211,6 +240,86 @@ func splitSession(session map[string]any) (meta, body map[string]any) {
 		body["messages"] = []any{}
 	}
 	return meta, body
+}
+
+// ReadSessionBody returns the archived body (messages / todos / artifacts /
+// pendingForkContext) for a session id. The active index only carries metadata;
+// the full body stays in sessions/<id>.json.
+func ReadSessionBody(id string) (map[string]any, bool) {
+	file, ok := sessionFile(paths.UIStatePath(), id)
+	if !ok {
+		return nil, false
+	}
+	raw, err := os.ReadFile(file)
+	if err != nil {
+		return nil, false
+	}
+	var body map[string]any
+	if err := json.Unmarshal(raw, &body); err != nil {
+		return nil, false
+	}
+	return body, true
+}
+
+// ArchiveSessions drops the bodies of the given sessions from the active index
+// while keeping their sessions/<id>.json files. It refuses to archive a session
+// whose body file is missing: the panel has already cleared its copy by then, so
+// archiving would destroy the only transcript. Returns the timestamp applied to
+// the archived ids and the ids that were skipped for that reason.
+func ArchiveSessions(ids []string) (archivedAt string, archivedIDs, skippedIDs []string, err error) {
+	if len(ids) == 0 {
+		return "", nil, nil, nil
+	}
+	writeMu.Lock()
+	defer writeMu.Unlock()
+	path := paths.UIStatePath()
+	state, hashes, loadErr := loadSplit(path)
+	if loadErr != nil {
+		return "", nil, nil, loadErr
+	}
+	if state == nil {
+		return "", nil, append(skippedIDs, ids...), nil
+	}
+	wanted := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		if id != "" {
+			wanted[id] = true
+		}
+	}
+	archivedAt = time.Now().UTC().Format(time.RFC3339)
+	for _, session := range sessionList(state["sessions"]) {
+		id := str(session["id"])
+		if !wanted[id] {
+			continue
+		}
+		file, ok := sessionFile(path, id)
+		if !ok {
+			skippedIDs = append(skippedIDs, id)
+			continue
+		}
+		if _, statErr := os.Stat(file); statErr != nil {
+			// 幂等重试也一样要核对文件：盘上没有正文就绝不告诉面板「可以清」。
+			skippedIDs = append(skippedIDs, id)
+			continue
+		}
+		if archived(session) {
+			archivedIDs = append(archivedIDs, id)
+			continue
+		}
+		session["archivedAt"] = archivedAt
+		session["messages"] = []any{}
+		session["todos"] = []any{}
+		session["artifacts"] = []any{}
+		delete(session, "pendingForkContext")
+		archivedIDs = append(archivedIDs, id)
+	}
+	if len(archivedIDs) == 0 {
+		return "", nil, skippedIDs, nil
+	}
+	if err := writeSplit(path, state, hashes); err != nil {
+		return "", nil, nil, err
+	}
+	return archivedAt, archivedIDs, skippedIDs, nil
 }
 
 func sessionFile(statePath, id string) (string, bool) {

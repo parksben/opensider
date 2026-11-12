@@ -212,6 +212,9 @@ func resolvedFromInfos(infos []protocol.AgentInfo) []detect.ResolvedAgent {
 }
 
 func (h *Host) send(msg any) {
+	if h.io == nil {
+		return
+	}
 	h.io.Send(msg)
 }
 
@@ -1260,6 +1263,14 @@ func (h *Host) dispatch(typ string, msg map[string]any) error {
 	case "form.result":
 		// 用户在侧栏提交 / 取消了一张表单：扩展只回字段名与计数，值不进这条消息。
 		h.handleFormResult(msg)
+		return nil
+	case "session.restore":
+		// 恢复归档会话：从 sessions/<id>.json 读回正文，分片回给侧栏。
+		h.restoreSessionBody(str(msg["requestId"]), str(msg["id"]))
+		return nil
+	case "session.archive":
+		// 归档：先确认正文真的在磁盘上，再把正文从索引里摘掉（见 uistate.ArchiveSessions）。
+		h.archiveSessions(str(msg["requestId"]), stringList(msg["ids"]))
 		return nil
 	case "cancel":
 		sessionID := str(msg["sessionId"])

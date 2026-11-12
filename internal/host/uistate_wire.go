@@ -116,9 +116,7 @@ func (h *Host) acceptStateSet(msg map[string]any) {
 		return
 	}
 	log.Log(fmt.Sprintf("ui.state.set chunks=%d bytes=%d", total, len(joined)))
-	if err := uistate.Save(state); err != nil {
-		log.Log("ui.state.set: " + err.Error())
-	}
+	h.persistStateSet(state)
 }
 
 func (h *Host) saveSingleStateSet(msg map[string]any) {
@@ -126,7 +124,22 @@ func (h *Host) saveSingleStateSet(msg map[string]any) {
 	if raw, err := json.Marshal(msg["state"]); err == nil {
 		_ = json.Unmarshal(raw, &state)
 	}
-	if err := uistate.Save(state); err != nil {
+	h.persistStateSet(state)
+}
+
+// persistStateSet writes the mirror and tells the panel which upload landed. The
+// archive flow flushes right before asking for an archive and waits for this
+// receipt: only then is the body known to be on disk.
+func (h *Host) persistStateSet(state map[string]any) {
+	err := uistate.Save(state)
+	reply := map[string]any{
+		"type":    "ui.state.saved",
+		"savedAt": str(state["savedAt"]),
+		"ok":      err == nil,
+	}
+	if err != nil {
+		reply["error"] = err.Error()
 		log.Log("ui.state.set: " + err.Error())
 	}
+	h.send(reply)
 }

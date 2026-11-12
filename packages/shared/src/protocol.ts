@@ -524,6 +524,13 @@ export type ExtToHost =
   | { type: "session.new"; requestId?: string }
   | { type: "session.use"; sessionId: string; requestId?: string }
   | { type: "session.fork"; sessionId: string; requestId?: string }
+  /** 恢复一条已归档的会话：Host 从 sessions/<id>.json 读回正文并分片返回。 */
+  | { type: "session.restore"; requestId: string; id: string }
+  /**
+   * 归档一批会话。由 Host 落地：只有 `sessions/<id>.json` 真的存在时才会把正文从
+   * 索引里摘掉，所以面板不必（也无法）自己判断正文有没有镜像过去。
+   */
+  | { type: "session.archive"; requestId: string; ids: string[] }
   | { type: "fs.pick"; requestId: string; mode?: FsPickMode }
   | { type: "fs.save"; requestId: string; name?: string; imageBase64: string; mime: "image/jpeg" }
   | {
@@ -589,10 +596,30 @@ export type HostToExt =
   | { type: "ui.state"; state: Record<string, unknown> | null }
   // 镜像超过 Native Messaging 单帧上限时的切片形态（见 internal/host/uistate_wire.go）
   | { type: "ui.state"; index: number; total: number; data: string }
+  /** 镜像落盘回执：`savedAt` 原样带回面板写的那份状态的时间戳，用来配对归档请求。 */
+  | { type: "ui.state.saved"; savedAt?: string; ok?: boolean; error?: string }
   | { type: "status"; state: HostStatusState; error?: string }
   | { type: "agents"; agents: AgentInfo[]; selectedId?: string }
   | { type: "agent.progress"; progress: AgentProgress }
   | { type: "session"; sessionId: string; replay?: boolean; created?: boolean; forked?: boolean; running?: boolean; requestId?: string }
+  /** 归档正文分片；error 非空时没有 data。拼法同 ui.state 的 StateChunkSink。 */
+  | {
+      type: "session.restore";
+      requestId: string;
+      index?: number;
+      total?: number;
+      data?: string;
+      error?: string;
+    }
+  /** 归档结果：`ids` 已落地；`skipped` 是 Host 没有正文文件、拒绝归档的会话。 */
+  | {
+      type: "session.archived";
+      requestId: string;
+      archivedAt?: string;
+      ids?: string[];
+      skipped?: string[];
+      error?: string;
+    }
   | AcpUpdateMessage
   /** 侧栏关闭期间跑出的增量：SW 缓存后并成一条补发给新连接的面板（见 background.ts）。 */
   | { type: "turn.replay"; sessionId: string; updates: AcpUpdateMessage[]; messages?: HostToExt[] }

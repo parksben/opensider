@@ -3,9 +3,15 @@ package uistate
 import (
 	"encoding/json"
 	"os"
+	"sync"
 
 	"github.com/parksben/opensider/internal/paths"
 )
+
+// writeMu serializes mirror writes. The host handles each incoming frame in its
+// own goroutine, so a state upload and an archive request can overlap; without
+// the lock two writeSplit calls could interleave the index and session files.
+var writeMu sync.Mutex
 
 type File struct {
 	Version  int              `json:"version"`
@@ -50,6 +56,10 @@ func HasHistory(state map[string]any) bool {
 		if !ok {
 			continue
 		}
+		if str(session["archivedAt"]) != "" {
+			// 归档会话只有元数据，但它的正文还在 sessions/<id>.json；不能把它当成空状态。
+			return true
+		}
 		if str(session["acpSessionId"]) != "" {
 			return true
 		}
@@ -67,6 +77,8 @@ func Save(state map[string]any) error {
 	if state == nil {
 		return nil
 	}
+	writeMu.Lock()
+	defer writeMu.Unlock()
 	path := paths.UIStatePath()
 	existing, hashes, err := loadSplit(path)
 	if err != nil {
