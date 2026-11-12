@@ -79,7 +79,7 @@ func (h *Host) handleUserInput(command protocol.BrowserCommand, sessionID string
 	}
 	entry := &pendingForm{command: command, sessionID: sessionID}
 	entry.timer = time.AfterFunc(userFormTimeout, func() {
-		h.settleForm(command.ID, false, nil, nil, "the user did not submit the form in time", false)
+		h.settleForm(command.ID, false, nil, nil, "the user did not submit the form in time", false, true)
 	})
 	h.forms[command.ID] = entry
 	h.mu.Unlock()
@@ -88,7 +88,10 @@ func (h *Host) handleUserInput(command protocol.BrowserCommand, sessionID string
 }
 
 // settleForm 收尾一张表单：写结果文件、清 pending。只认第一次调用。
-func (h *Host) settleForm(requestID string, ok bool, filled, missing []string, errText string, cancelled bool) {
+//
+// notify 为真时（超时 / 会话被删）再给扩展补一条 `form.done`：用户提交时扩展已经自己
+// 收过卡片了，不能再回一条，否则同一条「已填入」提示会弹两次。
+func (h *Host) settleForm(requestID string, ok bool, filled, missing []string, errText string, cancelled bool, notify bool) {
 	h.mu.Lock()
 	entry := h.forms[requestID]
 	delete(h.forms, requestID)
@@ -122,6 +125,16 @@ func (h *Host) settleForm(requestID string, ok bool, filled, missing []string, e
 	if err := watch.WriteCommandResult(result); err != nil {
 		log.Log("form result: " + err.Error())
 	}
+	if notify {
+		h.send(map[string]any{
+			"type":      "form.done",
+			"requestId": requestID,
+			"ok":        ok,
+			"filled":    filled,
+			"missing":   missing,
+			"cancelled": cancelled,
+		})
+	}
 	log.Log(fmt.Sprintf("form settled %s ok=%v", requestID, ok))
 }
 
@@ -134,7 +147,7 @@ func (h *Host) handleFormResult(msg map[string]any) {
 	}
 	filled := stringList(msg["filled"])
 	missing := stringList(msg["missing"])
-	h.settleForm(requestID, msg["ok"] == true, filled, missing, str(msg["error"]), msg["cancelled"] == true)
+	h.settleForm(requestID, msg["ok"] == true, filled, missing, str(msg["error"]), msg["cancelled"] == true, false)
 }
 
 // cancelFormsForSession 在一个会话被删掉 / 取消时收尾它挂着的表单，别让 Agent 干等。
@@ -151,7 +164,7 @@ func (h *Host) cancelFormsForSession(sessionID string) {
 	}
 	h.mu.Unlock()
 	for _, id := range ids {
-		h.settleForm(id, false, nil, nil, "", true)
+		h.settleForm(id, false, nil, nil, "", true, true)
 	}
 }
 
