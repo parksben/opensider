@@ -266,7 +266,7 @@ func ReadSessionBody(id string) (map[string]any, bool) {
 // whose body file is missing: the panel has already cleared its copy by then, so
 // archiving would destroy the only transcript. Returns the timestamp applied to
 // the archived ids and the ids that were skipped for that reason.
-func ArchiveSessions(ids []string) (archivedAt string, archivedIDs, skippedIDs []string, err error) {
+func ArchiveSessions(ids []string, running map[string]bool) (archivedAt string, archivedIDs, skippedIDs []string, err error) {
 	if len(ids) == 0 {
 		return "", nil, nil, nil
 	}
@@ -302,6 +302,11 @@ func ArchiveSessions(ids []string) (archivedAt string, archivedIDs, skippedIDs [
 			skippedIDs = append(skippedIDs, id)
 			continue
 		}
+		if sessionRunning(session, running) {
+			// Host 里这条会话还有一轮在跑：绝不归档（面板可能刚重开，还不知道后台任务）。
+			skippedIDs = append(skippedIDs, id)
+			continue
+		}
 		if archived(session) {
 			archivedIDs = append(archivedIDs, id)
 			continue
@@ -320,6 +325,24 @@ func ArchiveSessions(ids []string) (archivedAt string, archivedIDs, skippedIDs [
 		return "", nil, nil, err
 	}
 	return archivedAt, archivedIDs, skippedIDs, nil
+}
+
+// sessionRunning matches a session's ACP ids against the host's in-flight set.
+func sessionRunning(session map[string]any, running map[string]bool) bool {
+	if len(running) == 0 {
+		return false
+	}
+	if running[str(session["acpSessionId"])] {
+		return true
+	}
+	if providers, ok := session["acpByProvider"].(map[string]any); ok {
+		for _, value := range providers {
+			if running[str(value)] {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func sessionFile(statePath, id string) (string, bool) {

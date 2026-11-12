@@ -246,7 +246,7 @@ func TestArchiveSessionsMovesBodyOutOfTheIndex(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	archivedAt, archived, skipped, err := ArchiveSessions([]string{"s1", "s2"})
+	archivedAt, archived, skipped, err := ArchiveSessions([]string{"s1", "s2"}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -293,9 +293,43 @@ func TestArchiveSessionsMovesBodyOutOfTheIndex(t *testing.T) {
 	if err := os.Remove(file); err != nil {
 		t.Fatal(err)
 	}
-	if _, archivedAgain, skippedAgain, err := ArchiveSessions([]string{"s1"}); err != nil {
+	if _, archivedAgain, skippedAgain, err := ArchiveSessions([]string{"s1"}, nil); err != nil {
 		t.Fatal(err)
 	} else if len(archivedAgain) != 0 || len(skippedAgain) != 1 {
 		t.Fatalf("archived = %v, skipped = %v", archivedAgain, skippedAgain)
+	}
+}
+
+func TestArchiveSessionsRefusesRunningSessions(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	state := map[string]any{
+		"version": 1,
+		"sessions": []any{
+			map[string]any{
+				"id":           "s1",
+				"acpSessionId": "acp-1",
+				"updatedAt":    "2026-01-01T00:00:00Z",
+				"messages":     []any{map[string]any{"id": "m1", "role": "user"}},
+			},
+			map[string]any{
+				"id":        "s2",
+				"updatedAt": "2026-01-02T00:00:00Z",
+				"messages":  []any{map[string]any{"id": "m2", "role": "user"}},
+			},
+		},
+	}
+	if err := Save(state); err != nil {
+		t.Fatal(err)
+	}
+	_, archived, skipped, err := ArchiveSessions([]string{"s1", "s2"}, map[string]bool{"acp-1": true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(skipped) != 1 || skipped[0] != "s1" {
+		t.Fatalf("skipped = %v", skipped)
+	}
+	if len(archived) != 1 || archived[0] != "s2" {
+		t.Fatalf("archived = %v", archived)
 	}
 }
