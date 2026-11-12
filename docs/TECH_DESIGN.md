@@ -60,7 +60,7 @@ Cursor Agent 在 ACP 模式下仍然自己执行本地工具（读文件、写�
 - 发出用户输入（可带本机附件路径）、取消、权限决定、提问/计划回答、新建 / 切换 / fork 会话、选模型；进行中再发送的消息进该会话内存队列，`turn.end` 后按序发出
 - 展示进行中的页面命令、无边框连接状态、连接进度条（文案右侧「取消 / Cancel」）、输入框上方的 todo、消息队列与权限/提问/计划卡片、输入栏附件芯片、`@` 提及菜单、元素拾取蒙层与模型下拉。顶栏不放当前页 favicon。
 - 离线发送会立刻报错；Service Worker 断开时显示原因（含扩展 ID / `lastError`）并允许重试
-- 侧栏先 `sendMessage({ type: "ping" })` 唤醒 SW，再 `connect`。React StrictMode 卸载只摘监听器，不拆端口。端口若在 SW 还在加载时空断，自动重连，避免永远停在 Lost connection
+- 侧栏先 `sendMessage({ type: "ping" })` 唤醒 SW，再 `connect`。React StrictMode 卸载只摘监听器，不拆端口。端口若在 SW 还在加载时空断，自动重连，避免永远停在 Lost connection。**端口发送失败必须先拆掉旧端口**：`postMessage` 抛错（最常见的是整份 `ui.state.set` 超过扩展端口 64MiB 上限）时端口通常还连着，SW 的 `sidebars` 仍会把它当成一个活动连接广播；不清掉的话面板会从 N 条端口各收一份，同一段流式回复就被应用 N 遍（真实事故：每个 token 重复约 13 遍，且 N 随每次失败增长）。现在失败的端口进 `retiredPorts`、立即 `disconnect()`，它的迟到消息也不再 `emit`；超过上限的消息本身不重试（重试只会再拆一条端口），只补一条警告并重连保持通道可用。
 - 不再挂载 assistant-ui runtime；旧的 `ExternalStoreThreadRuntimeCore` 会在端口断开后抛错，把扩展标红
 
 ### Service Worker
@@ -661,6 +661,8 @@ Host 是通用 ACP Client + 数据驱动 `AgentProfile`（启动命令、鉴权�
 
 **Agent 主动交还（`requestUserTakeover`）**：自动化遇到必须人来的环节（登录 / 验证码 / 密码或短信校验 / 必须本人确认的授权），Agent 写一条 `{"method":"requestUserTakeover","args":{"reason":"…","resumeHint":"…"}}`。Host 自己消化这条命令（不过扩展），做三件事：写 `browser/results/<id>.json`（`ok:true`，回 `{released:true}`）、向扩展发 `control.release{sessionId}`（先把接管交还——标题前缀、banner、页面活性一并收回）、再发 `takeover{requestId, sessionId, reason, resumeHint}` 给侧栏。侧栏在输入区上方渲染一张「需要你接手」卡（`ControlBanner` 同一族），用户处理完点「继续」→ 侧栏给该会话发一条通道消息（`[OpenSider]` 前缀，不进本地消息记录）让 Agent 从当前页面状态接着干；点「稍后」只收起卡片。释放走的是现成的 `control.release`，所以 Agent 之后的下一条写命令会重新按借用闸门接管，语义与「回合结束」完全一致。
 
+**接手卡的生命周期**：卡片按 `sessionId` 归属——侧栏只在该 ACP 会话被选中时显示（`session-ids.ts` 的 `cardBelongsToSession`，覆盖 `acpSessionId` 与 `acpByProvider` 记忆），切到别的会话不弹。SW 里仍保留一份 `lastTakeover` 供面板重开时补发，但它是「此刻在等」而不是历史：面板点「继续」/「稍后」会发 `takeover.done{requestId}` 让 SW 立刻删掉；该会话发出新 prompt、宿主断开 / 换 Agent（`clearLiveTracking`）、或超过 30 分钟 TTL，也会清掉并广播 `takeover.done` 让还开着的面板收卡。这样插件重启 / 面板重开都不会把一张几天前的卡片重新唤起（真实报过；旧实现只把卡片存在 SW 内存里、永不清除，且不按会话过滤）。表单卡共用同一套归属与 TTL；Host 在表单超时或会话被删时补发 `form.done`，扩展据此收卡（用户主动提交时扩展已自己收过，Host 不再回一条，避免重复提示）。
+
 **窗口方法**：`openTab` 改为 `active:false` + 不聚焦窗口 + 开在目标标签旁（拿不到目标则焦点窗口），成功后自动接管（自建）；`switchTab` 保留原语义，只当展示动作（`agents.md` 写明不要用它选工作对象）；`closeTab` 目标是未接管的用户标签 → `borrow_required`（未保存拦截照旧）。
 
 **截图**：`runCapture` 前守卫式激活——目标窗口最小化 → `needs_visible`；目标已是活动标签 → 直接拍；否则 `tabs.update({active:true})`（不碰窗口焦点）→ 拍 → 仅在活动标签仍是它时还原原活动标签。`captureVisibleTab` 抓的是**窗口的活动标签**，不做这层会拍到用户正看的页；它只认 `<all_urls>` 或 activeTab 授权，所以 `host_permissions` 用 `<all_urls>`（页面能力仍只对 http(s) 下发，代码把关）。
@@ -683,7 +685,7 @@ Host 是通用 ACP Client + 数据驱动 `AgentProfile`（启动命令、鉴权�
 4. 扩展拿着 `requestId` → 目标标签页（Host 登记时带上的 tabId 快照，缺省用该会话的路由目标）→ 对每个字段直接调页面 API 的填值通路（与 `fillForm` 同一个函数，`screenshot`/`fill` 同一套原生 setter）。填完把 `{requestId, ok, filled:[labels], missing:[labels]}`（**只有字段名与计数，没有值**）回给侧栏，侧栏再转发 `form.result` 给 Host。
 5. Host 把结果写进 `browser/results/<id>.json`（`ok`、`filled`、`missing`；取消是 `cancelled`），Agent 那边一条命令就拿到了「填了哪几个、还缺哪几个」。值从头到尾没进过 Host 的日志、结果文件和 Agent 上下文。
 
-超时（10 分钟）或用户点取消 → 同样写结果并回 `form.result`，Agent 得到明确的失败，改为提示用户而不是重试填入。侧栏关闭会取消该卡片（Host 侧 pending 到点也会清）。
+超时（10 分钟）或用户点取消 → 同样写结果并回 `form.result`，Agent 得到明确的失败，改为提示用户而不是重试填入。Host 在超时 / 会话被删时会**补发** `form.done`（用户主动提交时扩展已经自己收过卡，Host 不再回，避免同一条「已填入」提示弹两次），扩展据此收卡、清掉 SW 里的补发缓存；表单卡和接手卡一样按 `sessionId` 归属、只在 15 分钟内补发，不能跳到别的会话里。
 
 ## 划词工具条（选中文本的翻译 / 搜索 / 引用）
 
