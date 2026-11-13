@@ -103,3 +103,81 @@ func TestEncodeChunksStayUnderNativeLimit(t *testing.T) {
 		}
 	}
 }
+
+func TestReadFileKeepsTextMIME(t *testing.T) {
+	dir := t.TempDir()
+	cases := []struct {
+		name string
+		body string
+		want string
+	}{
+		{"note.md", "# hello\n", "text/markdown; charset=utf-8"},
+		{"data.json", `{"a":1}`, "application/json; charset=utf-8"},
+		{"page.html", "<h1>hi</h1>", "text/html; charset=utf-8"},
+		{"main.go", "package main\n", "text/plain; charset=utf-8"},
+		{"unknown.bin", "plain text", "text/plain; charset=utf-8"},
+	}
+	for _, tc := range cases {
+		path := filepath.Join(dir, tc.name)
+		if err := os.WriteFile(path, []byte(tc.body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		mime, data, err := ReadFile(path)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		if mime != tc.want {
+			t.Fatalf("%s mime = %q, want %q", tc.name, mime, tc.want)
+		}
+		if string(data) != tc.body {
+			t.Fatalf("%s data = %q", tc.name, data)
+		}
+	}
+}
+
+func TestReadFilePDFAndImage(t *testing.T) {
+	dir := t.TempDir()
+	pdf := filepath.Join(dir, "doc.pdf")
+	if err := os.WriteFile(pdf, []byte("%PDF-1.7\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if mime, _, err := ReadFile(pdf); err != nil || mime != "application/pdf" {
+		t.Fatalf("pdf: mime=%q err=%v", mime, err)
+	}
+	png := filepath.Join(dir, "dot.png")
+	if err := os.WriteFile(png, tinyPNG, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if mime, _, err := ReadFile(png); err != nil || mime != "image/png" {
+		t.Fatalf("png: mime=%q err=%v", mime, err)
+	}
+	heic := filepath.Join(dir, "photo.heic")
+	if err := os.WriteFile(heic, []byte("\x00\x00\x00\x18ftypheic\x00\x00\x00\x00"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if mime, _, err := ReadFile(heic); err != nil || mime != "image/heic" {
+		t.Fatalf("heic: mime=%q err=%v", mime, err)
+	}
+}
+
+func TestReadFileRejectsDirectoryAndOversize(t *testing.T) {
+	dir := t.TempDir()
+	if _, _, err := ReadFile(dir); !errors.Is(err, ErrNotFile) {
+		t.Fatalf("dir: %v", err)
+	}
+	huge := filepath.Join(dir, "huge.bin")
+	file, err := os.Create(huge)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Truncate(MaxBytes + 1); err != nil {
+		file.Close()
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := ReadFile(huge); !errors.Is(err, ErrTooLarge) {
+		t.Fatalf("oversize: %v", err)
+	}
+}

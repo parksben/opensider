@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 )
 
 const (
@@ -22,8 +23,8 @@ var (
 	ErrAbsolute  = errors.New("path must be absolute")
 	ErrNotFile   = errors.New("not a regular file")
 	ErrNotImage  = errors.New("not an image")
-	ErrTooLarge  = errors.New("image is too large to preview")
-	ErrEmptyFile = errors.New("image is empty")
+	ErrTooLarge  = errors.New("file is too large to preview")
+	ErrEmptyFile = errors.New("file is empty")
 )
 
 var mimeByExt = map[string]string{
@@ -43,7 +44,78 @@ var mimeByExt = map[string]string{
 	".jxl":  "image/jxl",
 }
 
+// fileMIMEByExt covers the types the artifact preview page can render without
+// guessing. `http.DetectContentType` returns octet-stream for most source
+// files, so the extension stays the primary signal for text-like content.
+var fileMIMEByExt = map[string]string{
+	".md":       "text/markdown; charset=utf-8",
+	".markdown": "text/markdown; charset=utf-8",
+	".txt":      "text/plain; charset=utf-8",
+	".log":      "text/plain; charset=utf-8",
+	".csv":      "text/csv; charset=utf-8",
+	".tsv":      "text/tab-separated-values; charset=utf-8",
+	".json":     "application/json; charset=utf-8",
+	".jsonl":    "application/x-ndjson; charset=utf-8",
+	".yaml":     "text/yaml; charset=utf-8",
+	".yml":      "text/yaml; charset=utf-8",
+	".toml":     "text/toml; charset=utf-8",
+	".xml":      "application/xml; charset=utf-8",
+	".html":     "text/html; charset=utf-8",
+	".htm":      "text/html; charset=utf-8",
+	".css":      "text/css; charset=utf-8",
+	".js":       "text/javascript; charset=utf-8",
+	".mjs":      "text/javascript; charset=utf-8",
+	".cjs":      "text/javascript; charset=utf-8",
+	".ts":       "text/plain; charset=utf-8",
+	".tsx":      "text/plain; charset=utf-8",
+	".jsx":      "text/plain; charset=utf-8",
+	".go":       "text/plain; charset=utf-8",
+	".py":       "text/plain; charset=utf-8",
+	".rs":       "text/plain; charset=utf-8",
+	".java":     "text/plain; charset=utf-8",
+	".c":        "text/plain; charset=utf-8",
+	".h":        "text/plain; charset=utf-8",
+	".cpp":      "text/plain; charset=utf-8",
+	".sh":       "text/plain; charset=utf-8",
+	".sql":      "text/plain; charset=utf-8",
+	".ini":      "text/plain; charset=utf-8",
+	".conf":     "text/plain; charset=utf-8",
+	".env":      "text/plain; charset=utf-8",
+	".pdf":      "application/pdf",
+	".mp3":      "audio/mpeg",
+	".wav":      "audio/wav",
+	".m4a":      "audio/mp4",
+	".ogg":      "audio/ogg",
+	".mp4":      "video/mp4",
+	".webm":     "video/webm",
+	".mov":      "video/quicktime",
+}
+
 func Read(raw string) (mime string, data []byte, err error) {
+	path, data, err := readLocal(raw)
+	if err != nil {
+		return "", nil, err
+	}
+	mime, err = sniffMIME(path, data)
+	if err != nil {
+		return "", nil, err
+	}
+	return mime, data, nil
+}
+
+// ReadFile is the generic form used by the artifact preview page. Unlike Read
+// it accepts text, PDF, audio and video; the caller decides whether the MIME is
+// previewable. The byte cap and chunking stay identical to image preview so the
+// native-messaging frame limit is never exceeded.
+func ReadFile(raw string) (mime string, data []byte, err error) {
+	path, data, err := readLocal(raw)
+	if err != nil {
+		return "", nil, err
+	}
+	return detectFileMIME(path, data), data, nil
+}
+
+func readLocal(raw string) (string, []byte, error) {
 	path, err := cleanLocalPath(raw)
 	if err != nil {
 		return "", nil, err
@@ -61,7 +133,7 @@ func Read(raw string) (mime string, data []byte, err error) {
 	if info.Size() > MaxBytes {
 		return "", nil, ErrTooLarge
 	}
-	data, err = os.ReadFile(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return "", nil, err
 	}
@@ -71,11 +143,34 @@ func Read(raw string) (mime string, data []byte, err error) {
 	if int64(len(data)) > MaxBytes {
 		return "", nil, ErrTooLarge
 	}
-	mime, err = sniffMIME(path, data)
-	if err != nil {
-		return "", nil, err
+	return path, data, nil
+}
+
+func detectFileMIME(path string, data []byte) string {
+	ext := strings.ToLower(filepath.Ext(path))
+	if ext == ".svg" || (ext == "" && looksLikeSVG(data)) {
+		return "image/svg+xml"
 	}
-	return mime, data, nil
+	detected := http.DetectContentType(data)
+	if i := strings.IndexByte(detected, ';'); i >= 0 {
+		detected = detected[:i]
+	}
+	if strings.HasPrefix(detected, "image/") ||
+		strings.HasPrefix(detected, "audio/") ||
+		strings.HasPrefix(detected, "video/") ||
+		detected == "application/pdf" {
+		return detected
+	}
+	if mime, ok := fileMIMEByExt[ext]; ok {
+		return mime
+	}
+	if mime, ok := mimeByExt[ext]; ok {
+		return mime
+	}
+	if strings.HasPrefix(detected, "text/") || utf8.Valid(data) {
+		return "text/plain; charset=utf-8"
+	}
+	return "application/octet-stream"
 }
 
 func EncodeChunks(data []byte) []string {

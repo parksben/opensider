@@ -244,6 +244,32 @@ func (h *Host) previewImage(requestID, path string) {
 	}
 }
 
+func (h *Host) readFile(requestID, path string) {
+	mime, data, err := preview.ReadFile(path)
+	if err != nil {
+		log.Log("fs.read: " + err.Error())
+		h.send(map[string]any{"type": "fs.read", "requestId": requestID, "error": err.Error()})
+		return
+	}
+	chunks := preview.EncodeChunks(data)
+	if len(chunks) == 0 {
+		h.send(map[string]any{"type": "fs.read", "requestId": requestID, "error": preview.ErrEmptyFile.Error()})
+		return
+	}
+	log.Log(fmt.Sprintf("fs.read chunks=%d bytes=%d mime=%s", len(chunks), len(data), mime))
+	for i, chunk := range chunks {
+		h.send(map[string]any{
+			"type":      "fs.read",
+			"requestId": requestID,
+			"mime":      mime,
+			"size":      len(data),
+			"index":     i,
+			"total":     len(chunks),
+			"data":      chunk,
+		})
+	}
+}
+
 func (h *Host) sendModels() {
 	h.mu.Lock()
 	models := h.catalog.Models
@@ -1206,6 +1232,12 @@ func (h *Host) dispatch(typ string, msg map[string]any) error {
 			h.send(out)
 		}
 		return nil
+	case "fs.openDir":
+		path := str(msg["path"])
+		if err := reveal.Dir(path); err != nil {
+			log.Log("fs.openDir: " + err.Error())
+		}
+		return nil
 	case "fs.save":
 		requestID := str(msg["requestId"])
 		item, err := workspace.SavePastedJPEG(str(msg["imageBase64"]), str(msg["name"]))
@@ -1230,6 +1262,11 @@ func (h *Host) dispatch(typ string, msg map[string]any) error {
 		requestID := str(msg["requestId"])
 		path := str(msg["path"])
 		go h.previewImage(requestID, path)
+		return nil
+	case "fs.read":
+		requestID := str(msg["requestId"])
+		path := str(msg["path"])
+		go h.readFile(requestID, path)
 		return nil
 	case "model.set":
 		modelID := str(msg["modelId"])

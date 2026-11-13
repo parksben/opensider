@@ -108,6 +108,9 @@ export function ChatPane({
   todos,
   artifacts,
   onRevealArtifact,
+  onOpenArtifactDir,
+  onPreviewArtifact,
+  canPreviewArtifact,
   contextUsage,
   notice,
   onDismissNotice,
@@ -130,6 +133,9 @@ export function ChatPane({
   todos?: TodoItem[];
   artifacts?: AttachmentItem[];
   onRevealArtifact?: (path: string) => void;
+  onOpenArtifactDir?: (path: string) => void;
+  onPreviewArtifact?: (item: AttachmentItem) => void;
+  canPreviewArtifact?: (item: AttachmentItem) => boolean;
   /** Agent 上报的上下文用量；没有就不画那个环。 */
   contextUsage?: ContextUsageValue;
   /** Something the user just tried did not work (a drop, a paste, a stale bridge). */
@@ -746,7 +752,14 @@ export function ChatPane({
         {control}
         <TodoList locale={locale} todos={todos ?? []} />
         {hitl}
-        <ArtifactList locale={locale} items={artifacts ?? []} onReveal={(path) => onRevealArtifact?.(path)} />
+        <ArtifactList
+          locale={locale}
+          items={artifacts ?? []}
+          onReveal={(path) => onRevealArtifact?.(path)}
+          onOpenDirectory={(path) => onOpenArtifactDir?.(path)}
+          onPreview={(item) => onPreviewArtifact?.(item)}
+          canPreview={(item) => canPreviewArtifact?.(item) ?? false}
+        />
         <QueuedMessageList
           locale={locale}
           items={queue}

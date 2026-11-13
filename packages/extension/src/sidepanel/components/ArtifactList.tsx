@@ -1,10 +1,11 @@
 import type { AttachmentItem } from "@shared";
-import { ChevronDown, ChevronRight, File, FileArchive, FileCode, FileSpreadsheet, FileText, Folder, FolderOpen, Image } from "lucide-react";
+import { ChevronDown, ChevronRight, Eye, File, FileArchive, FileCode, FileSpreadsheet, FileText, Folder, FolderOpen, Image } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { Locale } from "../i18n";
 import { t } from "../i18n";
 import { IconButton } from "./IconButton";
 import { RippleButton } from "./RippleButton";
+import { artifactDir } from "../artifact-preview";
 
 function artifactKey(items: AttachmentItem[]): string {
   return items.map((item) => item.path).join("\n");
@@ -27,10 +28,16 @@ export function ArtifactList({
   locale,
   items,
   onReveal,
+  onOpenDirectory,
+  onPreview,
+  canPreview = () => false,
 }: {
   locale: Locale;
   items: AttachmentItem[];
   onReveal: (path: string) => void;
+  onOpenDirectory?: (path: string) => void;
+  onPreview?: (item: AttachmentItem) => void;
+  canPreview?: (item: AttachmentItem) => boolean;
 }) {
   const [open, setOpen] = useState(true);
   const seen = useRef("");
@@ -50,22 +57,35 @@ export function ArtifactList({
   if (items.length === 0) return null;
 
   const title = t(locale, "artifactList").replace("{count}", String(items.length));
+  const directory = artifactDir(items);
 
   return (
     <section className="mb-2 overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--panel-2)]">
-      <RippleButton
-        aria-expanded={open}
-        aria-label={open ? t(locale, "collapseArtifacts") : t(locale, "expandArtifacts")}
-        onClick={() => setOpen((value) => !value)}
-        className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left"
-      >
-        <span className="min-w-0 truncate text-[12.5px] font-medium tracking-tight">{title}</span>
-        {open ? (
-          <ChevronDown size={14} className="shrink-0 text-[var(--muted)]" />
-        ) : (
-          <ChevronRight size={14} className="shrink-0 text-[var(--muted)]" />
-        )}
-      </RippleButton>
+      <div className="flex items-center gap-1 px-2 py-1.5">
+        <RippleButton
+          aria-expanded={open}
+          onClick={() => setOpen((value) => !value)}
+          className="flex min-w-0 flex-1 items-center gap-2 px-1 py-0.5 text-left"
+        >
+          <span className="min-w-0 truncate text-[12.5px] font-medium tracking-tight">{title}</span>
+        </RippleButton>
+        {directory && onOpenDirectory ? (
+          <IconButton
+            label={t(locale, "openArtifactDir")}
+            onClick={() => onOpenDirectory(directory)}
+            className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-[var(--muted)] hover:text-[var(--text)]"
+          >
+            <FolderOpen size={14} />
+          </IconButton>
+        ) : null}
+        <IconButton
+          label={open ? t(locale, "collapseArtifacts") : t(locale, "expandArtifacts")}
+          onClick={() => setOpen((value) => !value)}
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-[var(--muted)] hover:text-[var(--text)]"
+        >
+          {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        </IconButton>
+      </div>
       {open ? (
         <ul className="cs-list-cap border-t border-[var(--line)] py-1">
           {items.map((item) => {
@@ -83,13 +103,24 @@ export function ArtifactList({
                     {t(locale, "artifactMissing")}
                   </span>
                 ) : (
-                  <IconButton
-                    label={t(locale, "revealArtifact")}
-                    onClick={() => onReveal(item.path)}
-                    className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-[var(--muted)] opacity-0 hover:text-[var(--text)] group-hover:opacity-100 group-focus-within:opacity-100"
-                  >
-                    <FolderOpen size={13} />
-                  </IconButton>
+                  <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+                    {onPreview && canPreview(item) ? (
+                      <IconButton
+                        label={t(locale, "previewArtifact")}
+                        onClick={() => onPreview(item)}
+                        className="flex h-6 w-6 items-center justify-center rounded text-[var(--muted)] hover:text-[var(--text)]"
+                      >
+                        <Eye size={13} />
+                      </IconButton>
+                    ) : null}
+                    <IconButton
+                      label={t(locale, "revealArtifact")}
+                      onClick={() => onReveal(item.path)}
+                      className="flex h-6 w-6 items-center justify-center rounded text-[var(--muted)] hover:text-[var(--text)]"
+                    >
+                      <FolderOpen size={13} />
+                    </IconButton>
+                  </div>
                 )}
               </li>
             );

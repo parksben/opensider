@@ -8,7 +8,10 @@ import (
 	"strings"
 )
 
-var ErrNotFound = errors.New("file not found")
+var (
+	ErrNotFound = errors.New("file not found")
+	ErrNotDir   = errors.New("not a directory")
+)
 
 func Path(raw string) error {
 	path := filepath.Clean(raw)
@@ -25,6 +28,30 @@ func Path(raw string) error {
 		return err
 	}
 	return reveal(path)
+}
+
+// Dir opens a directory in the system file manager. Path() reveals the
+// directory's parent and selects it, which is not what the artifact header
+// wants: it must open the artifact folder itself.
+func Dir(raw string) error {
+	path := filepath.Clean(raw)
+	if path == "" || path == "." {
+		return fmt.Errorf("empty path")
+	}
+	if !filepath.IsAbs(path) {
+		return fmt.Errorf("path must be absolute")
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("%w: %s", ErrNotFound, path)
+		}
+		return err
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("%w: %s", ErrNotDir, path)
+	}
+	return openDir(path)
 }
 
 // explorerSelectCmdLine 拼出资源管理器「打开所在目录并选中该文件」的原始命令行。

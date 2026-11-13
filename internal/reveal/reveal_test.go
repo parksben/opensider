@@ -2,6 +2,7 @@ package reveal
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -60,5 +61,25 @@ func TestExplorerSelectCmdLineRejectsUnsafeInput(t *testing.T) {
 		if line, ok := explorerSelectCmdLine(path); ok {
 			t.Fatalf("expected rejection for %q, got %q", path, line)
 		}
+	}
+}
+
+func TestDirValidation(t *testing.T) {
+	if err := Dir(""); err == nil || err.Error() != "empty path" {
+		t.Fatalf("empty: %v", err)
+	}
+	if err := Dir("relative"); err == nil || err.Error() != "path must be absolute" {
+		t.Fatalf("relative: %v", err)
+	}
+	missing := filepath.Join(t.TempDir(), "gone")
+	if err := Dir(missing); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("missing: %v", err)
+	}
+	file := filepath.Join(t.TempDir(), "file.txt")
+	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := Dir(file); !errors.Is(err, ErrNotDir) {
+		t.Fatalf("file: %v", err)
 	}
 }

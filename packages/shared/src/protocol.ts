@@ -544,7 +544,9 @@ export type ExtToHost =
       base64: string;
     }
   | { type: "fs.reveal"; path: string }
+  | { type: "fs.openDir"; path: string }
   | { type: "fs.preview"; requestId: string; path: string }
+  | { type: "fs.read"; requestId: string; path: string }
   | { type: "page.pick"; requestId: string; hint?: string }
   | { type: "page.pick.cancel"; requestId?: string }
   | { type: "control.anchor"; sessionId?: string; tabId?: number }
@@ -684,6 +686,16 @@ export type HostToExt =
   | { type: "host.unsupported"; requestId: string; command?: string; error?: string }
   | {
       type: "fs.previewed";
+      requestId: string;
+      mime?: string;
+      size?: number;
+      index?: number;
+      total?: number;
+      data?: string;
+      error?: string;
+    }
+  | {
+      type: "fs.read";
       requestId: string;
       mime?: string;
       size?: number;

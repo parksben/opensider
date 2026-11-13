@@ -46,3 +46,11 @@ func toleratedExit(err error) bool {
 	exit, ok := err.(*exec.ExitError)
 	return ok && exit.ExitCode() == 1
 }
+
+func openDir(path string) error {
+	open := exec.Command("explorer.exe", path)
+	open.Stdin = nil
+	open.Stdout = nil
+	open.Stderr = nil
+	return open.Run()
+}

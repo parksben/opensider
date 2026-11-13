@@ -10,6 +10,8 @@ type Shared = {
   attaching: boolean;
   reconnectTimer: ReturnType<typeof setTimeout> | undefined;
   attempts: number;
+  /** Messages sent while the first attach() is still resolving (e.g. a preview page). */
+  pending: ExtToHost[];
 };
 
 const shared: Shared = {
@@ -20,6 +22,7 @@ const shared: Shared = {
   attaching: false,
   reconnectTimer: undefined,
   attempts: 0,
+  pending: [],
 };
 
 function emit(msg: HostToExt): void {
@@ -34,6 +37,8 @@ function emit(msg: HostToExt): void {
  * if Chrome delivers something before the disconnect lands.
  */
 const retiredPorts = new WeakSet<chrome.runtime.Port>();
+/** Set by connectSidebar(); the preview page uses its own port name. */
+let portName = "sidebar";
 const TOO_LARGE = /maximum allowed size|message length exceeded/i;
 
 type PostResult = { ok: true } | { ok: false; error: string; tooLarge: boolean };
@@ -89,8 +94,11 @@ async function attach(): Promise<void> {
     if (replay) emit(replay);
     if (shared.port || !shared.alive) return;
 
-    const port = chrome.runtime.connect({ name: "sidebar" });
+    const port = chrome.runtime.connect({ name: portName });
     shared.port = port;
+    const pending = shared.pending;
+    shared.pending = [];
+    for (const msg of pending) postTo(port, msg);
     port.onMessage.addListener((msg: HostToExt) => {
       if (retiredPorts.has(port)) return;
       shared.attempts = 0;
@@ -123,6 +131,7 @@ async function attach(): Promise<void> {
 
 function teardown(): void {
   shared.closedByUs = true;
+  shared.pending = [];
   if (shared.reconnectTimer) {
     clearTimeout(shared.reconnectTimer);
     shared.reconnectTimer = undefined;
@@ -157,11 +166,12 @@ if (typeof window !== "undefined") {
   window.addEventListener("pagehide", onPageHide);
 }
 
-export function connectSidebar(onMessage: Listener): {
+export function connectSidebar(onMessage: Listener, name = "sidebar"): {
   send: (msg: ExtToHost) => void;
   reconnect: () => void;
   disconnect: () => void;
 } {
+  portName = name;
   shared.listeners.add(onMessage);
   shared.alive = true;
   shared.attempts = 0;
@@ -169,6 +179,10 @@ export function connectSidebar(onMessage: Listener): {
 
   return {
     send: (msg) => {
+      if (!shared.port && shared.attaching) {
+        shared.pending.push(msg);
+        return;
+      }
       const first = postTo(shared.port, msg);
       if (first.ok) return;
       if (first.tooLarge) {

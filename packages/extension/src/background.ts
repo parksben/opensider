@@ -82,6 +82,8 @@ import {
 
 let nativePort: chrome.runtime.Port | null = null;
 const sidebars = new Set<chrome.runtime.Port>();
+/** Artifact preview tabs ask for one file each; replies are routed back by request id. */
+const previewRequests = new Map<string, chrome.runtime.Port>();
 let lastStatus: HostToExt = { type: "status", state: "starting" };
 let lastPage: HostToExt | undefined;
 let lastSession: HostToExt | undefined;
@@ -395,6 +397,21 @@ function connectNative(force = false): void {
 
   nativePort.onMessage.addListener((msg: HostToExt) => {
     clearMissingRetry();
+    if (msg.type === "fs.read") {
+      const port = previewRequests.get(msg.requestId);
+      if (port) {
+        try {
+          port.postMessage(msg);
+        } catch {
+          previewRequests.delete(msg.requestId);
+        }
+      }
+      const last =
+        msg.error !== undefined ||
+        (typeof msg.index === "number" && typeof msg.total === "number" && msg.index + 1 >= msg.total);
+      if (last) previewRequests.delete(msg.requestId);
+      return;
+    }
     if (msg.type === "ui.state" && "total" in msg) {
       const joined = uiStateSink.push(msg.index, msg.total, msg.data);
       if (joined !== undefined) {
@@ -2746,6 +2763,20 @@ function handleControlMessage(msg: ExtToHost): boolean {
 }
 
 chrome.runtime.onConnect.addListener((port) => {
+  if (port.name === "preview") {
+    connectNative();
+    port.onMessage.addListener((msg: ExtToHost) => {
+      if (msg.type !== "fs.read") return;
+      previewRequests.set(msg.requestId, port);
+      sendNative(msg);
+    });
+    port.onDisconnect.addListener(() => {
+      for (const [id, pending] of previewRequests) {
+        if (pending === port) previewRequests.delete(id);
+      }
+    });
+    return;
+  }
   if (port.name !== "sidebar") return;
   sidebars.add(port);
   replay(port);

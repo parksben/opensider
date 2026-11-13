@@ -1,0 +1,122 @@
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+body {
+  background: var(--ink);
+  color: var(--text);
+}
+
+.preview-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.preview-header {
+  flex: none;
+  padding: 18px 24px 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.preview-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+.preview-path {
+  margin-top: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px;
+}
+
+.preview-main {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 24px;
+}
+
+.preview-main.is-frame {
+  overflow: hidden;
+  padding: 0;
+}
+
+.preview-doc {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.preview-text {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 12.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.preview-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #fff;
+}
+
+.preview-image {
+  display: block;
+  max-width: 100%;
+  max-height: calc(100vh - 140px);
+  margin: 0 auto;
+  object-fit: contain;
+}
+
+.preview-media {
+  display: block;
+  max-width: 100%;
+  margin: 24px auto 0;
+}
+
+.preview-status {
+  max-width: 560px;
+  margin: 72px auto;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+  text-align: center;
+}
+
+.preview-retry {
+  margin-top: 12px;
+  padding: 5px 14px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-2);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.preview-retry:hover {
+  border-color: var(--line-focus);
+  background: var(--panel);
+}

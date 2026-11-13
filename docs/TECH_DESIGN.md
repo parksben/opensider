@@ -160,6 +160,14 @@ Cursor Agent 在 ACP 模式下仍然自己执行本地工具（读文件、写�
 
 Host 是一份 Go 二进制（`cmd/opensider` + `internal/`）。`browser/tools.json` 由 `internal/protocol.ToolCatalog` 在启动时写入，不在 TS 里再维护一份。stdout 只给 Chrome，ACP 走子进程管道，日志只写 `~/.opensider/host.log`。`fs.pick` 时 exec 自己的 `pick` 子命令（独立进程才能把系统对话框拉到前台）。`hello` 不带 os；选文件分流用侧栏 UA。`page.pick` 到不了 Host。
 
+### 产物目录与浏览（浏览器 / VS Code 策略）
+
+产物列表的目录按钮走新命令 `fs.openDir`：Host 校验绝对路径并确认是目录后用系统文件管理器打开目录本身（macOS `open <dir>`、Windows `explorer <dir>`、Linux `xdg-open`），与「打开文件位置」的 `reveal`（选中文件）分开，避免目录按钮只把父目录选中。
+
+「浏览」不把本机文件路径直接交给浏览器（`file://` 既不可靠也不安全），而是打开扩展自己的预览页 `src/preview/index.html?path=…&name=…`。预览页用 `preview` 端口连 Service Worker，发 `fs.read`；Host 用 `preview.ReadFile` 读文件（上限 32MB，按 512KB base64 分片，和图片预览共用分片协议），预览页按 MIME 渲染 markdown（复用侧栏 `Markdown`）、纯文本/代码、图片、PDF、沙箱化 HTML、音频/视频。只有 `artifact-preview.ts` 里的白名单扩展名会显示浏览按钮；不在白名单的文件即使能被 Host 读出也不显示入口。
+
+VS Code 面板当前**没有产物列表**（`App`/`ChatPane` 只渲染 `FilesChanged`，`uistate` 透传 `artifacts` 但没有 UI 消费），所以这次浏览器端落地后，VS Code 端没有可挂按钮的列表。后续若补产物列表，markdown 用 VS Code 原生 `markdown.showPreview`（已确认内置支持，无需额外扩展），其余文本/图片用 `vscode.open` 在新标签打开，目录用 `revealFileInOS`/`env.openExternal` 打开；不要为 VS Code 再造一个浏览器式预览页。
+
 ### Host 请求的可靠性与版本错配
 
 扩展与本机 Host 是**两份各自更新的东西**：扩展随 release 走，Host 只在用户跑安装 / 更新 skill 时才被覆盖。于是「新扩展 + 旧 Host」是常态，而旧 Host 对不认识的消息只有一句 `default: return nil`——静默丢掉。用户看到的就是「拖进去了（提示都弹了）但附件栏没变化」，没有任何线索。三道门都要堵上：

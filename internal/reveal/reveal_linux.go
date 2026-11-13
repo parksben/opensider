@@ -37,3 +37,11 @@ func reveal(path string) error {
 	open.Stderr = nil
 	return open.Run()
 }
+
+func openDir(path string) error {
+	open := exec.Command("xdg-open", path)
+	open.Stdin = nil
+	open.Stdout = nil
+	open.Stderr = nil
+	return open.Run()
+}

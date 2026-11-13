@@ -34,6 +34,9 @@ export default defineConfig({
       // 否则构建产物里留下的是没打包的 `./main.tsx`，iframe 一加载就 404。
       input: {
         "selection-result": path.resolve(__dirname, "src/selection/index.html"),
+        // 产物预览页由侧栏用 chrome.tabs.create 打开，不在 manifest 里登记；
+        // 和结果层页面一样需要显式登记，否则构建产物里不会生成打包后的 HTML。
+        "artifact-preview": path.resolve(__dirname, "src/preview/index.html"),
       },
     },
   },

@@ -23,6 +23,7 @@ import { encodeImageBlob } from "../image-encode";
 import { fileToBase64, type DropPlan } from "./file-drop";
 import { blobUrlFromBase64Chunks, isAttachedImagePath } from "./image-preview";
 import { applyAcpUpdate, applyBrowserTool, createUserMessage, usageFromUpdate } from "./acp-messages";
+import { canPreviewArtifact } from "./artifact-preview";
 import { ARCHIVE_CHECK_MS, ARCHIVE_REQUEST_TIMEOUT_MS, ARCHIVE_RETRY_MS, pickSessionsToArchive } from "./archive";
 import { StateChunkSink } from "../state-transfer";
 import { connectSidebar } from "./bridge";
@@ -2037,6 +2038,12 @@ export function App() {
       sendRef.current({ type: "fs.pick", requestId, mode });
     });
 
+  const openArtifactPreview = useCallback((item: AttachmentItem) => {
+    const params = new URLSearchParams({ path: item.path, name: item.name });
+    const url = chrome.runtime.getURL(`src/preview/index.html?${params.toString()}`);
+    void chrome.tabs.create({ url, active: true });
+  }, []);
+
   const onPreviewImage = useCallback((path: string) => {
     return new Promise<string>((resolve, reject) => {
       if (!isAttachedImagePath(path)) {
@@ -2641,6 +2648,9 @@ export function App() {
               todos={selected.todos}
               artifacts={selected.artifacts ?? []}
               onRevealArtifact={(path) => sendRef.current({ type: "fs.reveal", path })}
+              onOpenArtifactDir={(path) => sendRef.current({ type: "fs.openDir", path })}
+              onPreviewArtifact={openArtifactPreview}
+              canPreviewArtifact={canPreviewArtifact}
               notice={notice}
               onDismissNotice={() => setNotice(undefined)}
               queue={queues[selected.id] ?? []}
