@@ -407,6 +407,7 @@ export type AgentMark =
   | "iflow"
   | "trae"
   | "qoder"
+  | "hermes"
   | "generic";
 
 export type AgentCaps = {

@@ -232,7 +232,7 @@ func kindFromKeywords(id string, name string) Kind {
 // plan / build 这类工作流模式不行（那正是旧实现把「默认权限」变成 plan 的原因）。
 func IsPermissionKind(kind Kind) bool {
 	switch kind {
-	case KindEdits, KindAuto, KindFullAccess:
+	case KindAsk, KindEdits, KindAuto, KindFullAccess:
 		return true
 	default:
 		return false

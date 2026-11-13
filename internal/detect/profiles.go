@@ -213,6 +213,22 @@ func Profiles() []AgentProfile {
 			Caps:         stdCaps(protocol.AgentCaps{}),
 			LoginHint:    "Install Qoder CLI (`qodercli`) and sign in.",
 		},
+		{
+			ID:   "hermes",
+			Name: "Hermes",
+			Mark: "hermes",
+			// Hermes ships two launchers, both speaking ACP over stdio. `hermes-acp`
+			// only exists once the ACP extra is installed, so try it first: `hermes`
+			// is present even on installs without the subcommand.
+			Launches: []Launch{
+				{Command: "hermes-acp", Args: nil},
+				{Command: "hermes", Args: []string{"acp"}},
+			},
+			Auth:         AuthKind{Type: "none"},
+			ContextFiles: []string{"AGENTS.md"},
+			Caps:         stdCaps(protocol.AgentCaps{Plans: true, Todos: true}),
+			LoginHint:    "Run `hermes setup` in a terminal to configure a provider, then retry.",
+		},
 	}
 }
 

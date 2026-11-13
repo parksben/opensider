@@ -41,6 +41,7 @@ var adapters = map[string]Adapter{
 	"copilot":  copilotAdapter{},
 	"claude":   claudeAdapter{},
 	"codex":    codexAdapter{},
+	"hermes":   hermesAdapter{},
 }
 
 // AdapterFor 取某家 CLI 的适配器，没有就走泛化。
@@ -198,6 +199,44 @@ func (codexAdapter) Kind(id, name string) Kind {
 	case "agent":
 		return KindAgent
 	case "agent-full-access":
+		return KindFullAccess
+	}
+	return KindUnknown
+}
+
+// hermesAdapter：0.23.1 实测——`session/new` 同时给两套权限表达：
+//   - configOptions `edit_approval_policy`（ask / workspace_session / session），
+//     config 优先，切它走 `session/set_config_option`；
+//   - 旧 `modes`（default / accept_edits / dont_ask），切它走 `session/set_mode`。
+//
+// 两套 id 不一样，所以候选按优先顺序都列出来，Resolve 只发当前会话真广告过的那套。
+// 这三档都是权限档（每步都问 → 自动过编辑 → 本会话不再问编辑），可以放心由权限策略驱动。
+type hermesAdapter struct{}
+
+func (hermesAdapter) PolicyCandidates(policy protocol.AgentPolicy) []string {
+	switch policy {
+	case protocol.PolicyAsk:
+		return []string{"ask", "default"}
+	case protocol.PolicyWorkspace:
+		return []string{"workspace_session", "accept_edits"}
+	case protocol.PolicyAuto, protocol.PolicyUnattended:
+		return []string{"session", "dont_ask"}
+	default:
+		return nil
+	}
+}
+
+func (hermesAdapter) PermissionOption(protocol.AgentPolicy) (string, string, bool) {
+	return "", "", false
+}
+
+func (hermesAdapter) Kind(id, name string) Kind {
+	switch id {
+	case "ask", "default":
+		return KindAsk
+	case "workspace_session", "accept_edits":
+		return KindEdits
+	case "session", "dont_ask":
 		return KindFullAccess
 	}
 	return KindUnknown

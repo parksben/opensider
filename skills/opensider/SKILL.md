@@ -7,7 +7,7 @@ description: Install, update, repair or uninstall the OpenSider browser bridge a
 
 OpenSider is a Chromium side panel extension that drives a local ACP Agent CLI
 (Cursor, GitHub Copilot, Claude Code, Codex, OpenCode, Gemini, Qwen, Kimi, iFlow,
-Trae, Qoder …). Two pieces have to exist on this machine:
+Trae, Qoder, Hermes …). Two pieces have to exist on this machine:
 
 | Piece | Where | Who does it |
 |---|---|---|

@@ -260,9 +260,104 @@ func TestIsPermissionKindSeparatesWorkflowFromPermission(t *testing.T) {
 	if IsPermissionKind(KindPlan) || IsPermissionKind(KindBuild) {
 		t.Fatal("plan/build are workflow modes, never a permission level")
 	}
-	for _, kind := range []Kind{KindEdits, KindAuto, KindFullAccess} {
+	for _, kind := range []Kind{KindAsk, KindEdits, KindAuto, KindFullAccess} {
 		if !IsPermissionKind(kind) {
 			t.Fatalf("%q should count as a permission kind", kind)
+		}
+	}
+}
+
+// hermes-agent 0.23.1 实测：configOptions 的 edit_approval_policy 优先，同时还有
+// 旧 modes（两套 id 不同：config 是 ask/workspace_session/session，modes 是
+// default/accept_edits/dont_ask）。
+const hermesSession = `{
+  "sessionId": "local-2da03bbb",
+  "modes": {"currentModeId": "default", "availableModes": [
+    {"id": "default", "name": "Default", "description": "Ask before edits."},
+    {"id": "accept_edits", "name": "Accept Edits", "description": "Auto-allow workspace and temp-dir edits; still asks for sensitive paths."},
+    {"id": "dont_ask", "name": "Don't Ask", "description": "Auto-allow file edits for this session except sensitive paths."}
+  ]},
+  "configOptions": [
+    {"id": "edit_approval_policy", "category": "mode", "currentValue": "ask", "options": [
+      {"value": "ask", "name": "Default"},
+      {"value": "workspace_session", "name": "Accept Edits"},
+      {"value": "session", "name": "Don't Ask"}
+    ]},
+    {"id": "model", "category": "model", "currentValue": "deepseek:deepseek-flash", "options": [
+      {"value": "deepseek:deepseek-flash", "name": "DeepSeek · deepseek-flash"}
+    ]},
+    {"id": "reasoning_effort", "category": "thought_level", "currentValue": "default", "options": [
+      {"value": "default", "name": "Default"}, {"value": "high", "name": "High"}
+    ]}
+  ]
+}`
+
+func TestHermesPrefersEditApprovalConfig(t *testing.T) {
+	target, ok := discover(t, "hermes", hermesSession)
+	if !ok {
+		t.Fatal("hermes advertises three edit approval levels, expected a target")
+	}
+	if target.Source != SourceConfig || target.ConfigID != "edit_approval_policy" {
+		t.Fatalf("want config source with configId=edit_approval_policy, got %+v", target)
+	}
+	if target.Current != "ask" {
+		t.Fatalf("want current ask, got %q", target.Current)
+	}
+	want := map[string]Kind{"ask": KindAsk, "workspace_session": KindEdits, "session": KindFullAccess}
+	if len(target.Options) != len(want) {
+		t.Fatalf("unexpected options %+v", target.Options)
+	}
+	for _, option := range target.Options {
+		if want[option.ID] != option.Kind {
+			t.Fatalf("%q classified as %q, want %q", option.ID, option.Kind, want[option.ID])
+		}
+	}
+}
+
+func TestHermesPolicyCandidatesFollowApprovalLevels(t *testing.T) {
+	target, has := discover(t, "hermes", hermesSession)
+	options := sessioncfg.Parse(decode(t, hermesSession)["configOptions"])
+	cases := []struct {
+		policy protocol.AgentPolicy
+		want   string
+	}{
+		{protocol.PolicyAsk, "ask"},
+		{protocol.PolicyWorkspace, "workspace_session"},
+		{protocol.PolicyAuto, "session"},
+		{protocol.PolicyUnattended, "session"},
+	}
+	for _, item := range cases {
+		push := Plan(item.policy, "hermes", target, has, options, "")
+		if push.ModeID != item.want {
+			t.Fatalf("policy %q: want mode %q, got %+v", item.policy, item.want, push)
+		}
+		if push.ConfigID != "" {
+			t.Fatalf("policy %q should not push a separate config option: %+v", item.policy, push)
+		}
+	}
+}
+
+func TestHermesFallsBackToLegacyModes(t *testing.T) {
+	session := decode(t, hermesSession)
+	target, ok := Discover("hermes", nil, session["modes"])
+	if !ok {
+		t.Fatal("hermes legacy modes should still be switchable")
+	}
+	if target.Source != SourceModes || target.Current != "default" {
+		t.Fatalf("want legacy modes with current=default, got %+v", target)
+	}
+	options := []sessioncfg.Option(nil)
+	for _, item := range []struct {
+		policy protocol.AgentPolicy
+		want   string
+	}{
+		{protocol.PolicyAsk, "default"},
+		{protocol.PolicyWorkspace, "accept_edits"},
+		{protocol.PolicyUnattended, "dont_ask"},
+	} {
+		push := Plan(item.policy, "hermes", target, true, options, "")
+		if push.ModeID != item.want {
+			t.Fatalf("policy %q: want legacy mode %q, got %+v", item.policy, item.want, push)
 		}
 	}
 }

@@ -17,11 +17,12 @@ already on this machine. At least one of them must be installed **and logged in*
 | Trae | `trae` | `traecli acp serve` | |
 | Qoder | `qoder` | `qodercli --acp` | |
 | CodeBuddy | `codebuddy` | `codebuddy --acp` | |
+| Hermes | `hermes` | `hermes-acp` (falls back to `hermes acp`) | needs the ACP extra; `hermes setup` once |
 
 ## Detecting what is installed
 
 ```sh
-for c in agent cursor-agent copilot opencode gemini qwen kimi iflow traecli qodercli codebuddy claude codex; do
+for c in agent cursor-agent copilot opencode gemini qwen kimi iflow traecli qodercli codebuddy claude codex hermes hermes-acp; do
   command -v "$c" >/dev/null 2>&1 && echo "found: $c"
 done
 ```
