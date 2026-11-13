@@ -8,9 +8,15 @@ const BROWSER_PREVIEW_EXTS = new Set([
   "mp3", "wav", "m4a", "ogg", "mp4", "webm",
 ]);
 
+function extensionOf(value: string): string {
+  const base = value.split(/[\\/]/).pop() ?? "";
+  const dot = base.lastIndexOf(".");
+  return dot >= 0 ? base.slice(dot + 1).toLowerCase() : "";
+}
+
 export function canPreviewArtifact(item: AttachmentItem): boolean {
   if (item.missing || item.kind === "folder" || item.kind === "element") return false;
-  const ext = item.name.split(".").pop()?.toLowerCase() ?? "";
+  const ext = extensionOf(item.path) || extensionOf(item.name);
   return BROWSER_PREVIEW_EXTS.has(ext);
 }
 

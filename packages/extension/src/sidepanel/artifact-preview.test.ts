@@ -16,6 +16,7 @@ describe("canPreviewArtifact", () => {
     assert.equal(canPreviewArtifact(item("/out/photo.png", "photo.png", "image")), true);
     assert.equal(canPreviewArtifact(item("/out/demo.mp4", "demo.mp4")), true);
     assert.equal(canPreviewArtifact(item("/out/photo.avif", "photo.avif", "image")), true);
+    assert.equal(canPreviewArtifact(item("/out/chart.png", "Chart", "image")), true);
   });
 
   it("rejects folders, missing files, and non-previewable types", () => {
