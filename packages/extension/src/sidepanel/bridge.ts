@@ -179,7 +179,9 @@ export function connectSidebar(onMessage: Listener, name = "sidebar"): {
 
   return {
     send: (msg) => {
-      if (!shared.port && shared.attaching) {
+      // Only the preview page sends immediately after connectSidebar(). Keep the
+      // sidebar's existing retry/oversize handling untouched.
+      if (!shared.port && shared.attaching && portName === "preview") {
         shared.pending.push(msg);
         return;
       }
