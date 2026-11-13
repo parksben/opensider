@@ -15,6 +15,7 @@ describe("canPreviewArtifact", () => {
     assert.equal(canPreviewArtifact(item("/out/main.go", "main.go")), true);
     assert.equal(canPreviewArtifact(item("/out/photo.png", "photo.png", "image")), true);
     assert.equal(canPreviewArtifact(item("/out/demo.mp4", "demo.mp4")), true);
+    assert.equal(canPreviewArtifact(item("/out/photo.avif", "photo.avif", "image")), true);
   });
 
   it("rejects folders, missing files, and non-previewable types", () => {
@@ -23,6 +24,9 @@ describe("canPreviewArtifact", () => {
     assert.equal(canPreviewArtifact(item("/out/plan.docx", "plan.docx")), false);
     assert.equal(canPreviewArtifact(item("/out/bundle.zip", "bundle.zip")), false);
     assert.equal(canPreviewArtifact(item("/out/app.exe", "app.exe")), false);
+    assert.equal(canPreviewArtifact(item("/out/photo.heic", "photo.heic", "image")), false);
+    assert.equal(canPreviewArtifact(item("/out/scan.tiff", "scan.tiff", "image")), false);
+    assert.equal(canPreviewArtifact(item("/out/clip.mov", "clip.mov")), false);
   });
 });
 
