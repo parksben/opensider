@@ -52,5 +52,9 @@ func openDir(path string) error {
 	open.Stdin = nil
 	open.Stdout = nil
 	open.Stderr = nil
-	return open.Run()
+	err := open.Run()
+	if err == nil || toleratedExit(err) {
+		return nil
+	}
+	return err
 }
