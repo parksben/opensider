@@ -475,6 +475,16 @@ mark.cs-at-match {
 }
 
 /*
+ * The live turn's stage. A minimum height keeps the message that started the turn from
+ * jumping while steps stream in, fold away and get replaced. The panel drops the class
+ * when the next user message starts a new turn (see turn-stage.ts); a panel opened on
+ * finished history never stages an old turn.
+ */
+.cs-live-stage {
+  min-height: clamp(180px, 32vh, 300px);
+}
+
+/*
  * 这里曾有 `.cs-thread-bubble`（content-visibility: auto + contain-intrinsic-size: auto
  * 160px）让离屏气泡只算盒子不渲染。真机逐帧实测它自己就是抖动源：气泡挂载 / 进出视口
  * 的那几帧里，跳过与恢复会用 160px 占位顶替真实高度（探针日志：57px 的用户气泡在

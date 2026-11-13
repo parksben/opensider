@@ -14,6 +14,7 @@ import { buildHandoffPrompt, EDITOR_REPO, handoffCutoff } from "../handoff";
 import { groupModelsByPrefix, modelGroupLabel, modelShortName } from "../model-groups";
 import { STICKY_PX, useThreadFollow } from "../thread-follow";
 import { toolFinished } from "../tool-status";
+import { nextStage, stageVisible, type StageState } from "../turn-stage";
 import {
   composerCarryMatches,
   decodeComposerCarry,
@@ -694,6 +695,7 @@ export function ChatPane({
           <div data-thread-body="" className="shrink-0 py-3">
             <MessageThread
               locale={locale}
+              sessionId={sessionId}
               messages={messages}
               isRunning={isRunning}
               editingId={editingId}
@@ -1048,6 +1050,7 @@ export function ChatPane({
 
 const MessageThread = memo(function MessageThread({
   locale,
+  sessionId,
   messages,
   isRunning,
   editingId,
@@ -1060,6 +1063,7 @@ const MessageThread = memo(function MessageThread({
   onContinue,
 }: {
   locale: Locale;
+  sessionId: string;
   messages: ChatMessage[];
   isRunning: boolean;
   editingId?: string;
@@ -1071,6 +1075,12 @@ const MessageThread = memo(function MessageThread({
   onRegenerate: (messageId: string) => void;
   onContinue: (messageId: string) => void;
 }) {
+  // The live turn keeps a minimum-height stage until the next user message; see turn-stage.ts.
+  const stageRef = useRef<StageState | undefined>(undefined);
+  const stage = nextStage(stageRef.current, sessionId, messages, isRunning);
+  stageRef.current = stage;
+  const stagedId = stageVisible(messages, stage.id) ? stage.id : undefined;
+  const awaitingStage = isRunning && messages[messages.length - 1]?.role === "user";
   return (
     <>
       {messages.map((message, index) => {
@@ -1122,6 +1132,7 @@ const MessageThread = memo(function MessageThread({
             key={message.id}
             locale={locale}
             locked={isRunning}
+            stage={message.id === stagedId}
             hideActions={isRunning && message.id === messages[messages.length - 1]?.id}
             className={gap}
             modelLabel={
@@ -1144,6 +1155,7 @@ const MessageThread = memo(function MessageThread({
           </MessageFrame>
         );
       })}
+      {awaitingStage ? <div aria-hidden data-live-stage="pending" className="cs-live-stage mt-3" /> : null}
     </>
   );
 });
@@ -1688,6 +1700,7 @@ function sameMessageFrame(prev: MessageFrameProps, next: MessageFrameProps): boo
   return (
     prev.locale === next.locale &&
     prev.locked === next.locked &&
+    prev.stage === next.stage &&
     prev.hideActions === next.hideActions &&
     prev.className === next.className &&
     prev.modelLabel === next.modelLabel &&
@@ -1699,6 +1712,7 @@ function sameMessageFrame(prev: MessageFrameProps, next: MessageFrameProps): boo
 type MessageFrameProps = {
   locale: Locale;
   locked: boolean;
+  stage?: boolean;
   hideActions?: boolean;
   className?: string;
   modelLabel?: string;
@@ -1713,6 +1727,7 @@ const MessageFrame = memo(
   function MessageFrame({
     locale,
     locked,
+    stage = false,
     hideActions,
     className = "",
     modelLabel,
@@ -1737,7 +1752,7 @@ const MessageFrame = memo(
     }
   };
   return (
-    <div data-thread-anchor="" className={`group/msg relative ${className}`}>
+    <div data-thread-anchor="" className={`group/msg relative ${className}${stage ? " cs-live-stage" : ""}`}>
       {children}
       {hideActions ? null : (
         <div
