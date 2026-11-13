@@ -10,13 +10,16 @@ import (
 
 // Prepare pins TMPDIR for one Agent and, on macOS, signs extracted native
 // addons so Gatekeeper does not re-prompt on every Chrome-spawned launch.
-// The returned stop function ends the background sweeper.
+// Hermes keeps its Python runtime outside TMPDIR, so prepareRuntime() trusts
+// that tree before the ACP server starts. The returned stop function ends the
+// background sweeper.
 func Prepare(agentID, command string) (tmpdir string, stop func()) {
 	id := strings.TrimSpace(agentID)
 	tmpdir = paths.AgentNativeDir(id)
 	if err := os.MkdirAll(tmpdir, 0o755); err != nil {
 		return "", func() {}
 	}
+	prepareRuntime(id)
 	return tmpdir, startSweep(command, tmpdir)
 }
 

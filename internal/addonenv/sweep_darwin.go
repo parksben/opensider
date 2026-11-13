@@ -3,13 +3,76 @@
 package addonenv
 
 import (
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/parksben/opensider/internal/log"
+	"github.com/parksben/opensider/internal/paths"
 )
+
+// prepareRuntime trusts native code that lives outside the Agent's TMPDIR.
+// The fast TMPDIR sweeper cannot see Hermes' managed Python venv, and that
+// venv is where Gatekeeper's prompt for charset_normalizer/cd.*.so comes from.
+func prepareRuntime(agentID string) {
+	if strings.TrimSpace(agentID) != "hermes" {
+		return
+	}
+	trustHermesRuntime()
+}
+
+// trustHermesRuntime walks Hermes' stable runtime roots once before launch.
+// It is deliberately not part of startSweep: those trees are large and stable,
+// so walking them on every 40ms tick would be wasteful.
+func trustHermesRuntime() {
+	roots := hermesRuntimeRoots()
+	if len(roots) == 0 {
+		return
+	}
+	hermesTrustMu.Lock()
+	defer hermesTrustMu.Unlock()
+	walkSignable(roots, trustFile)
+}
+
+func hermesRuntimeRoots() []string {
+	home := strings.TrimSpace(os.Getenv("HERMES_HOME"))
+	if home == "" {
+		root := paths.Home()
+		if root == "" {
+			return nil
+		}
+		home = filepath.Join(root, ".hermes")
+	}
+	return []string{
+		filepath.Join(home, "tools"),
+		filepath.Join(home, "installs"),
+	}
+}
+
+var (
+	hermesTrustMu sync.Mutex
+	trustFileMu   sync.Mutex
+	trustedNative sync.Map // path -> nativeFingerprint
+)
+
+// nativeFingerprint lets the background sweep skip native files it has already
+// trusted. Without it every 40ms tick would re-run codesign and xattr on the
+// same (sometimes 30MB) Mach-O files.
+type nativeFingerprint struct {
+	size int64
+	mod  int64
+}
+
+func fingerprint(path string) (nativeFingerprint, bool) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nativeFingerprint{}, false
+	}
+	return nativeFingerprint{size: info.Size(), mod: info.ModTime().UnixNano()}, true
+}
 
 func startSweep(command, tmpdir string) func() {
 	stopCh := make(chan struct{})
@@ -47,9 +110,9 @@ func sweep(roots []string) {
 	walkSignable(roots, trustFile)
 }
 
-// cleanRoots 在快扫循环之前把既有残留一次性收拾掉。walkSignable 只处理小于
-// 8MB 的 .node/.dylib，像 opensider-art/ocr、Python 的 .so 这类同样会被
-// Gatekeeper 拦下的文件它永远碰不到，只能整目录清一遍。
+// cleanRoots 在快扫循环之前把既有残留一次性收拾掉。walkSignable 只处理
+// .node/.dylib/.so 且不超过 64MB 的 Mach-O，像 opensider-art/ocr 里没有
+// 这些扩展名的原生文件它碰不到，只能整目录清一遍。
 func cleanRoots(roots []string) {
 	for _, root := range roots {
 		_ = exec.Command("xattr", "-cr", root).Run()
@@ -65,20 +128,61 @@ func trustSteps(path string) [][]string {
 	}
 }
 
-// trustFile 消除 path 上的隔离属性，让 Chrome 拉起的 Agent 不再触发 Gatekeeper。
+// trustFile makes path loadable under Gatekeeper. A valid signature is left
+// alone (only quarantine is cleared); an unsigned or linker-signed Mach-O is
+// ad-hoc signed and then cleaned. The clean step must stay after codesign:
+// when the Agent's launch chain carries quarantine, codesign itself rewrites
+// the file as a quarantined process and stamps com.apple.quarantine again
+// (measured 0081;…;Chrome; → 0281;…;;), so cleaning first is always undone.
 //
-// 顺序不能反：只要创建者的启动链本身带隔离（Chrome 下载安装的 App、以及它的
-// 子孙进程都算），macOS 就会给这些进程写出的文件重新打上
-// com.apple.quarantine。codesign 也是这条链上的子孙，它重写 Mach-O 时就等于
-// 又盖了一次章（实测 0081;…;Chrome; → 0281;…;;）。所以「先清属性、后签名」
-// 等于白清：文件永远停在隔离态，Chrome 每次拉起 Agent、dlopen 这些原生库都
-// 要再弹一次「无法验证开发者」。签名失败时把 codesign 的输出一起记下来，
-// 否则只剩一句 exit status 1，无从排查。
+// Hermes' uv-installed modules have no quarantine at all, only the protected
+// com.apple.provenance attribute. xattr cannot remove provenance, so the
+// signature itself is what lets syspolicyd approve the dlopen.
+//
+// Signing failures are logged with codesign's output; otherwise the host log
+// only says "exit status 1" and the cause is lost.
 func trustFile(path string) {
+	fp, ok := fingerprint(path)
+	if !ok {
+		return
+	}
+	if cached, ok := trustedNative.Load(path); ok && cached == fp {
+		return
+	}
+	trustFileMu.Lock()
+	defer trustFileMu.Unlock()
+	if cached, ok := trustedNative.Load(path); ok && cached == fp {
+		return
+	}
+	if codeSignatureValid(path) {
+		if clearAttributes(path) {
+			storeFingerprint(path)
+		}
+		return
+	}
+	clear := true
 	for _, step := range trustSteps(path) {
 		args := step[1:]
 		if out, err := exec.Command(step[0], args...).CombinedOutput(); err != nil {
+			clear = false
 			log.Log("addonenv " + step[0] + " skipped: " + path + " " + err.Error() + " " + strings.TrimSpace(string(out)))
 		}
+	}
+	if clear && codeSignatureValid(path) {
+		storeFingerprint(path)
+	}
+}
+
+func codeSignatureValid(path string) bool {
+	return exec.Command("codesign", "--verify", "--strict", "--verbose=0", path).Run() == nil
+}
+
+func clearAttributes(path string) bool {
+	return exec.Command("xattr", "-cr", path).Run() == nil
+}
+
+func storeFingerprint(path string) {
+	if fp, ok := fingerprint(path); ok {
+		trustedNative.Store(path, fp)
 	}
 }

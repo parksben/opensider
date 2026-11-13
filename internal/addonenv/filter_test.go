@@ -12,6 +12,15 @@ func TestShouldSign(t *testing.T) {
 	if !shouldSign("/tmp/libfoo.dylib", 80_000) {
 		t.Fatal("dylib")
 	}
+	if !shouldSign("/tmp/cd.cpython-314-darwin.so", 94_000) {
+		t.Fatal("python .so")
+	}
+	if !shouldSign("/tmp/_pydantic_core.cpython-314-darwin.so", 30<<20) {
+		t.Fatal("large python .so")
+	}
+	if shouldSign("/tmp/_pydantic_core.cpython-314-darwin.so", 65<<20) {
+		t.Fatal("must skip .so above 64MB")
+	}
 	if shouldSign("/tmp/opencode", 144_000_000) {
 		t.Fatal("must skip CLI binary")
 	}

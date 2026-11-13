@@ -21,19 +21,29 @@ func quarantineOf(path string) string {
 	return strings.TrimSpace(string(out))
 }
 
-// probeDylib 造一个真实的小体积 Mach-O dylib 并打上 Chrome 下发的
-// quarantine，用来复现「Chrome 拉起 Agent 解出原生库」的现场。
-func probeDylib(t *testing.T) string {
+// probeMachO 造一个真实的小体积 Mach-O。clang 产出的是 linker-signed
+// 二进制，和 uv 解包出来的 .so 一样过不了 codesign --verify --strict。
+func probeMachO(t *testing.T, path string) {
 	t.Helper()
-	dir := t.TempDir()
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	src := filepath.Join(dir, "probe.c")
 	if err := os.WriteFile(src, []byte("int probe(void) { return 42; }\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(dir, "probe.dylib")
 	if out, err := exec.Command("clang", "-dynamiclib", "-o", path, src).CombinedOutput(); err != nil {
 		t.Skipf("本机没有可用的 clang，跳过：%v %s", err, out)
 	}
+}
+
+// probeDylib 造一个真实的小体积 Mach-O dylib 并打上 Chrome 下发的
+// quarantine，用来复现「Chrome 拉起 Agent 解出原生库」的现场。
+func probeDylib(t *testing.T) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "probe.dylib")
+	probeMachO(t, path)
 	if out, err := exec.Command("xattr", "-w", "com.apple.quarantine", probeQuarantine, path).CombinedOutput(); err != nil {
 		t.Skipf("本机不允许设置 quarantine，跳过：%v %s", err, out)
 	}
@@ -73,5 +83,41 @@ func TestClearThenSignIsNotEnough(t *testing.T) {
 	}
 	if q := quarantineOf(path); q == "" {
 		t.Skip("当前进程不在隔离链上，写文件不会被盖章；请在 Chrome 启动的 Host 里跑这条用例")
+	}
+}
+
+func TestHermesRuntimeRoots(t *testing.T) {
+	root := filepath.Join(t.TempDir(), ".hermes")
+	t.Setenv("HERMES_HOME", root)
+	roots := hermesRuntimeRoots()
+	want := map[string]bool{
+		filepath.Join(root, "tools"):    true,
+		filepath.Join(root, "installs"): true,
+	}
+	if len(roots) != len(want) {
+		t.Fatalf("roots = %v, want %d", roots, len(want))
+	}
+	for _, root := range roots {
+		if !want[root] {
+			t.Fatalf("unexpected root %q", root)
+		}
+	}
+}
+
+// TestHermesRuntimeTrustsNativeModules 覆盖 uv 解包出的 .so：它没有
+// quarantine，只有 com.apple.provenance 和 linker-signed 签名，Gatekeeper
+// 只认 codesign 补出来的有效签名。
+func TestHermesRuntimeTrustsNativeModules(t *testing.T) {
+	root := filepath.Join(t.TempDir(), ".hermes")
+	t.Setenv("HERMES_HOME", root)
+	path := filepath.Join(root, "installs", "env", "venv", "lib", "python3.14",
+		"site-packages", "charset_normalizer", "cd.cpython-314-darwin.so")
+	probeMachO(t, path)
+	if out, err := exec.Command("codesign", "--verify", "--strict", path).CombinedOutput(); err == nil {
+		t.Skipf("clang 产出已经带有效签名，无法验证补签路径：%s", out)
+	}
+	trustHermesRuntime()
+	if out, err := exec.Command("codesign", "--verify", "--strict", path).CombinedOutput(); err != nil {
+		t.Fatalf("trustHermesRuntime 后签名校验失败：%v %s", err, out)
 	}
 }
