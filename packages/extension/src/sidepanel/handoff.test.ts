@@ -34,17 +34,31 @@ describe("handoff prompt", () => {
     assert.equal(cut.beforeRound, 2);
     const prompt = buildHandoffPrompt({
       locale: "zh",
-      target: "vscode",
       statePath: "/tmp/ui-state.json",
       sessionId: "sess",
       ...cut,
     });
-    assert.match(prompt, /VS Code 里的 OpenSider/);
+    assert.match(prompt, /请接着这个会话继续/);
+    assert.match(prompt, /如果读不到，请告诉我，我会把记录贴过来/);
     assert.match(prompt, /\/tmp\/sessions\/sess\.json/);
-    assert.match(prompt, /不在 ui-state\.json/);
     assert.match(prompt, /type 为 text/);
     assert.match(prompt, /只看第 2 轮之前/);
+    assert.doesNotMatch(prompt, /VS Code|OpenSider|ui-state\.json/);
     assert.doesNotMatch(prompt, /在 sessions 里找/);
     assert.doesNotMatch(prompt, /User: /);
+  });
+
+  it("uses the same generic wording in English", () => {
+    const prompt = buildHandoffPrompt({
+      locale: "en",
+      statePath: "/tmp/ui-state.json",
+      sessionId: "sess",
+      beforeRound: 2,
+      throughMessageId: "a1",
+    });
+    assert.match(prompt, /Continue this conversation/);
+    assert.match(prompt, /if not, tell me and I will paste the transcript/);
+    assert.match(prompt, /\/tmp\/sessions\/sess\.json/);
+    assert.doesNotMatch(prompt, /VS Code|OpenSider|ui-state\.json/);
   });
 });

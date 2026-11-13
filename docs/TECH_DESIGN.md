@@ -168,6 +168,10 @@ Host 是一份 Go 二进制（`cmd/opensider` + `internal/`）。`browser/tools.
 
 VS Code 面板当前**没有产物列表**（`App`/`ChatPane` 只渲染 `FilesChanged`，`uistate` 透传 `artifacts` 但没有 UI 消费），所以这次浏览器端落地后，VS Code 端没有可挂按钮的列表。后续若补产物列表，markdown 用 VS Code 原生 `markdown.showPreview`（已确认内置支持，无需额外扩展），其余文本/图片用 `vscode.open` 在新标签打开，目录用 `revealFileInOS`/`env.openExternal` 打开；不要为 VS Code 再造一个浏览器式预览页。
 
+### 跨 Agent 续聊
+
+消息上的「在其他 Agent 中继续」不再绑定 VS Code：不探测另一端是否安装，也不在文案或提示词里出现 VS Code / OpenSider / ui-state.json。生成的提示词只说明会话文件位置、如何按轮次截断，并明确「读不到就让我粘贴记录」，这样本地 CLI 和网页版 Agent 都能用。提示词本身不内嵌整段对话（体积不可控），读不到文件时由用户手动粘贴记录。
+
 ### Host 请求的可靠性与版本错配
 
 扩展与本机 Host 是**两份各自更新的东西**：扩展随 release 走，Host 只在用户跑安装 / 更新 skill 时才被覆盖。于是「新扩展 + 旧 Host」是常态，而旧 Host 对不认识的消息只有一句 `default: return nil`——静默丢掉。用户看到的就是「拖进去了（提示都弹了）但附件栏没变化」，没有任何线索。三道门都要堵上：

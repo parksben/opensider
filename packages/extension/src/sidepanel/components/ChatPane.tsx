@@ -1,5 +1,5 @@
 import type { AgentModeOption, AgentModel, AgentOption, AttachmentItem, ContextUsage as ContextUsageValue, CurrentPage, FsPickMode, SkillItem } from "@shared";
-import { ArrowDown, AtSign, Check, ChevronDown, ChevronRight, Code, Copy, File, FileDown, Folder, FolderPen, GitFork, Lightbulb, LoaderCircle, MousePointer2, Paperclip, Plus, RefreshCw, Send, Shield, Slash, Square, TriangleAlert, Unlock, X, Zap } from "lucide-react";
+import { ArrowDown, AtSign, Bot, Check, ChevronDown, ChevronRight, Copy, File, FileDown, Folder, FolderPen, GitFork, Lightbulb, LoaderCircle, MousePointer2, Paperclip, Plus, RefreshCw, Send, Shield, Slash, Square, TriangleAlert, Unlock, X, Zap } from "lucide-react";
 import logoUrl from "../../../assets/icon.svg?url";
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from "react";
 import type { ChatMessage, ChatPart, TodoItem } from "../chat-types";
@@ -10,7 +10,7 @@ import type { Locale } from "../i18n";
 import { t } from "../i18n";
 import { closeAtMenuLock, installAtMenuGuard, openAtMenuLock, shouldBlockSubmit } from "../at-menu-lock";
 import { composerHasContent, stripAttachmentMentions } from "../mentions";
-import { buildHandoffPrompt, EDITOR_REPO, handoffCutoff } from "../handoff";
+import { buildHandoffPrompt, handoffCutoff } from "../handoff";
 import { groupModelsByPrefix, modelGroupLabel, modelShortName } from "../model-groups";
 import { STICKY_PX, useThreadFollow } from "../thread-follow";
 import { toolFinished } from "../tool-status";
@@ -101,7 +101,6 @@ export function ChatPane({
   insertQuote,
   onQuoteInserted,
   page,
-  probeEditor,
   statePath,
   hitl,
   control,
@@ -184,8 +183,6 @@ export function ChatPane({
   insertQuote?: { id: string; text: string };
   onQuoteInserted?: (id: string) => void;
   page?: CurrentPage;
-  /** Asks the host whether OpenSider for VS Code is installed. `null` means it could not tell. */
-  probeEditor?: () => Promise<boolean | null>;
   /** Absolute path of `~/.opensider/ui-state.json`. */
   statePath?: string;
 }) {
@@ -231,7 +228,7 @@ export function ChatPane({
   // bottom, nothing may pull them back — plus the three forced jumps (send, session
   // switch, the button).
   const stickToBottom = useThreadFollow(listRef, sessionId, messages.length > 0, replayKey);
-  const [handoff, setHandoff] = useState<{ prompt: string; installed: boolean | null } | null>(null);
+  const [handoff, setHandoff] = useState<{ prompt: string } | null>(null);
   const editingRef = useRef<string | undefined>(undefined);
   const editingQueueRef = useRef<string | undefined>(undefined);
   const onEditingQueuedRef = useRef(onEditingQueued);
@@ -716,7 +713,6 @@ export function ChatPane({
                 if (!cut) return;
                 const prompt = buildHandoffPrompt({
                   locale,
-                  target: "vscode",
                   statePath: statePath || "~/.opensider/ui-state.json",
                   sessionId,
                   beforeRound: cut.beforeRound,
@@ -725,7 +721,7 @@ export function ChatPane({
                   pageTitle: page?.title,
                   pageUrl: page?.url,
                 });
-                void Promise.resolve(probeEditor?.() ?? null).then((installed) => setHandoff({ prompt, installed }));
+                setHandoff({ prompt });
               }}
             />
             <div ref={threadEndRef} aria-hidden className="h-px w-full" />
@@ -1040,20 +1036,9 @@ export function ChatPane({
       {handoff ? (
         <ContinueDialog
           locale={locale}
-          title={t(locale, "continueInEditor")}
-          hint={t(
-            locale,
-            handoff.installed === false
-              ? "continueMissingEditor"
-              : handoff.installed == null
-                ? "continueUnknownEditor"
-                : "continueReadyEditor",
-          )}
+          title={t(locale, "continueInOtherAgent")}
+          hint={t(locale, "continueReadyOtherAgent")}
           prompt={handoff.prompt}
-          installUrl={handoff.installed === true ? undefined : EDITOR_REPO}
-          onOpenInstall={(url) => {
-            void chrome.tabs.create({ url, active: true });
-          }}
           onClose={() => setHandoff(null)}
         />
       ) : null}
@@ -1794,11 +1779,11 @@ const MessageFrame = memo(
               {copied ? <Check size={12} /> : <Copy size={12} />}
             </IconButton>
             <IconButton
-              label={t(locale, "continueInEditor")}
+              label={t(locale, "continueInOtherAgent")}
               onClick={onContinue}
               className="rounded p-1 text-[var(--muted)] hover:text-[var(--text)]"
             >
-              <Code size={12} />
+              <Bot size={12} />
             </IconButton>
             <IconButton
               label={t(locale, "fork")}

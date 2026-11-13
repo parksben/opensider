@@ -46,7 +46,7 @@ import { SessionDrawer } from "./components/SessionDrawer";
 import { UpdateDialog } from "./components/UpdateDialog";
 import { UninstallDialog } from "./components/UninstallDialog";
 import { applyLocale, detectBrowserLocale, readCachedLocale, t, type Locale } from "./i18n";
-import { requestPeerProbe, settlePeerProbe } from "./peer-probe";
+import { settlePeerProbe } from "./peer-probe";
 import { BindRegistry, findSessionIdByAcpId } from "./session-bind";
 import { cardBelongsToSession, sessionAcpIds } from "./session-ids";
 import { adoptableCurrentId, modelForSession, withSessionModel } from "./model-memory";
@@ -2608,7 +2608,6 @@ export function App() {
               flatActions={actionFlat}
               skills={skills}
               onRefreshSkills={() => sendRef.current({ type: "skills.refresh" })}
-              probeEditor={() => requestPeerProbe(sendRef.current)}
               statePath={statePath}
               onAgentMode={(mode) => {
                 setAgentMode(mode);

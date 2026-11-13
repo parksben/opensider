@@ -198,11 +198,8 @@ const copy = {
     regenerate: "Regenerate",
     copyReply: "Copy",
     copiedReply: "Copied",
-    continueInEditor: "Continue in VS Code",
-    continueReadyEditor: "The prompt is ready. Copy it and paste it into a VS Code OpenSider chat to continue.",
-    continueMissingEditor: "OpenSider for VS Code is not installed on this machine. Install it, then copy the prompt below and paste it into a VS Code OpenSider chat.",
-    continueUnknownEditor: "The prompt is ready. Copy it and paste it into a VS Code OpenSider chat to continue. If it is not installed yet, install it from GitHub first.",
-    continueInstall: "Install from GitHub",
+    continueInOtherAgent: "Continue in another Agent",
+    continueReadyOtherAgent: "The prompt is ready. Copy it and paste it into another Agent's chat to continue.",
     copyContinuePrompt: "Copy prompt",
     // 划词工具条的结果层（工具条本身的按钮名在 src/selection-copy.ts 里，那是内容脚本，
     // 用不上这一份）。
@@ -439,11 +436,8 @@ const copy = {
     regenerate: "重新生成",
     copyReply: "复制",
     copiedReply: "已复制",
-    continueInEditor: "在 VS Code 中续聊",
-    continueReadyEditor: "提示词已生成，请复制以下内容并粘贴到 VS Code OpenSider 会话中即可续聊。",
-    continueMissingEditor: "没有检测到本机安装了 VS Code 端 OpenSider。请先安装，再复制以下提示词，粘贴到 VS Code OpenSider 会话中发送。",
-    continueUnknownEditor: "提示词已生成，请复制以下内容并粘贴到 VS Code OpenSider 会话中即可续聊。如果还没安装，请先从 GitHub 安装。",
-    continueInstall: "前往 GitHub 安装",
+    continueInOtherAgent: "在其他 Agent 中继续",
+    continueReadyOtherAgent: "提示词已生成，请复制以下内容并粘贴到其他 Agent 会话中即可续聊。",
     copyContinuePrompt: "复制提示词",
     // 划词工具条的结果层（工具条本身的按钮名在 src/selection-copy.ts 里）。
     selectionTranslateTitle: "翻译",
