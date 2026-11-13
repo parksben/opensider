@@ -2767,6 +2767,15 @@ chrome.runtime.onConnect.addListener((port) => {
     connectNative();
     port.onMessage.addListener((msg: ExtToHost) => {
       if (msg.type !== "fs.read") return;
+      if (!nativePort) connectNative();
+      if (!nativePort) {
+        try {
+          port.postMessage({ type: "fs.read", requestId: msg.requestId, error: "Native host is not connected." });
+        } catch {
+          // the preview tab closed while we were connecting
+        }
+        return;
+      }
       previewRequests.set(msg.requestId, port);
       sendNative(msg);
     });
