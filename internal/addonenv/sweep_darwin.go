@@ -34,7 +34,53 @@ func trustHermesRuntime() {
 	}
 	hermesTrustMu.Lock()
 	defer hermesTrustMu.Unlock()
+	disableCharSetNormalizerNative(roots)
 	walkSignable(roots, trustFile)
+}
+
+// disableCharSetNormalizerNative gets rid of the one native module pair that
+// macOS 26 keeps rejecting even after an ad-hoc signature. Hermes/uv wheels
+// carry com.apple.provenance, and syspolicyd denies those files (including the
+// copies in the uv cache) every time a Python process imports them. The
+// package ships pure-Python cd.py / md.py fallbacks, so moving the .so files
+// out of the import path is safer than fighting Gatekeeper on every launch.
+// The originals stay next to the package (suffix .opensider-disabled) for
+// reversibility; a later dependency sync that restores them is handled again
+// on the next launch.
+func disableCharSetNormalizerNative(roots []string) {
+	for _, root := range roots {
+		if root == "" {
+			continue
+		}
+		_ = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+			if err != nil || info == nil || info.IsDir() {
+				return nil
+			}
+			if filepath.Base(filepath.Dir(path)) != "charset_normalizer" {
+				return nil
+			}
+			name := strings.ToLower(info.Name())
+			if !strings.HasSuffix(name, ".so") ||
+				!(strings.HasPrefix(name, "cd.") || strings.HasPrefix(name, "md.")) {
+				return nil
+			}
+			disabled := path + ".opensider-disabled"
+			if _, statErr := os.Stat(disabled); statErr == nil {
+				if rmErr := os.Remove(path); rmErr != nil {
+					log.Log("addonenv disable charset native: " + rmErr.Error() + " " + path)
+				} else {
+					log.Log("addonenv disabled restored charset native " + path)
+				}
+				return nil
+			}
+			if renameErr := os.Rename(path, disabled); renameErr != nil {
+				log.Log("addonenv disable charset native: " + renameErr.Error() + " " + path)
+			} else {
+				log.Log("addonenv disabled charset native " + path)
+			}
+			return nil
+		})
+	}
 }
 
 func hermesRuntimeRoots() []string {
@@ -49,6 +95,10 @@ func hermesRuntimeRoots() []string {
 	return []string{
 		filepath.Join(home, "tools"),
 		filepath.Join(home, "installs"),
+		// uv keeps unpacked wheels here. Hermes may build an environment from
+		// this cache, and those copies are not the ones under installs/.
+		filepath.Join(home, "cache", "uv", "archive-v0"),
+		filepath.Join(home, "cache", "uv", "wheels-v7"),
 	}
 }
 

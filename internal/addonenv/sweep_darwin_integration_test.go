@@ -91,8 +91,10 @@ func TestHermesRuntimeRoots(t *testing.T) {
 	t.Setenv("HERMES_HOME", root)
 	roots := hermesRuntimeRoots()
 	want := map[string]bool{
-		filepath.Join(root, "tools"):    true,
-		filepath.Join(root, "installs"): true,
+		filepath.Join(root, "tools"):                     true,
+		filepath.Join(root, "installs"):                  true,
+		filepath.Join(root, "cache", "uv", "archive-v0"): true,
+		filepath.Join(root, "cache", "uv", "wheels-v7"):  true,
 	}
 	if len(roots) != len(want) {
 		t.Fatalf("roots = %v, want %d", roots, len(want))
@@ -111,7 +113,7 @@ func TestHermesRuntimeTrustsNativeModules(t *testing.T) {
 	root := filepath.Join(t.TempDir(), ".hermes")
 	t.Setenv("HERMES_HOME", root)
 	path := filepath.Join(root, "installs", "env", "venv", "lib", "python3.14",
-		"site-packages", "charset_normalizer", "cd.cpython-314-darwin.so")
+		"site-packages", "pydantic_core", "_pydantic_core.cpython-314-darwin.so")
 	probeMachO(t, path)
 	if out, err := exec.Command("codesign", "--verify", "--strict", path).CombinedOutput(); err == nil {
 		t.Skipf("clang 产出已经带有效签名，无法验证补签路径：%s", out)
@@ -119,5 +121,48 @@ func TestHermesRuntimeTrustsNativeModules(t *testing.T) {
 	trustHermesRuntime()
 	if out, err := exec.Command("codesign", "--verify", "--strict", path).CombinedOutput(); err != nil {
 		t.Fatalf("trustHermesRuntime 后签名校验失败：%v %s", err, out)
+	}
+}
+
+// TestDisableCharSetNormalizerNative locks the fallback behavior: the native
+// cd/md modules are moved aside so Python loads cd.py/md.py, and a dependency
+// sync that restores a .so cannot bring the Gatekeeper prompt back.
+func TestDisableCharSetNormalizerNative(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "charset_normalizer")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write := func(name string) string {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte(name), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	cd := write("cd.cpython-314-darwin.so")
+	md := write("md.cpython-314-darwin.so")
+	other := write("other.cpython-314-darwin.so")
+	fallback := write("cd.py")
+
+	disableCharSetNormalizerNative([]string{root})
+	for _, path := range []string{cd, md} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("%s still exists", path)
+		}
+		if _, err := os.Stat(path + ".opensider-disabled"); err != nil {
+			t.Fatalf("%s was not moved aside: %v", path, err)
+		}
+	}
+	for _, path := range []string{other, fallback} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("%s should stay: %v", path, err)
+		}
+	}
+
+	write("cd.cpython-314-darwin.so")
+	disableCharSetNormalizerNative([]string{root})
+	if _, err := os.Stat(cd); !os.IsNotExist(err) {
+		t.Fatalf("restored %s should be removed", cd)
 	}
 }
