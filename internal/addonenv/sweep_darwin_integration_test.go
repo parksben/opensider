@@ -166,3 +166,83 @@ func TestDisableCharSetNormalizerNative(t *testing.T) {
 		t.Fatalf("restored %s should be removed", cd)
 	}
 }
+
+// TestDisableCharSetNormalizerInVenv covers the venv layout used by Agent
+// commands that create an environment in TMPDIR or the workspace. The guard
+// must find site-packages directly instead of walking the whole venv.
+func TestDisableCharSetNormalizerInVenv(t *testing.T) {
+	venv := t.TempDir()
+	dir := filepath.Join(venv, "lib", "python3.14", "site-packages", "charset_normalizer")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write := func(name string) string {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte(name), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	cd := write("cd.cpython-314-darwin.so")
+	md := write("md.cpython-314-darwin.so")
+	other := write("other.cpython-314-darwin.so")
+
+	disableCharSetNormalizerInVenv(venv)
+	for _, path := range []string{cd, md} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("%s still exists", path)
+		}
+		if _, err := os.Stat(path + ".opensider-disabled"); err != nil {
+			t.Fatalf("%s was not moved aside: %v", path, err)
+		}
+	}
+	if _, err := os.Stat(other); err != nil {
+		t.Fatalf("%s should stay: %v", other, err)
+	}
+}
+
+func TestPythonVenvRootsIncludesVirtualEnv(t *testing.T) {
+	venv := t.TempDir()
+	if err := os.WriteFile(filepath.Join(venv, "pyvenv.cfg"), []byte("home = /usr/bin\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("VIRTUAL_ENV", venv)
+	found := false
+	for _, root := range pythonVenvRoots() {
+		if root == venv {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("pythonVenvRoots() did not include VIRTUAL_ENV %q", venv)
+	}
+}
+
+// TestGuardPythonVenvsFindsTempVenv covers the path that caused the remaining
+// macOS 26 prompt: a venv created directly under TMPDIR, outside Hermes.
+func TestGuardPythonVenvsFindsTempVenv(t *testing.T) {
+	venv, err := os.MkdirTemp("", "opensider-venv-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(venv)
+	if err := os.WriteFile(filepath.Join(venv, "pyvenv.cfg"), []byte("home = /usr/bin\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(venv, "lib", "python3.14", "site-packages", "charset_normalizer")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cd := filepath.Join(dir, "cd.cpython-314-darwin.so")
+	if err := os.WriteFile(cd, []byte("native"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	guardPythonVenvs()
+	if _, err := os.Stat(cd); !os.IsNotExist(err) {
+		t.Fatalf("%s still exists", cd)
+	}
+	if _, err := os.Stat(cd + ".opensider-disabled"); err != nil {
+		t.Fatalf("%s was not moved aside: %v", cd, err)
+	}
+}

@@ -15,9 +15,11 @@ import (
 )
 
 // prepareRuntime trusts native code that lives outside the Agent's TMPDIR.
-// The fast TMPDIR sweeper cannot see Hermes' managed Python venv, and that
-// venv is where Gatekeeper's prompt for charset_normalizer/cd.*.so comes from.
+// The fast TMPDIR sweeper cannot see Python venvs created by Agent commands,
+// and those venvs are where Gatekeeper's prompt for charset_normalizer/cd.*.so
+// comes from. Hermes has an additional managed runtime outside TMPDIR.
 func prepareRuntime(agentID string) {
+	guardPythonVenvs()
 	if strings.TrimSpace(agentID) != "hermes" {
 		return
 	}
@@ -53,33 +55,125 @@ func disableCharSetNormalizerNative(roots []string) {
 			continue
 		}
 		_ = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
-			if err != nil || info == nil || info.IsDir() {
+			if err != nil || info == nil || !info.IsDir() {
 				return nil
 			}
-			if filepath.Base(filepath.Dir(path)) != "charset_normalizer" {
+			if info.Name() != "charset_normalizer" {
 				return nil
 			}
-			name := strings.ToLower(info.Name())
-			if !strings.HasSuffix(name, ".so") ||
-				!(strings.HasPrefix(name, "cd.") || strings.HasPrefix(name, "md.")) {
-				return nil
-			}
-			disabled := path + ".opensider-disabled"
-			if _, statErr := os.Stat(disabled); statErr == nil {
-				if rmErr := os.Remove(path); rmErr != nil {
-					log.Log("addonenv disable charset native: " + rmErr.Error() + " " + path)
-				} else {
-					log.Log("addonenv disabled restored charset native " + path)
-				}
-				return nil
-			}
-			if renameErr := os.Rename(path, disabled); renameErr != nil {
-				log.Log("addonenv disable charset native: " + renameErr.Error() + " " + path)
-			} else {
-				log.Log("addonenv disabled charset native " + path)
-			}
-			return nil
+			disableCharSetNormalizerDir(path)
+			return filepath.SkipDir
 		})
+	}
+}
+
+// disableCharSetNormalizerDir moves the optional native cd/md modules aside.
+// Python then imports the pure-Python cd.py / md.py fallbacks, which keeps the
+// package usable without Gatekeeper evaluating an unsigned Mach-O.
+func disableCharSetNormalizerDir(dir string) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := strings.ToLower(entry.Name())
+		if !strings.HasSuffix(name, ".so") ||
+			!(strings.HasPrefix(name, "cd.") || strings.HasPrefix(name, "md.")) {
+			continue
+		}
+		path := filepath.Join(dir, entry.Name())
+		disabled := path + ".opensider-disabled"
+		if _, statErr := os.Stat(disabled); statErr == nil {
+			if rmErr := os.Remove(path); rmErr != nil {
+				log.Log("addonenv disable charset native: " + rmErr.Error() + " " + path)
+			} else {
+				log.Log("addonenv disabled restored charset native " + path)
+			}
+			continue
+		}
+		if renameErr := os.Rename(path, disabled); renameErr != nil {
+			log.Log("addonenv disable charset native: " + renameErr.Error() + " " + path)
+		} else {
+			log.Log("addonenv disabled charset native " + path)
+		}
+	}
+}
+
+// guardPythonVenvs covers Python environments created outside Hermes' managed
+// runtime. Agent commands often create a venv in TMPDIR (or in the workspace)
+// after installing a CLI; those environments are outside the Hermes roots and
+// were the source of the remaining macOS 26 Gatekeeper prompts.
+func guardPythonVenvs() {
+	venvGuardMu.Lock()
+	defer venvGuardMu.Unlock()
+	for _, venv := range pythonVenvRoots() {
+		disableCharSetNormalizerInVenv(venv)
+	}
+}
+
+func pythonVenvRoots() []string {
+	seen := map[string]bool{}
+	var roots []string
+	add := func(dir string) {
+		if dir == "" {
+			return
+		}
+		dir = filepath.Clean(dir)
+		if seen[dir] {
+			return
+		}
+		info, err := os.Stat(filepath.Join(dir, "pyvenv.cfg"))
+		if err != nil || info.IsDir() {
+			return
+		}
+		seen[dir] = true
+		roots = append(roots, dir)
+	}
+	add(os.Getenv("VIRTUAL_ENV"))
+	if cwd, err := os.Getwd(); err == nil {
+		add(filepath.Join(cwd, ".venv"))
+		add(filepath.Join(cwd, "venv"))
+	}
+	workspace := paths.WorkspaceDir()
+	add(filepath.Join(workspace, ".venv"))
+	add(filepath.Join(workspace, "venv"))
+	for _, tmp := range []string{"/private/tmp", os.TempDir()} {
+		entries, err := os.ReadDir(tmp)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
+			}
+			dir := filepath.Join(tmp, entry.Name())
+			add(dir)
+			// Agent commands commonly unpack a tool into a temporary directory
+			// and create its venv one level below it.
+			add(filepath.Join(dir, ".venv"))
+			add(filepath.Join(dir, "venv"))
+		}
+	}
+	return roots
+}
+
+func disableCharSetNormalizerInVenv(venv string) {
+	patterns := []string{
+		filepath.Join(venv, "lib", "python*", "site-packages", "charset_normalizer"),
+		filepath.Join(venv, "lib64", "python*", "site-packages", "charset_normalizer"),
+		filepath.Join(venv, "Lib", "site-packages", "charset_normalizer"),
+	}
+	for _, pattern := range patterns {
+		matches, err := filepath.Glob(pattern)
+		if err != nil {
+			continue
+		}
+		for _, dir := range matches {
+			disableCharSetNormalizerDir(dir)
+		}
 	}
 }
 
@@ -104,6 +198,7 @@ func hermesRuntimeRoots() []string {
 
 var (
 	hermesTrustMu sync.Mutex
+	venvGuardMu   sync.Mutex
 	trustFileMu   sync.Mutex
 	trustedNative sync.Map // path -> nativeFingerprint
 )
@@ -128,8 +223,23 @@ func startSweep(command, tmpdir string) func() {
 	stopCh := make(chan struct{})
 	var once sync.Once
 	go runSweep(command, tmpdir, stopCh)
+	go runVenvGuard(stopCh)
 	return func() {
 		once.Do(func() { close(stopCh) })
+	}
+}
+
+func runVenvGuard(stopCh <-chan struct{}) {
+	guardPythonVenvs()
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-stopCh:
+			return
+		case <-ticker.C:
+			guardPythonVenvs()
+		}
 	}
 }
 
