@@ -2062,6 +2062,10 @@ function renderAssistantPart(
  * One reasoning block. Only the block being written is ever on screen while the turn runs
  * (once anything after it arrives, the live branch drops it); inside the end-of-turn fold
  * it is a collapsed single line, the way it always was.
+ *
+ * While live it opens itself so the thought can be read as it lands, but the title stays a
+ * real toggle: `override` is the reader's own choice and outranks the default. (It used to
+ * be a controlled fold with no `onOpenChange`, so a click did nothing at all.)
  */
 function ReasoningRow({
   locale,
@@ -2074,11 +2078,13 @@ function ReasoningRow({
   live?: boolean;
   thinking: boolean;
 }) {
+  const [override, setOverride] = useState<boolean | null>(null);
   return (
     <TextFold
       label={t(locale, "thinking")}
       paneClass="cs-fold-scroll"
-      open={live ? true : undefined}
+      open={live ? (override ?? true) : undefined}
+      onOpenChange={live ? setOverride : undefined}
       follow={thinking}
       icon={
         <span className="inline-flex shrink-0 text-[var(--muted)]">
@@ -2171,21 +2177,22 @@ const AssistantMessage = memo(
   if (!fold) {
     // While the turn runs the message shows only what is happening right now: the reply
     // text written so far, and the single step currently on — the block being written, the
-    // tool call in flight. A step that finishes leaves the page entirely — no title row,
-    // and deliberately no reserved box either: a withheld height reads as a blank patch
-    // between steps, which is worse than the settling it would avoid. One consequence is
-    // spoken for: when a step goes, the content above it settles down by that height (the
-    // text streaming below does not move). The whole run — every step in order, plus the
-    // text between them — comes back behind the worked-for fold once the turn ends.
+    // tool call most recently announced. "Currently on" deliberately includes a step that
+    // has just **finished**: real agents report a tool's output only in the update that
+    // closes it (Hermes: `tool_call` carries the command, `tool_call_update` carries the
+    // result 400 ms later), so dropping the card the moment it completes means its content
+    // is never on screen at all — the run looks like it is only thinking. The card leaves
+    // when the next step is announced, which is also the one moment the content above it
+    // settles down by that height. The whole run — every step in order, plus the text
+    // between them — comes back behind the worked-for fold once the turn ends.
     const last = content[lastIndex];
-    const lastBusy = last.type !== "tool-call" || !toolFinished(last);
     return (
       <div className="space-y-1">
         {content.map((part, index) => {
           if (part.type === "text") {
             return renderAssistantPart(part, index, locale, page, live, lastIndex, false);
           }
-          if (index !== lastIndex || !lastBusy) return null;
+          if (index !== lastIndex) return null;
           return (
             <div key={index} data-live-step="visible">
               {renderAssistantPart(part, index, locale, page, live, lastIndex, hasToolCallAfter(content, index))}

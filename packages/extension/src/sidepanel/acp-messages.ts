@@ -2,6 +2,7 @@ import type { BrowserCommand, BrowserResult, ContextUsage } from "@shared";
 import type { ChatMessage, ChatPart, ToolPart, ToolStatus } from "./chat-types";
 import { isBenignStreamCloseText, stripBenignStreamClose } from "./stream-close";
 import { lastAssistant } from "./assistant-append";
+import { acpToolOutput } from "./tool-content";
 import { withPrimaryArg } from "./tool-label";
 
 function id(): string {
@@ -35,6 +36,20 @@ function findTool(messages: ChatMessage[], toolCallId: string): { messageIndex: 
     );
     if (partIndex >= 0) return { messageIndex, partIndex };
   }
+  return undefined;
+}
+
+/**
+ * What a `tool_call` / `tool_call_update` says the tool produced.
+ *
+ * `rawOutput` is the finished result when the agent sends one; `content` is what the rest
+ * send instead (Hermes only ever uses `content`), so it is read through `acpToolOutput` to
+ * keep the block wrapper out of the card.
+ */
+function toolOutput(update: Record<string, unknown>): unknown {
+  const raw = update.rawOutput;
+  if (raw != null && raw !== "") return raw;
+  if (update.content != null) return acpToolOutput(update.content);
   return undefined;
 }
 
@@ -114,7 +129,7 @@ export function applyAcpUpdate(
       ...current,
       toolName: update.title ? String(update.title) : current.toolName,
       args: update.rawInput ?? update.input ?? current.args,
-      result: update.rawOutput ?? update.content ?? current.result,
+      result: toolOutput(update) ?? current.result,
       status: (update.status as ToolStatus | undefined) ?? current.status,
       kind: update.kind ? String(update.kind) : current.kind,
     });

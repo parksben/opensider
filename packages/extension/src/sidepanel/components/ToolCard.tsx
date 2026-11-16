@@ -32,9 +32,10 @@ const kindIcon = {
  *     no output at all (no result, no status, but it did finish).
  *
  * `live` is only the turn's running state, and it is what allows a card to auto-open at
- * all. `pinned` remembers that the user opened a card by hand, so their reading position
- * survives the run and the fold at the end of it; it is reset whenever this card becomes
- * the running one again, so a fresh execution starts from the default, open.
+ * all. `override` is the reader's own answer, and it outranks the default: a card that
+ * opened itself because it is running can still be closed, and stays closed as the stream
+ * keeps landing in it. It is reset whenever this card becomes the running one again, so a
+ * fresh execution starts from the default, open.
  */
 export function ToolCard({
   locale,
@@ -53,19 +54,19 @@ export function ToolCard({
   const title = toolLiveHeadline(locale, part);
   const hasArgs = part.args != null && part.args !== "";
   const hasResult = part.result != null && part.result !== "";
-  const [pinned, setPinned] = useState(false);
+  const [override, setOverride] = useState<boolean | null>(null);
 
-  // This card started running: drop whatever the user pinned and show it open, the way a
-  // freshly executed tool should look. Without this, a card the user collapsed stays
-  // collapsed while it runs and the stream is invisible.
+  // This card started running: drop whatever the user chose last time and show it open,
+  // the way a freshly executed tool should look. Without this, a card the user collapsed
+  // stays collapsed while it runs and the stream is invisible.
   useEffect(() => {
-    if (running) setPinned(false);
+    if (running) setOverride(null);
   }, [running]);
 
-  // While the turn runs the card is only ever rendered while it is the running step (the
-  // live branch drops it the moment it finishes), and it stays open so its stream is
-  // visible. `pinned` is what keeps a card open for good inside the end-of-turn fold.
-  const open = live || pinned ? true : undefined;
+  // While the turn runs the card is only ever rendered while it is the newest step, and it
+  // opens itself so its stream is visible — unless the reader closed it, in which case
+  // that wins (`override`). When the run is over the fold owns the state instead.
+  const open = override ?? (live ? true : undefined);
   // Only the card that is running streams its result; the ones before it in the same turn
   // hold still, and yanking them to the bottom would hide their arguments.
   const follow = running;
@@ -75,7 +76,7 @@ export function ToolCard({
       label={title}
       paneClass="cs-fold-scroll"
       open={open}
-      onOpenChange={setPinned}
+      onOpenChange={setOverride}
       follow={follow}
       icon={
         <span className="inline-flex shrink-0 text-[var(--muted)]">

@@ -852,6 +852,17 @@ ACP 标准没有「向正在跑的 turn 注入用户消息」的请求，因此 
 - **边界**：`endPrompt` 先拿 `runtime.steerMu` 再清 `prompting`，避免 steer RPC 和 turn 收尾竞态；同一会话的多次 steering 用这个锁 FIFO 串行。若 steer 失败（Agent 不支持、原 turn 已结束、ACP 报错），Host 回 `prompt.steerFailed`，面板把消息收回队列；原 turn 仍在跑就等它结束再发，已经结束就立即按普通 prompt 重发。
 - **其它 Agent**：Copilot 的 ACP `session/prompt` 每次会先 abort 当前 turn，不能 native steer（它的 SDK 有 `mode: "immediate"`，但 OpenSider 当前走 ACP）；OpenCode V2 源码有 `delivery: "steer"`，ACP 入口还需实测；Claude / Codex / Cursor 等没有统一能力，默认安全回退到队列。后续可在 `AgentCaps` / 适配层逐家扩展，不把 agent-specific 逻辑塞进 UI。
 
+### 直播区只画一步（以及它为什么不立刻消失）
+
+流式期间 `AssistantMessage` 的 live 分支只画**最后一个 part**（正文例外：已写出的正文全画），这是「一次一步」的全部实现，也是贴底稳定性的关键（见 `verify-scroll-stability.mjs`：可见步骤数恒为 1，步骤离场的那一帧被当成布局位移、单独放行）。
+
+2026-11-16 修掉的两个坑，都是「受控但没有让用户接管」：
+
+- **做完的工具卡不能立刻下场**。以前 `lastBusy` 为 false 就把卡片从 live 区摘掉；而真实 Agent 恰恰只在**结束这条工具的那次更新**里带回输出（Hermes 实测：`tool_call` 只带命令，`tool_call_update` 带 `status:"completed"` + `content` 里的结果，永远没有 `rawOutput`），于是 400 ms 的卡片一闪而过、内容一秒都没上屏，整轮看起来只有思考在直播。现在做完的步骤留在原位，直到**下一个 part**（新的思考 / 新的工具 / 正文）宣告才离场——「一步」的语义不变，只是这一步活到被下一步替换为止。
+- **流式期间标题必须是真开关**。`TextFold` 的 `open` 受控时只有传了 `onOpenChange` 才可点；思考块以前传了 `open={true}` 却没传回调（点了没反应），工具卡把 `onOpenChange` 接到一个「只有 false 一种结果」的 `pinned` 上（点完还是 `open=true`）。现在两处都用 `override: boolean | null`：`null` = 跟随默认（运行中展开），用户点过之后就是他的选择，后续片段不再把它弹回展开；工具卡每次**重新开跑**时把 `override` 清回 `null`。
+
+工具输出取 `rawOutput`，没有则取 `content` 里的**纯文本块**（`acpToolOutput` 去掉 `{type:"content", content:{type:"text"}}` 这层壳再按行拼接）；只要有一块不是文本（diff / 终端 / 图片），就原样保留块结构，别把 diff 卡片要用的信息吃掉。
+
 ## 扩展身份
 
 未打包扩展的 ID 必须稳定，Native Messaging 的 `allowed_origins` 才能写死。`manifest.json` 带固定 `key`，未打包 ID 为 `gcblddgaifebccglndkaccmibhechimj`。

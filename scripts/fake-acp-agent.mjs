@@ -132,19 +132,36 @@ const chunk = (text) =>
 // 工具调用开始。搜索的真实形态是「先说一段我先去搜一下 → 调工具 → 才给结论」，Host 那边
 // 就靠这条更新把前面的过程叙述作废（见 internal/host 的 absorbSelectionUpdate），所以
 // 这里必须真的演出来，否则那条逻辑在测试里永远跑不到。
+const toolStyle = process.env.FAKE_ACP_TOOL_STYLE ?? "raw";
+// 工具事件两种形态：
+//   raw（默认）  `tool_call` 带 status，结束时 `tool_call_update` 带 rawOutput；
+//   hermes       Hermes 的真实形态（2026-11 实测）：`tool_call` **没有 status**，只有
+//                `content` 里的命令回显；结束时 `tool_call_update` 带 `status:"completed"`
+//                和 `content` 里的输出，**永远没有 rawOutput**。
+// 两者的差别正是「卡片直播时看不到内容」的触发条件，测试要能演出来。
+const contentBlocks = (text) => [{ type: "content", content: { type: "text", text } }];
 const toolCall = (title, id = `call-${turn}`, kind = "fetch") =>
   write({
     jsonrpc: "2.0",
     method: "session/update",
     params: {
       sessionId,
-      update: {
-        sessionUpdate: "tool_call",
-        toolCallId: id,
-        title,
-        kind,
-        status: "in_progress",
-      },
+      update:
+        toolStyle === "hermes"
+          ? {
+              sessionUpdate: "tool_call",
+              toolCallId: id,
+              title,
+              kind,
+              content: contentBlocks(`$ ${title}`),
+            }
+          : {
+              sessionUpdate: "tool_call",
+              toolCallId: id,
+              title,
+              kind,
+              status: "in_progress",
+            },
     },
   });
 // 思考（reasoning）流。与 agent_message_chunk 同构，只是 sessionUpdate 换成
@@ -159,12 +176,22 @@ const thought = (text) =>
     },
   });
 // 工具调用状态更新：中间态只带 status（无输出，卡片一直转），结束态带 rawOutput。
-const toolUpdate = (toolCallId, patch) =>
+// hermes 形态下结束态的 rawOutput 改放到 `content` 里，跟真实 Hermes 一致。
+const toolUpdate = (toolCallId, patch) => {
+  let update = patch;
+  if (toolStyle === "hermes") {
+    const { rawOutput, ...rest } = patch;
+    update = {
+      ...rest,
+      ...(rawOutput !== undefined ? { content: contentBlocks(String(rawOutput)) } : {}),
+    };
+  }
   write({
     jsonrpc: "2.0",
     method: "session/update",
-    params: { sessionId, update: { sessionUpdate: "tool_call_update", toolCallId, ...patch } },
+    params: { sessionId, update: { sessionUpdate: "tool_call_update", toolCallId, ...update } },
   });
+};
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const trace = (entry) => {
   if (!tracePath) return;
