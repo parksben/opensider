@@ -177,6 +177,8 @@ export function serializeSession(session: Session): PersistedState["sessions"][n
       ...message,
       createdAt: message.createdAt instanceof Date ? message.createdAt.toISOString() : String(message.createdAt),
       content: message.content.map(truncatePart),
+      // 「等 Agent 接手」只对正在跑的这一轮有意义，重开面板后没有那一轮了。
+      awaitingSteer: undefined,
     })),
   };
 }
@@ -338,7 +340,7 @@ export function nextSessionTitle(
 }
 
 export function titleFromMessages(messages: ChatMessage[]): string {
-  const first = messages.find((message) => message.role === "user");
+  const first = messages.find((message) => message.role === "user" && !message.pending);
   const text = stripEnvPrompt(
     first?.content
       .filter((part) => part.type === "text")
@@ -370,6 +372,8 @@ export function textOf(content: ChatPart[]): string {
 
 export function buildForkContext(messages: ChatMessage[]): string {
   const body = messages
+    // 还没发出去的引导消息不属于历史，不能被带进 fork 的前文。
+    .filter((message) => !message.pending)
     .map((message) => {
       const text = displayMentionText(textOf(message.content)).trim();
       const tools = message.content

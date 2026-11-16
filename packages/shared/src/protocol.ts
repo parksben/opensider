@@ -642,6 +642,11 @@ export type HostToExt =
   | { type: "prompt.busy"; requestId: string; sessionId?: string }
   /** 注入当前 turn 失败（Agent 不支持、turn 已结束或 ACP 报错）；面板收回队列。 */
   | { type: "prompt.steerFailed"; requestId: string; sessionId?: string; reason?: string }
+  /**
+   * 注入成功：Agent 已经确认接手这条引导消息。面板据此把「还没被读到」的标记摘掉，
+   * 之后到达的输出才开始渲染在那条用户消息之后。
+   */
+  | { type: "prompt.steerAccepted"; requestId: string; sessionId?: string }
   | { type: "page"; page: CurrentPage }
   | { type: "control"; sessions: TabControlState[] }
   | {

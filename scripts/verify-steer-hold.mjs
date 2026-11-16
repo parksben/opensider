@@ -2,7 +2,9 @@
 // Verifies how a message sent during a running turn is handled in each send mode:
 //
 //   steer (Hermes, caps.steer): the message appears in the transcript immediately —
-//     - text only: injected into the running turn (`/steer`, no "waiting" mark)
+//     - text only: injected into the running turn (`/steer`, no "waiting" mark); the
+//       answer keeps growing ABOVE it until the Agent accepts the steer, and new output
+//       lands BELOW it afterwards
 //     - with an attachment (cannot ride Hermes' text-only channel): stays on screen
 //       with a "Waiting for the agent" line and NO queue card, then goes out as the
 //       next turn once the running one ends
@@ -87,6 +89,18 @@ try {
     await panel.keyboard.press("Enter");
   };
   const bubbles = () => panel.locator(".cs-user-bubble").count();
+  // 每条助手回答都是一个 `group/msg` 外框（见 ChatPane 的 MessageFrame）。
+  const answers = () => panel.locator('div[class*="group/msg"]').count();
+  // 最后一条回答是否渲染在最后一条用户消息之后（DOM 顺序）。
+  const answerAfterUser = () =>
+    panel.evaluate(() => {
+      const users = [...document.querySelectorAll(".cs-user-bubble")];
+      const frames = [...document.querySelectorAll('div[class*="group/msg"]')];
+      const lastUser = users[users.length - 1];
+      const lastFrame = frames[frames.length - 1];
+      if (!lastUser || !lastFrame) return null;
+      return Boolean(lastUser.compareDocumentPosition(lastFrame) & Node.DOCUMENT_POSITION_FOLLOWING);
+    });
   const queueCards = () => panel.locator("ol.cs-list-cap li").count();
   const badge = () =>
     panel
@@ -125,6 +139,18 @@ try {
   ok("a text-only steer never becomes a queue card", (await queueCards()) === 0);
   for (let i = 0; i < 40 && !trace().includes("/steer steer text only"); i += 1) await sleep(250);
   ok("the host received it as a steer prompt", trace().includes("/steer steer text only"));
+  for (let i = 0; i < 40 && !trace().includes("steer_ack"); i += 1) await sleep(250);
+  ok("the agent acknowledged the steer", trace().includes("steer_ack"));
+  let afterAccepted = await answerAfterUser();
+  for (let i = 0; i < 40 && afterAccepted !== true; i += 1) {
+    await sleep(250);
+    afterAccepted = await answerAfterUser();
+  }
+  ok(
+    "once accepted, the answer continues below the steer message",
+    afterAccepted === true,
+    `after=${afterAccepted} answers=${await answers()}`,
+  );
 
   // 3. 引导 + 附件：附件过不了 Hermes 的纯文本通道，所以上屏后挂着等这一轮结束。
   await panel.evaluate(() => {
@@ -144,6 +170,14 @@ try {
   for (let i = 0; i < 40 && (await badge()) === 0; i += 1) await sleep(250);
   ok("it carries the waiting mark", (await badge()) === 1, `badge=${await badge()}`);
   ok("and still no queue card", (await queueCards()) === 0);
+  // 还没被 Agent 读到：正在跑的这一轮继续长在它上面，不许另起一段跑到它下面。
+  const answersWhileWaiting = await answers();
+  await sleep(3000);
+  ok(
+    "the running answer keeps growing above the waiting message",
+    (await answers()) === answersWhileWaiting && (await answerAfterUser()) === false,
+    `stages=${answersWhileWaiting}->${await answers()} after=${await answerAfterUser()}`,
+  );
 
   // 4. 本轮结束后，挂着的那条自动作为新一轮发出（不是 /steer，是正式 prompt）。
   for (let i = 0; i < 160 && (await badge()) > 0; i += 1) await sleep(250);

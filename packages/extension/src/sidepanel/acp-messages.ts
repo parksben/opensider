@@ -1,34 +1,11 @@
 import type { BrowserCommand, BrowserResult, ContextUsage } from "@shared";
 import type { ChatMessage, ChatPart, ToolPart, ToolStatus } from "./chat-types";
 import { isBenignStreamCloseText, stripBenignStreamClose } from "./stream-close";
+import { lastAssistant } from "./assistant-append";
 import { withPrimaryArg } from "./tool-label";
 
 function id(): string {
   return crypto.randomUUID();
-}
-
-function lastAssistant(
-  messages: ChatMessage[],
-  model?: { modelId?: string; modelName?: string },
-): { messages: ChatMessage[]; index: number } {
-  const last = messages[messages.length - 1];
-  if (last?.role === "assistant" && last.durationMs == null) {
-    const hasOwn = Boolean(last.modelId || last.modelName);
-    const hasIncoming = Boolean(model?.modelId || model?.modelName);
-    const stamped = hasOwn || !hasIncoming ? last : { ...last, modelId: model?.modelId, modelName: model?.modelName };
-    const copy = [...messages];
-    copy[copy.length - 1] = stamped;
-    return { messages: copy, index: copy.length - 1 };
-  }
-  const created: ChatMessage = {
-    id: id(),
-    role: "assistant",
-    content: [],
-    createdAt: new Date(),
-    modelId: model?.modelId,
-    modelName: model?.modelName,
-  };
-  return { messages: [...messages, created], index: messages.length };
 }
 
 function replacePart(message: ChatMessage, index: number, part: ChatPart): ChatMessage {

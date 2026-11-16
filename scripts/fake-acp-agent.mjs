@@ -560,6 +560,12 @@ async function runPrompt(id, text) {
 	  	return;
 	  }
 	  trace({ event: "prompt", turn: label, text: traceFull ? text : text.slice(0, 200), sessionId });
+  if (text.trimStart().startsWith("/steer")) {
+    // Hermes 的 `/steer` 是一条「注入当前轮」的命令：只回一句 ack，不会再开一轮输出。
+    trace({ event: "steer_ack", turn: label, sessionId });
+    reply(id, { stopReason: "end_turn" });
+    return;
+  }
   // 「Agent 自己换模式」：收到带文本的 prompt 时主动推一条 current_mode_update。
   if (modeSwitchOnPrompt && text.trim()) {
     const target = modeUrlIds ? withUrlId(modeSwitchOnPrompt) : modeSwitchOnPrompt;

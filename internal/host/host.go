@@ -1424,6 +1424,13 @@ func (h *Host) runSteer(runtime *acpRuntime, requestID, text string) {
 		return
 	}
 	log.Log("steer accepted " + sessionID + " stop=" + stop)
+	// 面板拿这条消息把「还没被读到」的标记摘掉：从这一刻起，Agent 的输出才算是在
+	// 回应这条引导消息，应该渲染在它下面。
+	h.send(map[string]any{
+		"type":      "prompt.steerAccepted",
+		"requestId": requestID,
+		"sessionId": sessionID,
+	})
 }
 
 func isSteerAck(update map[string]any) bool {

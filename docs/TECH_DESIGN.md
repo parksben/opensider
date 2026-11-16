@@ -907,6 +907,7 @@ macOS 清单路径：`~/Library/Application Support/Google/Chrome/NativeMessagin
 - **竞态**：宿主报 `prompt.busy` / `prompt.steerFailed` 时，`BindMeta.steer` 让 `requeueRejectedPrompt` 认出「这是 steering」——消息留在列表里、重新挂 `pending`；若那一轮已经结束就立刻 `flushSteerHold()`，绝不从列表撤掉转成队列卡。非 steering 的 prompt 被拒仍是原逻辑（撤下上屏消息、转队列）。
 - **重开面板 / 重连**：`pending` 落盘在 `StoredMessage` 上；状态回到 `ready` 且该会话已绑定、又没有任务在跑时，`useEffect` 补发最老的一条。
 - **撤回**：`onDeletePending` 只删 `pending` 的消息，已发出的气泡仍然走原来的「点气泡回填编辑」。
+- **输出挂在谁下面（与 Copilot 一致的舞台顺序）**：`assistant-append.ts` 的 `lastAssistant()` 在找「这段输出该写进哪条回答」时，会跳过末尾 `pending` / `awaitingSteer` 的用户消息——Agent 还没读到的那条消息不该把正在跑的回答顶到它下面。注入成功时 Host 回一条 `prompt.steerAccepted`，面板才把 `awaitingSteer` 摘掉；从那一刻起的新输出才会另起一段、渲染在那条用户消息之后。已经结算（`durationMs` 有值）的回答永远不会被续写，避免「轮次结束后又长高」。`awaitingSteer` 是运行期状态，落盘时清掉（`pending` 照常持久化）。
 
 端到端：`scripts/verify-steer-hold.mjs`（纯文本 steer 立即上屏且 trace 里是 `/steer`；带附件的那条挂「等待」、不进队列卡，本轮结束后以普通 prompt 发出且列表里只有一份）。
 

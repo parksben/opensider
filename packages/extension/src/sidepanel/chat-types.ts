@@ -33,6 +33,11 @@ export type ChatMessage = {
    * 标记（等待期间只展示、不参与轮次与舞台判定），轮次结束时自动作为新一轮发出。
    */
   pending?: boolean;
+  /**
+   * 引导模式下「已经注入当前轮、Agent 还没确认接手」的用户消息：在 Agent 读到它之前，
+   * 后续输出仍属于上面那一轮（渲染在它之前），确认接手后才另起一段渲染在它之后。
+   */
+  awaitingSteer?: boolean;
 };
 
 export type PermissionRequest = {
