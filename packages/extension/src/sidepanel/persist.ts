@@ -18,6 +18,7 @@ export type StoredMessage = {
   modelId?: string;
   modelName?: string;
   durationMs?: number;
+  pending?: boolean;
 };
 
 export type Session = {

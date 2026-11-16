@@ -22,6 +22,8 @@ export type BindMeta = {
   messageId?: string;
   userText?: string;
   userAttachments?: AttachmentItem[];
+  /** 这条 prompt 是 steering：被宿主拒绝时不上屏、不转队列，就地把消息挂回「等待」。 */
+  steer?: boolean;
 };
 
 export type BindTicket = { localId: string; kind: BindKind; meta?: BindMeta };

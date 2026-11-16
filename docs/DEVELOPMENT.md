@@ -119,6 +119,7 @@ scripts/verify-background-task.mjs  后台任务（关 UI 不打断 / 徽标 / �
 scripts/verify-tab-control.mjs  标签接管（借用 / 收回 / 行操作 / Stop 即释放 / quiet openTab）的端到端验证
 scripts/verify-page-tamper.mjs  主世界钩子「不留痕」的端到端验证（未触碰页面必须与干净 Chromium 一致）
 scripts/verify-queue-send-now.mjs  消息队列「立即发送」的端到端验证
+scripts/verify-steer-hold.mjs  运行中发消息的两种发送方式（引导：纯文本立即 `/steer`、带附件上屏等待并在本轮结束后自动发出；队列：卡片）的端到端验证
 scripts/verify-file-drop.mjs  拖文件到侧栏 → 变附件的端到端验证
 scripts/verify-composer-clipboard.mjs  输入框全选复制/剪切带上附件栏的端到端验证
 scripts/verify-page-overlays.mjs  动作后自动上报页面浮层（模态框/抽屉）的端到端验证

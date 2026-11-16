@@ -897,6 +897,19 @@ macOS 清单路径：`~/Library/Application Support/Google/Chrome/NativeMessagin
 - 字体：IBM Plex Sans / Mono（中英都不用衬线体）。Google Fonts 只拉 400/500。`html`/`body` 默认 `font-weight: 400`；`b`/`strong`/标题/`th`、Markdown 标题与表头、以及 Tailwind `font-medium`/`semibold`/`bold` 一律 500（`@theme` 把更重的 weight token 压到 500），避免浏览器 `bolder` 或 preflight 跳出 600/700。
 - 工具行左侧按 ACP `kind` 换 lucide 图标：read / edit / execute / search / fetch 等，颜色跟灰字走。`pending` / `in_progress` 时只渲 `LoaderCircle`，结束后才换回 kind 图标，二者不同时出现。标题始终用 `toolLiveHeadline`：短名（`toolLabel`）+ 全角 `：` + `primaryArg`。`tool_call` / 更新时 `withPrimaryArg` 把关键参数写进 `ToolPart.primaryArg` 并落盘；hydrate 时缺了再补算。二次进会话只读已存的 `primaryArg`，不因 args 形态变化丢掉拼接。`TextFold` 一行：外层 `w-full min-w-0`，内层簇 `max-w-full` 随文案变窄；文案 `min-w-0 truncate`（不要 `flex-1`），箭头 `shrink-0` 紧贴文案，只有标题被省略时才顶到行尾。展开后的入参 / 返回走 `ToolJsonView`：字符串以 `{`/`[` 包住才 `JSON.parse`，失败则原文；对象 / 数组直接拆。最外层单 key 只渲 value；其余层每项一段 `key：value`，复合 value 先写 `key：` 再以 `padding-left: 1em` 递进。`formatScalar` / 原文把 `\n{2,}` 压成 `\n`，只空白的段不渲。不再 `JSON.stringify` 进 `pre`。
 
+## 运行中发消息：引导（上屏等待）与队列
+
+发出消息时 `ChatPane.submit` 只看发送模式：`queue` → 队列卡片（`queues`，跨重启持久化）；`steer` → **一律上屏**，由 `App.onSteer` 决定怎么交给 Agent。
+
+- **能 steer**（`steerAvailableRef` 为真、`attachments.length === 0`、`wrapUserPrompt(...).skillPrefix` 为空）：直接 `sendToSession(..., { steer: true })`，Host 走 Hermes 的 `/steer`（`internal/acp` 的 `Client.Steer`，把消息作为 `session/prompt` 的 `/steer <text>` 注入当前轮）。消息同时已经写进消息列表。
+- **不能 steer**：`holdSteerMessage()` 把消息以 `pending: true` 追加进会话，气泡下方渲染「等待 Agent 处理」+ 撤回按钮。它不参与轮次与直播舞台判定（`turn-stage.ts` 的 `lastSettled()` / `stageVisible()` 都跳过 `pending`），所以挂着等待时当前这一轮的舞台不会被顶掉。
+- **交付时机**：`turn.end` 先尝试队列（`takeFromQueue` 返回是否发了一条），队列为空时 `flushSteerHold()` 把**最老的一条**挂着消息作为新一轮发出（`sendToSession(..., { userId })` 复用已上屏的那条，只清 `pending`，不重复追加）。一次只发一条：下一条等这一轮结束再发，避免连发把多条并进一个 prompt。
+- **竞态**：宿主报 `prompt.busy` / `prompt.steerFailed` 时，`BindMeta.steer` 让 `requeueRejectedPrompt` 认出「这是 steering」——消息留在列表里、重新挂 `pending`；若那一轮已经结束就立刻 `flushSteerHold()`，绝不从列表撤掉转成队列卡。非 steering 的 prompt 被拒仍是原逻辑（撤下上屏消息、转队列）。
+- **重开面板 / 重连**：`pending` 落盘在 `StoredMessage` 上；状态回到 `ready` 且该会话已绑定、又没有任务在跑时，`useEffect` 补发最老的一条。
+- **撤回**：`onDeletePending` 只删 `pending` 的消息，已发出的气泡仍然走原来的「点气泡回填编辑」。
+
+端到端：`scripts/verify-steer-hold.mjs`（纯文本 steer 立即上屏且 trace 里是 `/steer`；带附件的那条挂「等待」、不进队列卡，本轮结束后以普通 prompt 发出且列表里只有一份）。
+
 ## 有任务在跑时切 Agent（确认弹窗）
 
 切 Agent 会换掉本机 runtime：Host 先把旧 runtime 拆掉（`finishAllTurns()` → kill），正在跑的那几轮随即断在半路。这是**用户点一下就可能丢掉活儿**的动作，所以只在这一个入口拦一次。

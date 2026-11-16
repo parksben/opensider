@@ -296,6 +296,9 @@ export function App() {
   const queuesRef = useRef<Record<string, QueuedMessage[]>>({});
   const editingQueueRef = useRef<{ sessionId: string; id: string } | null>(null);
   const flushQueueRef = useRef<(sessionId: string) => void>(() => undefined);
+  const flushSteerHoldRef = useRef<(sessionId: string) => void>(() => undefined);
+  const steerAvailableRef = useRef(false);
+  const holdClaims = useRef<Set<string>>(new Set());
 
   const sendToSessionRef = useRef<(localId: string, text: string, attachments?: AttachmentItem[]) => void>(
     () => undefined,
@@ -483,7 +486,7 @@ export function App() {
     steer = false,
     anchor = true,
     skillPrefix = "",
-    meta?: { messageId?: string; userText?: string; userAttachments?: AttachmentItem[] },
+    meta?: { messageId?: string; userText?: string; userAttachments?: AttachmentItem[]; steer?: boolean },
   ) => {
     const requestId = crypto.randomUUID();
     bindRegistry.current.add(requestId, localId, "prompt", meta);
@@ -709,6 +712,7 @@ export function App() {
 
   const selectedAgent = agents.find((agent) => agent.id === selectedProviderId);
   const steerAvailable = selectedAgent?.caps.steer === true;
+  steerAvailableRef.current = steerAvailable;
 
   const patchSession = (id: string, updater: (session: Session) => Session) => {
     setSessions((current) => current.map((session) => (session.id === id ? updater(session) : session)));
@@ -834,12 +838,34 @@ export function App() {
     if (!ticket || ticket.kind !== "prompt") return;
     const localId = ticket.localId;
     const wasRunning = runningIdsRef.current.has(localId);
+    const meta = ticket.meta;
+    // A steering message already sits in the transcript and must stay there (steer mode
+    // never turns into a queue card). Mark it as waiting again, and if the turn it was
+    // aimed at is already gone, deliver it right away as the next turn.
+    if (meta?.steer) {
+      if (!wasRunning) {
+        const next = new Set(runningIdsRef.current);
+        next.add(localId);
+        syncRunning(next);
+      }
+      if (meta.messageId) {
+        const exists = sessionsRef.current
+          .find((item) => item.id === localId)
+          ?.messages.some((item) => item.id === meta.messageId);
+        if (exists) {
+          updateSessionMessages(localId, (current) =>
+            current.map((item) => (item.id === meta.messageId ? { ...item, pending: true } : item)),
+          );
+        }
+      }
+      if (!wasRunning) flushSteerHoldRef.current(localId);
+      return;
+    }
     if (!wasRunning && !steerFailure) {
       const next = new Set(runningIdsRef.current);
       next.add(localId);
       syncRunning(next);
     }
-    const meta = ticket.meta;
     if (!meta?.messageId) return;
     const session = sessionsRef.current.find((item) => item.id === localId);
     if (!session?.messages.some((item) => item.id === meta.messageId)) return;
@@ -1459,7 +1485,9 @@ export function App() {
         settleSupersededTurn(localId);
       } else {
         finishTurn(localId);
-        flushQueueRef.current(localId);
+        // 队列优先（队列模式的消息先到先发）；队列为空时再把引导模式下挂着的那条
+        // 「等待中」消息作为新一轮发出。
+        if (!takeFromQueue(localId)) flushSteerHoldRef.current(localId);
       }
       if (msg.stopReason === "error" && !msg.interrupted && localId === selectedIdRef.current) {
         setError(msg.error?.trim() || t(localeRef.current, "turnError"));
@@ -1859,15 +1887,24 @@ export function App() {
     localId: string,
     text: string,
     attachments: AttachmentItem[] = [],
-    options: { steer?: boolean } = {},
+    options: { steer?: boolean; userId?: string } = {},
   ) => {
     if (!localId) return;
     // Steering targets the running turn, so a permission/form card that turn is
     // waiting on must stay answerable; clearing it here would strand the Agent.
     if (!options.steer) settleCardsForSession(localId);
     const session = sessionsRef.current.find((item) => item.id === localId);
-    const user = createUserMessage(text, attachments);
-    updateSessionMessages(localId, (current) => [...current, user]);
+    // A held steer message is already on screen: adopt it (drop the "waiting" mark)
+    // instead of appending the same text a second time.
+    const held = options.userId ? session?.messages.find((item) => item.id === options.userId) : undefined;
+    const user = held ?? createUserMessage(text, attachments);
+    if (held) {
+      updateSessionMessages(localId, (current) =>
+        current.map((item) => (item.id === held.id ? { ...item, pending: false } : item)),
+      );
+    } else {
+      updateSessionMessages(localId, (current) => [...current, user]);
+    }
     if (statusRef.current !== "ready") {
       setError(t(localeRef.current, "offlineSend"));
       setStatus("error");
@@ -1895,7 +1932,7 @@ export function App() {
       options.steer,
       true,
       skillPrefix,
-      { messageId: user.id, userText: text, userAttachments: attachments },
+      { messageId: user.id, userText: text, userAttachments: attachments, steer: options.steer },
     );
   };
 
@@ -1973,15 +2010,21 @@ export function App() {
     sendRef.current({ type: "takeover.done", requestId: card.requestId, dismissed: true });
   };
 
-  const flushQueue = (sessionId: string) => {
-    if (!sessionId || runningIdsRef.current.has(sessionId)) return;
+  /** Sends the head of the queue as a new turn; returns whether it took one. */
+  const takeFromQueue = (sessionId: string): boolean => {
+    if (!sessionId || runningIdsRef.current.has(sessionId)) return false;
     const list = queuesRef.current[sessionId] ?? [];
     const first = list[0];
-    if (!first) return;
+    if (!first) return false;
     const editing = editingQueueRef.current;
-    if (editing && editing.sessionId === sessionId && editing.id === first.id) return;
+    if (editing && editing.sessionId === sessionId && editing.id === first.id) return false;
     setSessionQueue(sessionId, list.slice(1));
     sendToSession(sessionId, first.text, first.attachments);
+    return true;
+  };
+
+  const flushQueue = (sessionId: string) => {
+    takeFromQueue(sessionId);
   };
   flushQueueRef.current = flushQueue;
 
@@ -1998,22 +2041,76 @@ export function App() {
   };
 
   /**
-   * Running-turn submit: steer the active turn when the Agent supports it.
-   * Attachments and skills are not safe to inject through Hermes' text-only
-   * `/steer` command, so they keep the existing queue semantics.
+   * Running-turn submit in steer mode: the message always goes on screen as a normal
+   * user bubble, never into the queue panel.
+   *
+   * Text-only messages the Agent can steer are injected into the running turn right
+   * away (Hermes `/steer`) and the Agent decides when to pick them up. Everything
+   * that cannot ride that channel — attachments, `/skill` prompts, Agents without
+   * native steering — is held on screen with a `pending` mark and delivered as the
+   * next turn once the current one ends.
    */
   const onSteer = (text: string, attachments: AttachmentItem[] = []) => {
     const localId = selectedIdRef.current;
     if (!localId) return;
-    if (attachments.length > 0) {
-      onEnqueue(text, attachments);
+    const steerable =
+      steerAvailableRef.current &&
+      attachments.length === 0 &&
+      !wrapUserPrompt(text, [], skillsRef.current).skillPrefix;
+    if (steerable) {
+      sendToSession(localId, text, [], { steer: true });
       return;
     }
-    if (wrapUserPrompt(text, attachments, skillsRef.current).skillPrefix) {
-      onEnqueue(text, attachments);
-      return;
+    holdSteerMessage(localId, text, attachments);
+  };
+
+  /** Show the message now, deliver it when the running turn ends. */
+  const holdSteerMessage = (localId: string, text: string, attachments: AttachmentItem[] = []) => {
+    const held = { ...createUserMessage(text, attachments), pending: true };
+    updateSessionMessages(localId, (current) => [...current, held]);
+  };
+
+  /**
+   * Deliver the oldest held steer message as a new turn. Only one at a time: the next
+   * one goes out when THIS turn ends, so a burst of steers never lands as one prompt.
+   */
+  const flushSteerHold = (sessionId: string) => {
+    if (!sessionId || runningIdsRef.current.has(sessionId)) return;
+    const session = sessionsRef.current.find((item) => item.id === sessionId);
+    const held = session?.messages.find(
+      (item) => item.role === "user" && item.pending && !holdClaims.current.has(item.id),
+    );
+    if (!held) return;
+    // turn.end 与「就绪后补发」的 effect 可能同时看到同一条：先认领再清标记，
+    // 免得同一条消息被发两次。
+    holdClaims.current.add(held.id);
+    updateSessionMessages(sessionId, (current) =>
+      current.map((item) => (item.id === held.id ? { ...item, pending: false } : item)),
+    );
+    try {
+      sendToSession(sessionId, textOf(held.content), held.attachments ?? [], { userId: held.id });
+    } finally {
+      holdClaims.current.delete(held.id);
     }
-    sendToSession(localId, text, [], { steer: true });
+  };
+  flushSteerHoldRef.current = flushSteerHold;
+
+  // 重开面板 / 重连后：上一轮已经不在了，把还挂着的引导消息补发出去（一次一条）。
+  useEffect(() => {
+    if (status !== "ready" || !selectedId) return;
+    if (runningIdsRef.current.has(selectedId)) return;
+    const session = sessions.find((item) => item.id === selectedId);
+    if (!session?.acpSessionId) return;
+    if (!session.messages.some((item) => item.role === "user" && item.pending)) return;
+    flushSteerHoldRef.current(selectedId);
+  }, [status, selectedId, sessions]);
+
+  const onDeletePending = (messageId: string) => {
+    const sessionId = selectedIdRef.current;
+    if (!sessionId) return;
+    updateSessionMessages(sessionId, (current) =>
+      current.filter((item) => !(item.id === messageId && item.pending)),
+    );
   };
 
   const onUpdateQueued = (id: string, text: string, attachments: AttachmentItem[]) => {
@@ -2713,6 +2810,7 @@ export function App() {
               queue={queues[selected.id] ?? []}
               steerAvailable={steerAvailable}
               onSteer={onSteer}
+              onDeletePending={onDeletePending}
               control={
                 <>
                   {visibleTakeover ? (

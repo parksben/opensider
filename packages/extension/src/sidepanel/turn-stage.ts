@@ -13,6 +13,9 @@ export type StageState = {
  * message that started it. A different session resets it: forked threads copy message ids,
  * and a copied finished answer must not inherit a stage. A panel opened on history never
  * stages an old turn, even if that turn is missing its duration stamp.
+ *
+ * `pending` user messages (held in steer mode, not delivered yet) are skipped everywhere:
+ * they sit at the end of the list but the running turn before them is still live.
  */
 export function nextStage(
   state: StageState | undefined,
@@ -21,7 +24,7 @@ export function nextStage(
   isRunning: boolean,
 ): StageState {
   const base = state && state.sessionId === sessionId ? state : { sessionId };
-  const last = messages[messages.length - 1];
+  const last = lastSettled(messages);
   if (isRunning && last?.role === "assistant" && last.durationMs == null) {
     return { sessionId, id: last.id };
   }
@@ -33,5 +36,14 @@ export function stageVisible(messages: ChatMessage[], id?: string): boolean {
   if (!id) return false;
   const index = messages.findIndex((message) => message.id === id);
   if (index < 0) return false;
-  return !messages.slice(index + 1).some((message) => message.role === "user");
+  return !messages.slice(index + 1).some((message) => message.role === "user" && !message.pending);
+}
+
+/** The last message that has actually been sent (held steer messages do not count). */
+export function lastSettled(messages: ChatMessage[]): ChatMessage | undefined {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (!message.pending) return message;
+  }
+  return undefined;
 }

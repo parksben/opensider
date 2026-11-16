@@ -34,7 +34,7 @@ export function SendModeSelect({
   const current = OPTIONS.find((option) => option.id === mode) ?? OPTIONS[0];
   const CurrentIcon = current.icon;
   const currentLabel = t(locale, current.label);
-  const tip = `${t(locale, "sendModeHint")}: ${currentLabel}`;
+  const tip = t(locale, "sendModeTip").replace("{mode}", currentLabel);
 
   useEffect(() => {
     if (!open) return;

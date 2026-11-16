@@ -320,6 +320,7 @@ function Panel({
       onSend={noop}
       steerAvailable={false}
       onSteer={noop}
+      onDeletePending={noop}
       onEnqueue={noop}
       onUpdateQueued={noop}
       onDeleteQueued={noop}

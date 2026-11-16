@@ -28,6 +28,11 @@ export type ChatMessage = {
   modelId?: string;
   modelName?: string;
   durationMs?: number;
+  /**
+   * 引导模式下「已经上屏、但还没交给 Agent」的用户消息：当前这一轮结束前一直挂着这个
+   * 标记（等待期间只展示、不参与轮次与舞台判定），轮次结束时自动作为新一轮发出。
+   */
+  pending?: boolean;
 };
 
 export type PermissionRequest = {

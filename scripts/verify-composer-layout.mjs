@@ -315,7 +315,7 @@ try {
   await hermesComposer.click();
   await panel.keyboard.type("hold the turn open");
   await panel.keyboard.press("Enter");
-  const steerPill = panel.locator('button[title^="While a turn is running"]');
+  const steerPill = panel.locator('button[title^="Message send mode"]');
   const steerShown = await steerPill
     .waitFor({ state: "visible", timeout: 30_000 })
     .then(() => true)
@@ -333,7 +333,7 @@ try {
           top: Number(r.top.toFixed(1)),
         };
       };
-      const steer = footer.querySelector('button[title^="While a turn is running"]');
+      const steer = footer.querySelector('button[title^="Message send mode"]');
       const dropdowns = [...footer.querySelectorAll("button[aria-expanded]")];
       // 「引导」左边最近的那颗下拉就是权限档。
       const permission = steer
