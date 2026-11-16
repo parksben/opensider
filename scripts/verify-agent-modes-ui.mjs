@@ -162,8 +162,8 @@ try {
   const topGap = first.composerBottom === null ? null : first.permTop - first.composerBottom;
   const bottomGap = first.permBottom === undefined ? null : first.viewportHeight - first.permBottom;
   check(
-    "the footer row keeps equal space above and below",
-    topGap !== null && bottomGap !== null && Math.abs(topGap - bottomGap) <= 1,
+    "the footer row keeps a 6px top gap and a 12px bottom gap",
+    topGap !== null && bottomGap !== null && Math.abs(topGap - 6) <= 1 && Math.abs(bottomGap - 12) <= 1,
     `top=${topGap}px bottom=${bottomGap}px`,
   );
 
