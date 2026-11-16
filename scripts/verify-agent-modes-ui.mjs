@@ -130,6 +130,8 @@ try {
         gap: left ? Number((permRect.left - left.rect.right).toFixed(1)) : null,
         composerBottom: composer ? Number(composer.bottom.toFixed(1)) : null,
         permTop: Number(permRect.top.toFixed(1)),
+        permBottom: Number((permRect.top + permRect.height).toFixed(1)),
+        viewportHeight: window.innerHeight,
       };
     });
 
@@ -156,6 +158,13 @@ try {
     "the mode and permission pills sit outside the composer",
     first.composerBottom !== null && first.permTop >= first.composerBottom - 1,
     `composer.bottom=${first.composerBottom} permission.top=${first.permTop}`,
+  );
+  const topGap = first.composerBottom === null ? null : first.permTop - first.composerBottom;
+  const bottomGap = first.permBottom === undefined ? null : first.viewportHeight - first.permBottom;
+  check(
+    "the footer row keeps equal space above and below",
+    topGap !== null && bottomGap !== null && Math.abs(topGap - bottomGap) <= 1,
+    `top=${topGap}px bottom=${bottomGap}px`,
   );
 
   if (switchTo) {
