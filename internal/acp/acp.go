@@ -336,6 +336,34 @@ func (c *Client) Prompt(text string) (string, error) {
 	return stop, nil
 }
 
+// Steer injects a user message into the turn that is already running. ACP has
+// no standard steering request, so this uses the Hermes adapter's `/steer`
+// slash command: Hermes calls agent.steer() and returns end_turn without
+// closing the active turn. Callers must only use this when the Agent advertises
+// native steering (AgentCaps.Steer).
+func (c *Client) Steer(text string) (string, error) {
+	if c.GetSessionID() == "" {
+		return "", errors.New("no session")
+	}
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return "", errors.New("empty steer message")
+	}
+	result, err := c.request("session/prompt", map[string]any{
+		"sessionId": c.GetSessionID(),
+		"prompt":    []any{map[string]any{"type": "text", "text": "/steer " + text}},
+	})
+	if err != nil {
+		return "", c.wrapAgentError(err)
+	}
+	obj, _ := result.(map[string]any)
+	stop := str(obj["stopReason"])
+	if stop == "" {
+		stop = "end_turn"
+	}
+	return stop, nil
+}
+
 func (c *Client) Cancel() {
 	session := c.GetSessionID()
 	c.mu.Lock()

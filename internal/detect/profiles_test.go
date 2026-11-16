@@ -57,6 +57,9 @@ func TestHermesProfileLaunchesACP(t *testing.T) {
 	if !p.Caps.Plans || !p.Caps.Todos || p.Caps.Questions {
 		t.Fatalf("caps %+v, want plans/todos on and questions off", p.Caps)
 	}
+	if !p.Caps.Steer {
+		t.Fatalf("caps %+v, want native steering on", p.Caps)
+	}
 	if !strings.Contains(p.LoginHint, "hermes setup") {
 		t.Fatalf("login hint %q", p.LoginHint)
 	}

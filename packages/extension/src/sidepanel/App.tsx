@@ -479,6 +479,7 @@ export function App() {
     sessionId: string,
     text: string,
     interrupt = false,
+    steer = false,
     anchor = true,
     skillPrefix = "",
     meta?: { messageId?: string; userText?: string; userAttachments?: AttachmentItem[] },
@@ -501,6 +502,7 @@ export function App() {
       sessionId,
       requestId,
       interrupt,
+      ...(steer ? { steer } : {}),
       ...(skillPrefix ? { skillPrefix } : {}),
       currentPage: pageRef.current
         ? { title: pageRef.current.title, url: pageRef.current.url }
@@ -704,6 +706,9 @@ export function App() {
     [sessions, selectedId],
   );
 
+  const selectedAgent = agents.find((agent) => agent.id === selectedProviderId);
+  const steerAvailable = selectedAgent?.caps.steer === true;
+
   const patchSession = (id: string, updater: (session: Session) => Session) => {
     setSessions((current) => current.map((session) => (session.id === id ? updater(session) : session)));
   };
@@ -816,6 +821,34 @@ export function App() {
 
   /** hydration 完成前到达的会话消息先存这儿，见 SESSION_SCOPED_TYPES。 */
   const deferredRef = useRef<HostToExt[]>([]);
+
+  const requeueRejectedPrompt = (requestId: string, steerFailure: boolean) => {
+    const ticket = bindRegistry.current.take(requestId);
+    if (!ticket || ticket.kind !== "prompt") return;
+    const localId = ticket.localId;
+    const wasRunning = runningIdsRef.current.has(localId);
+    if (!wasRunning && !steerFailure) {
+      const next = new Set(runningIdsRef.current);
+      next.add(localId);
+      syncRunning(next);
+    }
+    const meta = ticket.meta;
+    if (!meta?.messageId) return;
+    const session = sessionsRef.current.find((item) => item.id === localId);
+    if (!session?.messages.some((item) => item.id === meta.messageId)) return;
+    updateSessionMessages(localId, (current) => current.filter((item) => item.id !== meta.messageId));
+    if (typeof meta.userText === "string") {
+      const item: QueuedMessage = {
+        id: crypto.randomUUID(),
+        text: meta.userText,
+        attachments: meta.userAttachments ?? [],
+      };
+      setSessionQueue(localId, [...(queuesRef.current[localId] ?? []), item]);
+    }
+    // A steering request can lose the race with turn.end. In that case there is no
+    // future turn.end to flush the queue, so send the requeued message normally now.
+    if (steerFailure && !wasRunning) flushQueueRef.current(localId);
+  };
 
   const handleHost = (msg: HostToExt) => {
     // 本地状态（含会话到 ACP 的绑定）还没读完：会话相关消息先攒着，hydration 后按序重放。
@@ -959,6 +992,7 @@ export function App() {
           ticket.localId,
           msg.sessionId,
           regen.context ? `${wrapForkContext(regen.context)}\n\n${body}` : body,
+          false,
           false,
           true,
           skillPrefix,
@@ -1425,32 +1459,11 @@ export function App() {
       }
       return;
     }
-    if (msg.type === "prompt.busy") {
+    if (msg.type === "prompt.busy" || msg.type === "prompt.steerFailed") {
       // 宿主拒绝这条 prompt：该会话已经有一轮在跑（典型来源是重开面板后本地还没
-      // 认定 running，用户直接发了消息）。把刚上屏的用户消息收回队列、保持 running，
-      // 等那一轮 turn.end 后按排队顺序再发——不能静默丢消息，否则旧一轮的迟到输出
-      // 会落在新消息下面，看起来就是「串戏 / 断片」。
-      const ticket = bindRegistry.current.take(msg.requestId);
-      if (!ticket || ticket.kind !== "prompt") return;
-      const localId = ticket.localId;
-      if (!runningIdsRef.current.has(localId)) {
-        const next = new Set(runningIdsRef.current);
-        next.add(localId);
-        syncRunning(next);
-      }
-      const meta = ticket.meta;
-      if (!meta?.messageId) return;
-      const session = sessionsRef.current.find((item) => item.id === localId);
-      if (!session?.messages.some((item) => item.id === meta.messageId)) return;
-      updateSessionMessages(localId, (current) => current.filter((item) => item.id !== meta.messageId));
-      if (typeof meta.userText === "string") {
-        const item: QueuedMessage = {
-          id: crypto.randomUUID(),
-          text: meta.userText,
-          attachments: meta.userAttachments ?? [],
-        };
-        setSessionQueue(localId, [...(queuesRef.current[localId] ?? []), item]);
-      }
+      // 认定 running，用户直接发了消息），或者 steering 失败（Agent 不支持 / turn
+      // 已结束）。把刚上屏的用户消息收回队列，等那一轮 turn.end 后按排队顺序再发。
+      requeueRejectedPrompt(msg.requestId, msg.type === "prompt.steerFailed");
       return;
     }
     if (msg.type === "permission") {
@@ -1834,10 +1847,12 @@ export function App() {
     localId: string,
     text: string,
     attachments: AttachmentItem[] = [],
-    options: { interrupt?: boolean } = {},
+    options: { interrupt?: boolean; steer?: boolean } = {},
   ) => {
     if (!localId) return;
-    settleCardsForSession(localId);
+    // Steering targets the running turn, so a permission/form card that turn is
+    // waiting on must stay answerable; clearing it here would strand the Agent.
+    if (!options.steer) settleCardsForSession(localId);
     const session = sessionsRef.current.find((item) => item.id === localId);
     const user = createUserMessage(text, attachments);
     updateSessionMessages(localId, (current) => [...current, user]);
@@ -1851,7 +1866,9 @@ export function App() {
       patchSession(session.id, (item) => ({ ...item, pendingForkContext: undefined }));
     }
     const { skillPrefix, body } = wrapUserPrompt(text, attachments, skillsRef.current);
-    beginTurn(localId);
+    // Steering belongs to the turn that is already running; resetting its start time
+    // would make the turn duration and live-stage bookkeeping wrong.
+    if (!options.steer || !runningIdsRef.current.has(localId)) beginTurn(localId);
     setError(undefined);
     if (!session?.acpSessionId) {
       pendingRegen.current.set(localId, { text, attachments, context });
@@ -1863,6 +1880,7 @@ export function App() {
       session.acpSessionId,
       context ? `${wrapForkContext(context)}\n\n${body}` : body,
       options.interrupt,
+      options.steer,
       true,
       skillPrefix,
       { messageId: user.id, userText: text, userAttachments: attachments },
@@ -1893,7 +1911,7 @@ export function App() {
     const interrupt = runningIdsRef.current.has(localId);
     beginTurn(localId);
     setError(undefined);
-    sendPrompt(localId, session.acpSessionId, text, interrupt, false);
+    sendPrompt(localId, session.acpSessionId, text, interrupt, false, false);
   };
 
   const continueAfterBorrow = (request: BorrowRequest, allow: boolean) => {
@@ -1952,6 +1970,25 @@ export function App() {
     if (!sessionId) return;
     const item: QueuedMessage = { id: crypto.randomUUID(), text, attachments };
     setSessionQueue(sessionId, [...(queuesRef.current[sessionId] ?? []), item]);
+  };
+
+  /**
+   * Running-turn submit: steer the active turn when the Agent supports it.
+   * Attachments and skills are not safe to inject through Hermes' text-only
+   * `/steer` command, so they keep the existing queue semantics.
+   */
+  const onSteer = (text: string, attachments: AttachmentItem[] = []) => {
+    const localId = selectedIdRef.current;
+    if (!localId) return;
+    if (attachments.length > 0) {
+      onEnqueue(text, attachments);
+      return;
+    }
+    if (wrapUserPrompt(text, attachments, skillsRef.current).skillPrefix) {
+      onEnqueue(text, attachments);
+      return;
+    }
+    sendToSession(localId, text, [], { steer: true });
   };
 
   const onUpdateQueued = (id: string, text: string, attachments: AttachmentItem[]) => {
@@ -2653,6 +2690,8 @@ export function App() {
               notice={notice}
               onDismissNotice={() => setNotice(undefined)}
               queue={queues[selected.id] ?? []}
+              steerAvailable={steerAvailable}
+              onSteer={onSteer}
               control={
                 <>
                   {visibleTakeover ? (

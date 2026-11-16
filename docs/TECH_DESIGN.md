@@ -57,7 +57,7 @@ Cursor Agent 在 ACP 模式下仍然自己执行本地工具（读文件、写�
 - 消息列表、输入框、进行中状态由侧栏自己的 React state 驱动（不依赖 assistant-ui 的 `useAuiState` 选择器，避免和 ExternalStore 不同步：表现为发了消息没动效、也没有停止按钮）
 - 会话列表、当前选中会话、语言也由 App state 驱动，写入 `chrome.storage.local`
 - 工具调用、思考、markdown 由侧栏自己的折叠行 / Markdown 组件展示
-- 发出用户输入（可带本机附件路径）、取消、权限决定、提问/计划回答、新建 / 切换 / fork 会话、选模型；进行中再发送的消息进该会话内存队列，`turn.end` 后按序发出
+- 发出用户输入（可带本机附件路径）、取消、权限决定、提问/计划回答、新建 / 切换 / fork 会话、选模型；进行中再发送的消息按 Agent 能力 native steering；不支持时进该会话内存队列，`turn.end` 后按序发出
 - 展示进行中的页面命令、无边框连接状态、连接进度条（文案右侧「取消 / Cancel」）、输入框上方的 todo、消息队列与权限/提问/计划卡片、输入栏附件芯片、`@` 提及菜单、元素拾取蒙层与模型下拉。顶栏不放当前页 favicon。
 - 离线发送会立刻报错；Service Worker 断开时显示原因（含扩展 ID / `lastError`）并允许重试
 - 侧栏先 `sendMessage({ type: "ping" })` 唤醒 SW，再 `connect`。React StrictMode 卸载只摘监听器，不拆端口。端口若在 SW 还在加载时空断，自动重连，避免永远停在 Lost connection。**端口发送失败必须先拆掉旧端口**：`postMessage` 抛错（最常见的是整份 `ui.state.set` 超过扩展端口 64MiB 上限）时端口通常还连着，SW 的 `sidebars` 仍会把它当成一个活动连接广播；不清掉的话面板会从 N 条端口各收一份，同一段流式回复就被应用 N 遍（真实事故：每个 token 重复约 13 遍，且 N 随每次失败增长）。现在失败的端口进 `retiredPorts`、立即 `disconnect()`，它的迟到消息也不再 `emit`；超过上限的消息本身不重试（重试只会再拆一条端口），只补一条警告并重连保持通道可用。
@@ -85,8 +85,8 @@ Cursor Agent 在 ACP 模式下仍然自己执行本地工具（读文件、写�
   - `update` 在「无面板 + 该会话在跑」时按会话按序缓存（约 4MB 上限），首个面板连上后作为**一条** `{type:"turn.replay", sessionId, updates}` 补发（面板侧整批 `applyAcpUpdate`，绕过「只有进行中才收增量」的门；usage 只更新上下文环，不落成消息），补发一次即清。
   - 待答的 `permission` / `cursor`（带 `id` 的）按 `id` 常驻一个小表（不论面板在不在都记），任何面板连上都重发**尚未回执**的那些；回执经过 SW（`permission.reply` / `cursor.reply`）、该会话 `turn.end`、或状态清空时删掉——后台任务卡在权限卡上时，重开面板就能接着答。
   - 面板侧对「还没 hydration 完就先到的会话消息」（`update` / `turn.end` / `turns.running` / `turn.replay` / `permission` / `cursor` / `browser.command` / `browser.result` / `artifacts`）做一次性暂存（按 ACP id 入队、上限保护），hydration 完成后按序重放，仍映射不到才丢弃——否则打开面板的头几百毫秒里到达的补发会因 `localIdForAcp` 还是空被丢掉。
-  - **在跑状态的双保险**：`turns.running` 是按 ACP id 的集合，只能覆盖「面板本地绑定已经指向同一个 ACP id」的情况；重开后本地绑定晚到、或宿主刚把会话换到新 id 时会漏。于是 `session.use` 命中「已在跑」时回执里额外带 `running: true`，面板收到就直接把该本地会话标成在跑（显示停止钮、输入走队列）。两者都是「加」不是「减」，`turn.end` 才清。
-- **在跑时新消息不丢**：面板把自己的 ACP id 发给宿主 prompt 后，宿主发现该会话已经在跑（典型来源：重开面板时本地还没认定 running，用户直接发了消息）时，不再 `log("prompt ignored")` 了事，而是回 `{type:"prompt.busy", requestId, sessionId}`。面板按 `requestId` 找到刚才登记的 prompt 票据，把那条用户消息从消息流里收回、放进该会话的 `queues`，并保持 running；宿主那一轮 `turn.end` 到达时 `flushQueue` 按顺序把它发出去。这样用户看到的是「消息在队列里等」，而不是「消息消失、Agent 随后莫名其妙串戏」。
+  - **在跑状态的双保险**：`turns.running` 是按 ACP id 的集合，只能覆盖「面板本地绑定已经指向同一个 ACP id」的情况；重开后本地绑定晚到、或宿主刚把会话换到新 id 时会漏。于是 `session.use` 命中「已在跑」时回执里额外带 `running: true`，面板收到就直接把该本地会话标成在跑（显示停止钮、输入按 steering 能力注入或走队列）。两者都是「加」不是「减」，`turn.end` 才清。
+- **在跑时新消息不丢**：面板把自己的 ACP id 发给宿主 prompt 后，宿主发现该会话已经在跑（典型来源：重开面板时本地还没认定 running，用户直接发了消息）时，不再 `log("prompt ignored")` 了事，而是回 `{type:"prompt.busy", requestId, sessionId}`；steering 失败则回 `{type:"prompt.steerFailed", requestId, sessionId, reason}`。面板按 `requestId` 找到刚才登记的 prompt 票据，把那条用户消息从消息流里收回、放进该会话的 `queues`，并保持 running；宿主那一轮 `turn.end` 到达时 `flushQueue` 按顺序把它发出去。这样用户看到的是「消息在队列里等」，而不是「消息消失、Agent 随后莫名其妙串戏」。
 - **页面能力不停**：活动态武装与两个主世界钩子的注入门控从「`sidebars.size > 0`」放宽为「`sidebars.size > 0 || liveTurns.size > 0`」；最后一个面板断开时若还有任务在跑就**不**执行 `releaseActivity()`，等最后一轮 `turn.end` 且面板仍关着时再释放——与「侧栏一关就还原」的承诺只差「任务收工后」这一拍，页面最终照样回到原生行为。
 
 ### Content Script
@@ -371,7 +371,7 @@ chrome.storage.local 与 ~/.opensider/ui-state.json（同形）
 | `session.use` + `sessionId` + `requestId` | 该会话已在某进程上且正在跑则只回 `session`（replay，带 `requestId` + **`running: true`**），不 `session/load`；否则在空闲进程上 `session/load`，失败则 `session/new`（回执带新 id + `requestId` + `created: true`）。**面板看到 `created: true` 必须把本地历史写成 `pendingForkContext`**（同 fork 失败那条路），否则下一条消息不带前文，Agent 会「断片」 |
 | `session.fork` + `sessionId` + `requestId` | 在空闲进程上先试不稳定的 `session/fork`（整段历史）；失败则 `session/new`；回执带 `requestId` |
 | `session.archive` + `requestId` + `ids` | 逐条确认 `sessions/<id>.json` 存在后写 `archivedAt` 并清空索引正文，回 `session.archived{requestId,archivedAt,ids,skipped}`。文件不在的 id 进 `skipped`，绝不归档 |
-| `prompt` 可带 `sessionId` + `requestId` | 绑到已持有该会话的进程，或空闲进程 `session/load` 后再 prompt。同一会话已有一轮在跑则拒绝；不同会话并行。**拒绝不得静默**：回 `{type:"prompt.busy", requestId, sessionId}`，面板据此把刚上屏的那条用户消息收回队列、保持 running，等 `turn.end` 后按排队顺序再发（见「后台任务」）。若 `session/load` 失败被迫换新会话，用带该 `requestId` 的 `session` 回执（`created: true`）通知侧栏更新绑定并补前文 |
+| `prompt` 可带 `sessionId` + `requestId` | 绑到已持有该会话的进程，或空闲进程 `session/load` 后再 prompt。同一会话已有一轮在跑且 Agent 支持 native steering 时走 `steer`（见「运行中消息」）；否则拒绝并回 `{type:"prompt.busy", requestId, sessionId}`。不同会话并行。**拒绝不得静默**：面板把刚上屏的那条用户消息收回队列、保持 running，等 `turn.end` 后按排队顺序再发（见「后台任务」）。若 `session/load` 失败被迫换新会话，用带该 `requestId` 的 `session` 回执（`created: true`）通知侧栏更新绑定并补前文 |
 | `prompt` + `interrupt: true` | 「立即发送」专用：该会话正在跑时，Host 先对它在跑的 runtime 发 `session/cancel`，**等那一轮 return**（有上限，超时就照样往下走）再开始新的一轮；被顶掉那轮结束时 `turn.end` 带 `interrupted: true`，侧栏只结算时长与内容、**不清 running、不 flush 队列**（新一轮已经在跑）。不这么做就会变成「侧栏自己计时 + 等 `turn.end` 再发」，而 `turn.end` 只要没到（cancel 打空、ACP 会话 id 漂了）消息就静默丢掉 |
 | `cancel` 可带 `sessionId` | 只取消该 ACP 会话所在进程的一轮；**找不到该会话就不动手**（早期会「随便挑一个 prompting 的进程」取消，导致 B 的停止杀掉 A 的任务） |
 | `update` / `turn.end` / `permission` / `cursor` 带 `sessionId` | 侧栏按 ACP id 精确映射到本地会话，**不按当前选中项；映射不到就丢弃**（不允许落到「当前选中」，那是串戏的主要通道）。`turn.end` 在 `stopReason=error` 时带 `error` 原文（Host 已改写成可执行的登录提示），侧栏顶栏直接显示，不要换成一句笼统的「这一轮以错误结束」 |
@@ -414,7 +414,7 @@ chrome.storage.local 与 ~/.opensider/ui-state.json（同形）
 
 1. 队列按本地会话 id 存在 `App` 内存里（`queues`），不写 `chrome.storage`。切走会话不丢；删会话时一并丢掉。
 2. `onSend` 抽成 `sendToSession(localId, text, attachments)`。自动发出后台会话的队首时必须带上该会话 id，不得再用 `selectedId`。
-3. `ChatPane` 提交：改历史仍走 `onRevise`（进行中拒绝）；改队列项走 `onUpdateQueued`（覆盖后清编辑态再 flush）；否则进行中 `onEnqueue`，空闲 `onSend`。进行中 `Stop` 与 `Send` 并存；回形针 / 拾取 / `@` 不再因 `isRunning` 禁用，方便往队列里组消息。
+3. `ChatPane` 提交：改历史仍走 `onRevise`（进行中拒绝）；改队列项走 `onUpdateQueued`（覆盖后清编辑态再 flush）；否则进行中且 Agent 支持 steering 时按输入区切换走 `onSteer` / `onEnqueue`；不支持或有附件 / skill 时 `onEnqueue`，空闲 `onSend`。进行中 `Stop` 与 `Send` 并存；回形针 / 拾取 / `@` 不再因 `isRunning` 禁用，方便组 steering 或队列消息。
 4. 只在 Host `turn.end` 里 `finishTurn` 之后 `flushQueue`。队空或该会话仍在跑则 return；`editingQueueRef` 指向队首则按住，等用户点发送覆盖后再发。改的不是队首则队首照常 shift。`cancel` 立刻 `finishTurn` 但不 flush，等这条 `turn.end`，避免旧结束事件误结束下一条。连接 `error` / `finishAllTurns` 不自动 flush。
 5. 取消队列编辑、删掉一项、或覆盖保存之后，若该会话已空闲，再 `flushQueue` 一次，避免队首解按后卡住。`QueuedMessageList` 画在 composer 上方：左 `displayMentionText`（过长省略，没有正文则附件名），右 `CornerDownLeft`（立即发送）/ `Pencil` / `Trash2`。
 6. 立即发送：从队列摘掉这一条（可插队）。该会话若在跑，先 `cancel` + `finishTurn`，把条目推进 `pendingForceSend`，**等**这条 `turn.end` 再 `sendToSession`——Host 在 `prompting` 时会丢掉新 `prompt`。`turn.end` 时若该会话有强制发送，只发这一条、不 `flushQueue`。空闲则当场发出。正在改这一条则退出编辑、还原草稿，不把未保存的改动发出去。
@@ -835,6 +835,15 @@ Host 是 ACP Client，`clientCapabilities` 关闭 `fs` / `terminal`，让 Agent 
 3. `lastAssistant` 只续写没有 `durationMs` 的末尾 assistant，避免回放把多轮 Agent 正文叠进上一条。
 
 `hydrateSession` 对已落盘的坍缩记录跑 `repairCollapsedMessages`：去掉 `[Current tab]` / fork 包装，能按 `User:` / `Assistant:` 切开的就拆回多轮。展示和 `titleFromMessages` 走 `stripEnvPrompt`。
+
+### 运行中消息（Steering）
+
+ACP 标准没有「向正在跑的 turn 注入用户消息」的请求，因此 steering 必须按 Agent 能力走，不能对所有 Agent 发第二个 `session/prompt`。
+
+- **能力声明**：`AgentCaps.steer` 只有明确支持 native steering 的 Agent 才为 true；当前先接 Hermes。UI 在运行中显示「引导 / Steer」「队列 / Queue」切换，默认 Enter 走 steering；附件和 skill 仍走队列（Hermes 的 `/steer` 是 text-only）。
+- **Hermes**：它的 ACP server 在 `is_running` 时接受第二个 `/steer <text>` prompt，调用 `agent.steer()`，把内容加到当前 turn 的下一次模型调用，然后返回 `end_turn` 但不结束原 turn。Host 只在 `runtime.steer` 为 true 时调用 `acp.Client.Steer`，不修改 `prompting` / `turnDone`，原 `session/prompt` 的返回仍然是唯一的 `turn.end`。
+- **边界**：`endPrompt` 先拿 `runtime.steerMu` 再清 `prompting`，避免 steer RPC 和 turn 收尾竞态；同一会话的多次 steering 用这个锁 FIFO 串行。若 steer 失败（Agent 不支持、原 turn 已结束、ACP 报错），Host 回 `prompt.steerFailed`，面板把消息收回队列；原 turn 仍在跑就等它结束再发，已经结束就立即按普通 prompt 重发。
+- **其它 Agent**：Copilot 的 ACP `session/prompt` 每次会先 abort 当前 turn，不能 native steer（它的 SDK 有 `mode: "immediate"`，但 OpenSider 当前走 ACP）；OpenCode V2 源码有 `delivery: "steer"`，ACP 入口还需实测；Claude / Codex / Cursor 等没有统一能力，默认安全回退到队列。后续可在 `AgentCaps` / 适配层逐家扩展，不把 agent-specific 逻辑塞进 UI。
 
 ## 扩展身份
 

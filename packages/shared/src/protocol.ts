@@ -415,6 +415,8 @@ export type AgentCaps = {
   questions: boolean;
   plans: boolean;
   todos: boolean;
+  /** The Agent can absorb a message into its running turn (native steering). */
+  steer: boolean;
 };
 
 export type AgentInfo = {
@@ -520,6 +522,11 @@ export type ExtToHost =
       currentPage?: { title: string; url: string };
       /** 「立即发送」：该会话正在跑就先取消它，等它收尾再开始这一轮（顺序由 Host 定）。 */
       interrupt?: boolean;
+      /**
+       * Steering：该会话正在跑时把这条消息注入当前 turn，而不是开新一轮。
+       * Host 只在 Agent 声明 `caps.steer` 时接受；不支持时回 `prompt.steerFailed`。
+       */
+      steer?: boolean;
     }
   | { type: "cancel"; sessionId?: string }
   | { type: "session.new"; requestId?: string }
@@ -633,6 +640,8 @@ export type HostToExt =
   | { type: "turn.end"; stopReason: string; sessionId?: string; error?: string; interrupted?: boolean }
   /** 宿主没有接受这条 prompt：该会话已经有一轮在跑。面板据此把消息收回队列。 */
   | { type: "prompt.busy"; requestId: string; sessionId?: string }
+  /** 注入当前 turn 失败（Agent 不支持、turn 已结束或 ACP 报错）；面板收回队列。 */
+  | { type: "prompt.steerFailed"; requestId: string; sessionId?: string; reason?: string }
   | { type: "page"; page: CurrentPage }
   | { type: "control"; sessions: TabControlState[] }
   | {

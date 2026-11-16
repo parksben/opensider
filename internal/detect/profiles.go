@@ -46,6 +46,7 @@ func stdCaps(over protocol.AgentCaps) protocol.AgentCaps {
 	caps.Questions = over.Questions
 	caps.Plans = over.Plans
 	caps.Todos = over.Todos
+	caps.Steer = over.Steer
 	return caps
 }
 
@@ -226,7 +227,7 @@ func Profiles() []AgentProfile {
 			},
 			Auth:         AuthKind{Type: "none"},
 			ContextFiles: []string{"AGENTS.md"},
-			Caps:         stdCaps(protocol.AgentCaps{Plans: true, Todos: true}),
+			Caps:         stdCaps(protocol.AgentCaps{Plans: true, Todos: true, Steer: true}),
 			LoginHint:    "Run `hermes setup` in a terminal to configure a provider, then retry.",
 		},
 	}

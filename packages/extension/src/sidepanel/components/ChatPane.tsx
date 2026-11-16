@@ -114,6 +114,8 @@ export function ChatPane({
   notice,
   onDismissNotice,
   queue,
+  steerAvailable,
+  onSteer,
 }: {
   locale: Locale;
   hostReady: boolean;
@@ -141,6 +143,8 @@ export function ChatPane({
   notice?: string;
   onDismissNotice?: () => void;
   queue: QueuedMessage[];
+  steerAvailable: boolean;
+  onSteer: (text: string, attachments: AttachmentItem[]) => void;
   onSend: (text: string, attachments: AttachmentItem[]) => void;
   onEnqueue: (text: string, attachments: AttachmentItem[]) => void;
   onUpdateQueued: (id: string, text: string, attachments: AttachmentItem[]) => void;
@@ -214,6 +218,7 @@ export function ChatPane({
   const atButtonRef = useRef<HTMLSpanElement>(null);
   const [slashOpen, setSlashOpen] = useState(false);
   const [slashQuery, setSlashQuery] = useState("");
+  const [sendMode, setSendMode] = useState<"steer" | "queue">("steer");
   const slashButtonRef = useRef<HTMLSpanElement>(null);
   /** 工具栏的 `/` 钮打开菜单时不往输入框塞 `/`（塞了会把光标拽到最前），查询为 null 也不能关掉菜单。 */
   const slashForcedRef = useRef(false);
@@ -392,12 +397,19 @@ export function ChatPane({
     closeAtMenu();
     if (reviseId) onRevise(reviseId, text, files);
     else if (queueEditId) onUpdateQueued(queueEditId, text, files);
-    else if (isRunning) onEnqueue(text, files);
-    else onSend(text, files);
+    else if (isRunning) {
+      if (steerAvailable && sendMode === "steer" && files.length === 0) onSteer(text, files);
+      else onEnqueue(text, files);
+    } else onSend(text, files);
     requestAnimationFrame(() => stickToBottom());
   };
 
   submitRef.current = submit;
+
+  useEffect(() => {
+    if (!isRunning) setSendMode("steer");
+    else if (!steerAvailable) setSendMode("queue");
+  }, [isRunning, steerAvailable]);
   // 按住的那次发送：Host 一报就绪补发。`submitRef` 比把 submit 写进依赖可靠——它是每次
   // 渲染新建的闭包，直接当依赖会出现「旧闭包把新草稿发出去」这类错位。
   useEffect(() => {
@@ -766,6 +778,39 @@ export function ChatPane({
           onMove={onMoveQueued}
         />
         <div className={`cs-composer rounded-xl bg-[var(--panel)] px-2 py-2 ${isRunning ? "is-running" : ""}`}>
+          {isRunning && steerAvailable ? (
+            <div className="mb-1.5 flex items-center justify-end gap-2 px-1">
+              <span className="text-[10px] text-[var(--muted)]">{label("sendModeHint")}</span>
+              <div
+                role="group"
+                aria-label={label("sendModeHint")}
+                className="inline-flex overflow-hidden rounded-full border border-[var(--line)] text-[11px]"
+              >
+                <button
+                  type="button"
+                  aria-pressed={sendMode === "steer"}
+                  title={label("steerMode")}
+                  onClick={() => setSendMode("steer")}
+                  className={`px-2 py-0.5 transition-colors ${
+                    sendMode === "steer" ? "bg-[var(--brass)] text-[var(--ink)]" : "text-[var(--muted)] hover:text-[var(--text)]"
+                  }`}
+                >
+                  {label("steerMode")}
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={sendMode === "queue"}
+                  title={label("queueMode")}
+                  onClick={() => setSendMode("queue")}
+                  className={`px-2 py-0.5 transition-colors ${
+                    sendMode === "queue" ? "bg-[var(--brass)] text-[var(--ink)]" : "text-[var(--muted)] hover:text-[var(--text)]"
+                  }`}
+                >
+                  {label("queueMode")}
+                </button>
+              </div>
+            </div>
+          ) : null}
           {editingQueueId ? (
             <div className="mb-1.5 flex items-start justify-between gap-2 px-1">
               <p className="min-w-0 flex-1 text-[11px] leading-snug text-[var(--muted)]">

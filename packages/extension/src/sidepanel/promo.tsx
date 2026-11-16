@@ -310,6 +310,8 @@ function Panel({
       modelId="claude-opus"
       showModelPicker
       onSend={noop}
+      steerAvailable={false}
+      onSteer={noop}
       onEnqueue={noop}
       onUpdateQueued={noop}
       onDeleteQueued={noop}

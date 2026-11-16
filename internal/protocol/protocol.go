@@ -60,6 +60,8 @@ type AgentCaps struct {
 	Questions bool `json:"questions"`
 	Plans     bool `json:"plans"`
 	Todos     bool `json:"todos"`
+	// Steer means the Agent can absorb a message into its running turn.
+	Steer bool `json:"steer"`
 }
 
 type AgentInfo struct {
