@@ -359,6 +359,52 @@ try {
         (layout.ring ? layout.ring.left > layout.footerMid : true),
       JSON.stringify(layout),
     );
+
+    // 8. 下拉里每个选项都要带一句说明（跟权限下拉同规），并且窄面板下菜单不能
+    //    顶出右边界——这一钮是行内第三个，left-0 起排的 16rem 会顶出去。
+    await steerPill.click();
+    const menu = await panel.evaluate(() => {
+      const steer = document.querySelector('button[title^="Message send mode"]');
+      const box = steer?.parentElement?.querySelector("div");
+      if (!box) return null;
+      const rows = [...box.children].map((row) => {
+        const lines = [...row.querySelectorAll("span")];
+        return {
+          label: lines[0]?.textContent?.trim() ?? "",
+          hint: lines[1]?.textContent?.trim() ?? "",
+        };
+      });
+      const r = box.getBoundingClientRect();
+      return { rows, right: Number(r.right.toFixed(1)), viewport: window.innerWidth };
+    });
+    ok(
+      "every send-mode option carries a one-line description",
+      Boolean(menu) &&
+        menu.rows.length === 2 &&
+        menu.rows.every((row) => row.label.length > 0 && row.hint.length > 0) &&
+        menu.rows[0].hint !== menu.rows[1].hint,
+      JSON.stringify(menu?.rows),
+    );
+    await panel.keyboard.press("Escape");
+    for (const width of [320, 380]) {
+      await panel.setViewportSize({ width, height: 620 });
+      await panel.waitForTimeout(250);
+      await steerPill.click().catch(() => undefined);
+      const narrowMenu = await panel.evaluate(() => {
+        const steer = document.querySelector('button[title^="Message send mode"]');
+        const box = steer?.parentElement?.querySelector("div");
+        if (!box) return null;
+        const r = box.getBoundingClientRect();
+        return { left: Number(r.left.toFixed(1)), right: Number(r.right.toFixed(1)), viewport: window.innerWidth };
+      });
+      ok(
+        `at ${width}px the send-mode menu stays inside the panel`,
+        Boolean(narrowMenu) && narrowMenu.left >= 0 && narrowMenu.right <= narrowMenu.viewport,
+        JSON.stringify(narrowMenu),
+      );
+      await panel.keyboard.press("Escape");
+    }
+    await panel.setViewportSize({ width: 900, height: 620 });
   }
 } finally {
   await context.close().catch(() => undefined);
