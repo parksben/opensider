@@ -1783,7 +1783,7 @@ const MessageFrame = memo(
               onClick={onContinue}
               className="rounded p-1 text-[var(--muted)] hover:text-[var(--text)]"
             >
-              <Bot size={12} />
+              <Bot size={14} />
             </IconButton>
             <IconButton
               label={t(locale, "fork")}
