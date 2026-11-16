@@ -69,8 +69,14 @@ try {
 
   const composer = panel.locator('[contenteditable="true"]');
   const bodyText = () => panel.evaluate(() => document.body.innerText);
-  const waitForText = (needle, timeout = 30_000) =>
-    panel.waitForFunction((value) => document.body.innerText.includes(value), needle, { timeout });
+  const waitForText = async (needle, timeout = 30_000) => {
+    const deadline = Date.now() + timeout;
+    while (Date.now() < deadline) {
+      if ((await bodyText()).includes(needle)) return;
+      await panel.waitForTimeout(100);
+    }
+    throw new Error(`timed out waiting for ${JSON.stringify(needle)}`);
+  };
 
   // 1. Connect to the fake agent through the onboarding screen (otherwise the panel may
   // auto-connect to whatever real CLI is installed here first).
