@@ -164,6 +164,40 @@ try {
   await image.waitFor({ state: "visible", timeout: 20_000 });
   ok("the image preview loads the blob", (await image.evaluate((el) => el.naturalWidth)) === 1);
 
+  // 图片预览右键「复制图片」：只在写入前记一笔载荷（类型 / 字节数），真实写入照旧执行
+  // ——扩展页是不透明来源，CDP 不给它发剪贴板读权限，读回来这条路走不通。
+  await imageViewer.evaluate(() => {
+    window.__copied = null;
+    const original = navigator.clipboard.write.bind(navigator.clipboard);
+    navigator.clipboard.write = async (items) => {
+      const blob = await items[0].getType("image/png");
+      window.__copied = { types: items.flatMap((item) => item.types), size: blob.size };
+      return original(items);
+    };
+  });
+  await image.click({ button: "right" });
+  const copyImage = imageViewer.getByRole("menuitem", { name: "Copy image" });
+  const menuShown = await copyImage
+    .waitFor({ state: "visible", timeout: 10_000 })
+    .then(() => true)
+    .catch(() => false);
+  ok("right-clicking the preview image offers Copy image", menuShown);
+  if (menuShown) {
+    await copyImage.click();
+    await imageViewer.waitForTimeout(500);
+    const copied = await imageViewer.evaluate(() => window.__copied);
+    ok(
+      "an image/png is written to the clipboard",
+      Boolean(copied) && copied.types.includes("image/png") && copied.size > 0,
+      JSON.stringify(copied),
+    );
+    const flash = await imageViewer
+      .locator(".preview-flash")
+      .innerText()
+      .catch(() => "");
+    ok("the preview confirms the copy", flash.toLowerCase().includes("copied"), flash);
+  }
+
   const composer = panel.locator('[contenteditable="true"]');
   await composer.click();
   await panel.keyboard.type("start the next turn");

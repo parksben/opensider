@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { HostToExt } from "@shared";
 import { connectSidebar } from "../sidepanel/bridge";
+import { ContextMenu } from "../sidepanel/components/ContextMenu";
 import { Markdown } from "../sidepanel/components/Markdown";
+import { writeImageToClipboard } from "../image-clipboard";
 import { detectBrowserLocale, readCachedLocale, t, type Locale } from "../sidepanel/i18n";
 
 type Loaded =
@@ -125,6 +127,21 @@ export function ArtifactPreview() {
     };
   }, [attempt]);
 
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const [flash, setFlash] = useState<"copied" | "failed" | null>(null);
+
+  useEffect(() => {
+    if (!flash) return;
+    const timer = window.setTimeout(() => setFlash(null), 1600);
+    return () => window.clearTimeout(timer);
+  }, [flash]);
+
+  const copyImage = useCallback((src: string) => {
+    void writeImageToClipboard(src)
+      .then(() => setFlash("copied"))
+      .catch(() => setFlash("failed"));
+  }, []);
+
   const retry = useCallback(() => {
     if (urlRef.current) {
       URL.revokeObjectURL(urlRef.current);
@@ -169,7 +186,17 @@ export function ArtifactPreview() {
       body = <pre className="preview-text">{state.text}</pre>;
     }
   } else if (state.mime.startsWith("image/")) {
-    body = <img className="preview-image" src={state.url} alt={name} />;
+    body = (
+      <img
+        className="preview-image"
+        src={state.url}
+        alt={name}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          setMenu({ x: event.clientX, y: event.clientY });
+        }}
+      />
+    );
   } else if (state.mime === "application/pdf") {
     body = <iframe className="preview-frame" src={state.url} title={name} />;
   } else if (state.mime.startsWith("audio/")) {
@@ -191,6 +218,21 @@ export function ArtifactPreview() {
         </div>
       </header>
       <main className={`preview-main${frame ? " is-frame" : ""}`}>{body}</main>
+      {menu && state.phase === "binary" && state.mime.startsWith("image/") ? (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          onClose={() => setMenu(null)}
+          items={[
+            { id: "copy-image", label: t(locale, "copyImage"), onSelect: () => copyImage(state.url) },
+          ]}
+        />
+      ) : null}
+      {flash ? (
+        <div className={`preview-flash ${flash}`} role="status">
+          {t(locale, flash === "copied" ? "copiedReply" : "copyImageFailed")}
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -1,10 +1,12 @@
-import { LoaderCircle, RotateCcw, X, ZoomIn, ZoomOut } from "lucide-react";
+import { Check, Copy, LoaderCircle, RotateCcw, X, ZoomIn, ZoomOut } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { TransformComponent, TransformWrapper, useControls } from "react-zoom-pan-pinch";
 import type { Locale } from "../i18n";
 import { t } from "../i18n";
+import { writeImageToClipboard } from "../../image-clipboard";
 import { isPreviewBackdropClose, previewPointerDragged } from "../image-preview";
+import { ContextMenu } from "./ContextMenu";
 import { IconButton } from "./IconButton";
 
 const CHROME_CLASS = "cs-preview-chrome";
@@ -62,11 +64,13 @@ function PreviewStage({
   name,
   src,
   onClose,
+  onImageMenu,
 }: {
   locale: Locale;
   name: string;
   src: string;
   onClose: () => void;
+  onImageMenu: (x: number, y: number) => void;
 }) {
   const motionOff = reduceMotion();
   return (
@@ -117,18 +121,39 @@ export function ImagePreview({
   const [src, setSrc] = useState("");
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const [flash, setFlash] = useState<"copied" | "failed" | null>(null);
   const pointer = useRef<{ x: number; y: number; dragged: boolean } | null>(null);
+
+  const copyImage = () => {
+    if (!src) return;
+    void writeImageToClipboard(src)
+      .then(() => setFlash("copied"))
+      .catch(() => setFlash("failed"));
+  };
+
+  useEffect(() => {
+    if (!flash) return;
+    const timer = window.setTimeout(() => setFlash(null), 1600);
+    return () => window.clearTimeout(timer);
+  }, [flash]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
         onClose();
+        return;
+      }
+      // ⌘/Ctrl+C 也能直接拷走这张图（焦点在预览里时，用户的直觉就是它）。
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "c" && ready) {
+        event.preventDefault();
+        copyImage();
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, ready, src]);
 
   useEffect(() => {
     let cancelled = false;
@@ -160,6 +185,11 @@ export function ImagePreview({
       aria-modal="true"
       aria-label={t(locale, "previewImage")}
       className="fixed inset-0 z-[90] bg-[var(--overlay)] backdrop-blur-[2px]"
+      onContextMenu={(event) => {
+        // 预览就是为这张图开的：右键落在图之外的留白上也给同一个菜单。
+        event.preventDefault();
+        if (src && ready) setMenu({ x: event.clientX, y: event.clientY });
+      }}
       onPointerDown={(event) => {
         pointer.current = { x: event.clientX, y: event.clientY, dragged: false };
       }}
@@ -183,7 +213,13 @@ export function ImagePreview({
           </p>
         </>
       ) : src && ready ? (
-        <PreviewStage locale={locale} name={name} src={src} onClose={onClose} />
+        <PreviewStage
+          locale={locale}
+          name={name}
+          src={src}
+          onClose={onClose}
+          onImageMenu={(x, y) => setMenu({ x, y })}
+        />
       ) : (
         <>
           <PreviewChrome locale={locale} onClose={onClose} />
@@ -199,6 +235,25 @@ export function ImagePreview({
           <LoaderCircle size={28} strokeWidth={2} className="cs-preview-spin absolute inset-0 m-auto text-[var(--text)]" />
         </>
       )}
+      {menu ? (
+        <ContextMenu
+          x={menu.x}
+          y={menu.y}
+          onClose={() => setMenu(null)}
+          items={[
+            { id: "copy-image", label: t(locale, "copyImage"), icon: <Copy size={13} />, onSelect: copyImage },
+          ]}
+        />
+      ) : null}
+      {flash ? (
+        <div
+          role="status"
+          className="pointer-events-none absolute left-1/2 top-3 z-[3] flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-[var(--line)] bg-[var(--panel)] px-3 py-1 text-[12px] text-[var(--text)] shadow-lg"
+        >
+          {flash === "copied" ? <Check size={13} className="text-[var(--brass)]" /> : null}
+          {t(locale, flash === "copied" ? "copiedReply" : "copyImageFailed")}
+        </div>
+      ) : null}
     </div>,
     document.body,
   );

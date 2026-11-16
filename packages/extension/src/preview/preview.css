@@ -120,3 +120,20 @@ body {
   border-color: var(--line-focus);
   background: var(--panel);
 }
+
+/* 「已复制 / 复制失败」的一行提示：图片预览右键复制用。 */
+.preview-flash {
+  position: fixed;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  padding: 4px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 12px;
+  box-shadow: 0 6px 18px rgb(0 0 0 / 18%);
+  pointer-events: none;
+}
