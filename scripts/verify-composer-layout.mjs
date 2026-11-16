@@ -10,6 +10,7 @@
 //   - the Agent menu opens upward near the viewport bottom instead of off-screen
 //
 //   node scripts/verify-composer-layout.mjs
+import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { check, createSandbox, extensionIdFromDist, loadPlaywright, cachedChromium } from "./lib/sandbox.mjs";
@@ -22,6 +23,12 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const { chromium } = loadPlaywright();
 const sandbox = createSandbox({ root, prefix: "opensider-composer-", dist });
+// 选 Hermes（profile 里 steer: true），这样跑起来时底部右侧的「引导」胶囊也在场。
+// 入口仍然指向假 Agent，测的只是布局。
+const hermesStub = join(sandbox.home, ".opensider", "runtime", "claude-acp", "node_modules", ".bin", "hermes-acp");
+mkdirSync(dirname(hermesStub), { recursive: true });
+writeFileSync(hermesStub, `#!/bin/sh\nexec node "${join(root, "scripts", "fake-acp-agent.mjs")}" "$@"\n`);
+chmodSync(hermesStub, 0o755);
 const context = await chromium.launchPersistentContext(sandbox.profile, {
   headless: process.env.HEADED !== "1",
   executablePath: cachedChromium(),
@@ -161,6 +168,15 @@ try {
   ok("the Agent switch sits inside the composer", Boolean(layout.agent));
   ok("the header no longer carries the Agent switch", !layout.headerHasAgentSwitch);
   ok(
+    "the toolbar pills sit flush (no gap beyond their own padding)",
+    Boolean(layout.agent && layout.model && layout.effort) &&
+      layout.model.left - layout.agent.right <= 1 &&
+      layout.effort.left - layout.model.right <= 1,
+    layout.agent && layout.model && layout.effort
+      ? `agent.right=${layout.agent.right} model.left=${layout.model.left} model.right=${layout.model.right} effort.left=${layout.effort.left}`
+      : "a pill is missing",
+  );
+  ok(
     "Agent, model and effort line up on the left in that order",
     Boolean(layout.agent && layout.model && layout.effort) &&
       layout.agent.right <= layout.model.left + 1 &&
@@ -281,6 +297,54 @@ try {
         narrow.lastButtonRight <= narrow.headerRight + 0.5 &&
         narrow.titleRight <= (narrow.firstButtonLeft ?? 0) + 1,
       `truncated=${narrow.titleTruncated} title.right=${narrow.titleRight} buttons=${narrow.firstButtonLeft}..${narrow.lastButtonRight} header.right=${narrow.headerRight}`,
+    );
+  }
+
+  // 7. Hermes 支持 steering：运行中「引导」胶囊必须待在右下角（上下文环左侧），
+  //    而不是跟模式 / 权限挤在左边。这里不种 selectedProviderId——宿主镜像里的
+  //    历史会话会把本地状态抢回去，直接从 Agent 菜单切，跟真实用户路径一致。
+  await panel.setViewportSize({ width: 900, height: 620 });
+  const hermesComposer = panel.locator('[contenteditable="true"]');
+  await hermesComposer.waitFor({ state: "visible", timeout: 60_000 });
+  await panel.getByText(/Ask every time|默认权限/).first().waitFor({ timeout: 90_000 });
+  await panel.locator('button[title^="Switch agent"]').click();
+  await panel.getByRole("button", { name: "Hermes", exact: true }).click();
+  const cancelConnect = panel.getByRole("button", { name: /^Cancel$|^取消$/ });
+  await cancelConnect.waitFor({ state: "visible", timeout: 30_000 });
+  await cancelConnect.waitFor({ state: "hidden", timeout: 90_000 });
+  await hermesComposer.click();
+  await panel.keyboard.type("hold the turn open");
+  await panel.keyboard.press("Enter");
+  const steerPill = panel.locator('button[title^="While a turn is running"]');
+  const steerShown = await steerPill
+    .waitFor({ state: "visible", timeout: 30_000 })
+    .then(() => true)
+    .catch(() => false);
+  ok("the steer pill appears while a steerable turn runs", steerShown);
+  if (steerShown) {
+    const right = await panel.evaluate(() => {
+      const composer = document.querySelector(".cs-composer");
+      const footer = composer.nextElementSibling;
+      const steer = footer.querySelector('button[title^="While a turn is running"]');
+      const ring = [...footer.querySelectorAll("button")].find((button) => button.getAttribute("title")?.includes("context used"));
+      const mode = footer.querySelector("button[aria-expanded]");
+      const box = (el) => { const r = el.getBoundingClientRect(); return { left: Number(r.left.toFixed(1)), right: Number(r.right.toFixed(1)), top: Number(r.top.toFixed(1)) }; };
+      return {
+        steer: steer ? box(steer) : null,
+        ring: ring ? box(ring) : null,
+        mode: mode ? box(mode) : null,
+        footerRight: Number(footer.getBoundingClientRect().right.toFixed(1)),
+        footerMid: Number((footer.getBoundingClientRect().left + footer.getBoundingClientRect().right) / 2),
+      };
+    });
+    // 假 Agent 不报 usage，所以上下文环可能不在；在的话「引导」必须让开它。
+    ok(
+      "the steer pill sits on the right, left of the context ring",
+      Boolean(right.steer && right.mode) &&
+        right.steer.left > right.footerMid &&
+        (right.ring ? right.steer.right <= right.ring.left + 1 : true) &&
+        right.mode.right < right.steer.left,
+      JSON.stringify(right),
     );
   }
 } finally {

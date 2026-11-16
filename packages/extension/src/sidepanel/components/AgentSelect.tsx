@@ -1,9 +1,10 @@
 import type { AgentInfo } from "@shared";
-import { ChevronDown } from "lucide-react";
+import { Bot } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Locale } from "../i18n";
 import { t } from "../i18n";
+import { COMPOSER_ICON_PX } from "../layout";
 import { useRipple } from "../useRipple";
 import { RippleButton } from "./RippleButton";
 
@@ -88,7 +89,8 @@ export function AgentSelect({
 
   return (
     <div ref={rootRef} className="relative min-w-0 shrink">
-      {/* 与模型 / 推理档位两个钮同一套形态：同一行并排的东西，边框、底色、字号只能有一套。 */}
+      {/* 与底部操作行（模式 / 权限）同一套形态：平日无边框无底色，只有 hover / 展开时
+          才铺一层胶囊底，图标 + 文案，不带展开箭头。 */}
       <button
         type="button"
         title={t(locale, "switchAgent")}
@@ -99,10 +101,12 @@ export function AgentSelect({
         onPointerDown={(event) => {
           if (!disabled) spawn(event);
         }}
-        className="relative flex h-7 max-w-[9.5rem] min-w-0 items-center gap-1 overflow-hidden whitespace-nowrap rounded-full border border-[var(--line)] bg-[var(--panel-2)] px-2 text-[11px] text-[var(--muted)] hover:text-[var(--text)] disabled:opacity-40 disabled:hover:text-[var(--muted)]"
+        className={`relative flex h-7 w-fit max-w-[9.5rem] min-w-0 items-center gap-1 overflow-hidden whitespace-nowrap rounded-full px-2 text-[11px] hover:bg-[var(--hover)] disabled:opacity-40 disabled:hover:bg-transparent ${
+          open ? "bg-[var(--hover)] text-[var(--text)]" : "text-[var(--muted)]"
+        }`}
       >
+        <Bot size={COMPOSER_ICON_PX} className="shrink-0" />
         <span className="min-w-0 truncate">{current.name}</span>
-        <ChevronDown size={12} className={`shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
         {ripples.map((ripple) => (
           <span
             key={ripple.id}

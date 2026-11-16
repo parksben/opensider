@@ -21,7 +21,13 @@ const { chromium } = loadPlaywright();
 const context = await launchSandbox(chromium, {
   dist,
   sandbox,
-  env: { FAKE_ACP_STEPS: "1", FAKE_ACP_STEP_MS: "300", FAKE_ACP_TRACE: sandbox.tracePath },
+  env: {
+    FAKE_ACP_STEPS: "1",
+    FAKE_ACP_STEP_MS: "300",
+    FAKE_ACP_TRACE: sandbox.tracePath,
+    // 首帧故意晚到 1.2s：这段时间舞台里应该写着「思考中」。
+    FAKE_ACP_FIRST_MS: "1200",
+  },
 });
 try {
   const worker = await waitForWorker(context, 60_000);
@@ -65,6 +71,16 @@ try {
   await panel.locator(".cs-user-bubble").first().waitFor({ state: "visible", timeout: 15_000 });
   await panel.locator(".cs-live-stage").first().waitFor({ state: "attached", timeout: 15_000 });
   ok("a stage appears as soon as the turn starts", (await panel.locator(".cs-live-stage").count()) >= 1);
+  const pending = panel.locator('[data-live-stage="pending"]');
+  const pendingShown = await pending
+    .waitFor({ state: "visible", timeout: 6000 })
+    .then(() => true)
+    .catch(() => false);
+  ok("the pending stage shows a thinking label", pendingShown && /Thinking/.test(await pending.innerText()), pendingShown ? (await pending.innerText()).trim() : "no pending stage");
+  ok(
+    "the thinking label carries the spinner",
+    pendingShown && (await pending.locator(".cs-braille-spin").count()) === 1,
+  );
   // The pending placeholder is replaced by the assistant frame once the first chunk lands;
   // measure the frame, not the detached placeholder.
   const stage = panel.locator('.cs-live-stage:not([data-live-stage="pending"])').first();

@@ -9,6 +9,8 @@
 //   FAKE_ACP_CHUNK_MS          delay between chunks in ms (default 300)
 //   FAKE_ACP_IGNORE_CANCEL_MS  keep running this long after session/cancel (default 0)
 //   FAKE_ACP_TRACE             append a JSON line per prompt/cancel/end to this file
+//   FAKE_ACP_FIRST_MS          delay the first chunk of every turn by this many ms
+//                              (default 0) — holds the "thinking" stage on screen.
 //   FAKE_ACP_INIT_MS           delay every `initialize` reply by this many ms (default 0).
 //                              Lets a test hold the panel in "connecting" long enough to
 //                              measure the composer while the Agent is still coming up.
@@ -64,6 +66,7 @@ const chunks = Number(process.env.FAKE_ACP_CHUNKS ?? 20);
 const chunkMs = Number(process.env.FAKE_ACP_CHUNK_MS ?? 300);
 const ignoreCancelMs = Number(process.env.FAKE_ACP_IGNORE_CANCEL_MS ?? 0);
 const initMs = Number(process.env.FAKE_ACP_INIT_MS ?? 0);
+const firstMs = Number(process.env.FAKE_ACP_FIRST_MS ?? 0);
 const permissionMode = process.env.FAKE_ACP_PERMISSION === "1";
 const tracePath = process.env.FAKE_ACP_TRACE ?? "";
 // 默认只 trace 前 200 字符（够看开头）；要断言整段提示词时设 FAKE_ACP_TRACE_FULL=1。
@@ -578,6 +581,10 @@ async function runPrompt(id, text) {
     trace({ event: "permission_requested", turn: label });
     const outcome = await requestPermission("Run the risky tool");
     trace({ event: "permission_outcome", turn: label, outcome });
+  }
+  if (firstMs > 0) {
+    trace({ event: "first_chunk_delay", turn: label, ms: firstMs });
+    await sleep(firstMs);
   }
   if (stepsMode) {
     await runSteps(id, label);

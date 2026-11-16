@@ -1,5 +1,5 @@
 import type { AgentInfo, AgentModeOption, AgentModel, AgentOption, AgentProgress, AttachmentItem, ContextUsage as ContextUsageValue, CurrentPage, FsPickMode, SkillItem } from "@shared";
-import { ArrowDown, AtSign, Bot, Check, ChevronDown, ChevronRight, Copy, File, FileDown, Folder, FolderPen, GitFork, Lightbulb, LoaderCircle, MousePointer2, Paperclip, Plus, RefreshCw, Send, Shield, Slash, Square, TriangleAlert, Unlock, X, Zap } from "lucide-react";
+import { ArrowDown, AtSign, Bot, Check, ChevronDown, ChevronRight, Copy, Cpu, File, FileDown, Folder, FolderPen, GitFork, Lightbulb, LoaderCircle, MousePointer2, Paperclip, Plus, RefreshCw, Send, Shield, Slash, Square, TriangleAlert, Unlock, X, Zap } from "lucide-react";
 import logoUrl from "../../../assets/icon.svg?url";
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from "react";
 import type { ChatMessage, ChatPart, TodoItem } from "../chat-types";
@@ -972,10 +972,11 @@ export function ChatPane({
                   onClose={() => setAttachOpen(false)}
                 />
               </div>
-              {/* 三个下拉紧跟在功能钮后面（同一套 gap-1）：Agent 切换、模型、推理档位。
+              {/* 三个下拉紧跟在功能钮后面：Agent 切换、模型、推理档位。它们之间**不留额外
+                  间距**（胶囊自身的 px-2 已经给出视觉间隔），只跟左侧图标钮那一组保持 gap-1。
                   连接中 Agent 钮留在原位只置灰，模型 / 档位随 Host 断开自然消失——
                   这一行的宽高都不变，输入框位置不会跟着抖。 */}
-              <div className="flex min-w-0 items-center gap-1">
+              <div className="flex min-w-0 items-center gap-0">
                 {agents && agents.length > 0 && onSelectAgent ? (
                   <AgentSelect
                     locale={locale}
@@ -1080,15 +1081,7 @@ export function ChatPane({
           </div>
         ) : (
           <div className="mt-1.5 flex h-7 min-w-0 items-center justify-between gap-2 px-1">
-            <div className="flex min-w-0 items-center gap-1">
-              {isRunning && steerAvailable ? (
-                <SendModeSelect
-                  locale={locale}
-                  mode={sendMode}
-                  iconOnly={iconOnly === true}
-                  onMode={setSendMode}
-                />
-              ) : null}
+            <div className="flex min-w-0 items-center gap-0">
               <AgentModeSelect
                 locale={locale}
                 options={agentModes ?? []}
@@ -1098,7 +1091,17 @@ export function ChatPane({
               />
               <ModeSelect locale={locale} mode={agentMode} iconOnly={iconOnly === true} onMode={onAgentMode} />
             </div>
-            <ContextUsage locale={locale} usage={contextUsage} />
+            <div className="flex shrink-0 items-center gap-1">
+              {isRunning && steerAvailable ? (
+                <SendModeSelect
+                  locale={locale}
+                  mode={sendMode}
+                  iconOnly={iconOnly === true}
+                  onMode={setSendMode}
+                />
+              ) : null}
+              <ContextUsage locale={locale} usage={contextUsage} />
+            </div>
           </div>
         )}
         </div>
@@ -1232,7 +1235,16 @@ const MessageThread = memo(function MessageThread({
           </MessageFrame>
         );
       })}
-      {awaitingStage ? <div aria-hidden data-live-stage="pending" className="cs-live-stage mt-3" /> : null}
+      {awaitingStage ? (
+        // 首帧还没到：舞台顶部先给一句「思考中」，别让用户对着空白等（高度仍由
+        // .cs-live-stage 兜住，第一段正文落进来时不会把气泡下面顶动）。
+        <div data-live-stage="pending" className="cs-live-stage mt-3">
+          <p role="status" className="flex items-center gap-1.5 text-[12px] text-[var(--muted)]">
+            <span aria-hidden className="cs-braille-spin" />
+            {t(locale, "statusThinking")}
+          </p>
+        </div>
+      ) : null}
     </>
   );
 });
@@ -1565,10 +1577,13 @@ function ModelSelect({
           if (!disabled) spawn(event);
         }}
         style={shellStyle}
-        className={`relative flex h-7 w-full min-w-0 ${shellMax ?? ""} items-center gap-1 overflow-hidden whitespace-nowrap rounded-full border border-[var(--line)] bg-[var(--panel-2)] px-2 text-[11px] text-[var(--muted)] hover:text-[var(--text)] disabled:opacity-40`}
+        className={`relative flex h-7 w-fit min-w-0 ${shellMax ?? ""} items-center gap-1 overflow-hidden whitespace-nowrap rounded-full px-2 text-[11px] hover:bg-[var(--hover)] disabled:opacity-40 disabled:hover:bg-transparent ${
+          open ? "bg-[var(--hover)] text-[var(--text)]" : "text-[var(--muted)]"
+        }`}
       >
+        {/* 与底部操作行同一套形态：无边框、无底色、无箭头，只有图标 + 文案。 */}
+        <Cpu size={COMPOSER_ICON_PX} className="shrink-0" />
         <span className="min-w-0 truncate">{label}</span>
-        <ChevronDown size={COMPOSER_ICON_PX} className={`shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
         {ripples.map((ripple) => (
           <span
             key={ripple.id}
