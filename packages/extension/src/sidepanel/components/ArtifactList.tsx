@@ -61,19 +61,25 @@ export function ArtifactList({
 
   return (
     <section className="mb-2 overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--panel-2)]">
-      <div className="flex items-center gap-1 px-2 py-1.5">
-        <RippleButton
-          aria-expanded={open}
-          onClick={() => setOpen((value) => !value)}
-          className="flex min-w-0 flex-1 items-center gap-2 px-1 py-0.5 text-left"
-        >
-          <span className="min-w-0 truncate text-[12.5px] font-medium tracking-tight">{title}</span>
-        </RippleButton>
+      <div className="relative flex items-center gap-1 px-2 py-1.5">
+        <span className="absolute inset-0 z-0">
+          <RippleButton
+            aria-expanded={open}
+            aria-label={title}
+            onClick={() => setOpen((value) => !value)}
+            className="h-full w-full rounded-none"
+          >
+            <span className="sr-only">{title}</span>
+          </RippleButton>
+        </span>
+        <span className="pointer-events-none relative z-10 min-w-0 flex-1 truncate px-1 text-[12.5px] font-medium tracking-tight">
+          {title}
+        </span>
         {directory && onOpenDirectory ? (
           <IconButton
             label={t(locale, "openArtifactDir")}
             onClick={() => onOpenDirectory(directory)}
-            className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-[var(--muted)] hover:text-[var(--text)]"
+            className="relative z-10 flex h-6 w-6 shrink-0 items-center justify-center rounded text-[var(--muted)] hover:text-[var(--text)]"
           >
             <FolderOpen size={14} />
           </IconButton>
@@ -81,7 +87,7 @@ export function ArtifactList({
         <IconButton
           label={open ? t(locale, "collapseArtifacts") : t(locale, "expandArtifacts")}
           onClick={() => setOpen((value) => !value)}
-          className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-[var(--muted)] hover:text-[var(--text)]"
+          className="relative z-10 flex h-6 w-6 shrink-0 items-center justify-center rounded text-[var(--muted)] hover:text-[var(--text)]"
         >
           {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         </IconButton>

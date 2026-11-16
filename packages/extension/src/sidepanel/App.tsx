@@ -348,6 +348,8 @@ export function App() {
     setOnboardingCompleted(state.onboardingCompleted);
     setSessionsOpen(state.sessionsOpen);
     setDrawerWidth(state.sessionDrawerWidth);
+    queuesRef.current = state.queues;
+    setQueues(state.queues);
     loadedRef.current = { ...state, sessions: nextSessions, selectedId: nextSelectedId };
     // 会话列表被整表替换（host 镜像灌回）：悬挂的请求可能指向已不存在的本地会话，清掉。
     bindRegistry.current.clear();
@@ -718,7 +720,13 @@ export function App() {
     const next = new Set(runningIdsRef.current);
     next.add(id);
     syncRunning(next);
-    patchSession(id, (session) => (session.todos.length === 0 ? session : { ...session, todos: [] }));
+    // A new turn starts with no artifacts. Only a `reportArtifacts` from this turn may
+    // bring the panel back; otherwise the previous turn's list would read as new output.
+    patchSession(id, (session) =>
+      session.todos.length === 0 && (session.artifacts?.length ?? 0) === 0
+        ? session
+        : { ...session, todos: [], artifacts: [] },
+    );
   };
 
   const replyPermission = (id: number, options: PermissionRequest["options"]): boolean => {
@@ -1633,6 +1641,10 @@ export function App() {
       onboardingCompleted,
       sessionsOpen,
       drawerWidth,
+      queues,
+      // Artifacts are per turn: clear/report must reach disk even while a turn is
+      // streaming, or reopening the panel would bring the previous turn's list back.
+      sessions.map((session) => [session.id, (session.artifacts ?? []).map((item) => item.path)]),
     ]);
     const transcriptDigest = JSON.stringify(
       sessions.map((session) => [
@@ -1666,6 +1678,7 @@ export function App() {
         sessionsOpen,
         sessionDrawerWidth: drawerWidth,
         sessions,
+        queues,
       });
       // 先把整份状态序列化 + 写本地热缓存；再发 Host 镜像。写失败（配额等）只打警告，
       // 绝不能连镜像一起停掉——重装后的恢复靠的就是它（见 persist.saveState）。
@@ -1702,6 +1715,7 @@ export function App() {
     sessionsOpen,
     drawerWidth,
     sessions,
+    queues,
   ]);
 
   // 镜像就绪（含 Host 重连）先补一次整份同步：面板可能只读到了本地热缓存，此前没有

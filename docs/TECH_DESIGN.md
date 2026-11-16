@@ -166,6 +166,8 @@ Host 是一份 Go 二进制（`cmd/opensider` + `internal/`）。`browser/tools.
 
 「浏览」不把本机文件路径直接交给浏览器（`file://` 既不可靠也不安全），而是打开扩展自己的预览页 `src/preview/index.html?path=…&name=…`。预览页用 `preview` 端口连 Service Worker，发 `fs.read`；Host 用 `preview.ReadFile` 读文件（上限 32MB，按 512KB base64 分片，和图片预览共用分片协议），预览页按 MIME 渲染 markdown（复用侧栏 `Markdown`）、纯文本/代码、图片、PDF、沙箱化 HTML、音频/视频。只有 `artifact-preview.ts` 里的白名单扩展名会显示浏览按钮；不在白名单的文件即使能被 Host 读出也不显示入口。
 
+产物列表是**逐轮**的：`beginTurn` 先把该会话的 `artifacts` 清空，只有本轮 `reportArtifacts` 送回非空列表才重新出现；因此没有产出的轮次不会继续挂着上一轮面板。列表整行标题栏用一个绝对定位的 `RippleButton` 铺满（标题文字和右侧按钮在上层），hover、点击和涟漪都覆盖整个顶栏；文件夹 / 箭头按钮各自 `stopPropagation` 或作为覆盖层之上的独立按钮，不触发折叠。
+
 VS Code 面板当前**没有产物列表**（`App`/`ChatPane` 只渲染 `FilesChanged`，`uistate` 透传 `artifacts` 但没有 UI 消费），所以这次浏览器端落地后，VS Code 端没有可挂按钮的列表。后续若补产物列表，markdown 用 VS Code 原生 `markdown.showPreview`（已确认内置支持，无需额外扩展），其余文本/图片用 `vscode.open` 在新标签打开，目录用 `revealFileInOS`/`env.openExternal` 打开；不要为 VS Code 再造一个浏览器式预览页。
 
 ### 跨 Agent 续聊
@@ -413,12 +415,12 @@ chrome.storage.local 与 ~/.opensider/ui-state.json（同形）
 
 消息队列（进行中再发送）：
 
-1. 队列按本地会话 id 存在 `App` 内存里（`queues`），不写 `chrome.storage`。切走会话不丢；删会话时一并丢掉。
+1. 队列按本地会话 id 存在 `App` 内存里（`queues`），并随整份 UI state 持久化到 `chrome.storage.local` 与 Host 镜像的 `queues` 字段；hydrate 时按当前会话 id 过滤、校验正文 / 附件后恢复。队列变化算「紧急设置变化」，即使某一轮正在流式也要立刻写入，避免运行中重启丢队列。切走会话不丢；删会话时一并丢掉。
 2. `onSend` 抽成 `sendToSession(localId, text, attachments)`。自动发出后台会话的队首时必须带上该会话 id，不得再用 `selectedId`。
 3. `ChatPane` 提交：改历史仍走 `onRevise`（进行中拒绝）；改队列项走 `onUpdateQueued`（覆盖后清编辑态再 flush）；否则进行中且 Agent 支持 steering 时按输入区切换走 `onSteer` / `onEnqueue`；不支持或有附件 / skill 时 `onEnqueue`，空闲 `onSend`。进行中 `Stop` 与 `Send` 并存；回形针 / 拾取 / `@` 不再因 `isRunning` 禁用，方便组 steering 或队列消息。
 4. 只在 Host `turn.end` 里 `finishTurn` 之后 `flushQueue`。队空或该会话仍在跑则 return；`editingQueueRef` 指向队首则按住，等用户点发送覆盖后再发。改的不是队首则队首照常 shift。`cancel` 立刻 `finishTurn` 但不 flush，等这条 `turn.end`，避免旧结束事件误结束下一条。连接 `error` / `finishAllTurns` 不自动 flush。
 5. 取消队列编辑、删掉一项、或覆盖保存之后，若该会话已空闲，再 `flushQueue` 一次，避免队首解按后卡住。`QueuedMessageList` 画在 composer 上方：左 `displayMentionText`（过长省略，没有正文则附件名），右 `CornerDownLeft`（立即发送）/ `Pencil` / `Trash2`。
-6. 立即发送：从队列摘掉这一条（可插队）。该会话若在跑且消息是纯文本、无 skill、所选 Agent 支持 native steering，直接走 steering 注入当前 turn；否则保留旧的 `cancel` + 等 `turn.end` 再发的回退路径。`turn.end` 时若该会话有强制发送，只发这一条、不 `flushQueue`。空闲则当场发出。正在改这一条则退出编辑、还原草稿，不把未保存的改动发出去。
+6. 立即发送：从队列摘掉这一条（可插队）。该会话若在跑且消息是纯文本、无 skill、所选 Agent 支持 native steering，直接走 steering 注入当前 turn；不能 steer 时**不打断当前 turn**，把这一条保留在队首，等 `turn.end` 后按正常队列发出。空闲则当场发出。正在改这一条则退出编辑、还原草稿，不把未保存的改动发出去。
 
 旧的 `session.json` `{ sessionId }` 在侧栏还没有本地目录时，迁成第一条会话。
 
@@ -602,7 +604,7 @@ policy 只在「该 CLI 适配器声明了这个权限档」且「用户没显�
 
 Host → 侧栏 `{type:"agentModes", source:"config"|"modes", configId?, currentId, options:[{id,name,desc,kind}]}`（发现不到就发空 `options`，等同「不显示」）；侧栏 → Host `{type:"agent.setMode", modeId}`。都按会话路由（带 `sessionId`），与 `models` / `model.set` 同一套。
 
-`SendModeSelect`、`AgentModeSelect` 与权限 `ModeSelect` 同构（同一套 pill、弹出层、涟漪、tooltip、`bottom-full` 定位规则），三者与 `ContextUsage` 放在输入框**外侧底部**的单独一行：三个下拉左对齐，上下文环右对齐。`SendModeSelect` 只在运行中且 Agent 声明支持 steering 时出现（引导 / 队列），选项来自当前 sendMode。`options.length < 2` → **整个控件不渲染**；名称用 Agent 给的 `name`（**不翻译、不换词**，渲染时只把首字母大写——opencode 那类只给 `id` 的引擎会返回 `build` / `plan`，直接画出来全是小写；已有的驼峰 / 句首大写不受影响），说明用 `description`（没有就不画第二行）。图标按 `kind` 映射（只准用 lucide）：`plan`→`ClipboardList`、`build`→`Hammer`、`ask`→`MessageCircleQuestion`、`agent`→`Bot`、`edits`→`FolderPen`、`auto`→`Zap`、`full_access`→`Unlock`、`unknown`→`Workflow`。
+`SendModeSelect`、`AgentModeSelect` 与权限 `ModeSelect` 同构（同一套 pill、弹出层、涟漪、tooltip、`bottom-full` 定位规则），三者与 `ContextUsage` 放在输入框**外侧底部**的单独一行：三个下拉左对齐，上下文环右对齐；该行与输入框间距 6px、与视口底边间距 12px（`mt-1.5` + 外层 `pb-3`），顶部是底部的一半。`SendModeSelect` 只在运行中且 Agent 声明支持 steering 时出现（引导 / 队列），选项来自当前 sendMode。`options.length < 2` → **整个控件不渲染**；名称用 Agent 给的 `name`（**不翻译、不换词**，渲染时只把首字母大写——opencode 那类只给 `id` 的引擎会返回 `build` / `plan`，直接画出来全是小写；已有的驼峰 / 句首大写不受影响），说明用 `description`（没有就不画第二行）。图标按 `kind` 映射（只准用 lucide）：`plan`→`ClipboardList`、`build`→`Hammer`、`ask`→`MessageCircleQuestion`、`agent`→`Bot`、`edits`→`FolderPen`、`auto`→`Zap`、`full_access`→`Unlock`、`unknown`→`Workflow`。
 
 **输入栏工具栏与底部操作行的图标尺寸只有一个来源：`layout.ts` 的 `COMPOSER_ICON_PX`**（回形针 / 拾取 / `@` / `/` / 发送方式 / 模式 / 权限 / 停止 / 发送、模型下拉的箭头，以及各下拉菜单里的图标；推理档位钮是**纯文本**，它不带图标，理由见「其它配置项」那一节）。不要给某个图标单独写一个“光学尺寸”——同行并排的东西，代码里的数值一致才是在屏幕上的尺寸一致；按墨迹 `getBBox()` 去逐个调是治不完的（同尺寸下实心块就是比细线显大）。宽度 ≤ 448px 时发送方式、模式与权限三个钮只画图标，tooltip 给「名称 — 含义」或完整模式名，**而且这时它必须是正圆**
 （`h-7` 配 `w-7`、不加内边距、图标居中）：宽 30 高 28 的「圆」hover 起来是个椭圆，用户报过。

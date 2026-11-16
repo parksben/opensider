@@ -54,6 +54,27 @@ try {
   ok("the artifact header has an open-folder button", (await folder.count()) === 1);
   ok("the open-folder button has the requested tooltip", (await folder.getAttribute("aria-label")) === "Open artifacts folder");
 
+  const section = panel.locator("section").filter({ hasText: "Artifacts" }).first();
+  const header = section.locator("button[aria-expanded]").first();
+  const geometry = await section.evaluate((element) => {
+    const sectionRect = element.getBoundingClientRect();
+    const button = element.querySelector("button[aria-expanded]");
+    const buttonRect = button?.getBoundingClientRect();
+    return buttonRect
+      ? { sectionWidth: sectionRect.width, buttonWidth: buttonRect.width, buttonHeight: buttonRect.height }
+      : null;
+  });
+  ok(
+    "the artifact header toggle spans the whole header",
+    Boolean(geometry) && geometry.buttonWidth >= geometry.sectionWidth - 3,
+    geometry ? `button=${geometry.buttonWidth} section=${geometry.sectionWidth}` : "not found",
+  );
+  await header.click({ position: { x: 6, y: Math.max(1, (geometry?.buttonHeight ?? 28) / 2) } });
+  await panel.locator("li.group").first().waitFor({ state: "detached", timeout: 10_000 });
+  ok("clicking the header padding collapses the artifact list", true);
+  await header.click();
+  await panel.locator("li.group").first().waitFor({ state: "visible", timeout: 10_000 });
+
   const row = panel.locator("li.group").first();
   await row.waitFor({ state: "visible", timeout: 20_000 });
   await row.hover();
@@ -92,6 +113,18 @@ try {
   const image = imageViewer.locator(".preview-image");
   await image.waitFor({ state: "visible", timeout: 20_000 });
   ok("the image preview loads the blob", (await image.evaluate((el) => el.naturalWidth)) === 1);
+
+  const composer = panel.locator('[contenteditable="true"]');
+  await composer.click();
+  await panel.keyboard.type("start the next turn");
+  await panel.keyboard.press("Enter");
+  let hidden = true;
+  try {
+    await section.waitFor({ state: "detached", timeout: 30_000 });
+  } catch {
+    hidden = false;
+  }
+  ok("starting a new turn hides the previous artifact list", hidden);
 } finally {
   await context.close().catch(() => undefined);
 }

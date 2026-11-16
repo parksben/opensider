@@ -113,13 +113,21 @@ try {
   await queued.waitFor({ state: "visible", timeout: 15_000 });
   ok("the second message was queued while the first turn ran", true);
 
-  // 3. Send it now while the agent cannot steer: the message must stay queued
+  // 3. Queue state has to survive an extension reload; otherwise the restart would
+  // silently drop the text the user just typed while the turn was still running.
+  await panel.waitForTimeout(900);
+  await panel.reload();
+  await composer.waitFor({ state: "visible", timeout: 30_000 });
+  await queued.waitFor({ state: "visible", timeout: 20_000 });
+  ok("the queued message survives a panel reload", true);
+
+  // 4. Send it now while the agent cannot steer: the message must stay queued
   // instead of cancelling the running turn.
   await queued.locator("button").first().click();
   await panel.waitForTimeout(800);
   ok("the queue entry stays while the turn runs", await queued.isVisible());
 
-  // 4. The first turn runs to completion, then the queued message starts.
+  // 5. The first turn runs to completion, then the queued message starts.
   let started = true;
   try {
     await waitForText("T2.3", 30_000);
@@ -139,7 +147,7 @@ try {
   const text = await bodyText();
   ok("the sent message is still on screen", text.includes(second));
 
-  // 5. The agent's own view: two prompts, the second one carrying the queued text,
+  // 6. The agent's own view: two prompts, the second one carrying the queued text,
   // and no cancel for the first turn.
   const events = trace(tracePath);
   const prompts = events.filter((event) => event.event === "prompt");
@@ -154,7 +162,7 @@ try {
   const streamed = (text.match(/T1\.\d+/g) ?? []).length;
   ok("the first turn streamed to completion", streamed === CHUNKS, `${streamed}/${CHUNKS} chunks`);
 
-  // 6. The host must not take the interrupt path for a user send.
+  // 7. The host must not take the interrupt path for a user send.
   let logged = false;
   try {
     logged = execFileSync("grep", ["-r", "prompt interrupt requested", join(sandbox.home, ".opensider")], {

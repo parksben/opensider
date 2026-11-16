@@ -167,8 +167,8 @@ service worker 超时）。排障时可以 `PLAYWRIGHT_CHROMIUM=/path/to/binary 
 `node scripts/verify-queue-send-now.mjs`。它在一个临时沙箱里跑：临时 HOME、现编的 Host
 二进制、把假 Agent（`scripts/fake-acp-agent.mjs`）放到检测顺序最靠前的 OpenSider 自有
 bin 目录冒充 `copilot`，并把本机桥接清单写进临时 profile 的 `NativeMessagingHosts/`
-（Chromium 自己的构建只认 profile 内这份，临时 HOME 会被忽略）。跑完 13 项检查，
-覆盖「消息进队列 → 点立即发送 → 当前一轮继续跑完、队列项保留 → turn 结束后新消息才发出 →
+（Chromium 自己的构建只认 profile 内这份，临时 HOME 会被忽略）。跑完 14 项检查，
+覆盖「消息进队列 → 重载面板后队列还在 → 点立即发送 → 当前一轮继续跑完、队列项保留 → turn 结束后新消息才发出 →
 Host 日志里没有 interrupt 路径」。注意：清单里 `copilot` 的解析顺序依赖
 `paths.AgentSearchDirs()`，改了那段要同步改这个脚本。
 
