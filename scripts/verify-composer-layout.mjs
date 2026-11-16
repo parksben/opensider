@@ -66,7 +66,15 @@ try {
     selectedModelId: "", selectedModelByProvider: {}, agentMode: "ask",
     selectedProviderId: "copilot", onboardingCompleted: true, sessionsOpen: false,
     sessionDrawerWidth: 248,
-    sessions: [{ id: "c1", title: "composer", createdAt: now, updatedAt: now, todos: [], artifacts: [], messages: [] }],
+    sessions: [{
+      id: "c1",
+      title: "前端监控大盘与实时告警配置的完整回归验证记录",
+      createdAt: now,
+      updatedAt: now,
+      todos: [],
+      artifacts: [],
+      messages: [],
+    }],
   });
 
   const panel = await context.newPage();
@@ -222,6 +230,59 @@ try {
     narrow.composerRight - narrow.sendRight <= 16,
     `send.right=${narrow.sendRight} composer.right=${narrow.composerRight}`,
   );
+
+  // 6. Header: the session title is left-aligned behind a chat bubble, and a long title
+  //    truncates instead of pushing the action buttons off the edge.
+  const headerAt = (width) =>
+    panel.evaluate((viewport) => {
+      const header = document.querySelector("header");
+      const title = header.querySelector("[title]");
+      const icon = header.querySelector("svg.lucide-message-square");
+      const buttons = [...header.querySelectorAll(":scope > div > div:last-child button")];
+      const box = header.getBoundingClientRect();
+      const titleBox = title.getBoundingClientRect();
+      return {
+        viewport,
+        headerLeft: Number(box.left.toFixed(1)),
+        headerRight: Number(box.right.toFixed(1)),
+        titleLeft: Number(titleBox.left.toFixed(1)),
+        titleRight: Number(titleBox.right.toFixed(1)),
+        titleTruncated: title.scrollWidth > title.clientWidth + 1,
+        titleAlign: getComputedStyle(title).textAlign,
+        iconLeft: icon ? Number(icon.getBoundingClientRect().left.toFixed(1)) : null,
+        firstButtonLeft: buttons.length ? Number(Math.min(...buttons.map((b) => b.getBoundingClientRect().left)).toFixed(1)) : null,
+        lastButtonRight: buttons.length ? Number(Math.max(...buttons.map((b) => b.getBoundingClientRect().right)).toFixed(1)) : null,
+      };
+    }, width);
+
+  await panel.setViewportSize({ width: 900, height: 620 });
+  await panel.waitForTimeout(400);
+  const wide = await headerAt(900);
+  ok("the header shows a chat bubble before the title", wide.iconLeft !== null && wide.iconLeft < wide.titleLeft, `icon=${wide.iconLeft} title=${wide.titleLeft}`);
+  ok(
+    "the title is left-aligned right after the icon",
+    wide.titleAlign === "left" && wide.titleLeft - wide.iconLeft <= 20 && wide.titleLeft - wide.headerLeft < 48,
+    `align=${wide.titleAlign} icon=${wide.iconLeft} title=${wide.titleLeft} header.left=${wide.headerLeft}`,
+  );
+  ok(
+    "the title never overlaps the header actions",
+    wide.firstButtonLeft !== null && wide.titleRight <= wide.firstButtonLeft + 1,
+    `title.right=${wide.titleRight} buttons.left=${wide.firstButtonLeft}`,
+  );
+
+  for (const width of [360, 320]) {
+    await panel.setViewportSize({ width, height: 620 });
+    await panel.waitForTimeout(400);
+    const narrow = await headerAt(width);
+    ok(
+      `at ${width}px the long title truncates and the actions stay inside the header`,
+      narrow.titleTruncated &&
+        narrow.lastButtonRight !== null &&
+        narrow.lastButtonRight <= narrow.headerRight + 0.5 &&
+        narrow.titleRight <= (narrow.firstButtonLeft ?? 0) + 1,
+      `truncated=${narrow.titleTruncated} title.right=${narrow.titleRight} buttons=${narrow.firstButtonLeft}..${narrow.lastButtonRight} header.right=${narrow.headerRight}`,
+    );
+  }
 } finally {
   await context.close().catch(() => undefined);
 }

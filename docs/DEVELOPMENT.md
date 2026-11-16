@@ -132,7 +132,7 @@ scripts/verify-user-handoff.mjs  接手卡与表单代填（交还接管 / 侧�
 scripts/verify-archive.mjs  会话归档（自动归档 / 正文留在磁盘 / 重开面板不灌回 / 恢复正文）的端到端验证
 scripts/verify-live-stage.mjs  直播舞台（运行中最小高度 / 用户消息不抖动 / 下一轮释放上一轮）的端到端验证
 scripts/verify-artifact-preview.mjs  产物列表（打开产物目录 / 浏览按钮）与浏览器 markdown 预览页的端到端验证
-scripts/verify-composer-layout.mjs  输入框工具行（Agent / 模型 / 推理档位居左、发送居右）与连接进度不抖动的端到端验证
+scripts/verify-composer-layout.mjs  输入框工具行（Agent / 模型 / 推理档位居左、发送居右）、连接进度不抖动与顶栏标题左对齐的端到端验证
 scripts/verify-continue-agent.mjs  「在其他 Agent 中继续」按钮 / 弹窗文案 / 提示词的端到端验证
 scripts/verify-skill-menu.mjs  `/` skill 探测菜单（列表 / 搜索 / 详情面板 / 芯片落位 / 发出的提示词）的端到端验证
 scripts/verify-agent-switch-guard.mjs  有任务在跑时切 Agent（确认弹窗 / 取消不切 / 确认才切）的端到端验证
@@ -166,9 +166,9 @@ service worker 超时）。排障时可以 `PLAYWRIGHT_CHROMIUM=/path/to/binary 
 消息队列的「立即发送」在运行中不打断当前一轮：能 steering 的纯文本消息直接注入，
 不能 steer 时保留在队首，等当前 turn 结束后再发。这条路径靠真浏览器验证：
 输入框那一行的布局，以及「连接中底部换成进度、输入框位置不动」这条不抖动约束，跑
-`node scripts/verify-composer-layout.mjs`（11 项）：它用 `FAKE_ACP_INIT_MS` 把连接拖住 5 秒，
+`node scripts/verify-composer-layout.mjs`（16 项）：它用 `FAKE_ACP_INIT_MS` 把连接拖住 5 秒，
 先在连接中量一次输入框 top / bottom 与底部行高度，就绪后再量一次并要求完全相等；同时断言
-Agent / 模型 / 推理档位三颗 pill 在同一行从左往右排、发送钮贴右，以及 360px 下只省略不溢出。
+Agent / 模型 / 推理档位三颗 pill 在同一行从左往右排、发送钮贴右，以及 360px 下只省略不溢出；最后一段量顶栏：标题前有 `MessageSquare`、标题左对齐且不压到右侧按钮，320 / 360px 下长标题省略而按钮完整。
 
 `node scripts/verify-queue-send-now.mjs`。它在一个临时沙箱里跑：临时 HOME、现编的 Host
 二进制、把假 Agent（`scripts/fake-acp-agent.mjs`）放到检测顺序最靠前的 OpenSider 自有

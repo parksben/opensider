@@ -1,20 +1,17 @@
 import type { AgentProgress, HostStatusState } from "@shared";
-import { ChevronsLeft, ChevronsRight, CircleArrowUp, RotateCw, Unplug } from "lucide-react";
-import { useLayoutEffect, useRef, useState } from "react";
+import { ChevronsLeft, ChevronsRight, CircleArrowUp, MessageSquare, RotateCw, Unplug } from "lucide-react";
 import type { Locale } from "../i18n";
 import { t } from "../i18n";
 import { isPlaceholderTitle } from "../persist";
+import { COMPOSER_ICON_PX } from "../layout";
 import { IconButton } from "./IconButton";
 import { RippleButton } from "./RippleButton";
-
-const TITLE_GAP = 32;
 
 export function Header({
   locale,
   status,
   error,
   progress,
-  compact,
   sessionTitle,
   sessionsOpen,
   updateAvailable,
@@ -26,7 +23,6 @@ export function Header({
   status: HostStatusState;
   error?: string;
   progress?: AgentProgress;
-  compact?: boolean;
   sessionTitle: string;
   sessionsOpen: boolean;
   /** 扩展或桥接落后于最新 release 时，抽屉钮左侧多一个提示图标。 */
@@ -38,50 +34,10 @@ export function Header({
   const label = (key: Parameters<typeof t>[1]) => t(locale, key);
   const unnamed = isPlaceholderTitle(sessionTitle);
   const title = unnamed ? label("untitled") : sessionTitle.trim();
-  const leftRef = useRef<HTMLDivElement>(null);
-  const rightRef = useRef<HTMLDivElement>(null);
-  const barRef = useRef<HTMLDivElement>(null);
-  const [sidePad, setSidePad] = useState({ left: TITLE_GAP, right: TITLE_GAP });
-  // Agent 切换钮已经搬到输入框里（见 ChatPane）；顶栏左侧只剩状态。连接中的完整进度
-  // 也搬到了输入框底部，顶栏这里只保留 `2/6` 这种最小提示（窄宽度下仍然只有它）。
+  // Agent 切换钮已经搬到输入框里（见 ChatPane）；连接中的完整进度也搬到了输入框底部，
+  // 顶栏这里只保留 `2/6` 这种最小提示。状态放在右侧：标题左缘固定在图标处，连接 / 重连
+  // 都不会把它推来推去。
   const showStatus = status !== "ready";
-
-  useLayoutEffect(() => {
-    if (compact) return;
-    const bar = barRef.current;
-    const left = leftRef.current;
-    const right = rightRef.current;
-    if (!bar || !left || !right) return;
-    const measure = () => {
-      // 标题层直接以左右 cluster 的占位为 inset，两侧各留 TITLE_GAP。
-      // 面板太窄、放不下两个安全间距时，按可分配空间对半压缩（绝不覆盖两侧控件），
-      // 标题自身照常 truncate。
-      const room = bar.offsetWidth;
-      const rest = room - left.offsetWidth - right.offsetWidth;
-      const gap = Math.max(0, Math.min(TITLE_GAP, rest / 2));
-      setSidePad({
-        left: left.offsetWidth + gap,
-        right: right.offsetWidth + gap,
-      });
-    };
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(bar);
-    observer.observe(left);
-    observer.observe(right);
-    return () => observer.disconnect();
-  }, [compact, status, error, sessionsOpen, updateAvailable]);
-
-  const titleCluster = (align: "left" | "center") => (
-    <div
-      title={title}
-      className={`min-w-0 truncate whitespace-nowrap text-[14px] font-medium tracking-tight text-[var(--text)] ${
-        align === "left" ? "w-full text-left" : "w-full text-center"
-      }`}
-    >
-      {title}
-    </div>
-  );
 
   const statusChip = showStatus ? (
     <div className="flex shrink-0 items-center gap-1.5 rounded-full px-2 py-1 text-[11px]" title={error}>
@@ -137,36 +93,29 @@ export function Header({
 
   return (
     <header className="relative z-40 border-b border-[var(--line)] bg-[color-mix(in_oklab,var(--panel)_88%,transparent)] px-3 py-2.5 backdrop-blur">
-      {compact ? (
-        <div className="flex min-w-0 items-center gap-1.5">
-          <div className="flex min-w-0 flex-1 items-center gap-1.5">
-            {statusChip}
-            {retryButton}
-            {titleCluster("left")}
-          </div>
-          <div className="flex shrink-0 items-center justify-end gap-1.5">
-            {updateButton}
-            {drawerButton}
-          </div>
-        </div>
-      ) : (
-        <div ref={barRef} className="relative flex items-center justify-between">
-          <div ref={leftRef} className="flex shrink-0 items-center gap-1.5">
-            {statusChip}
-            {retryButton}
-          </div>
+      {/* 一行到底：`min-w-0` 在标题上，面板再窄也只是省略标题，右侧按钮永远完整；标题
+          不可点击改名（重命名只在右侧会话卡片上）。 */}
+      <div className="flex min-w-0 items-center gap-2">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5">
+          <MessageSquare
+            size={COMPOSER_ICON_PX}
+            aria-hidden
+            className="shrink-0 text-[var(--muted)] opacity-80"
+          />
           <div
-            className="pointer-events-none absolute bottom-0 top-0 flex items-center justify-center"
-            style={{ left: sidePad.left, right: sidePad.right }}
+            title={title}
+            className="min-w-0 flex-1 truncate whitespace-nowrap text-left text-[14px] font-medium tracking-tight text-[var(--text)]"
           >
-            <div className="flex w-full min-w-0 items-center justify-center">{titleCluster("center")}</div>
-          </div>
-          <div ref={rightRef} className="flex shrink-0 items-center justify-end gap-1.5">
-            {updateButton}
-            {drawerButton}
+            {title}
           </div>
         </div>
-      )}
+        <div className="flex shrink-0 items-center justify-end gap-1.5">
+          {statusChip}
+          {retryButton}
+          {updateButton}
+          {drawerButton}
+        </div>
+      </div>
 
       {error && status === "error" ? (
         <p className="mt-2 text-[11.5px] leading-relaxed text-[var(--bad)]">{error}</p>
