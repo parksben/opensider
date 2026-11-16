@@ -2,6 +2,7 @@ import type { AgentInfo, AgentModeOption, AgentModel, AgentOption, AgentProgress
 import { ArrowDown, AtSign, Bot, Check, ChevronDown, ChevronRight, Copy, Cpu, Clock3, File, FileDown, Folder, FolderPen, GitFork, Lightbulb, LoaderCircle, MousePointer2, Paperclip, Plus, RefreshCw, Send, Shield, Slash, Square, Trash2, TriangleAlert, Unlock, X, Zap } from "lucide-react";
 import logoUrl from "../../../assets/icon.svg?url";
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import type { ChatMessage, ChatPart, TodoItem } from "../chat-types";
 import { useComposerHistory } from "../composer-history";
 import { COMPOSER_ICON_PX, MODEL_MENU_MAX_PX, MODEL_MENU_SAFE_PX, MODEL_NARROW_MAX_PX } from "../layout";
@@ -9,7 +10,7 @@ import { AgentOptionSelect } from "./AgentOptionSelect";
 import type { Locale } from "../i18n";
 import { t } from "../i18n";
 import { closeAtMenuLock, installAtMenuGuard, openAtMenuLock, shouldBlockSubmit } from "../at-menu-lock";
-import { composerHasContent, stripAttachmentMentions } from "../mentions";
+import { composerHasContent, displayMentionText, stripAttachmentMentions } from "../mentions";
 import { buildHandoffPrompt, handoffCutoff } from "../handoff";
 import { groupModelsByPrefix, modelGroupLabel, modelShortName } from "../model-groups";
 import { STICKY_PX, useThreadFollow } from "../thread-follow";
@@ -260,6 +261,8 @@ export function ChatPane({
   const editingQueueRef = useRef<string | undefined>(undefined);
   const onEditingQueuedRef = useRef(onEditingQueued);
   const [preview, setPreview] = useState<{ name: string; path: string }>();
+  /** 右键已上屏的用户消息：在光标处给一个「复制完整内容」的小菜单。 */
+  const [messageMenu, setMessageMenu] = useState<{ x: number; y: number; message: ChatMessage } | null>(null);
   const [awayFromBottom, setAwayFromBottom] = useState(false);
   /** 连接未就绪时按下的那次发送：草稿按住，等 hostReady 再补跑一次 submit。 */
   const heldSubmitRef = useRef(false);
@@ -294,6 +297,54 @@ export function ChatPane({
     carryRef.current = decodeComposerCarry(payload) ?? null;
     void chrome.storage.session.set({ [COMPOSER_CARRY_KEY]: payload }).catch(() => undefined);
   };
+
+  /**
+   * 复制一条已上屏的用户消息。带附件时把同样的 `{text, attachments}` 记进 carry：
+   * 粘回输入框时正文和附件芯片一起还原，跟「全选输入框复制」是同一条通路。
+   */
+  const copyMessage = (message: ChatMessage) => {
+    const text = stripEnvPrompt(textOf(message.content));
+    const displayed = displayMentionText(text).trim();
+    const items = message.attachments ?? [];
+    // 只有附件没有正文的消息也要能粘：用附件名当正文，carry 里存同一份字符串。
+    const body = displayed || items.map((item) => item.name).join("\n");
+    void navigator.clipboard.writeText(body).catch(() => undefined);
+    if (items.length > 0) {
+      const payload = encodeComposerCarry({ text: body, attachments: items, at: Date.now() });
+      carryRef.current = decodeComposerCarry(payload) ?? null;
+      void chrome.storage.session.set({ [COMPOSER_CARRY_KEY]: payload }).catch(() => undefined);
+    }
+    setMessageMenu(null);
+  };
+
+  const openMessageMenu = (message: ChatMessage, x: number, y: number) => {
+    // 简单夹一下，别让菜单掉到视口外。
+    const width = 168;
+    const height = 36;
+    setMessageMenu({
+      message,
+      x: Math.max(8, Math.min(x, window.innerWidth - width - 8)),
+      y: Math.max(8, Math.min(y, window.innerHeight - height - 8)),
+    });
+  };
+
+  useEffect(() => {
+    if (!messageMenu) return;
+    const close = () => setMessageMenu(null);
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") close();
+    };
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", onKey);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => {
+      document.removeEventListener("pointerdown", close);
+      document.removeEventListener("keydown", onKey);
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+    };
+  }, [messageMenu]);
 
   /** A paste whose text is exactly what was copied: bring the attachments along, once. */
   const restoreCarriedAttachments = (pastedText: string) => {
@@ -741,6 +792,7 @@ export function ChatPane({
               models={models}
               page={page}
               onStartEdit={onStartEdit}
+              onMessageMenu={openMessageMenu}
               onPreview={openPreview}
               onFork={onFork}
               onRegenerate={onRegenerate}
@@ -1110,6 +1162,26 @@ export function ChatPane({
         )}
         </div>
       </div>
+      {messageMenu
+        ? createPortal(
+            <div
+              style={{ top: messageMenu.y, left: messageMenu.x }}
+              className="fixed z-[90] min-w-[10.5rem] overflow-hidden rounded-lg border border-[var(--line)] bg-[var(--panel)] py-1 shadow-xl"
+              onPointerDown={(event) => event.stopPropagation()}
+              role="menu"
+            >
+              <RippleButton
+                role="menuitem"
+                onClick={() => copyMessage(messageMenu.message)}
+                className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[12.5px] text-[var(--text)]"
+              >
+                <Copy size={13} className="shrink-0 text-[var(--muted)]" />
+                {t(locale, "copyMessage")}
+              </RippleButton>
+            </div>,
+            document.body,
+          )
+        : null}
       {preview ? (
         <ImagePreview
           locale={locale}
@@ -1146,6 +1218,7 @@ const MessageThread = memo(function MessageThread({
   onRegenerate,
   onContinue,
   onDeletePending,
+  onMessageMenu,
 }: {
   locale: Locale;
   sessionId: string;
@@ -1160,6 +1233,7 @@ const MessageThread = memo(function MessageThread({
   onRegenerate: (messageId: string) => void;
   onContinue: (messageId: string) => void;
   onDeletePending: (messageId: string) => void;
+  onMessageMenu: (message: ChatMessage, x: number, y: number) => void;
 }) {
   // The live turn keeps a minimum-height stage until the next user message; see turn-stage.ts.
   const stageRef = useRef<StageState | undefined>(undefined);
@@ -1178,6 +1252,10 @@ const MessageThread = memo(function MessageThread({
             <div
               role={message.pending || isRunning ? undefined : "button"}
               tabIndex={message.pending || isRunning ? undefined : 0}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                onMessageMenu(message, event.clientX, event.clientY);
+              }}
               onClick={() => {
                 if (isRunning || message.pending) return;
                 // A click that ended a text selection is the user copying, not asking to

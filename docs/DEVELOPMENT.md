@@ -122,6 +122,7 @@ scripts/verify-queue-send-now.mjs  消息队列「立即发送」的端到端验
 scripts/verify-steer-hold.mjs  运行中发消息的两种发送方式（引导：纯文本立即 `/steer`、带附件上屏等待并在本轮结束后自动发出；队列：卡片）的端到端验证
 scripts/verify-file-drop.mjs  拖文件到侧栏 → 变附件的端到端验证
 scripts/verify-composer-clipboard.mjs  输入框全选复制/剪切带上附件栏的端到端验证
+scripts/verify-message-copy.mjs  已上屏用户消息右键「复制完整内容」→ 粘回输入框正文与附件都还原的端到端验证
 scripts/verify-page-overlays.mjs  动作后自动上报页面浮层（模态框/抽屉）的端到端验证
 scripts/verify-host-skew.mjs  本机 Host 比扩展旧时的提示（可见 / 可关 / 不影响可用功能）
 scripts/verify-state-mirror.mjs  状态镜像（>1MB 分片推送 / 上传、超限帧不脱帧、空态不覆盖）的帧级验证
