@@ -1,21 +1,11 @@
-import type { AgentInfo, AgentProgress, HostStatusState } from "@shared";
+import type { AgentProgress, HostStatusState } from "@shared";
 import { ChevronsLeft, ChevronsRight, CircleArrowUp, RotateCw, Unplug } from "lucide-react";
 import { useLayoutEffect, useRef, useState } from "react";
 import type { Locale } from "../i18n";
 import { t } from "../i18n";
 import { isPlaceholderTitle } from "../persist";
-import { AgentSelect } from "./AgentSelect";
 import { IconButton } from "./IconButton";
 import { RippleButton } from "./RippleButton";
-
-const PHASE_KEYS = {
-  resolve: "progressResolve",
-  spawn: "progressSpawn",
-  handshake: "progressHandshake",
-  auth: "progressAuth",
-  session: "progressSession",
-  models: "progressModels",
-} as const;
 
 const TITLE_GAP = 32;
 
@@ -24,35 +14,25 @@ export function Header({
   status,
   error,
   progress,
-  agents,
-  selectedProviderId,
-  showAgentSelect,
   compact,
   sessionTitle,
   sessionsOpen,
   updateAvailable,
   onRetry,
-  onCancelConnect,
   onToggleSessions,
-  onSelectAgent,
   onShowUpdate,
 }: {
   locale: Locale;
   status: HostStatusState;
   error?: string;
   progress?: AgentProgress;
-  agents: AgentInfo[];
-  selectedProviderId: string;
-  showAgentSelect: boolean;
   compact?: boolean;
   sessionTitle: string;
   sessionsOpen: boolean;
   /** 扩展或桥接落后于最新 release 时，抽屉钮左侧多一个提示图标。 */
   updateAvailable?: boolean;
   onRetry?: () => void;
-  onCancelConnect?: () => void;
   onToggleSessions: () => void;
-  onSelectAgent: (id: string) => void;
   onShowUpdate: () => void;
 }) {
   const label = (key: Parameters<typeof t>[1]) => t(locale, key);
@@ -62,9 +42,9 @@ export function Header({
   const rightRef = useRef<HTMLDivElement>(null);
   const barRef = useRef<HTMLDivElement>(null);
   const [sidePad, setSidePad] = useState({ left: TITLE_GAP, right: TITLE_GAP });
-  const showSwitcher =
-    !compact && showAgentSelect && agents.length > 0 && status !== "connecting" && status !== "starting";
-  const showStatus = !showSwitcher && (!compact || status !== "ready");
+  // Agent 切换钮已经搬到输入框里（见 ChatPane）；顶栏左侧只剩状态。连接中的完整进度
+  // 也搬到了输入框底部，顶栏这里只保留 `2/6` 这种最小提示（窄宽度下仍然只有它）。
+  const showStatus = status !== "ready";
 
   useLayoutEffect(() => {
     if (compact) return;
@@ -90,7 +70,7 @@ export function Header({
     observer.observe(left);
     observer.observe(right);
     return () => observer.disconnect();
-  }, [compact, showAgentSelect, status, agents.length, selectedProviderId, error, sessionsOpen]);
+  }, [compact, status, error, sessionsOpen, updateAvailable]);
 
   const titleCluster = (align: "left" | "center") => (
     <div
@@ -172,16 +152,7 @@ export function Header({
       ) : (
         <div ref={barRef} className="relative flex items-center justify-between">
           <div ref={leftRef} className="flex shrink-0 items-center gap-1.5">
-            {showSwitcher ? (
-              <AgentSelect
-                locale={locale}
-                agents={agents}
-                selectedId={selectedProviderId}
-                onSelect={onSelectAgent}
-              />
-            ) : (
-              statusChip
-            )}
+            {statusChip}
             {retryButton}
           </div>
           <div
@@ -197,37 +168,6 @@ export function Header({
         </div>
       )}
 
-      {status === "connecting" ? (
-        <div className="mt-2">
-          {progress ? (
-            <div className="h-0.5 overflow-hidden rounded-full bg-[var(--panel-2)]">
-              <div
-                className="h-full bg-[var(--brass)] transition-[width] duration-300"
-                style={{ width: `${Math.round((progress.index / progress.total) * 100)}%` }}
-              />
-            </div>
-          ) : null}
-          <div className="mt-1 flex items-center justify-between gap-2">
-            <p className="min-w-0 truncate text-[11px] text-[var(--muted)]">
-              {progress
-                ? `${progress.index}/${progress.total} · ${
-                    PHASE_KEYS[progress.phase as keyof typeof PHASE_KEYS]
-                      ? label(PHASE_KEYS[progress.phase as keyof typeof PHASE_KEYS])
-                      : progress.label
-                  }`
-                : label("connecting")}
-            </p>
-            {onCancelConnect ? (
-              <RippleButton
-                onClick={onCancelConnect}
-                className="cs-hover-brass shrink-0 rounded px-1.5 py-0.5 text-[11px] text-[var(--brass)]"
-              >
-                {label("cancelConnect")}
-              </RippleButton>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
       {error && status === "error" ? (
         <p className="mt-2 text-[11.5px] leading-relaxed text-[var(--bad)]">{error}</p>
       ) : null}

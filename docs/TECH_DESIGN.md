@@ -606,6 +606,10 @@ Host → 侧栏 `{type:"agentModes", source:"config"|"modes", configId?, current
 
 `SendModeSelect`、`AgentModeSelect` 与权限 `ModeSelect` 同构（同一套 pill、弹出层、涟漪、tooltip、`bottom-full` 定位规则），三者与 `ContextUsage` 放在输入框**外侧底部**的单独一行：三个下拉左对齐，上下文环右对齐；该行与输入框间距 6px、与视口底边间距 12px（`mt-1.5` + 外层 `pb-3`），顶部是底部的一半。`SendModeSelect` 只在运行中且 Agent 声明支持 steering 时出现（引导 / 队列），选项来自当前 sendMode。`options.length < 2` → **整个控件不渲染**；名称用 Agent 给的 `name`（**不翻译、不换词**，渲染时只把首字母大写——opencode 那类只给 `id` 的引擎会返回 `build` / `plan`，直接画出来全是小写；已有的驼峰 / 句首大写不受影响），说明用 `description`（没有就不画第二行）。图标按 `kind` 映射（只准用 lucide）：`plan`→`ClipboardList`、`build`→`Hammer`、`ask`→`MessageCircleQuestion`、`agent`→`Bot`、`edits`→`FolderPen`、`auto`→`Zap`、`full_access`→`Unlock`、`unknown`→`Workflow`。
 
+**Agent 切换钮住在输入框工具行里**（`AgentSelect`，紧跟在功能钮之后、模型下拉左侧），顶栏不再有它；同一行从左到右是「功能钮 → Agent → 模型 → 推理档位」，右侧只剩停止与发射。三颗 pill 共用模型下拉那套外壳（`rounded-full border border-[var(--line)] bg-[var(--panel-2)] px-2 text-[11px]`、`max-w-[9.5rem]`、`min-w-0` 可省略），所以窄宽度下是**一起省略**而不是把发送钮挤出去。菜单原本朝下展开（顶栏里够用），到了输入框底部会掉出视口，因此改成「下方放不下就向上、左右夹在视口内」，并在菜单挂载后按真实高度再校正一次（首帧只有估算高度）。
+
+`connecting` 时整行底部操作行换成进度：`mt-1.5 flex h-7` 容器里放 2px 进度条（绝对定位在行顶，不占额外高度）+ `progressText()` + 「取消」。**两套内容的容器高度必须一致（都是 `h-7`）**，否则输入框会随连接状态上下跳——切 Agent 时最显眼。`progressText` / `progressPercent` 抽在 `progress-label.ts`，`Header` 与 `AgentSetup` 用同一份 phase 映射，不再各写一套。
+
 **输入栏工具栏与底部操作行的图标尺寸只有一个来源：`layout.ts` 的 `COMPOSER_ICON_PX`**（回形针 / 拾取 / `@` / `/` / 发送方式 / 模式 / 权限 / 停止 / 发送、模型下拉的箭头，以及各下拉菜单里的图标；推理档位钮是**纯文本**，它不带图标，理由见「其它配置项」那一节）。不要给某个图标单独写一个“光学尺寸”——同行并排的东西，代码里的数值一致才是在屏幕上的尺寸一致；按墨迹 `getBBox()` 去逐个调是治不完的（同尺寸下实心块就是比细线显大）。宽度 ≤ 448px 时发送方式、模式与权限三个钮只画图标，tooltip 给「名称 — 含义」或完整模式名，**而且这时它必须是正圆**
 （`h-7` 配 `w-7`、不加内边距、图标居中）：宽 30 高 28 的「圆」hover 起来是个椭圆，用户报过。
 

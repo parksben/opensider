@@ -2585,16 +2585,11 @@ export function App() {
           status={status}
           error={error}
           progress={progress}
-          agents={agents}
-          selectedProviderId={selectedProviderId}
-          showAgentSelect={onboardingCompleted && status !== "missing"}
           compact={compact}
           sessionTitle={selected.title}
           sessionsOpen={sessionsOpen}
           updateAvailable={updateAvailable}
           onShowUpdate={() => setUpdateOpen(true)}
-          onSelectAgent={pickAgent}
-          onCancelConnect={cancelConnect}
           onToggleSessions={() => setSessionsOpen((open) => !open)}
           onRetry={() => {
             bindRegistry.current.clear();
@@ -2643,6 +2638,12 @@ export function App() {
               models={models}
               modelId={selectedModelId}
               showModelPicker={status === "ready" && models.length > 0}
+              agents={agents}
+              selectedProviderId={selectedProviderId}
+              onSelectAgent={pickAgent}
+              connecting={status === "connecting"}
+              progress={progress}
+              onCancelConnect={cancelConnect}
               onSend={onSend}
               onRevise={reviseFromMessage}
               onCancel={onCancel}

@@ -9,6 +9,9 @@
 //   FAKE_ACP_CHUNK_MS          delay between chunks in ms (default 300)
 //   FAKE_ACP_IGNORE_CANCEL_MS  keep running this long after session/cancel (default 0)
 //   FAKE_ACP_TRACE             append a JSON line per prompt/cancel/end to this file
+//   FAKE_ACP_INIT_MS           delay every `initialize` reply by this many ms (default 0).
+//                              Lets a test hold the panel in "connecting" long enough to
+//                              measure the composer while the Agent is still coming up.
 //   FAKE_ACP_PERMISSION=1       prompts whose text mentions "permission" wait 1.5s, then
 //                              send a session/request_permission and only continue once
 //                              the client answers (scripts/verify-background-task.mjs: the
@@ -60,6 +63,7 @@ import { createInterface } from "node:readline";
 const chunks = Number(process.env.FAKE_ACP_CHUNKS ?? 20);
 const chunkMs = Number(process.env.FAKE_ACP_CHUNK_MS ?? 300);
 const ignoreCancelMs = Number(process.env.FAKE_ACP_IGNORE_CANCEL_MS ?? 0);
+const initMs = Number(process.env.FAKE_ACP_INIT_MS ?? 0);
 const permissionMode = process.env.FAKE_ACP_PERMISSION === "1";
 const tracePath = process.env.FAKE_ACP_TRACE ?? "";
 // 默认只 trace 前 200 字符（够看开头）；要断言整段提示词时设 FAKE_ACP_TRACE_FULL=1。
@@ -605,6 +609,7 @@ async function handle(msg) {
   }
   if (method === "initialize") {
     trace({ event: "initialize" });
+    if (initMs > 0) await sleep(initMs);
     reply(id, { protocolVersion: 1, agentCapabilities: {} });
     return;
   }

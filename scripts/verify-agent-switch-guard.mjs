@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// 有任务在跑的时候，从 header 左上角切 Agent 必须先问一句：Host 会停掉旧 runtime，正在跑的
+// 有任务在跑的时候，从输入框工具行左侧切 Agent 必须先问一句：Host 会停掉旧 runtime，正在跑的
 // 那几轮会被打断，不能默默切走。
 //
 //   ok 有运行中任务 → 弹全局面板式确认（数量正确、两个按钮在位）
@@ -13,7 +13,7 @@
 //
 // Prints one line per check and exits non-zero if any of them fails.
 import { join } from "node:path";
-import { readFileSync, existsSync } from "node:fs";
+import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createSandbox, check, extensionIdFromDist, launchSandbox, loadPlaywright, waitForWorker } from "./lib/sandbox.mjs";
 
 const root = join(import.meta.dirname, "..");
@@ -34,6 +34,12 @@ const context = await launchSandbox(chromium, {
     FAKE_ACP_CHUNK_MS: "300",
   },
 });
+// 切换目标也得是本机能跑起来的 Agent：给假 Agent 再挂一个 `gemini` 名字的入口，切换后
+// 新 runtime 能真的握手成功。不挂的话这条用例就依赖「本机恰好装了第二个 CLI」。
+const geminiStub = join(sandbox.home, ".opensider", "runtime", "claude-acp", "node_modules", ".bin", "gemini");
+writeFileSync(geminiStub, `#!/bin/sh\nexec node "${join(root, "scripts", "fake-acp-agent.mjs")}" "$@"\n`);
+chmodSync(geminiStub, 0o755);
+
 const ourId = extensionIdFromDist(dist);
 const runtimeReady = () => {
   if (!existsSync(hostLog)) return 0;
@@ -97,9 +103,29 @@ try {
 
   const switcher = panel.locator('button[aria-label="Switch agent"]');
   const dialog = panel.getByRole("dialog");
+  /**
+   * 打开 Agent 菜单并选中一家。不传名字时选「菜单里第一家和当前不同的」——本机装了哪些
+   * Agent 因机器而异（这条用例原先写死 Gemini，机器上没装就直接失败）。
+   */
   const pickAgent = async (name) => {
+    const currentName = (await switcher.innerText()).trim();
     await switcher.click({ timeout: 10_000 });
-    await panel.getByText(name, { exact: true }).last().click({ timeout: 10_000 });
+    const menu = panel.locator("div.fixed.z-\\[70\\]");
+    await menu.waitFor({ state: "visible", timeout: 10_000 });
+    if (name) {
+      await panel.getByText(name, { exact: true }).last().click({ timeout: 10_000 });
+      return;
+    }
+    const items = menu.locator("button");
+    const count = await items.count();
+    for (let i = 0; i < count; i += 1) {
+      const text = (await items.nth(i).innerText()).trim();
+      if (text && text !== currentName) {
+        await items.nth(i).click();
+        return;
+      }
+    }
+    throw new Error(`no other agent to switch to (menu: ${count} items)`);
   };
 
   // ---------------------------------------------------------------- 有任务在跑
@@ -115,7 +141,7 @@ try {
   ok("a turn is running", runningAppeared);
 
   const beforeCancel = runtimeReady();
-  await pickAgent("Gemini");
+  await pickAgent();
   const dialogShown = await dialog
     .waitFor({ state: "visible", timeout: 5_000 })
     .then(() => true)
@@ -152,7 +178,7 @@ try {
   ok("Cancel closes the dialog", (await dialog.count()) === 0);
 
   // Confirm: the host starts a new runtime and the interrupted turn stops showing as running.
-  await pickAgent("Gemini");
+  await pickAgent();
   await dialog.getByRole("button", { name: "Switch" }).waitFor({ state: "visible", timeout: 5_000 });
   await dialog.getByRole("button", { name: "Switch" }).click();
   let switched = false;

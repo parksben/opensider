@@ -2,16 +2,8 @@ import type { AgentInfo, AgentProgress } from "@shared";
 import { LoaderCircle } from "lucide-react";
 import type { Locale } from "../i18n";
 import { t } from "../i18n";
+import { progressPercent, progressText } from "../progress-label";
 import { RippleButton } from "./RippleButton";
-
-const PHASE_KEYS = {
-  resolve: "progressResolve",
-  spawn: "progressSpawn",
-  handshake: "progressHandshake",
-  auth: "progressAuth",
-  session: "progressSession",
-  models: "progressModels",
-} as const;
 
 export function AgentSetup({
   locale,
@@ -37,7 +29,6 @@ export function AgentSetup({
   onRetry: () => void;
 }) {
   const selected = agents.find((item) => item.id === selectedId);
-  const phaseKey = progress ? PHASE_KEYS[progress.phase as keyof typeof PHASE_KEYS] : undefined;
   const showEmpty = !connecting && !scanning && agents.length === 0;
 
   return (
@@ -57,13 +48,11 @@ export function AgentSetup({
                 <div className="h-1 overflow-hidden rounded-full bg-[var(--panel-2)]">
                   <div
                     className="h-full bg-[var(--brass)] transition-[width] duration-300"
-                    style={{ width: `${Math.round((progress.index / progress.total) * 100)}%` }}
+                    style={{ width: `${progressPercent(progress)}%` }}
                   />
                 </div>
                 <div className="flex items-center justify-between gap-2">
-                  <p className="min-w-0 truncate text-[11.5px] text-[var(--muted)]">
-                    {progress.index}/{progress.total} · {phaseKey ? t(locale, phaseKey) : progress.label}
-                  </p>
+                  <p className="min-w-0 truncate text-[11.5px] text-[var(--muted)]">{progressText(locale, progress)}</p>
                   {onCancel ? (
                     <RippleButton
                       onClick={onCancel}

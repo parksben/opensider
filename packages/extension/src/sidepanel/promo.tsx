@@ -27,7 +27,7 @@ import {
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
-import type { AgentModeOption, AgentModel, AttachmentItem, CurrentPage, SkillItem } from "@shared";
+import type { AgentInfo, AgentModeOption, AgentModel, AttachmentItem, CurrentPage, SkillItem } from "@shared";
 import logoUrl from "../../assets/icon.svg?url";
 import { ChatPane } from "./components/ChatPane";
 import { ControlBanner } from "./components/ControlBanner";
@@ -238,6 +238,11 @@ const AGENT_MODES: AgentModeOption[] = [
   { id: "plan", name: "Plan", kind: "plan" },
 ];
 const SKILLS: SkillItem[] = [];
+// 演示面板里的 Agent 切换钮（真实数据来自 Host 的检测结果）。
+const PANEL_AGENTS: AgentInfo[] = [
+  { id: "hermes", name: "Hermes", mark: "hermes", installed: true, caps: { models: true, questions: false, plans: true, todos: true, steer: true } },
+  { id: "copilot", name: "GitHub Copilot", mark: "copilot", installed: true, caps: { models: true, questions: false, plans: false, todos: false, steer: false } },
+];
 const noop = () => undefined;
 const noopAsync = async () => [];
 
@@ -309,6 +314,9 @@ function Panel({
       models={MODELS}
       modelId="claude-opus"
       showModelPicker
+      agents={PANEL_AGENTS}
+      selectedProviderId="hermes"
+      onSelectAgent={noop}
       onSend={noop}
       steerAvailable={false}
       onSteer={noop}

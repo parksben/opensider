@@ -1,4 +1,4 @@
-import type { AgentModeOption, AgentModel, AgentOption, AttachmentItem, ContextUsage as ContextUsageValue, CurrentPage, FsPickMode, SkillItem } from "@shared";
+import type { AgentInfo, AgentModeOption, AgentModel, AgentOption, AgentProgress, AttachmentItem, ContextUsage as ContextUsageValue, CurrentPage, FsPickMode, SkillItem } from "@shared";
 import { ArrowDown, AtSign, Bot, Check, ChevronDown, ChevronRight, Copy, File, FileDown, Folder, FolderPen, GitFork, Lightbulb, LoaderCircle, MousePointer2, Paperclip, Plus, RefreshCw, Send, Shield, Slash, Square, TriangleAlert, Unlock, X, Zap } from "lucide-react";
 import logoUrl from "../../../assets/icon.svg?url";
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from "react";
@@ -37,6 +37,7 @@ import { useRipple } from "../useRipple";
 import type { QueuedMessage } from "../queued-message";
 import { AttachMenu } from "./AttachMenu";
 import { AgentModeSelect } from "./AgentModeSelect";
+import { AgentSelect } from "./AgentSelect";
 import { SendModeSelect } from "./SendModeSelect";
 import { AtMenu } from "./AtMenu";
 import { ComposerActionsMenu, type ComposerAction } from "./ComposerActionsMenu";
@@ -54,6 +55,7 @@ import { ArtifactList } from "./ArtifactList";
 import { TodoList } from "./TodoList";
 import { ToolCard } from "./ToolCard";
 import { ContextUsage } from "./ContextUsage";
+import { progressPercent, progressText } from "../progress-label";
 
 /** Where the "copy/cut carried the attachments" payload waits for its paste. */
 const COMPOSER_CARRY_KEY = "opensiderComposerCarry";
@@ -117,6 +119,12 @@ export function ChatPane({
   queue,
   steerAvailable,
   onSteer,
+  agents,
+  selectedProviderId,
+  onSelectAgent,
+  connecting,
+  progress,
+  onCancelConnect,
 }: {
   locale: Locale;
   hostReady: boolean;
@@ -140,6 +148,17 @@ export function ChatPane({
   canPreviewArtifact?: (item: AttachmentItem) => boolean;
   /** Agent 上报的上下文用量；没有就不画那个环。 */
   contextUsage?: ContextUsageValue;
+  /** 本机检测到的 Agent 列表与当前选中的那家（工具行左侧的切换钮）。 */
+  agents?: AgentInfo[];
+  selectedProviderId?: string;
+  onSelectAgent?: (id: string) => void;
+  /**
+   * Host 正在连接。底部那一行整行换成连接进度（不再显示发送方式 / 模式 / 权限），
+   * 工具行里的 Agent 钮留在原位只置灰——两侧宽高都不变，输入框位置才不会抖。
+   */
+  connecting?: boolean;
+  progress?: AgentProgress;
+  onCancelConnect?: () => void;
   /** Something the user just tried did not work (a drop, a paste, a stale bridge). */
   notice?: string;
   onDismissNotice?: () => void;
@@ -953,6 +972,36 @@ export function ChatPane({
                   onClose={() => setAttachOpen(false)}
                 />
               </div>
+              {/* 三个下拉紧跟在功能钮后面（同一套 gap-1）：Agent 切换、模型、推理档位。
+                  连接中 Agent 钮留在原位只置灰，模型 / 档位随 Host 断开自然消失——
+                  这一行的宽高都不变，输入框位置不会跟着抖。 */}
+              <div className="flex min-w-0 items-center gap-1">
+                {agents && agents.length > 0 && onSelectAgent ? (
+                  <AgentSelect
+                    locale={locale}
+                    agents={agents}
+                    selectedId={selectedProviderId ?? ""}
+                    disabled={connecting}
+                    onSelect={onSelectAgent}
+                  />
+                ) : null}
+                {showModelPicker ? (
+                  <ModelSelect
+                    locale={locale}
+                    models={models}
+                    modelId={modelId}
+                    narrow={narrowModel}
+                    onModel={onModel}
+                    modelConfigs={modelConfigOptions}
+                    onConfig={onAgentOption}
+                  />
+                ) : null}
+                {/* 推理档位紧跟模型下拉右侧（引擎不广告 thought_level 就整个不出现）。 */}
+                <AgentOptionSelect
+                  option={thoughtLevel}
+                  onValue={(configId, value) => onAgentOption?.(configId, value)}
+                />
+              </div>
               <AtMenu
                 open={atOpen}
                 locale={locale}
@@ -984,23 +1033,7 @@ export function ChatPane({
                 onClose={closeSlashMenu}
               />
             </div>
-            <div className="flex min-w-0 shrink items-center justify-end gap-1.5">
-              {showModelPicker ? (
-                <ModelSelect
-                  locale={locale}
-                  models={models}
-                  modelId={modelId}
-                  narrow={narrowModel}
-                  onModel={onModel}
-                  modelConfigs={modelConfigOptions}
-                  onConfig={onAgentOption}
-                />
-              ) : null}
-              {/* 推理档位紧跟模型下拉右侧（引擎不广告 thought_level 就整个不出现）。 */}
-              <AgentOptionSelect
-                option={thoughtLevel}
-                onValue={(configId, value) => onAgentOption?.(configId, value)}
-              />
+            <div className="flex shrink-0 items-center justify-end gap-1.5">
               {isRunning ? (
                 <IconButton
                   side="top"
@@ -1023,27 +1056,51 @@ export function ChatPane({
             </div>
           </div>
         </div>
-        <div className="mt-1.5 flex min-w-0 items-center justify-between gap-2 px-1">
-          <div className="flex min-w-0 items-center gap-1">
-            {isRunning && steerAvailable ? (
-              <SendModeSelect
-                locale={locale}
-                mode={sendMode}
-                iconOnly={iconOnly === true}
-                onMode={setSendMode}
-              />
+        {connecting ? (
+          // 连接中：整行换成连接进度。高度与下面那一行完全相同（h-7），否则输入框
+          // 会因为底部变高而往上跳——切 Agent 前后最显眼的就是这一下。
+          <div className="relative mt-1.5 flex h-7 min-w-0 items-center justify-between gap-2 px-1">
+            <div className="absolute inset-x-1 top-0 h-0.5 overflow-hidden rounded-full bg-[var(--panel-2)]">
+              {progressPercent(progress) !== undefined ? (
+                <div
+                  className="h-full bg-[var(--brass)] transition-[width] duration-300"
+                  style={{ width: `${progressPercent(progress)}%` }}
+                />
+              ) : null}
+            </div>
+            <p className="min-w-0 flex-1 truncate text-[11px] text-[var(--muted)]">{progressText(locale, progress)}</p>
+            {onCancelConnect ? (
+              <RippleButton
+                onClick={onCancelConnect}
+                className="cs-hover-brass shrink-0 rounded px-1.5 py-0.5 text-[11px] text-[var(--brass)]"
+              >
+                {label("cancelConnect")}
+              </RippleButton>
             ) : null}
-            <AgentModeSelect
-              locale={locale}
-              options={agentModes ?? []}
-              currentId={agentModeId ?? ""}
-              iconOnly={iconOnly === true}
-              onMode={onAgentModeId ?? (() => undefined)}
-            />
-            <ModeSelect locale={locale} mode={agentMode} iconOnly={iconOnly === true} onMode={onAgentMode} />
           </div>
-          <ContextUsage locale={locale} usage={contextUsage} />
-        </div>
+        ) : (
+          <div className="mt-1.5 flex h-7 min-w-0 items-center justify-between gap-2 px-1">
+            <div className="flex min-w-0 items-center gap-1">
+              {isRunning && steerAvailable ? (
+                <SendModeSelect
+                  locale={locale}
+                  mode={sendMode}
+                  iconOnly={iconOnly === true}
+                  onMode={setSendMode}
+                />
+              ) : null}
+              <AgentModeSelect
+                locale={locale}
+                options={agentModes ?? []}
+                currentId={agentModeId ?? ""}
+                iconOnly={iconOnly === true}
+                onMode={onAgentModeId ?? (() => undefined)}
+              />
+              <ModeSelect locale={locale} mode={agentMode} iconOnly={iconOnly === true} onMode={onAgentMode} />
+            </div>
+            <ContextUsage locale={locale} usage={contextUsage} />
+          </div>
+        )}
         </div>
       </div>
       {preview ? (
