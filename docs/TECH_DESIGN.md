@@ -372,7 +372,8 @@ chrome.storage.local 与 ~/.opensider/ui-state.json（同形）
 | `session.fork` + `sessionId` + `requestId` | 在空闲进程上先试不稳定的 `session/fork`（整段历史）；失败则 `session/new`；回执带 `requestId` |
 | `session.archive` + `requestId` + `ids` | 逐条确认 `sessions/<id>.json` 存在后写 `archivedAt` 并清空索引正文，回 `session.archived{requestId,archivedAt,ids,skipped}`。文件不在的 id 进 `skipped`，绝不归档 |
 | `prompt` 可带 `sessionId` + `requestId` | 绑到已持有该会话的进程，或空闲进程 `session/load` 后再 prompt。同一会话已有一轮在跑且 Agent 支持 native steering 时走 `steer`（见「运行中消息」）；否则拒绝并回 `{type:"prompt.busy", requestId, sessionId}`。不同会话并行。**拒绝不得静默**：面板把刚上屏的那条用户消息收回队列、保持 running，等 `turn.end` 后按排队顺序再发（见「后台任务」）。若 `session/load` 失败被迫换新会话，用带该 `requestId` 的 `session` 回执（`created: true`）通知侧栏更新绑定并补前文 |
-| `prompt` + `interrupt: true` | 「立即发送」专用：该会话正在跑时，Host 先对它在跑的 runtime 发 `session/cancel`，**等那一轮 return**（有上限，超时就照样往下走）再开始新的一轮；被顶掉那轮结束时 `turn.end` 带 `interrupted: true`，侧栏只结算时长与内容、**不清 running、不 flush 队列**（新一轮已经在跑）。不这么做就会变成「侧栏自己计时 + 等 `turn.end` 再发」，而 `turn.end` 只要没到（cancel 打空、ACP 会话 id 漂了）消息就静默丢掉 |
+| `prompt` + `steer: true` | 「立即发送」且消息可 native steering 时使用：Host 调 `acp.Client.Steer` 注入当前 turn，不取消原 turn；附件 / skill / 不支持时回退到 `prompt` + `interrupt: true`。 |
+| `prompt` + `interrupt: true` | 「立即发送」的安全回退：该会话正在跑时，Host 先对它在跑的 runtime 发 `session/cancel`，**等那一轮 return**（有上限，超时就照样往下走）再开始新的一轮；被顶掉那轮结束时 `turn.end` 带 `interrupted: true`，侧栏只结算时长与内容、**不清 running、不 flush 队列**（新一轮已经在跑）。不这么做就会变成「侧栏自己计时 + 等 `turn.end` 再发」，而 `turn.end` 只要没到（cancel 打空、ACP 会话 id 漂了）消息就静默丢掉 |
 | `cancel` 可带 `sessionId` | 只取消该 ACP 会话所在进程的一轮；**找不到该会话就不动手**（早期会「随便挑一个 prompting 的进程」取消，导致 B 的停止杀掉 A 的任务） |
 | `update` / `turn.end` / `permission` / `cursor` 带 `sessionId` | 侧栏按 ACP id 精确映射到本地会话，**不按当前选中项；映射不到就丢弃**（不允许落到「当前选中」，那是串戏的主要通道）。`turn.end` 在 `stopReason=error` 时带 `error` 原文（Host 已改写成可执行的登录提示），侧栏顶栏直接显示，不要换成一句笼统的「这一轮以错误结束」 |
 | `fs.pick` | Host 弹出本机选文件/文件夹对话框，回 `fs.picked`（绝对路径 + kind） |
@@ -417,7 +418,7 @@ chrome.storage.local 与 ~/.opensider/ui-state.json（同形）
 3. `ChatPane` 提交：改历史仍走 `onRevise`（进行中拒绝）；改队列项走 `onUpdateQueued`（覆盖后清编辑态再 flush）；否则进行中且 Agent 支持 steering 时按输入区切换走 `onSteer` / `onEnqueue`；不支持或有附件 / skill 时 `onEnqueue`，空闲 `onSend`。进行中 `Stop` 与 `Send` 并存；回形针 / 拾取 / `@` 不再因 `isRunning` 禁用，方便组 steering 或队列消息。
 4. 只在 Host `turn.end` 里 `finishTurn` 之后 `flushQueue`。队空或该会话仍在跑则 return；`editingQueueRef` 指向队首则按住，等用户点发送覆盖后再发。改的不是队首则队首照常 shift。`cancel` 立刻 `finishTurn` 但不 flush，等这条 `turn.end`，避免旧结束事件误结束下一条。连接 `error` / `finishAllTurns` 不自动 flush。
 5. 取消队列编辑、删掉一项、或覆盖保存之后，若该会话已空闲，再 `flushQueue` 一次，避免队首解按后卡住。`QueuedMessageList` 画在 composer 上方：左 `displayMentionText`（过长省略，没有正文则附件名），右 `CornerDownLeft`（立即发送）/ `Pencil` / `Trash2`。
-6. 立即发送：从队列摘掉这一条（可插队）。该会话若在跑，先 `cancel` + `finishTurn`，把条目推进 `pendingForceSend`，**等**这条 `turn.end` 再 `sendToSession`——Host 在 `prompting` 时会丢掉新 `prompt`。`turn.end` 时若该会话有强制发送，只发这一条、不 `flushQueue`。空闲则当场发出。正在改这一条则退出编辑、还原草稿，不把未保存的改动发出去。
+6. 立即发送：从队列摘掉这一条（可插队）。该会话若在跑且消息是纯文本、无 skill、所选 Agent 支持 native steering，直接走 steering 注入当前 turn；否则保留旧的 `cancel` + 等 `turn.end` 再发的回退路径。`turn.end` 时若该会话有强制发送，只发这一条、不 `flushQueue`。空闲则当场发出。正在改这一条则退出编辑、还原草稿，不把未保存的改动发出去。
 
 旧的 `session.json` `{ sessionId }` 在侧栏还没有本地目录时，迁成第一条会话。
 

@@ -1887,11 +1887,18 @@ export function App() {
     );
   };
 
-  // 「立即发送」：Host 收到 interrupt 会先停掉正在跑的那一轮、等它收尾再跑这条，
-  // 所以侧栏只需要立刻把消息上屏并发出去，不用自己等 turn.end 猜时机。
+  // 「立即发送」：能 native steering 的纯文本消息直接注入当前 turn；带附件 /
+  // skill 或 Agent 不支持时回退到旧的中断语义（取消当前 turn，再发新一轮）。
   const sendQueuedNow = (sessionId: string, item: QueuedMessage) => {
+    const running = runningIdsRef.current.has(sessionId);
+    const steer =
+      running &&
+      steerAvailable &&
+      item.attachments.length === 0 &&
+      !wrapUserPrompt(item.text, item.attachments, skillsRef.current).skillPrefix;
     sendToSession(sessionId, item.text, item.attachments, {
-      interrupt: runningIdsRef.current.has(sessionId),
+      steer,
+      interrupt: running && !steer,
     });
   };
   sendToSessionRef.current = sendToSession;
