@@ -1023,7 +1023,7 @@ export function ChatPane({
             </div>
           </div>
         </div>
-        <div className="mt-1 flex min-w-0 items-center justify-between gap-2 px-1">
+        <div className="mt-3 flex min-w-0 items-center justify-between gap-2 px-1">
           <div className="flex min-w-0 items-center gap-1">
             {isRunning && steerAvailable ? (
               <SendModeSelect
