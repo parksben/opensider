@@ -160,7 +160,7 @@ export function ArtifactPreview() {
     if (ext === "md" || ext === "markdown" || state.mime === "text/markdown") {
       body = (
         <div className="preview-doc">
-          <Markdown text={state.text} />
+          <Markdown variant="doc" text={state.text} />
         </div>
       );
     } else if (state.mime === "text/html") {

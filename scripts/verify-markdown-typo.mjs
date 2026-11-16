@@ -5,8 +5,8 @@
 //      literal — GFM only strikes on `~~`, and the old `singleTilde` default turned those
 //      two tildes into one long `<del>` across the sentence
 //   2. `~~…~~` still renders a real strikethrough
-//   3. the heading ladder is visible: h1 > h2 > h3 > body, h1 at semibold with a hairline
-//   4. blockquotes / hr / inline code keep the house style (no backticks around code)
+//   3. the transcript keeps its compact look: headings stay at body size (the bigger
+//      document ladder belongs to the artifact preview, not to chat)
 //
 //   node scripts/verify-markdown-typo.mjs          # expects packages/extension/dist
 //
@@ -96,21 +96,16 @@ try {
     const px = (el, prop = "fontSize") => Number.parseFloat(getComputedStyle(el)[prop]);
     const h1 = root.querySelector("h1");
     const h2 = root.querySelector("h2");
-    const h3 = root.querySelector("h3");
     const body = root.querySelector("p");
-    const dels = [...root.querySelectorAll("del")].map((node) => node.textContent ?? "");
-    const quote = root.querySelector("blockquote");
-    const code = root.querySelector("p code");
     return {
       text: root.textContent ?? "",
-      dels,
-      sizes: { h1: px(h1), h2: px(h2), h3: px(h3), body: px(body) },
+      dels: [...root.querySelectorAll("del")].map((node) => node.textContent ?? ""),
+      prose: root.classList.contains("prose"),
+      sizes: { h1: px(h1), h2: px(h2), body: px(body) },
       h1Weight: px(h1, "fontWeight"),
       h1Border: getComputedStyle(h1).borderBottomWidth,
-      quoteBorder: quote ? getComputedStyle(quote).borderLeftWidth : "0px",
-      codeBefore: code ? getComputedStyle(code, "::before").content : "none",
+      codeBefore: getComputedStyle(root.querySelector("p code"), "::before").content,
       hr: Boolean(root.querySelector("hr")),
-      table: Boolean(root.querySelector("th")),
     };
   });
 
@@ -128,17 +123,19 @@ try {
   );
   check("a real ~~pair~~ still strikes", rendered.dels.some((text) => text.includes("这句应该被划掉")), JSON.stringify(rendered.dels), results);
   check(
-    "the heading ladder descends: h1 > h2 > h3 > body",
-    rendered.sizes.h1 > rendered.sizes.h2 && rendered.sizes.h2 > rendered.sizes.h3 && rendered.sizes.h3 > rendered.sizes.body,
-    JSON.stringify(rendered.sizes),
+    "the transcript keeps its compact look (no document typography)",
+    rendered.prose === false && rendered.sizes.h1 === rendered.sizes.h2 && rendered.sizes.h1 === rendered.sizes.body && rendered.h1Border === "0px",
+    `prose=${rendered.prose} sizes=${JSON.stringify(rendered.sizes)} border=${rendered.h1Border}`,
     results,
   );
-  check("the document title is clearly bigger than body copy", rendered.sizes.h1 >= 18, `h1=${rendered.sizes.h1} body=${rendered.sizes.body}`, results);
-  check("headings are semibold", rendered.h1Weight >= 600, `weight=${rendered.h1Weight}`, results);
-  check("the document title carries a hairline", rendered.h1Border !== "0px", `border=${rendered.h1Border}`, results);
-  check("blockquotes keep their left rule", rendered.quoteBorder !== "0px", `border=${rendered.quoteBorder}`, results);
-  check("inline code renders without backticks", rendered.codeBefore === "none" || rendered.codeBefore === '""', `content=${rendered.codeBefore}`, results);
-  check("hr and tables still render", rendered.hr && rendered.table, `hr=${rendered.hr} th=${rendered.table}`, results);
+  check("the transcript keeps its light heading weight", rendered.h1Weight === 500, `weight=${rendered.h1Weight}`, results);
+  // 聊天这边的 Markdown 保持原样：分隔线照旧，行内代码本来就没有反引号。
+  check(
+    "hr and inline code keep the transcript style",
+    rendered.hr && (rendered.codeBefore === "none" || rendered.codeBefore === '""'),
+    JSON.stringify({ hr: rendered.hr, code: rendered.codeBefore }),
+    results,
+  );
 } finally {
   await context.close().catch(() => undefined);
 }

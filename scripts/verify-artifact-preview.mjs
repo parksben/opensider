@@ -4,6 +4,7 @@
 //   - the artifact header gets an "open artifacts folder" button left of the chevron
 //   - a markdown artifact gets a "preview" button left of the reveal button
 //   - clicking preview opens the extension preview page and renders the markdown
+//     with the document typography (heading ladder / quote rule / no code backticks)
 //
 //   node scripts/verify-artifact-preview.mjs
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -28,7 +29,24 @@ try {
 
   const artifact = join(sandbox.workspace, "outputs", "plan.md");
   mkdirSync(dirname(artifact), { recursive: true });
-  writeFileSync(artifact, "# Artifact preview\n\nThis markdown came from the artifact list.\n", { flag: "w" });
+  // 预览页是「读文档」：标题要有层级，所以这里塞一份带 h1/h2/h3、引用与行内代码的稿子。
+  writeFileSync(
+    artifact,
+    [
+      "# Artifact preview",
+      "",
+      "This markdown came from the artifact list. Batch A takes 2~3 working days, batch B another 2~3.",
+      "",
+      "## Section one",
+      "",
+      "### Detail",
+      "",
+      "> A quoted constraint.",
+      "",
+      "Inline `reportArtifacts` code.",
+    ].join("\n"),
+    { flag: "w" },
+  );
 
   const now = new Date().toISOString();
   await worker.evaluate((payload) => chrome.storage.local.set({ "opensider/state": payload }), {
@@ -90,6 +108,38 @@ try {
   await viewer.locator(".preview-doc").waitFor({ state: "visible", timeout: 20_000 });
   const heading = await viewer.locator(".preview-doc h1").innerText();
   ok("the markdown preview renders the file", heading.includes("Artifact preview"), heading);
+
+  const doc = await viewer.evaluate(() => {
+    const root = document.querySelector(".preview-doc .markdown");
+    const px = (el, prop = "fontSize") => Number.parseFloat(getComputedStyle(el)[prop]);
+    const h1 = root.querySelector("h1");
+    const h2 = root.querySelector("h2");
+    const h3 = root.querySelector("h3");
+    const body = root.querySelector("p");
+    return {
+      prose: root.classList.contains("prose") && root.classList.contains("md-doc"),
+      sizes: { h1: px(h1), h2: px(h2), h3: px(h3), body: px(body) },
+      h1Weight: px(h1, "fontWeight"),
+      h1Border: getComputedStyle(h1).borderBottomWidth,
+      quoteBorder: getComputedStyle(root.querySelector("blockquote")).borderLeftWidth,
+      codeBefore: getComputedStyle(root.querySelector("p code"), "::before").content,
+      dels: [...root.querySelectorAll("del")].length,
+    };
+  });
+  ok("the preview opts into the document typography", doc.prose, JSON.stringify(doc));
+  ok(
+    "the preview heading ladder descends: h1 > h2 > h3 > body",
+    doc.sizes.h1 > doc.sizes.h2 && doc.sizes.h2 > doc.sizes.h3 && doc.sizes.h3 > doc.sizes.body,
+    JSON.stringify(doc.sizes),
+  );
+  ok("the document title is semibold with a hairline", doc.h1Weight >= 600 && doc.h1Border !== "0px", `weight=${doc.h1Weight} border=${doc.h1Border}`);
+  ok("the document quotes keep their left rule", doc.quoteBorder !== "0px", `border=${doc.quoteBorder}`);
+  ok(
+    "the document inline code has no backticks",
+    doc.codeBefore === "none" || doc.codeBefore === '""',
+    `content=${doc.codeBefore}`,
+  );
+  ok("single tildes do not strike in the preview either", doc.dels === 0, `del=${doc.dels}`);
   ok("the preview page is an extension page", viewer.url().startsWith(`chrome-extension://${sandbox.extensionId}/src/preview/index.html`), viewer.url());
   const hostLog = join(sandbox.home, ".opensider", "host.log");
   for (let i = 0; i < 40 && !(existsSync(hostLog) && readFileSync(hostLog, "utf8").includes("fs.read")); i += 1) await sleep(200);
