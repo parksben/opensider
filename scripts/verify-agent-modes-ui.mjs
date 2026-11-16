@@ -124,9 +124,12 @@ try {
         .map((b) => ({ text: (b.textContent || "").trim(), rect: b.getBoundingClientRect() }))
         .filter((entry) => entry.text && Math.abs(entry.rect.top - permRect.top) < 6 && entry.rect.right <= permRect.left + 1)
         .pop();
+      const composer = document.querySelector(".cs-composer")?.getBoundingClientRect();
       return {
         label: left ? left.text : null,
         gap: left ? Number((permRect.left - left.rect.right).toFixed(1)) : null,
+        composerBottom: composer ? Number(composer.bottom.toFixed(1)) : null,
+        permTop: Number(permRect.top.toFixed(1)),
       };
     });
 
@@ -148,6 +151,11 @@ try {
     "connecting shows the mode control with no message sent",
     Boolean(first.label),
     first.label ? `label=${first.label} gap=${first.gap}px after ${first.seconds}s` : `nothing after ${first.seconds}s`,
+  );
+  check(
+    "the mode and permission pills sit outside the composer",
+    first.composerBottom !== null && first.permTop >= first.composerBottom - 1,
+    `composer.bottom=${first.composerBottom} permission.top=${first.permTop}`,
   );
 
   if (switchTo) {

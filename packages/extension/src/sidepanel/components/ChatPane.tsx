@@ -37,6 +37,7 @@ import { useRipple } from "../useRipple";
 import type { QueuedMessage } from "../queued-message";
 import { AttachMenu } from "./AttachMenu";
 import { AgentModeSelect } from "./AgentModeSelect";
+import { SendModeSelect } from "./SendModeSelect";
 import { AtMenu } from "./AtMenu";
 import { ComposerActionsMenu, type ComposerAction } from "./ComposerActionsMenu";
 import { SlashMenu } from "./SlashMenu";
@@ -778,39 +779,6 @@ export function ChatPane({
           onMove={onMoveQueued}
         />
         <div className={`cs-composer rounded-xl bg-[var(--panel)] px-2 py-2 ${isRunning ? "is-running" : ""}`}>
-          {isRunning && steerAvailable ? (
-            <div className="mb-1.5 flex items-center justify-end gap-2 px-1">
-              <span className="text-[10px] text-[var(--muted)]">{label("sendModeHint")}</span>
-              <div
-                role="group"
-                aria-label={label("sendModeHint")}
-                className="inline-flex overflow-hidden rounded-full border border-[var(--line)] text-[11px]"
-              >
-                <button
-                  type="button"
-                  aria-pressed={sendMode === "steer"}
-                  title={label("steerMode")}
-                  onClick={() => setSendMode("steer")}
-                  className={`px-2 py-0.5 transition-colors ${
-                    sendMode === "steer" ? "bg-[var(--brass)] text-[var(--ink)]" : "text-[var(--muted)] hover:text-[var(--text)]"
-                  }`}
-                >
-                  {label("steerMode")}
-                </button>
-                <button
-                  type="button"
-                  aria-pressed={sendMode === "queue"}
-                  title={label("queueMode")}
-                  onClick={() => setSendMode("queue")}
-                  className={`px-2 py-0.5 transition-colors ${
-                    sendMode === "queue" ? "bg-[var(--brass)] text-[var(--ink)]" : "text-[var(--muted)] hover:text-[var(--text)]"
-                  }`}
-                >
-                  {label("queueMode")}
-                </button>
-              </div>
-            </div>
-          ) : null}
           {editingQueueId ? (
             <div className="mb-1.5 flex items-start justify-between gap-2 px-1">
               <p className="min-w-0 flex-1 text-[11px] leading-snug text-[var(--muted)]">
@@ -985,17 +953,6 @@ export function ChatPane({
                   onClose={() => setAttachOpen(false)}
                 />
               </div>
-              {/* 两个下拉之间的间距跟图标钮那组一样（gap-1），不要把两个钮贴死。 */}
-              <div className="flex min-w-0 items-center gap-1">
-                <AgentModeSelect
-                  locale={locale}
-                  options={agentModes ?? []}
-                  currentId={agentModeId ?? ""}
-                  iconOnly={iconOnly === true}
-                  onMode={onAgentModeId ?? (() => undefined)}
-                />
-                <ModeSelect locale={locale} mode={agentMode} iconOnly={iconOnly === true} onMode={onAgentMode} />
-              </div>
               <AtMenu
                 open={atOpen}
                 locale={locale}
@@ -1028,7 +985,6 @@ export function ChatPane({
               />
             </div>
             <div className="flex min-w-0 shrink items-center justify-end gap-1.5">
-              <ContextUsage locale={locale} usage={contextUsage} />
               {showModelPicker ? (
                 <ModelSelect
                   locale={locale}
@@ -1066,6 +1022,27 @@ export function ChatPane({
               </IconButton>
             </div>
           </div>
+        </div>
+        <div className="mt-1 flex min-w-0 items-center justify-between gap-2 px-1">
+          <div className="flex min-w-0 items-center gap-1">
+            {isRunning && steerAvailable ? (
+              <SendModeSelect
+                locale={locale}
+                mode={sendMode}
+                iconOnly={iconOnly === true}
+                onMode={setSendMode}
+              />
+            ) : null}
+            <AgentModeSelect
+              locale={locale}
+              options={agentModes ?? []}
+              currentId={agentModeId ?? ""}
+              iconOnly={iconOnly === true}
+              onMode={onAgentModeId ?? (() => undefined)}
+            />
+            <ModeSelect locale={locale} mode={agentMode} iconOnly={iconOnly === true} onMode={onAgentMode} />
+          </div>
+          <ContextUsage locale={locale} usage={contextUsage} />
         </div>
         </div>
       </div>

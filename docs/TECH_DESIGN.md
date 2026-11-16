@@ -602,12 +602,12 @@ policy 只在「该 CLI 适配器声明了这个权限档」且「用户没显�
 
 Host → 侧栏 `{type:"agentModes", source:"config"|"modes", configId?, currentId, options:[{id,name,desc,kind}]}`（发现不到就发空 `options`，等同「不显示」）；侧栏 → Host `{type:"agent.setMode", modeId}`。都按会话路由（带 `sessionId`），与 `models` / `model.set` 同一套。
 
-`AgentModeSelect` 与权限 `ModeSelect` 同构（同一套弹出层、涟漪、tooltip、`bottom-full` 定位规则），选项来自 `agentModes`。`options.length < 2` → **整个控件不渲染**；名称用 Agent 给的 `name`（**不翻译、不换词**，渲染时只把首字母大写——opencode 那类只给 `id` 的引擎会返回 `build` / `plan`，直接画出来全是小写；已有的驼峰 / 句首大写不受影响），说明用 `description`（没有就不画第二行）。图标按 `kind` 映射（只准用 lucide）：`plan`→`ClipboardList`、`build`→`Hammer`、`ask`→`MessageCircleQuestion`、`agent`→`Bot`、`edits`→`FolderPen`、`auto`→`Zap`、`full_access`→`Unlock`、`unknown`→`Workflow`。
+`SendModeSelect`、`AgentModeSelect` 与权限 `ModeSelect` 同构（同一套 pill、弹出层、涟漪、tooltip、`bottom-full` 定位规则），三者与 `ContextUsage` 放在输入框**外侧底部**的单独一行：三个下拉左对齐，上下文环右对齐。`SendModeSelect` 只在运行中且 Agent 声明支持 steering 时出现（引导 / 队列），选项来自当前 sendMode。`options.length < 2` → **整个控件不渲染**；名称用 Agent 给的 `name`（**不翻译、不换词**，渲染时只把首字母大写——opencode 那类只给 `id` 的引擎会返回 `build` / `plan`，直接画出来全是小写；已有的驼峰 / 句首大写不受影响），说明用 `description`（没有就不画第二行）。图标按 `kind` 映射（只准用 lucide）：`plan`→`ClipboardList`、`build`→`Hammer`、`ask`→`MessageCircleQuestion`、`agent`→`Bot`、`edits`→`FolderPen`、`auto`→`Zap`、`full_access`→`Unlock`、`unknown`→`Workflow`。
 
-**输入栏那一行的图标尺寸只有一个来源：`layout.ts` 的 `COMPOSER_ICON_PX`**（回形针 / 拾取 / `@` / `/` / 模式 / 权限 / 停止 / 发送、模型下拉的箭头，以及各下拉菜单里的图标；推理档位钮是**纯文本**，它不带图标，理由见「其它配置项」那一节）。不要给某个图标单独写一个“光学尺寸”——同行并排的东西，代码里的数值一致才是在屏幕上的尺寸一致；按墨迹 `getBBox()` 去逐个调是治不完的（同尺寸下实心块就是比细线显大）。宽度 ≤ 448px 时模式与权限两个钮只画图标，tooltip 给「名称 — 含义」，**而且这时它必须是正圆**
+**输入栏工具栏与底部操作行的图标尺寸只有一个来源：`layout.ts` 的 `COMPOSER_ICON_PX`**（回形针 / 拾取 / `@` / `/` / 发送方式 / 模式 / 权限 / 停止 / 发送、模型下拉的箭头，以及各下拉菜单里的图标；推理档位钮是**纯文本**，它不带图标，理由见「其它配置项」那一节）。不要给某个图标单独写一个“光学尺寸”——同行并排的东西，代码里的数值一致才是在屏幕上的尺寸一致；按墨迹 `getBBox()` 去逐个调是治不完的（同尺寸下实心块就是比细线显大）。宽度 ≤ 448px 时发送方式、模式与权限三个钮只画图标，tooltip 给「名称 — 含义」或完整模式名，**而且这时它必须是正圆**
 （`h-7` 配 `w-7`、不加内边距、图标居中）：宽 30 高 28 的「圆」hover 起来是个椭圆，用户报过。
 
-**工具栏的宽度断点也都住在 `layout.ts`**，组件里不许再写魔法数字：`COMPOSER_ACTION_FLAT_PX = 600`（≥600 平铺四个功能钮，<600 收成一个 `+` 钮，见「Skill 探测菜单」末条）、`ICON_ONLY_MAIN_PX = 448`（两个下拉收成图标）、`MODEL_NARROW_MAIN_PX = 396` / `MODEL_NARROW_MAX_PX = 80`、`COMPACT_MAIN_PX = 348`。
+**工具栏的宽度断点也都住在 `layout.ts`**，组件里不许再写魔法数字：`COMPOSER_ACTION_FLAT_PX = 600`（≥600 平铺四个功能钮，<600 收成一个 `+` 钮，见「Skill 探测菜单」末条）、`ICON_ONLY_MAIN_PX = 448`（三个下拉收成图标）、`MODEL_NARROW_MAIN_PX = 396` / `MODEL_NARROW_MAX_PX = 80`、`COMPACT_MAIN_PX = 348`。
 
 ### 各家情况（适配器只写差异）
 

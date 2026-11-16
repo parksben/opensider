@@ -2,8 +2,8 @@
 export const COMPACT_MAIN_PX = 348;
 
 /**
- * Width at or below which the two composer pills (session mode and permission) drop their
- * labels and show the icon only.
+ * Width at or below which the three footer pills (send mode, session mode and permission)
+ * drop their labels and show the icon only.
  *
  * Deliberately separate from COMPACT_MAIN_PX: the pills run out of room much earlier than
  * the rest of the layout, and collapsing them should not drag the other compact
@@ -35,8 +35,8 @@ export const MODEL_MENU_MAX_PX = 352;
 export const MODEL_MENU_SAFE_PX = 12;
 
 /**
- * Icon size for every button in the composer toolbar row (attach / pick / mention / session
- * mode / permission / stop / send).
+ * Icon size for every button in the composer toolbar and footer rows (attach / pick /
+ * mention / send mode / session mode / permission / stop / send).
  *
  * One value for all of them on purpose: these sit side by side, so the number in the code is
  * the thing that has to match. Do not size one of them "optically" by hand — a difference in
@@ -46,7 +46,8 @@ export const COMPOSER_ICON_PX = 14;
 /**
  * Width at or above which the four composer action buttons (attach / pick / mention / slash)
  * are laid out flat. Below it they collapse into a single plus button that opens them on
- * hover or click: four buttons plus the two pills do not fit in a narrow side panel.
+ * hover or click: four buttons, the model picker and stop/send do not fit in a narrow
+ * side panel.
  */
 export const COMPOSER_ACTION_FLAT_PX = 600;
 
