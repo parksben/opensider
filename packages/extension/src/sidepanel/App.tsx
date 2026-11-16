@@ -1847,7 +1847,7 @@ export function App() {
     localId: string,
     text: string,
     attachments: AttachmentItem[] = [],
-    options: { interrupt?: boolean; steer?: boolean } = {},
+    options: { steer?: boolean } = {},
   ) => {
     if (!localId) return;
     // Steering targets the running turn, so a permission/form card that turn is
@@ -1879,7 +1879,7 @@ export function App() {
       localId,
       session.acpSessionId,
       context ? `${wrapForkContext(context)}\n\n${body}` : body,
-      options.interrupt,
+      false,
       options.steer,
       true,
       skillPrefix,
@@ -1887,19 +1887,25 @@ export function App() {
     );
   };
 
-  // 「立即发送」：能 native steering 的纯文本消息直接注入当前 turn；带附件 /
-  // skill 或 Agent 不支持时回退到旧的中断语义（取消当前 turn，再发新一轮）。
+  // 「立即发送」：运行中只走 native steering；不能 steer 时保留这条并挪到队首，
+  // 等当前 turn 正常结束后自动发出，绝不取消正在执行的一轮。
   const sendQueuedNow = (sessionId: string, item: QueuedMessage) => {
+    const list = queuesRef.current[sessionId] ?? [];
     const running = runningIdsRef.current.has(sessionId);
     const steer =
       running &&
       steerAvailable &&
       item.attachments.length === 0 &&
       !wrapUserPrompt(item.text, item.attachments, skillsRef.current).skillPrefix;
-    sendToSession(sessionId, item.text, item.attachments, {
-      steer,
-      interrupt: running && !steer,
-    });
+    if (running && !steer) {
+      setSessionQueue(sessionId, [item, ...list.filter((entry) => entry.id !== item.id)]);
+      return;
+    }
+    setSessionQueue(
+      sessionId,
+      list.filter((entry) => entry.id !== item.id),
+    );
+    sendToSession(sessionId, item.text, item.attachments, { steer });
   };
   sendToSessionRef.current = sendToSession;
 
@@ -2031,10 +2037,6 @@ export function App() {
     const list = queuesRef.current[sessionId] ?? [];
     const item = list.find((entry) => entry.id === id);
     if (!item) return;
-    setSessionQueue(
-      sessionId,
-      list.filter((entry) => entry.id !== id),
-    );
     if (editingQueueRef.current?.sessionId === sessionId && editingQueueRef.current.id === id) {
       editingQueueRef.current = null;
     }

@@ -372,8 +372,8 @@ chrome.storage.local 与 ~/.opensider/ui-state.json（同形）
 | `session.fork` + `sessionId` + `requestId` | 在空闲进程上先试不稳定的 `session/fork`（整段历史）；失败则 `session/new`；回执带 `requestId` |
 | `session.archive` + `requestId` + `ids` | 逐条确认 `sessions/<id>.json` 存在后写 `archivedAt` 并清空索引正文，回 `session.archived{requestId,archivedAt,ids,skipped}`。文件不在的 id 进 `skipped`，绝不归档 |
 | `prompt` 可带 `sessionId` + `requestId` | 绑到已持有该会话的进程，或空闲进程 `session/load` 后再 prompt。同一会话已有一轮在跑且 Agent 支持 native steering 时走 `steer`（见「运行中消息」）；否则拒绝并回 `{type:"prompt.busy", requestId, sessionId}`。不同会话并行。**拒绝不得静默**：面板把刚上屏的那条用户消息收回队列、保持 running，等 `turn.end` 后按排队顺序再发（见「后台任务」）。若 `session/load` 失败被迫换新会话，用带该 `requestId` 的 `session` 回执（`created: true`）通知侧栏更新绑定并补前文 |
-| `prompt` + `steer: true` | 「立即发送」且消息可 native steering 时使用：Host 调 `acp.Client.Steer` 注入当前 turn，不取消原 turn；附件 / skill / 不支持时回退到 `prompt` + `interrupt: true`。 |
-| `prompt` + `interrupt: true` | 「立即发送」的安全回退：该会话正在跑时，Host 先对它在跑的 runtime 发 `session/cancel`，**等那一轮 return**（有上限，超时就照样往下走）再开始新的一轮；被顶掉那轮结束时 `turn.end` 带 `interrupted: true`，侧栏只结算时长与内容、**不清 running、不 flush 队列**（新一轮已经在跑）。不这么做就会变成「侧栏自己计时 + 等 `turn.end` 再发」，而 `turn.end` 只要没到（cancel 打空、ACP 会话 id 漂了）消息就静默丢掉 |
+| `prompt` + `steer: true` | 运行中发送且消息可 native steering 时使用：Host 调 `acp.Client.Steer` 注入当前 turn，不取消原 turn；附件 / skill / 不支持时由侧栏保留在队首，等 `turn.end` 后按正常队列发出。 |
+| `prompt` + `interrupt: true` | 仅保留给内部通道消息（如接管卡片后的 control nudge）与旧客户端兼容，用户发送不再使用。Host 先对在跑的 runtime 发 `session/cancel`，**等那一轮 return**（有上限，超时就照样往下走）再开始新的一轮；被顶掉那轮结束时 `turn.end` 带 `interrupted: true`，侧栏只结算时长与内容、**不清 running、不 flush 队列**（新一轮已经在跑） |
 | `cancel` 可带 `sessionId` | 只取消该 ACP 会话所在进程的一轮；**找不到该会话就不动手**（早期会「随便挑一个 prompting 的进程」取消，导致 B 的停止杀掉 A 的任务） |
 | `update` / `turn.end` / `permission` / `cursor` 带 `sessionId` | 侧栏按 ACP id 精确映射到本地会话，**不按当前选中项；映射不到就丢弃**（不允许落到「当前选中」，那是串戏的主要通道）。`turn.end` 在 `stopReason=error` 时带 `error` 原文（Host 已改写成可执行的登录提示），侧栏顶栏直接显示，不要换成一句笼统的「这一轮以错误结束」 |
 | `fs.pick` | Host 弹出本机选文件/文件夹对话框，回 `fs.picked`（绝对路径 + kind） |

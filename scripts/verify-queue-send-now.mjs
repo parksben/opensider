@@ -107,16 +107,20 @@ try {
   await queued.waitFor({ state: "visible", timeout: 15_000 });
   ok("the second message was queued while the first turn ran", true);
 
-  // 3. Send it now: this is the reported flow (interrupt + send the new message).
+  // 3. Send it now while the agent cannot steer: the message must stay queued
+  // instead of cancelling the running turn.
   await queued.locator("button").first().click();
+  await panel.waitForTimeout(800);
+  ok("the queue entry stays while the turn runs", await queued.isVisible());
 
+  // 4. The first turn runs to completion, then the queued message starts.
   let started = true;
   try {
     await waitForText("T2.3", 30_000);
   } catch {
     started = false;
   }
-  ok("a new turn started for the queued message", started, started ? "" : "no T2.* chunk was streamed");
+  ok("the queued message started after the turn ended", started, started ? "" : "no T2.* chunk was streamed");
 
   let cleared = true;
   try {
@@ -124,13 +128,13 @@ try {
   } catch {
     cleared = false;
   }
-  ok("the queue entry was consumed", cleared);
+  ok("the queue entry was consumed after the turn ended", cleared);
 
-  // The transcript has to still carry the message the user sent.
   const text = await bodyText();
   ok("the sent message is still on screen", text.includes(second));
 
-  // 4. The agent's own view: two prompts, the second one carrying the queued text.
+  // 5. The agent's own view: two prompts, the second one carrying the queued text,
+  // and no cancel for the first turn.
   const events = trace(tracePath);
   const prompts = events.filter((event) => event.event === "prompt");
   ok("the agent received exactly two prompts", prompts.length === 2, `saw ${prompts.length}`);
@@ -139,17 +143,12 @@ try {
     Boolean(prompts[1]?.text?.includes(second)),
     prompts[1]?.text ? `got ${JSON.stringify(prompts[1].text.slice(0, 80))}` : "no second prompt",
   );
-  ok(
-    "the first turn was cancelled by the host",
-    events.some((event) => event.event === "cancel") &&
-      events.some((event) => event.event === "end" && event.turn === 1 && event.stopReason === "cancelled"),
-  );
+  ok("the first turn was not cancelled", !events.some((event) => event.event === "cancel"));
 
-  // The interrupt has to actually cut the running turn short.
   const streamed = (text.match(/T1\.\d+/g) ?? []).length;
-  ok("the interrupted turn stopped early", streamed < CHUNKS, `${streamed}/${CHUNKS} chunks`);
+  ok("the first turn streamed to completion", streamed === CHUNKS, `${streamed}/${CHUNKS} chunks`);
 
-  // 5. The host really took the interrupt path (not the "prompt ignored" one).
+  // 6. The host must not take the interrupt path for a user send.
   let logged = false;
   try {
     logged = execFileSync("grep", ["-r", "prompt interrupt requested", join(sandbox.home, ".opensider")], {
@@ -158,7 +157,7 @@ try {
   } catch {
     logged = false;
   }
-  ok("the host logged the interrupt", logged);
+  ok("the host did not log an interrupt", !logged);
 
   const failed = results.filter((result) => !result.ok);
   console.log(`\n${results.length - failed.length}/${results.length} checks passed`);

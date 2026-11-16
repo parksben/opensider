@@ -162,13 +162,14 @@ SW），再由 `packages/extension/scripts/build-page-hooks.mjs` 把两个主世
 Playwright 自己的默认浏览器——那个版本忽略 `--load-extension`，扩展根本不会加载（现象是等
 service worker 超时）。排障时可以 `PLAYWRIGHT_CHROMIUM=/path/to/binary node scripts/verify-*.mjs` 直接指定。
 
-消息队列的「立即发送」（打断当前一轮 + 立刻把这条发出去）也靠真浏览器验证：
+消息队列的「立即发送」在运行中不打断当前一轮：能 steering 的纯文本消息直接注入，
+不能 steer 时保留在队首，等当前 turn 结束后再发。这条路径靠真浏览器验证：
 `node scripts/verify-queue-send-now.mjs`。它在一个临时沙箱里跑：临时 HOME、现编的 Host
 二进制、把假 Agent（`scripts/fake-acp-agent.mjs`）放到检测顺序最靠前的 OpenSider 自有
 bin 目录冒充 `copilot`，并把本机桥接清单写进临时 profile 的 `NativeMessagingHosts/`
-（Chromium 自己的构建只认 profile 内这份，临时 HOME 会被忽略）。跑完 12 项检查，
-覆盖「消息进队列 → 点立即发送 → 新消息上屏且真的被 Agent 收到 → 新一轮起来 → 旧一轮
-被砍短 → Host 日志里确实走了 interrupt 路径」。注意：清单里 `copilot` 的解析顺序依赖
+（Chromium 自己的构建只认 profile 内这份，临时 HOME 会被忽略）。跑完 13 项检查，
+覆盖「消息进队列 → 点立即发送 → 当前一轮继续跑完、队列项保留 → turn 结束后新消息才发出 →
+Host 日志里没有 interrupt 路径」。注意：清单里 `copilot` 的解析顺序依赖
 `paths.AgentSearchDirs()`，改了那段要同步改这个脚本。
 
 「Agent 还没连上就按发送」跑 `node scripts/verify-held-send.mjs`（9 项）：它把 Host 的
