@@ -1263,6 +1263,12 @@ const MessageThread = memo(function MessageThread({
                 />
               ) : null}
             </div>
+            {message.awaitingSteer && !message.pending ? (
+              <div className="mt-1 flex items-center gap-1 pr-0.5 text-[11px] text-[var(--muted)]">
+                <Clock3 size={12} aria-hidden />
+                <span>{t(locale, "steeringPending")}</span>
+              </div>
+            ) : null}
             {message.pending ? (
               <div className="mt-1 flex items-center gap-1 pr-0.5 text-[11px] text-[var(--muted)]">
                 <Clock3 size={12} aria-hidden />

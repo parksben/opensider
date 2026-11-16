@@ -48,6 +48,7 @@ import { UninstallDialog } from "./components/UninstallDialog";
 import { applyLocale, detectBrowserLocale, readCachedLocale, t, type Locale } from "./i18n";
 import { settlePeerProbe } from "./peer-probe";
 import { BindRegistry, findSessionIdByAcpId } from "./session-bind";
+import { IDLE_STEER_BOUNDARY, steerBoundaryStep, type SteerBoundaryState } from "./steer-boundary";
 import { cardBelongsToSession, sessionAcpIds } from "./session-ids";
 import { adoptableCurrentId, modelForSession, withSessionModel } from "./model-memory";
 import { displayVersion, isNewer, type ReleaseCheckState } from "./version";
@@ -301,6 +302,8 @@ export function App() {
   const holdClaims = useRef<Set<string>>(new Set());
   /** 已注入、等 Agent 确认接手的引导消息：requestId → 那条消息。 */
   const steerOutbox = useRef(new Map<string, { localId: string; messageId: string }>());
+  /** 已确认收到、但 Agent 还没读到的引导：会话 → 边界状态 + 那几条消息。 */
+  const steerBoundaries = useRef(new Map<string, { state: SteerBoundaryState; ids: Set<string> }>());
   const clearSteerAwaitingRef = useRef<(sessionId: string) => void>(() => undefined);
 
   const sendToSessionRef = useRef<(localId: string, text: string, attachments?: AttachmentItem[]) => void>(
@@ -858,6 +861,7 @@ export function App() {
     if (meta?.steer || meta?.heldIds?.length) {
       const ids = new Set([...(meta.heldIds ?? []), ...(meta.messageId ? [meta.messageId] : [])]);
       steerOutbox.current.delete(requestId);
+      steerBoundaries.current.delete(localId);
       if (!wasRunning) {
         const next = new Set(runningIdsRef.current);
         next.add(localId);
@@ -1468,6 +1472,7 @@ export function App() {
         setContextUsage(usage);
         return;
       }
+      advanceSteerBoundary(localId, msg.update);
       updateSessionMessages(localId, (current) => applyAcpUpdate(current, msg.update, { modelId, modelName }));
       return;
     }
@@ -1533,12 +1538,16 @@ export function App() {
       return;
     }
     if (msg.type === "prompt.steerAccepted") {
+      // Agent 只是把这条引导收进缓冲（Hermes 的 `/steer` 不打断当前轮），真正读到它要
+      // 等到下一次工具批次结束。先挂着「引导中」，等边界到了再摘（见 steer-boundary.ts）。
       const entry = steerOutbox.current.get(msg.requestId);
       if (!entry) return;
       steerOutbox.current.delete(msg.requestId);
-      updateSessionMessages(entry.localId, (current) =>
-        current.map((item) => (item.id === entry.messageId ? { ...item, awaitingSteer: false } : item)),
-      );
+      const armed = steerBoundaries.current.get(entry.localId);
+      steerBoundaries.current.set(entry.localId, {
+        state: { armed: true, boundary: armed?.state.boundary ?? false },
+        ids: new Set([...(armed?.ids ?? []), entry.messageId]),
+      });
       return;
     }
     if (msg.type === "prompt.busy" || msg.type === "prompt.steerFailed") {
@@ -1945,6 +1954,13 @@ export function App() {
     // instead of appending the same text a second time.
     const heldIds = options.userIds ?? [];
     const held = heldIds.length > 0 ? session?.messages.filter((item) => heldIds.includes(item.id)) : undefined;
+    // 会话还没绑定（刚切 Agent / 刚开面板）时没有「当前这一轮」可注入：引导只能排到
+    // 第一条消息后面等，不能覆盖它的 pendingRegen（那条消息才是最该先发的）。
+    if (options.steer && !session?.acpSessionId) {
+      const waiting = { ...createUserMessage(text, attachments), pending: true };
+      updateSessionMessages(localId, (current) => [...current, waiting]);
+      return;
+    }
     const user = held?.[0] ?? createUserMessage(text, attachments);
     if (held?.length) {
       const ids = new Set(heldIds);
@@ -2137,8 +2153,30 @@ export function App() {
         ?.messages.some((item) => item.role === "user" && item.pending),
     );
 
+  /**
+   * 推进「Agent 读到引导」的判定：工具批次结束后的第一段正文，才说明它真的读到了。
+   * 到了这一步才摘掉 `awaitingSteer`，让后续输出另起一段落在消息下面。
+   */
+  const advanceSteerBoundary = (sessionId: string, update: Record<string, unknown>) => {
+    const armed = steerBoundaries.current.get(sessionId);
+    if (!armed) return;
+    const step = steerBoundaryStep(armed.state, update);
+    if (!step.consumed) {
+      armed.state = step.state;
+      return;
+    }
+    steerBoundaries.current.delete(sessionId);
+    const ids = armed.ids;
+    updateSessionMessages(sessionId, (current) =>
+      current.some((item) => ids.has(item.id) && item.awaitingSteer)
+        ? current.map((item) => (ids.has(item.id) ? { ...item, awaitingSteer: false } : item))
+        : current,
+    );
+  };
+
   /** 这一轮结束（或断开）后不再有输出属于任何「还没被读到」的消息，统一摘标记。 */
   const clearSteerAwaiting = (sessionId: string) => {
+    steerBoundaries.current.delete(sessionId);
     for (const [requestId, entry] of steerOutbox.current) {
       if (entry.localId === sessionId) steerOutbox.current.delete(requestId);
     }

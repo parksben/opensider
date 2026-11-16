@@ -2,9 +2,9 @@
 // Verifies how a message sent during a running turn is handled in each send mode:
 //
 //   steer (Hermes, caps.steer): the message appears in the transcript immediately —
-//     - text only: injected into the running turn (`/steer`, no "waiting" mark); the
-//       answer keeps growing ABOVE it until the Agent accepts the steer, and new output
-//       lands BELOW it afterwards
+//     - text only: injected into the running turn (`/steer`); the Agent only buffers it, so
+//       the answer keeps growing ABOVE it (marked "Steering") until a tool batch finishes —
+//       that is when new output starts below it, or at turn end when the turn has no tools
 //     - with an attachment (cannot ride Hermes' text-only channel): stays on screen
 //       with a "Waiting for the agent" line and NO queue card, then goes out as the
 //       next turn once the running one ends
@@ -143,15 +143,19 @@ try {
   ok("the host received it as a steer prompt", trace().includes("/steer steer text only"));
   for (let i = 0; i < 40 && !trace().includes("steer_ack"); i += 1) await sleep(250);
   ok("the agent acknowledged the steer", trace().includes("steer_ack"));
-  let afterAccepted = await answerAfterUser();
-  for (let i = 0; i < 40 && afterAccepted !== true; i += 1) {
-    await sleep(250);
-    afterAccepted = await answerAfterUser();
-  }
+  // 关键：Agent 只是「收下并缓冲」了这条引导，还没读到它 —— 回答必须继续长在上面，
+  // 不能因为收到 ack 就切段（那正是用户看到的「打断并继续」）。
+  const answersAfterAck = await answers();
+  await sleep(3000);
   ok(
-    "once accepted, the answer continues below the steer message",
-    afterAccepted === true,
-    `after=${afterAccepted} answers=${await answers()}`,
+    "the answer keeps growing above the steer until the agent reads it",
+    (await answers()) === answersAfterAck && (await answerAfterUser()) === false,
+    `answers=${answersAfterAck}->${await answers()} after=${await answerAfterUser()}`,
+  );
+  ok(
+    "the steer message shows a steering marker while it is unread",
+    (await panel.getByText("Steering").count()) >= 1,
+    `markers=${await panel.getByText("Steering").count()}`,
   );
 
   // 3. 引导 + 附件：附件过不了 Hermes 的纯文本通道，所以上屏后挂着等这一轮结束。
@@ -196,6 +200,11 @@ try {
   // 5. 本轮结束后，两条等待中的消息「一起」作为一轮发出（Copilot 一次读多条）。
   for (let i = 0; i < 160 && (await badge()) > 0; i += 1) await sleep(250);
   ok("both waiting marks clear once the turn ends", (await badge()) === 0, `badge=${await badge()}`);
+  ok(
+    "the steering marker clears at turn end too",
+    (await panel.getByText("Steering").count()) === 0,
+    `markers=${await panel.getByText("Steering").count()}`,
+  );
   for (let i = 0; i < 80 && !trace().includes("steer again and wait your turn"); i += 1) await sleep(250);
   const promptLines = trace()
     .split("\n")

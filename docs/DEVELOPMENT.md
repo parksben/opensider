@@ -120,6 +120,7 @@ scripts/verify-tab-control.mjs  标签接管（借用 / 收回 / 行操作 / Sto
 scripts/verify-page-tamper.mjs  主世界钩子「不留痕」的端到端验证（未触碰页面必须与干净 Chromium 一致）
 scripts/verify-queue-send-now.mjs  消息队列「立即发送」的端到端验证
 scripts/verify-steer-hold.mjs  运行中发消息的两种发送方式（引导：纯文本立即 `/steer`、带附件上屏等待并在本轮结束后自动发出；队列：卡片）的端到端验证
+scripts/verify-steer-tools.mjs  引导在有工具调用的轮次里的判定（ack 不切段 / 工具批次结束后的第一段正文才切段、标记消失、新回答落在消息下面）的端到端验证
 scripts/verify-file-drop.mjs  拖文件到侧栏 → 变附件的端到端验证
 scripts/verify-composer-clipboard.mjs  输入框全选复制/剪切带上附件栏的端到端验证
 scripts/verify-message-copy.mjs  已上屏用户消息右键「复制完整内容」→ 粘回输入框正文与附件都还原的端到端验证
