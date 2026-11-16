@@ -300,8 +300,8 @@ try {
     );
   }
 
-  // 7. Hermes 支持 steering：运行中「引导」胶囊必须待在右下角（上下文环左侧），
-  //    而不是跟模式 / 权限挤在左边。这里不种 selectedProviderId——宿主镜像里的
+  // 7. Hermes 支持 steering：运行中的「引导」胶囊必须紧跟在权限档右边（同一簇、
+  //    不留水平间距），右簇只剩上下文环。这里不种 selectedProviderId——宿主镜像里的
   //    历史会话会把本地状态抢回去，直接从 Agent 菜单切，跟真实用户路径一致。
   await panel.setViewportSize({ width: 900, height: 620 });
   const hermesComposer = panel.locator('[contenteditable="true"]');
@@ -322,29 +322,42 @@ try {
     .catch(() => false);
   ok("the steer pill appears while a steerable turn runs", steerShown);
   if (steerShown) {
-    const right = await panel.evaluate(() => {
+    const layout = await panel.evaluate(() => {
       const composer = document.querySelector(".cs-composer");
       const footer = composer.nextElementSibling;
+      const box = (el) => {
+        const r = el.getBoundingClientRect();
+        return {
+          left: Number(r.left.toFixed(1)),
+          right: Number(r.right.toFixed(1)),
+          top: Number(r.top.toFixed(1)),
+        };
+      };
       const steer = footer.querySelector('button[title^="While a turn is running"]');
+      const dropdowns = [...footer.querySelectorAll("button[aria-expanded]")];
+      // 「引导」左边最近的那颗下拉就是权限档。
+      const permission = steer
+        ? dropdowns.filter((button) => button.getBoundingClientRect().right <= steer.getBoundingClientRect().left + 1).at(-1)
+        : null;
       const ring = [...footer.querySelectorAll("button")].find((button) => button.getAttribute("title")?.includes("context used"));
-      const mode = footer.querySelector("button[aria-expanded]");
-      const box = (el) => { const r = el.getBoundingClientRect(); return { left: Number(r.left.toFixed(1)), right: Number(r.right.toFixed(1)), top: Number(r.top.toFixed(1)) }; };
+      const footerBox = footer.getBoundingClientRect();
       return {
         steer: steer ? box(steer) : null,
+        permission: permission ? box(permission) : null,
         ring: ring ? box(ring) : null,
-        mode: mode ? box(mode) : null,
-        footerRight: Number(footer.getBoundingClientRect().right.toFixed(1)),
-        footerMid: Number((footer.getBoundingClientRect().left + footer.getBoundingClientRect().right) / 2),
+        footerMid: Number((footerBox.left + footerBox.right) / 2),
       };
     });
-    // 假 Agent 不报 usage，所以上下文环可能不在；在的话「引导」必须让开它。
+    // 假 Agent 不报 usage，所以上下文环可能不在；在的话必须留在右簇。
     ok(
-      "the steer pill sits on the right, left of the context ring",
-      Boolean(right.steer && right.mode) &&
-        right.steer.left > right.footerMid &&
-        (right.ring ? right.steer.right <= right.ring.left + 1 : true) &&
-        right.mode.right < right.steer.left,
-      JSON.stringify(right),
+      "the steer pill sits right after the permission pill, with no gap",
+      Boolean(layout.steer && layout.permission) &&
+        Math.abs(layout.steer.left - layout.permission.right) <= 1 &&
+        layout.steer.top === layout.permission.top &&
+        layout.permission.left < layout.footerMid &&
+        layout.steer.right < layout.footerMid &&
+        (layout.ring ? layout.ring.left > layout.footerMid : true),
+      JSON.stringify(layout),
     );
   }
 } finally {

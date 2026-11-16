@@ -1090,8 +1090,7 @@ export function ChatPane({
                 onMode={onAgentModeId ?? (() => undefined)}
               />
               <ModeSelect locale={locale} mode={agentMode} iconOnly={iconOnly === true} onMode={onAgentMode} />
-            </div>
-            <div className="flex shrink-0 items-center gap-1">
+              {/* 运行中「引导 / 队列」紧跟权限档右边（同一簇、同样 gap-0），不单独占右侧。 */}
               {isRunning && steerAvailable ? (
                 <SendModeSelect
                   locale={locale}
@@ -1100,8 +1099,8 @@ export function ChatPane({
                   onMode={setSendMode}
                 />
               ) : null}
-              <ContextUsage locale={locale} usage={contextUsage} />
             </div>
+            <ContextUsage locale={locale} usage={contextUsage} />
           </div>
         )}
         </div>
