@@ -489,7 +489,13 @@ export function App() {
     steer = false,
     anchor = true,
     skillPrefix = "",
-    meta?: { messageId?: string; userText?: string; userAttachments?: AttachmentItem[]; steer?: boolean },
+    meta?: {
+      messageId?: string;
+      heldIds?: string[];
+      userText?: string;
+      userAttachments?: AttachmentItem[];
+      steer?: boolean;
+    },
   ) => {
     const requestId = crypto.randomUUID();
     bindRegistry.current.add(requestId, localId, "prompt", meta);
@@ -846,9 +852,30 @@ export function App() {
     const localId = ticket.localId;
     const wasRunning = runningIdsRef.current.has(localId);
     const meta = ticket.meta;
-    // A steering message already sits in the transcript and must stay there (steer mode
-    // never turns into a queue card). Mark it as waiting again, and if the turn it was
-    // aimed at is already gone, deliver it right away as the next turn.
+    // Messages that were already on screen (a steer, or a batch of held messages) stay in
+    // the transcript: steer mode never turns into a queue card. Put them back to waiting,
+    // and if the turn they were aimed at is already gone, deliver them right away.
+    if (meta?.steer || meta?.heldIds?.length) {
+      const ids = new Set([...(meta.heldIds ?? []), ...(meta.messageId ? [meta.messageId] : [])]);
+      steerOutbox.current.delete(requestId);
+      if (!wasRunning) {
+        const next = new Set(runningIdsRef.current);
+        next.add(localId);
+        syncRunning(next);
+      }
+      const exists = sessionsRef.current
+        .find((item) => item.id === localId)
+        ?.messages.some((item) => ids.has(item.id));
+      if (exists) {
+        updateSessionMessages(localId, (current) =>
+          current.map((item) =>
+            ids.has(item.id) ? { ...item, pending: true, awaitingSteer: false } : item,
+          ),
+        );
+      }
+      if (!wasRunning) flushSteerHoldRef.current(localId);
+      return;
+    }
     if (meta?.steer) {
       steerOutbox.current.delete(requestId);
       if (!wasRunning) {
@@ -1907,20 +1934,22 @@ export function App() {
     localId: string,
     text: string,
     attachments: AttachmentItem[] = [],
-    options: { steer?: boolean; userId?: string } = {},
+    options: { steer?: boolean; userIds?: string[] } = {},
   ) => {
     if (!localId) return;
     // Steering targets the running turn, so a permission/form card that turn is
     // waiting on must stay answerable; clearing it here would strand the Agent.
     if (!options.steer) settleCardsForSession(localId);
     const session = sessionsRef.current.find((item) => item.id === localId);
-    // A held steer message is already on screen: adopt it (drop the "waiting" mark)
+    // Held steer messages are already on screen: adopt them (drop the "waiting" mark)
     // instead of appending the same text a second time.
-    const held = options.userId ? session?.messages.find((item) => item.id === options.userId) : undefined;
-    const user = held ?? createUserMessage(text, attachments);
-    if (held) {
+    const heldIds = options.userIds ?? [];
+    const held = heldIds.length > 0 ? session?.messages.filter((item) => heldIds.includes(item.id)) : undefined;
+    const user = held?.[0] ?? createUserMessage(text, attachments);
+    if (held?.length) {
+      const ids = new Set(heldIds);
       updateSessionMessages(localId, (current) =>
-        current.map((item) => (item.id === held.id ? { ...item, pending: false } : item)),
+        current.map((item) => (ids.has(item.id) ? { ...item, pending: false } : item)),
       );
     } else {
       updateSessionMessages(localId, (current) => [...current, user]);
@@ -1952,7 +1981,13 @@ export function App() {
       options.steer,
       true,
       skillPrefix,
-      { messageId: user.id, userText: text, userAttachments: attachments, steer: options.steer },
+      {
+        messageId: user.id,
+        heldIds,
+        userText: text,
+        userAttachments: attachments,
+        steer: options.steer,
+      },
     );
     // 引导消息在 Agent 确认接手之前不切分上面那一轮的回答（见 acp-messages 的
     // lastAssistant）；收到 prompt.steerAccepted 才摘掉这个标记。
@@ -2081,16 +2116,26 @@ export function App() {
   const onSteer = (text: string, attachments: AttachmentItem[] = []) => {
     const localId = selectedIdRef.current;
     if (!localId) return;
+    // 先来后到：前面还有没交付的消息时，这条也只能排在它后面一起等。否则「带附件的
+    // 那条还在等、后发的纯文本先被 Agent 执行」，顺序就乱了。
     const steerable =
       steerAvailableRef.current &&
       attachments.length === 0 &&
-      !wrapUserPrompt(text, [], skillsRef.current).skillPrefix;
+      !wrapUserPrompt(text, [], skillsRef.current).skillPrefix &&
+      !hasHeldMessage(localId);
     if (steerable) {
       sendToSession(localId, text, [], { steer: true });
       return;
     }
     holdSteerMessage(localId, text, attachments);
   };
+
+  const hasHeldMessage = (sessionId: string): boolean =>
+    Boolean(
+      sessionsRef.current
+        .find((item) => item.id === sessionId)
+        ?.messages.some((item) => item.role === "user" && item.pending),
+    );
 
   /** 这一轮结束（或断开）后不再有输出属于任何「还没被读到」的消息，统一摘标记。 */
   const clearSteerAwaiting = (sessionId: string) => {
@@ -2112,26 +2157,35 @@ export function App() {
   };
 
   /**
-   * Deliver the oldest held steer message as a new turn. Only one at a time: the next
-   * one goes out when THIS turn ends, so a burst of steers never lands as one prompt.
+   * Deliver every held steer message as ONE new turn, in the order they were typed.
+   *
+   * Copilot reads whatever arrived while it was busy in a single go, so batching keeps
+   * the Agent from answering the first message before it has seen the second. The
+   * bubbles stay on screen individually; only the prompt is the concatenation.
    */
   const flushSteerHold = (sessionId: string) => {
     if (!sessionId || runningIdsRef.current.has(sessionId)) return;
     const session = sessionsRef.current.find((item) => item.id === sessionId);
-    const held = session?.messages.find(
+    const held = (session?.messages ?? []).filter(
       (item) => item.role === "user" && item.pending && !holdClaims.current.has(item.id),
     );
-    if (!held) return;
-    // turn.end 与「就绪后补发」的 effect 可能同时看到同一条：先认领再清标记，
-    // 免得同一条消息被发两次。
-    holdClaims.current.add(held.id);
+    if (held.length === 0) return;
+    // turn.end 与「就绪后补发」的 effect 可能同时看到同一批：先认领再清标记，
+    // 免得同一批消息被发两次。
+    for (const message of held) holdClaims.current.add(message.id);
+    const ids = new Set(held.map((item) => item.id));
     updateSessionMessages(sessionId, (current) =>
-      current.map((item) => (item.id === held.id ? { ...item, pending: false } : item)),
+      current.map((item) => (ids.has(item.id) ? { ...item, pending: false } : item)),
     );
+    const text = held
+      .map((item) => textOf(item.content))
+      .filter((part) => part.trim() !== "")
+      .join("\n\n");
+    const attachments = held.flatMap((item) => item.attachments ?? []);
     try {
-      sendToSession(sessionId, textOf(held.content), held.attachments ?? [], { userId: held.id });
+      sendToSession(sessionId, text, attachments, { userIds: held.map((item) => item.id) });
     } finally {
-      holdClaims.current.delete(held.id);
+      for (const message of held) holdClaims.current.delete(message.id);
     }
   };
   flushSteerHoldRef.current = flushSteerHold;

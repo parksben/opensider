@@ -8,6 +8,8 @@
 //     - with an attachment (cannot ride Hermes' text-only channel): stays on screen
 //       with a "Waiting for the agent" line and NO queue card, then goes out as the
 //       next turn once the running one ends
+//     - a later message typed while one is waiting waits as well (no queue jumping), and
+//       the whole batch goes out together, in order, when the running turn ends
 //   queue mode is covered by scripts/verify-queue-send-now.mjs (cards + persistence)
 //
 //   node scripts/verify-steer-hold.mjs          # expects packages/extension/dist
@@ -179,17 +181,37 @@ try {
     `stages=${answersWhileWaiting}->${await answers()} after=${await answerAfterUser()}`,
   );
 
-  // 4. 本轮结束后，挂着的那条自动作为新一轮发出（不是 /steer，是正式 prompt）。
-  for (let i = 0; i < 160 && (await badge()) > 0; i += 1) await sleep(250);
-  ok("the waiting mark clears once the turn ends", (await badge()) === 0, `badge=${await badge()}`);
-  for (let i = 0; i < 80 && !trace().includes("steer with an attachment"); i += 1) await sleep(250);
-  const lines = trace().split("\n").filter((line) => line.includes("steer with an attachment"));
+  // 4. 先来后到：前面有一条在等，后面这条纯文本也只能跟着等，不能插队被先执行。
+  await send("steer again and wait your turn");
+  for (let i = 0; i < 60 && (await bubbles()) < 4; i += 1) await sleep(250);
+  ok("a message typed behind a waiting one lands on screen too", (await bubbles()) === 4, `bubbles=${await bubbles()}`);
+  for (let i = 0; i < 40 && (await badge()) < 2; i += 1) await sleep(250);
+  ok("it waits as well instead of jumping the line", (await badge()) === 2, `badge=${await badge()}`);
   ok(
-    "the held message went out as a normal prompt, not a steer",
-    lines.length > 0 && lines.every((line) => !line.includes("/steer")),
-    lines.join(" | ").slice(0, 240),
+    "the newer message was not injected as a steer",
+    !trace().includes("/steer steer again and wait your turn"),
+    trace().includes("/steer steer again and wait your turn") ? "was steered" : "not steered",
   );
-  ok("the transcript still holds exactly one copy of it", (await bubbles()) === 3, `bubbles=${await bubbles()}`);
+
+  // 5. 本轮结束后，两条等待中的消息「一起」作为一轮发出（Copilot 一次读多条）。
+  for (let i = 0; i < 160 && (await badge()) > 0; i += 1) await sleep(250);
+  ok("both waiting marks clear once the turn ends", (await badge()) === 0, `badge=${await badge()}`);
+  for (let i = 0; i < 80 && !trace().includes("steer again and wait your turn"); i += 1) await sleep(250);
+  const promptLines = trace()
+    .split("\n")
+    .filter((line) => line.includes("steer with an attachment") && line.includes("steer again and wait your turn"));
+  ok(
+    "the waiting messages went out together in one prompt",
+    promptLines.length === 1,
+    `prompts=${promptLines.length}`,
+  );
+  ok(
+    "and stayed in the order they were typed",
+    promptLines[0]?.indexOf("steer with an attachment") < promptLines[0]?.indexOf("steer again and wait your turn"),
+    promptLines[0]?.slice(0, 240) ?? "no prompt",
+  );
+  ok("it went out as a normal prompt, not a steer", (promptLines[0] ?? "").includes("/steer") === false);
+  ok("the transcript keeps one copy of each message", (await bubbles()) === 4, `bubbles=${await bubbles()}`);
 } finally {
   await context.close().catch(() => undefined);
 }
