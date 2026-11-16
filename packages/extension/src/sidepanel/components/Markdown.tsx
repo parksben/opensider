@@ -21,10 +21,13 @@ export const Markdown = memo(function Markdown({ text, page }: { text: string; p
     void openAgentLink(href ?? "", page, forceNewTab);
   };
 
+  // GFM 的删除线只认 `~~`，但 micromark 默认把单个 `~` 也当成删除线，会把
+  // 「约 2~3 个工作日…再 2~3 个工作日」这类文案整段划掉。关掉单波浪号后这类内容
+  // 原样输出，`~~删掉~~` 仍然生效。
   return (
-    <div className="markdown">
+    <div className="markdown prose">
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={[[remarkGfm, { singleTilde: false }]]}
         components={{
           a({ href, children }) {
             return (

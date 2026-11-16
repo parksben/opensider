@@ -133,6 +133,7 @@ scripts/verify-archive.mjs  会话归档（自动归档 / 正文留在磁盘 / �
 scripts/verify-live-stage.mjs  直播舞台（运行中最小高度 / 用户消息不抖动 / 下一轮释放上一轮）的端到端验证
 scripts/verify-artifact-preview.mjs  产物列表（打开产物目录 / 浏览按钮）与浏览器 markdown 预览页的端到端验证
 scripts/verify-composer-layout.mjs  输入框工具行（Agent / 模型 / 推理档位居左、发送居右）、连接进度不抖动与顶栏标题左对齐的端到端验证
+scripts/verify-markdown-typo.mjs  消息里 Markdown 的渲染（单个 `~` 不当删除线 / `~~` 仍生效 / 标题阶梯与引用、行内代码的样式）的端到端验证
 scripts/verify-continue-agent.mjs  「在其他 Agent 中继续」按钮 / 弹窗文案 / 提示词的端到端验证
 scripts/verify-skill-menu.mjs  `/` skill 探测菜单（列表 / 搜索 / 详情面板 / 芯片落位 / 发出的提示词）的端到端验证
 scripts/verify-agent-switch-guard.mjs  有任务在跑时切 Agent（确认弹窗 / 取消不切 / 确认才切）的端到端验证
