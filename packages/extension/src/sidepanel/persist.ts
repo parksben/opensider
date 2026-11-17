@@ -391,24 +391,6 @@ export function wrapForkContext(context: string): string {
   return `[Forked thread context — prior messages only. Do not mention this wrapper. Wait for the user's question below.]\n\n${context}`;
 }
 
-export function hasSessionHistory(sessions: Array<{ messages?: unknown[]; acpSessionId?: string; acpByProvider?: Record<string, string> }>): boolean {
-  return sessions.some(
-    (session) =>
-      (session.messages?.length ?? 0) > 0 || Boolean(session.acpSessionId) || Boolean(session.acpByProvider && Object.keys(session.acpByProvider).length),
-  );
-}
-
-export function preferHostState(local: LoadedState, host: LoadedState): boolean {
-  const hostHas = hasSessionHistory(host.sessions);
-  const localHas = hasSessionHistory(local.sessions);
-  if (hostHas && !localHas) return true;
-  if (!hostHas) return false;
-  const hostAt = Date.parse(host.savedAt ?? "");
-  const localAt = Date.parse(local.savedAt ?? "");
-  if (Number.isFinite(hostAt) && Number.isFinite(localAt)) return hostAt > localAt;
-  return false;
-}
-
 export type LoadedState = {
   savedAt?: string;
   locale: Locale;
@@ -532,6 +514,10 @@ export function parseHostState(raw: Record<string, unknown> | null): LoadedState
   if (!raw || raw.version !== 1 || !Array.isArray(raw.sessions)) return undefined;
   return fromPersisted(raw as PersistedState);
 }
+
+import { hasSessionHistory } from "./host-mirror";
+
+export { acceptHostMirror, hasSessionHistory, preferHostState } from "./host-mirror";
 
 export function toPersistedState(state: {
   locale: Locale;

@@ -22,7 +22,12 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { encodeImageBlob } from "../image-encode";
 import { fileToBase64, type DropPlan } from "./file-drop";
 import { blobUrlFromBase64Chunks, isAttachedImagePath } from "./image-preview";
-import { applyAcpUpdate, applyBrowserTool, createUserMessage, usageFromUpdate } from "./acp-messages";
+import {
+  applyAcpUpdate,
+  applyBrowserTool,
+  createUserMessage,
+  usageFromUpdate,
+} from "./acp-messages";
 import { canPreviewArtifact } from "./artifact-preview";
 import { ARCHIVE_CHECK_MS, ARCHIVE_REQUEST_TIMEOUT_MS, ARCHIVE_RETRY_MS, pickSessionsToArchive } from "./archive";
 import { StateChunkSink } from "../state-transfer";
@@ -63,6 +68,7 @@ import {
 } from "./theme";
 import type { QueuedMessage } from "./queued-message";
 import {
+  acceptHostMirror,
   buildForkContext,
   applyProviderBinding,
   autoPermissionOptionId,
@@ -626,7 +632,21 @@ export function App() {
   const pickAgent = (providerId: string) => {
     if (!providerId) return;
     if (providerId === connectedProviderRef.current && statusRef.current === "ready") {
-      requestConnect(providerId);
+      // 已经连着这家：`requestConnect` 会直接返回，所以这里必须自己把「显示」纠正回来。
+      // 显示和真正连着的不一致时（典型是旧镜像回灌过状态），用户点它就是在说「我要这家」——
+      // 什么也不做会变成「点了没反应」（用户报过）。
+      if (selectedProviderRef.current !== providerId) {
+        const session = sessionsRef.current.find((item) => item.id === selectedIdRef.current);
+        const before = session?.acpSessionId;
+        const after = session ? boundAcpId(session, providerId) : undefined;
+        selectedProviderRef.current = providerId;
+        setSelectedProviderId(providerId);
+        setSessions((list) => applyProviderBinding(list, providerId));
+        setSelectedModelId(modelForSession(session, providerId, selectedModelByProviderRef.current));
+        // 会话上那份绑定也可能被回灌成了上一家的，只有真的换了才重新绑一次——否则就是
+        // 白白让 Host 再 `session/load` 回放一遍当前会话。
+        if (after !== before) tryBindCurrent();
+      }
       return;
     }
     const running = runningIdsRef.current.size;
@@ -983,8 +1003,20 @@ export function App() {
         return;
       }
       const host = parseHostState(msg.state);
-      const local = loadedRef.current;
-      if (host && (!local || preferHostState(local, host))) {
+      // 面板已经起来了：Host 每次 `hello` 都会把手里那份镜像推过来，而它几乎总是比内存旧
+      // （一轮在跑时正文不落盘、大状态写盘要几秒）。无脑灌回会把刚切好的 Agent 和正在跑的
+      // 正文一起倒回去，所以只接受「确实比我们手里新」的那份（见 persist.acceptHostMirror）。
+      if (
+        host &&
+        acceptHostMirror({
+          host,
+          local: loadedRef.current,
+          memorySessions: sessionsRef.current,
+          running: runningIdsRef.current.size,
+          wroteAt: wroteAtRef.current,
+          dirty: persistTimer.current !== 0,
+        })
+      ) {
         applyLoaded(host);
       }
       setHostMirrorReady(true);
@@ -1018,7 +1050,16 @@ export function App() {
       // 上解除，见 connectInFlightRef 的注释。
       if (msg.state !== "connecting" && msg.state !== "idle") connectInFlightRef.current = false;
       if (msg.state === "ready") {
-        connectedProviderRef.current = selectedProviderRef.current;
+        // 谁真的连着，以 Host 报的为准：`hello.providerId` 是当前 runtime 的 Agent，
+        // `pendingConnectRef` 是我们刚要求连的那家。UI 上的选中态只是意图，它可能被一份
+        // 更旧的状态镜像改写过（见 persist.acceptHostMirror）——别拿它当真。
+        const live = pendingConnectRef.current || connectedProviderRef.current || selectedProviderRef.current;
+        if (live && live !== selectedProviderRef.current) {
+          selectedProviderRef.current = live;
+          setSelectedProviderId(live);
+          setSessions((list) => applyProviderBinding(list, live));
+        }
+        connectedProviderRef.current = live;
         pendingConnectRef.current = "";
         if (!onboardingRef.current) setOnboardingCompleted(true);
         setProgress(undefined);
@@ -1701,6 +1742,8 @@ export function App() {
   const persistSettingsDigest = useRef("");
   /** 立刻写一次（面板要关、切到后台时用），不走合并窗口、也不受「回合进行中」限制。 */
   const persistFlush = useRef<() => string | undefined>(() => undefined);
+  /** 面板最近一次写出去的 savedAt（ms；0 = 还没写过）——回灌镜像时用它判断新旧。 */
+  const wroteAtRef = useRef(0);
   /** Host 镜像就绪后强制写一次：否则「镜像就绪」只改依赖、指纹没变，会跳过首次同步。 */
   const mirrorSeeded = useRef(false);
   /** 任意会话有一轮在跑：正文变化这期间不落盘（流式内容每半秒都在变，写出去是纯浪费 + 崩溃源）。 */
@@ -1765,6 +1808,7 @@ export function App() {
       });
       // 先把整份状态序列化 + 写本地热缓存；再发 Host 镜像。写失败（配额等）只打警告，
       // 绝不能连镜像一起停掉——重装后的恢复靠的就是它（见 persist.saveState）。
+      wroteAtRef.current = Date.parse(payload.savedAt ?? "") || Date.now();
       void saveState(payload).finally(() => {
         if (hostMirrorReady) {
           sendRef.current({ type: "ui.state.set", state: payload as Record<string, unknown> });
