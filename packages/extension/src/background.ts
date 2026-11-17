@@ -150,13 +150,23 @@ const INSTALL_HINT = "Send the prompt shown in the side panel to your local AI A
 // `scripts/verify-page-activity.mjs` without a real prompt.
 (globalThis as unknown as Record<string, unknown>)["__opensiderTurnEnd"] = (sessionId?: string) => {
   trackTurnEnd(sessionId, false);
+  // Mirrors the real `turn.end` handler, including the "this turn is over" mark that keeps a
+  // late browser command from taking the tab back.
+  if (sessionId) endedTurns.add(sessionId);
   return parkControlFor(sessionId);
 };
 // Marks a session as having a turn in flight (test seam, see __opensiderTurnEnd); returns
 // the live set so tests can assert what the worker actually tracks.
 (globalThis as unknown as Record<string, unknown>)["__opensiderTurnStart"] = (sessionId: string) => {
   trackTurnStart(sessionId);
+  // A new turn re-arms tab control, exactly like a real `prompt` does.
+  endedTurns.delete(sessionId);
   return [...liveTurns];
+};
+// The Stop button's side of the same lifecycle (`scripts/verify-tab-control.mjs`): parking
+// happens immediately, and the turn's late commands must not take the tab back afterwards.
+(globalThis as unknown as Record<string, unknown>)["__opensiderTurnCancel"] = (sessionId: string) => {
+  handleTurnCancel(sessionId);
 };
 // The last outbound host messages. `scripts/verify-tab-control.mjs` reads them to check that
 // answering a borrow request really nudged the Agent, without a real host in the loop.
@@ -467,6 +477,8 @@ function connectNative(force = false): void {
       void parkControlFor(msg.sessionId);
       // 后台任务的在跑集合：interrupted 的那一轮不算结束（新一轮已经接上，见 trackTurnEnd）。
       trackTurnEnd(msg.sessionId, msg.interrupted === true);
+      // An interrupted turn hands over to the next one, which is already running.
+      if (msg.interrupted !== true) endedTurns.add(msg.sessionId);
       // 该轮的交互卡不会再有回音；已结束的轮次不重发。
       for (const [id, pending] of pendingHitl) {
         if ((pending as { sessionId?: string }).sessionId === msg.sessionId) pendingHitl.delete(id);
@@ -547,6 +559,7 @@ function sendNative(msg: ExtToHost): void {
   if (msg.type === "prompt") {
     clearHandoffForSession(msg.sessionId);
     trackTurnStart(msg.sessionId);
+    if (msg.sessionId) endedTurns.delete(msg.sessionId);
   }
   connectNative();
   if (!nativePort) {
@@ -717,6 +730,17 @@ chrome.storage.onChanged.addListener((changes, area) => {
 // panel is listening, and how long the touched pages stay armed.
 
 const liveTurns = new Set<string>();
+
+/**
+ * Sessions whose turn already ended and that have not started another one yet.
+ *
+ * Browser commands are asynchronous: an Agent that fires a `navigate` / `runScript` at the
+ * end of a turn gets its result after `turn.end`. Those late commands used to re-take the
+ * tab and re-publish the control state, so the 「已接管」 card popped back up under an answer
+ * that had already finished (user reported it). Taking control is a per-turn thing; a
+ * session sits here from `turn.end` until its next prompt.
+ */
+const endedTurns = new Set<string>();
 /**
  * A turn can outlive the side panel, so the service worker has to stay up for its whole
  * duration. An open native port usually keeps an MV3 worker alive, but that is a Chrome
@@ -816,6 +840,7 @@ function trackTurnEnd(sessionId: string | undefined, interrupted: boolean): void
 function clearLiveTracking(): void {
   const had = liveTurns.size > 0 || missedTurns.size > 0 || pendingHitl.size > 0;
   liveTurns.clear();
+  endedTurns.clear();
   missedTurns.clear();
   pendingHitl.clear();
   resetHandoffCards();
@@ -887,6 +912,10 @@ function replayMissedTurn(port: chrome.runtime.Port): void {
  * instead of waiting for a `turn.end` some agents never send after a cancel. */
 function handleTurnCancel(sessionId: string | undefined): void {
   if (!sessionId) return;
+  // Same "this turn is over" mark as the real `turn.end`: a command the cancelled turn had
+  // already in flight must not take the tab back and raise the card under a stopped answer
+  // (see endedTurns). The next prompt clears it.
+  endedTurns.add(sessionId);
   void parkControlFor(sessionId);
 }
 
@@ -1011,6 +1040,9 @@ async function sessionTargetTab(sessionId: string): Promise<chrome.tabs.Tab | un
 }
 
 async function adoptTab(sessionId: string, tabId: number, now = Date.now(), origin = false): Promise<void> {
+  // A command that lands after its turn ended must not re-take the tab: the hold card would
+  // reappear under the finished answer (see endedTurns).
+  if (endedTurns.has(sessionId)) return;
   await loadControlState();
   takeover(controlState, sessionId, tabId, now);
   if (origin) rememberOrigin(controlState, sessionId, tabId);
@@ -1066,6 +1098,8 @@ async function remapControlEntry(addedTabId: number, removedTabId: number): Prom
 
 /** No grant yet: ask the side panel, or answer from the cooldown / existing request. */
 async function requestBorrow(sessionId: string, tab: chrome.tabs.Tab): Promise<ControlGate> {
+  // Its turn is over: no card to answer, so ask nothing and let the command run.
+  if (endedTurns.has(sessionId)) return { tab };
   const tabId = tab.id as number;
   const title = stripControlMark(tab.title ?? "");
   const now = Date.now();

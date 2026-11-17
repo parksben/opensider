@@ -3,6 +3,7 @@ import type { ChatMessage, ChatPart, ToolPart, ToolStatus } from "./chat-types";
 import { isBenignStreamCloseText, stripBenignStreamClose } from "./stream-close";
 import { lastAssistant } from "./assistant-append";
 import { acpToolOutput } from "./tool-content";
+import { browserToolId } from "./tool-presence";
 import { withPrimaryArg } from "./tool-label";
 
 function id(): string {
@@ -161,7 +162,7 @@ export function applyBrowserTool(
   result?: BrowserResult,
   model?: { modelId?: string; modelName?: string },
 ): ChatMessage[] {
-  const toolCallId = `browser:${command.id}`;
+  const toolCallId = browserToolId(command.id);
   const found = findTool(messages, toolCallId);
   const part = withPrimaryArg({
     type: "tool-call",

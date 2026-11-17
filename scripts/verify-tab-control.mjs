@@ -38,46 +38,11 @@ import { existsSync, mkdtempSync, readdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
+import { cachedChromium, loadPlaywright } from "./lib/sandbox.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const dist = join(root, "packages", "extension", "dist");
-
-function loadPlaywright() {
-  try {
-    return createRequire(import.meta.url)("playwright");
-  } catch {
-    // Fall back to a global install, then to whatever `npx playwright` left in its cache.
-    const candidates = [];
-    try {
-      const globalRoot = execFileSync("npm", ["root", "-g"], { encoding: "utf8" }).trim();
-      candidates.push(join(globalRoot, "playwright"));
-    } catch {
-      // npm not available — keep going with the cache probe
-    }
-    const npxRoot = join(homedir(), ".npm", "_npx");
-    if (existsSync(npxRoot)) {
-      for (const dir of readdirSync(npxRoot)) candidates.push(join(npxRoot, dir, "node_modules", "playwright"));
-    }
-    for (const candidate of candidates) {
-      const entry = join(candidate, "index.js");
-      if (existsSync(entry)) return createRequire(pathToFileURL(entry))("playwright");
-    }
-    throw new Error("playwright not found: install it globally, or run `npx playwright --version` once");
-  }
-}
-
-function cachedChromium() {
-  const cache = join(homedir(), "Library", "Caches", "ms-playwright");
-  if (!existsSync(cache)) return undefined;
-  const dir = readdirSync(cache)
-    .filter((name) => name.startsWith("chromium-"))
-    .sort()
-    .pop();
-  if (!dir) return undefined;
-  const bin = join(cache, dir, "chrome-mac", "Chromium.app", "Contents", "MacOS", "Chromium");
-  return existsSync(bin) ? bin : undefined;
-}
 
 const page = (name) => `<!doctype html>
 <html><head><meta charset="utf-8"><title>${name}</title></head>
@@ -552,7 +517,25 @@ try {
   );
   check("turn end takes the banner down", parkedBanner.ok);
 
-  // 7d. Memory: a self-opened tab and a granted tab come back without a card.
+  // 7c-bis. Browser work is asynchronous: an Agent that fires a last `navigate` / `runScript`
+  // gets its result after turn.end. Taking a tab is a per-turn thing, so such a late command
+  // runs but must not take the tab over — otherwise the control card pops back up underneath
+  // an answer that has already finished (user reported 2026-11-17).
+  const lateCommand = await dispatch(
+    { id: `late-${Date.now()}`, method: "click", args: { selector: "#btn", tabId: created } },
+    "verify-s1",
+  );
+  check("a command arriving after turn.end still runs", lateCommand?.ok === true, lateCommand?.error);
+  const lateState = await controlState();
+  check(
+    "...but it does not take the tab back",
+    !lateState.entries.some((entry) => entry.sessionId === "verify-s1"),
+    JSON.stringify(lateState.entries),
+  );
+  check("...and it raises no card", lateState.pending === null, JSON.stringify(lateState.pending));
+
+  // 7d. Next turn: memory still makes a self-opened / granted tab re-enter without a card.
+  await sw.evaluate(() => globalThis.__opensiderTurnStart("verify-s1"));
   const reOwn = await dispatch(
     { id: `reown-${Date.now()}`, method: "click", args: { selector: "#btn", tabId: created } },
     "verify-s1",
@@ -589,7 +572,9 @@ try {
     ), tabH);
   check(
     "every row offers focus and take-back actions",
-    rowLabels.length === 2 && /Focus|聚焦/.test(rowLabels[0] ?? "") && /Take back|收回/.test(rowLabels[1] ?? ""),
+    rowLabels.length === 2 &&
+      /Switch to this tab|切换到该标签/.test(rowLabels[0] ?? "") &&
+      /Take back|收回/.test(rowLabels[1] ?? ""),
     JSON.stringify(rowLabels),
   );
 
@@ -659,7 +644,25 @@ try {
   const createdMarkOff = await waitFor(async () => !(await marked(created)), true);
   check("stop clears the title marks", createdMarkOff.ok, `title=${createdMarkOff.last}`);
 
-  // 7e. A user tab that was never approved still asks.
+  // 7d-ter-bis. Stop is the same "this turn is over" moment as turn.end (the host may never
+  // answer a cancel): a command the cancelled turn already had in flight must run but not
+  // take the tab back — otherwise the control card pops up under a stopped answer.
+  const lateAfterStop = await dispatch(
+    { id: `late-stop-${Date.now()}`, method: "click", args: { selector: "#btn", tabId: created } },
+    "verify-s1",
+  );
+  check("a command arriving after Stop still runs", lateAfterStop?.ok === true, lateAfterStop?.error);
+  const afterStopLate = await controlState();
+  check(
+    "...but it does not take the tab back after Stop",
+    !afterStopLate.entries.some((entry) => entry.sessionId === "verify-s1"),
+    JSON.stringify(afterStopLate.entries),
+  );
+  check("...and Stop raises no card", afterStopLate.pending === null, JSON.stringify(afterStopLate.pending));
+
+  // 7e. A user tab that was never approved still asks — in a live turn (a finished or
+  // cancelled one has already handed control back, see 7c-bis / 7d-ter-bis).
+  await sw.evaluate(() => globalThis.__opensiderTurnStart("verify-s1"));
   const askAgain = await dispatch(
     { id: `ask-${Date.now()}`, method: "click", args: { selector: "#btn", tabId: tabG } },
     "verify-s1",
@@ -773,7 +776,10 @@ try {
   );
 
   // A policy grant is not a user approval: with the mode back on `ask`, the tab asks again.
+  // (The turn has to be running for a card to be raised at all — control is per-turn, see
+  // 7c-bis.)
   await sw.evaluate((sessionId) => globalThis.__opensiderTurnEnd(sessionId), "verify-s1");
+  await sw.evaluate((sessionId) => globalThis.__opensiderTurnStart(sessionId), "verify-s1");
   await setMode("Allow all", "Ask every time");
   check("the policy was switched back", await waitForPolicy("ask"));
   const reAsk = await dispatch(

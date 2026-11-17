@@ -116,7 +116,7 @@ scripts/promo.mjs     README 宣传视频渲染（promo.html 逐帧截图 + prom
 scripts/verify-native-ui.mjs  原生 UI shim 的端到端验证（真 Chromium + 已构建扩展）
 scripts/verify-page-activity.mjs  页面活动态（面板开着强制可见 / 后台任务期间保持武装 / 收工后才还原）的端到端验证
 scripts/verify-background-task.mjs  后台任务（关 UI 不打断 / 徽标 / 重开侧栏补发实况与权限卡）的端到端验证
-scripts/verify-tab-control.mjs  标签接管（借用 / 收回 / 行操作 / Stop 即释放 / quiet openTab）的端到端验证
+scripts/verify-tab-control.mjs  标签接管（借用 / 收回 / 行操作 / Stop 即释放 / quiet openTab / 回合收尾后迟到的命令不再接管）的端到端验证
 scripts/verify-agent-switch.mjs  切 Agent 之后旧状态镜像不再把它改回上一家（重连推送 / 点已连着的那家 / 在跑的正文不丢）的端到端验证
 scripts/verify-page-tamper.mjs  主世界钩子「不留痕」的端到端验证（未触碰页面必须与干净 Chromium 一致）
 scripts/verify-queue-send-now.mjs  消息队列「立即发送」的端到端验证

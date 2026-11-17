@@ -686,6 +686,14 @@ Host 是通用 ACP Client + 数据驱动 `AgentProfile`（启动命令、鉴权�
 
 **回合结束（`turn.end`）**：SW 在转发 Host 消息的同一路挂勾——park 掉该会话的持有（徽标 / banner 收起、`autoDiscardable` 复位），保留访问记忆与待答卡片；下一次写命令对记忆内标签静默再接管。**用户主动终止也算「回合结束」的立即版**：侧栏发 `cancel` 时 SW 先转发给 Host，随即就地 `parkControlFor(sessionId)`——不依赖 Agent 愿不愿意/何时回 `turn.end`（旧实现只靠 turn.end，遇到不响应取消的 CLI 时接管态与标题前缀会一直挂着，用户报过）；取消路上 Agent 若还有命令到达，park 过的标签会走「锚点 / 记忆」路径静默再接管，不受影响。`openTab` 自建的记入 `origins`，用户批准借用时记入 `trusted`；标签关闭 / `onReplaced` 同步清理。用户收回与会话删除则连访问记忆一起清空。
 
+**收尾之后的迟到命令（`endedTurns`）**：命令是异步的——Agent 在回合末尾发一条 `navigate` / `runScript`，回执（以及紧随其后的另一条命令）常常在 `turn.end` 之后才到 SW。以前这些命令会照常 `adoptTab`：`takeover` 写回一条持有、`autoDiscardable` 又锁上、广播 control，于是**回复已经结束，接管卡却又冒出来**（2026-11-17 用户报过），侧栏那边还会因为「已经结算的回答不能续写」而在答案下面另起一条「已执行」气泡。现在 SW 维护一个「这一轮已经收尾、还没开始下一轮」的集合 `endedTurns`：`turn.end`（非 `interrupted`）与 `cancel`（`handleTurnCancel`）写入，`prompt`（`sendNative` 里发出去的每一条新消息）与 `clearLiveTracking` 清掉。落在集合里的会话：
+
+- `adoptTab` 直接返回——不接管、不广播、不碰 `autoDiscardable`，卡片不会跟回来；
+- `requestBorrow` 不再建借用请求（那会弹一张没人能答、也无从续跑的卡），命令照常执行。**代价**：显式指定 `args.tabId`、且该标签在本会话里既不是锚点也没有访问记忆的迟到写命令，会绕过借用卡执行一次；窗口很窄（命令必须正好在回合收尾的瞬间在飞），要收紧的话在这里改成回一条 `turn_ended` 失败结果即可。
+
+侧栏侧的同一道闸门在 `tool-presence.ts`：`browserUpdateAccepted(messages, toolCallId, live)` 只在「这一轮还在跑（`runningIds`，或最后一条是没结算的 assistant）」或「这条命令的卡片已经在对话里」时放行，否则整个回执丢掉——已经在屏幕上的卡照旧更新结果，没出现过的不会再长出一条只有过程的助手消息。ACP 的 `update` 本来就有等价判断（见 `App` 的 `msg.type === "update"` 分支），这次把浏览器命令补成同一套。
+
+
 **答卡续跑（侧栏侧）**：用户点「允许 / 拒绝」后，侧栏除了回 `control.grant`，还给该请求归属的会话发一条**通道消息**（`i18n.controlContinueAllowed` / `controlContinueDenied`，带 `[OpenSider]` 前缀与标签标题）把 Agent 带回正轨——不等用户再打一条，也不进本地消息记录：`sendPrompt(..., { anchor: false })`，不过 `updateSessionMessages` / `wrapUserPrompt`，重新生成 / Fork 的「上一条用户消息」不被污染（Agent 自己的会话历史里保留这条）。会话正在跑时带 `interrupt: true`：Host 先停旧一轮并等它收尾（`turn.end{interrupted}` 走 `settleSupersededTurn`），新一轮接上——**不再进待发队列**，用户点了卡就是最高优先级。档位切到 `auto` / `unattended` 时若还有未答卡片，侧栏按「允许」走同一条路径，但 `control.grant` 带 `auto:true`，`resolveBorrow` 据此跳过 `rememberTrusted`（策略放行不等于用户批准）。
 
 **状态 UI（侧栏）**：状态面板与借用卡同为 `ControlBanner` 组件，插在 `ChatPane` 输入区堆叠的顶部（`control` 属性，渲染在 `<TodoList>` 之前），用统一的卡片族样式（`mb-2 rounded-lg border border-[var(--line)] bg-[var(--panel-2)]`），不再占用 header 下方那条横带。持有状态是一个**列表面板**：表头（状态点 + 「正在操作 / 已接管」+ 数量 + 「全部收回」）下面**每个被接管的标签一行**（行内状态点 + 标题 + 域名），行尾两个 **hover（或键盘聚焦）才出现**的 icon 按钮（`opacity-0 group-hover:opacity-100 group-focus-within:opacity-100`，与产物列表同族）：**聚焦**（Lucide `LocateFixed`，把该标签切到前台并聚焦其窗口）与**收回**（Lucide `Undo2`）。列表套 `cs-list-cap`（max-height 30vh、内部滚动）——标签多时逐行可认、逐行可聚焦 / 收回（2026-10-07 用户要求列表化；2026-10-13 用户要求改 hover icon 并加聚焦）。被接管标签的状态由 SW 广播，卡片在渲染时读快照里的标题——新开（自建）标签被接管那一刻通常还没加载完、标题为空，所以 `tabs.onUpdated` 对「已持有标签」的 `status/title/url` 变化会防抖重广播（`publishControlIfHeld` → `scheduleControlPublish`，150ms），卡片随页面标题自动更新；实在没有标题时兜底显示域名。

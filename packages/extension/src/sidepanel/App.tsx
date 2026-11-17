@@ -29,6 +29,7 @@ import {
   usageFromUpdate,
 } from "./acp-messages";
 import { canPreviewArtifact } from "./artifact-preview";
+import { browserToolId, browserUpdateAccepted } from "./tool-presence";
 import { ARCHIVE_CHECK_MS, ARCHIVE_REQUEST_TIMEOUT_MS, ARCHIVE_RETRY_MS, pickSessionsToArchive } from "./archive";
 import { StateChunkSink } from "../state-transfer";
 import { connectSidebar } from "./bridge";
@@ -804,6 +805,16 @@ export function App() {
       localId = unattributedSessionId();
       if (!localId) return;
     }
+    const session = sessionsRef.current.find((item) => item.id === localId);
+    if (!session) return;
+    // 浏览器命令是异步的：Agent 在一轮末尾发出的 navigate / runScript，回执常常晚于
+    // turn.end。这一轮已经收尾时再往对话里塞新步骤，`lastAssistant` 只能另起一条
+    // assistant —— 于是答案下面多出一条「已执行」、只有过程没有正文（用户报过）。已经在
+    // 对话里出现过的那条命令照旧更新（它的结果该显示出来），没出现过的一律丢掉。
+    const last = session.messages[session.messages.length - 1];
+    const live =
+      runningIdsRef.current.has(localId) || (last?.role === "assistant" && last.durationMs == null);
+    if (!browserUpdateAccepted(session.messages, browserToolId(command.id), live)) return;
     const modelId = selectedModelRef.current;
     const modelName =
       models.find((item) => item.id === modelId)?.name ||
