@@ -137,6 +137,10 @@ try {
   await send("steer text only");
   for (let i = 0; i < 40 && (await bubbles()) < 2; i += 1) await sleep(250);
   ok("a text-only steer lands in the transcript right away", (await bubbles()) === 2, `bubbles=${await bubbles()}`);
+  ok(
+    "an unread steer does not show a new-turn thinking placeholder",
+    (await panel.locator('[data-live-stage="pending"]').count()) === 0,
+  );
   ok("a text-only steer shows no waiting mark", (await badge()) === 0);
   ok("a text-only steer never becomes a queue card", (await queueCards()) === 0);
   for (let i = 0; i < 40 && !trace().includes("/steer steer text only"); i += 1) await sleep(250);

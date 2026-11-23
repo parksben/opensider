@@ -47,3 +47,7 @@ export function lastSettled(messages: ChatMessage[]): ChatMessage | undefined {
   }
   return undefined;
 }
+
+export function shouldShowAwaitingStage(isRunning: boolean, last: ChatMessage | undefined): boolean {
+  return isRunning && last?.role === "user" && !last.awaitingSteer;
+}

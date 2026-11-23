@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { ChatMessage } from "./chat-types.ts";
-import { nextStage, stageVisible } from "./turn-stage.ts";
+import { nextStage, shouldShowAwaitingStage, stageVisible } from "./turn-stage.ts";
 
 function message(id: string, role: "user" | "assistant", durationMs?: number): ChatMessage {
   return { id, role, content: [], createdAt: new Date("2026-01-01T00:00:00Z"), durationMs };
@@ -14,6 +14,12 @@ const stageOf = (messages: ChatMessage[], isRunning: boolean, current?: { sessio
 test("a live assistant turn is staged as soon as it starts streaming", () => {
   const messages = [message("u1", "user"), message("a1", "assistant")];
   assert.equal(stageOf(messages, true), "a1");
+});
+
+test("a steer message does not show a new-turn placeholder before it is read", () => {
+  const steering = { ...message("u2", "user"), awaitingSteer: true };
+  assert.equal(shouldShowAwaitingStage(true, steering), false);
+  assert.equal(shouldShowAwaitingStage(true, message("u2", "user")), true);
 });
 
 test("a finished turn stays staged until the next user message", () => {

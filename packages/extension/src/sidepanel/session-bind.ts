@@ -26,6 +26,8 @@ export type BindMeta = {
   steer?: boolean;
   /** 这条 prompt 由这批「已上屏、等待中」的消息拼成；被拒时整批挂回等待。 */
   heldIds?: string[];
+  /** 这条 prompt 来自队列「立即发送」；Host 拒绝时重新放回队首。 */
+  immediate?: boolean;
 };
 
 export type BindTicket = { localId: string; kind: BindKind; meta?: BindMeta };

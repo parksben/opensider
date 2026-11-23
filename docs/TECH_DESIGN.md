@@ -422,7 +422,7 @@ chrome.storage.local 与 ~/.opensider/ui-state.json（同形）
 3. `ChatPane` 提交：改历史仍走 `onRevise`（进行中拒绝）；改队列项走 `onUpdateQueued`（覆盖后清编辑态再 flush）；否则进行中且 Agent 支持 steering 时按输入区切换走 `onSteer` / `onEnqueue`；不支持或有附件 / skill 时 `onEnqueue`，空闲 `onSend`。进行中 `Stop` 与 `Send` 并存；回形针 / 拾取 / `@` 不再因 `isRunning` 禁用，方便组 steering 或队列消息。
 4. 只在 Host `turn.end` 里 `finishTurn` 之后 `flushQueue`。队空或该会话仍在跑则 return；`editingQueueRef` 指向队首则按住，等用户点发送覆盖后再发。改的不是队首则队首照常 shift。`cancel` 立刻 `finishTurn` 但不 flush，等这条 `turn.end`，避免旧结束事件误结束下一条。连接 `error` / `finishAllTurns` 不自动 flush。
 5. 取消队列编辑、删掉一项、或覆盖保存之后，若该会话已空闲，再 `flushQueue` 一次，避免队首解按后卡住。`QueuedMessageList` 画在 composer 上方：左 `displayMentionText`（过长省略，没有正文则附件名），右 `CornerDownLeft`（立即发送）/ `Pencil` / `Trash2`。
-6. 立即发送：从队列摘掉这一条（可插队）。该会话若在跑且消息是纯文本、无 skill、所选 Agent 支持 native steering，直接走 steering 注入当前 turn；不能 steer 时**不打断当前 turn**，把这一条保留在队首，等 `turn.end` 后按正常队列发出。空闲则当场发出。正在改这一条则退出编辑、还原草稿，不把未保存的改动发出去。
+6. 立即发送：从队列摘掉这一条（可插队）。该会话若在跑且消息是纯文本、无 skill、所选 Agent 支持 native steering，直接走 steering 注入当前 turn；否则显式请求 Host 中断当前 turn 并发送这一条，其他队列项保持原顺序，等新 turn 正常结束后再 flush。Host 若仍判定 prompt busy，则把被拒消息重新放回队首。空闲则当场发出。正在改这一条则退出编辑、还原草稿，不把未保存的改动发出去。引导中的 steer 消息下方不显示新 turn 的首帧占位。
 
 旧的 `session.json` `{ sessionId }` 在侧栏还没有本地目录时，迁成第一条会话。
 

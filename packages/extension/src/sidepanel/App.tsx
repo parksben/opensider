@@ -317,6 +317,7 @@ export function App() {
     () => undefined,
   );
   const turnStartedAt = useRef(new Map<string, number>());
+  const interruptReplacement = useRef(new Map<string, "pending" | "ended" | "rejected">());
   pageRef.current = page;
   statusRef.current = status;
   selectedIdRef.current = selectedId;
@@ -505,6 +506,7 @@ export function App() {
       userText?: string;
       userAttachments?: AttachmentItem[];
       steer?: boolean;
+      immediate?: boolean;
     },
   ) => {
     const requestId = crypto.randomUUID();
@@ -853,6 +855,7 @@ export function App() {
     if (!target) return;
     const started = turnStartedAt.current.get(target);
     turnStartedAt.current.delete(target);
+    interruptReplacement.current.delete(target);
     if (!runningIdsRef.current.has(target) && started == null) return;
     const next = new Set(runningIdsRef.current);
     next.delete(target);
@@ -948,7 +951,21 @@ export function App() {
         text: meta.userText,
         attachments: meta.userAttachments ?? [],
       };
-      setSessionQueue(localId, [...(queuesRef.current[localId] ?? []), item]);
+      const queue = queuesRef.current[localId] ?? [];
+      setSessionQueue(localId, meta.immediate ? [item, ...queue] : [...queue, item]);
+    }
+    if (meta.immediate) {
+      const state = interruptReplacement.current.get(localId);
+      if (state === "ended") {
+        interruptReplacement.current.delete(localId);
+        turnStartedAt.current.delete(localId);
+        finishTurn(localId);
+        flushQueueRef.current(localId);
+      } else if (state === "pending") {
+        interruptReplacement.current.set(localId, "rejected");
+      } else if (!wasRunning) {
+        flushQueueRef.current(localId);
+      }
     }
     // A steering request can lose the race with turn.end. In that case there is no
     // future turn.end to flush the queue, so send the requeued message normally now.
@@ -1571,13 +1588,23 @@ export function App() {
     if (msg.type === "turn.end") {
       const localId = localIdForAcp(msg.sessionId);
       if (!localId) return;
-      // 该回合已结束，不会再收到这轮 prompt 的绑定修正回执，清掉悬挂项。
-      bindRegistry.current.dropPrompts(localId);
       if (msg.interrupted) {
         // 被「立即发送」顶掉的那一轮：只结算它自己，不清 running、也不 flush 队列 ——
         // 新消息已经带着 interrupt 交给 Host，新一轮正在接上来。
         settleSupersededTurn(localId);
+        const replacement = interruptReplacement.current.get(localId);
+        if (replacement === "rejected") {
+          interruptReplacement.current.delete(localId);
+          finishTurn(localId);
+          flushQueueRef.current(localId);
+        } else {
+          if (replacement === "pending") interruptReplacement.current.set(localId, "ended");
+          turnStartedAt.current.set(localId, Date.now());
+        }
       } else {
+        // 该回合已结束，不会再收到这轮 prompt 的绑定修正回执，清掉悬挂项。
+        bindRegistry.current.dropPrompts(localId);
+        interruptReplacement.current.delete(localId);
         finishTurn(localId);
         clearSteerAwaiting(localId);
         // 队列优先（队列模式的消息先到先发）；队列为空时再把引导模式下挂着的那条
@@ -1998,7 +2025,7 @@ export function App() {
     localId: string,
     text: string,
     attachments: AttachmentItem[] = [],
-    options: { steer?: boolean; userIds?: string[] } = {},
+    options: { steer?: boolean; interrupt?: boolean; immediate?: boolean; userIds?: string[] } = {},
   ) => {
     if (!localId) return;
     // Steering targets the running turn, so a permission/form card that turn is
@@ -2037,18 +2064,20 @@ export function App() {
     const { skillPrefix, body } = wrapUserPrompt(text, attachments, skillsRef.current);
     // Steering belongs to the turn that is already running; resetting its start time
     // would make the turn duration and live-stage bookkeeping wrong.
-    if (!options.steer || !runningIdsRef.current.has(localId)) beginTurn(localId);
+    const running = runningIdsRef.current.has(localId);
+    if (!running || (!options.steer && !options.interrupt)) beginTurn(localId);
     setError(undefined);
     if (!session?.acpSessionId) {
       pendingRegen.current.set(localId, { text, attachments, context });
       if (!bindRegistry.current.hasLocal(localId)) requestSession("new", localId);
       return;
     }
+    if (options.interrupt) interruptReplacement.current.set(localId, "pending");
     const requestId = sendPrompt(
       localId,
       session.acpSessionId,
       context ? `${wrapForkContext(context)}\n\n${body}` : body,
-      false,
+      options.interrupt,
       options.steer,
       true,
       skillPrefix,
@@ -2058,6 +2087,7 @@ export function App() {
         userText: text,
         userAttachments: attachments,
         steer: options.steer,
+        immediate: options.immediate,
       },
     );
     // 引导消息在 Agent 确认接手之前不切分上面那一轮的回答（见 acp-messages 的
@@ -2070,25 +2100,25 @@ export function App() {
     }
   };
 
-  // 「立即发送」：运行中只走 native steering；不能 steer 时保留这条并挪到队首，
-  // 等当前 turn 正常结束后自动发出，绝不取消正在执行的一轮。
+  // 「立即发送」：能 native steering 时注入当前 turn；否则中断当前 turn 并开始新一轮。
   const sendQueuedNow = (sessionId: string, item: QueuedMessage) => {
     const list = queuesRef.current[sessionId] ?? [];
     const running = runningIdsRef.current.has(sessionId);
+    const session = sessionsRef.current.find((entry) => entry.id === sessionId);
     const steer =
       running &&
       steerAvailable &&
       item.attachments.length === 0 &&
       !wrapUserPrompt(item.text, item.attachments, skillsRef.current).skillPrefix;
-    if (running && !steer) {
-      setSessionQueue(sessionId, [item, ...list.filter((entry) => entry.id !== item.id)]);
-      return;
-    }
     setSessionQueue(
       sessionId,
       list.filter((entry) => entry.id !== item.id),
     );
-    sendToSession(sessionId, item.text, item.attachments, { steer });
+    sendToSession(sessionId, item.text, item.attachments, {
+      steer,
+      interrupt: running && !steer && Boolean(session?.acpSessionId),
+      immediate: true,
+    });
   };
   sendToSessionRef.current = sendToSession;
 
