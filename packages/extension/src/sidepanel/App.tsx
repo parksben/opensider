@@ -220,6 +220,8 @@ export function App() {
   const statusRef = useRef(status);
   const selectedIdRef = useRef(selectedId);
   const sessionsRef = useRef(sessions);
+  const streamBatchRef = useRef(new Map<string, Record<string, unknown>[]>());
+  const streamBatchFrameRef = useRef<number>(0);
   /** 卡片要跟着「该卡片所属的会话」走，发送/删除时按会话收掉（见 settleCardsForSession）。 */
   const takeoverRef = useRef(takeover);
   const formRequestRef = useRef(formRequest);
@@ -972,6 +974,36 @@ export function App() {
     if (steerFailure && !wasRunning) flushQueueRef.current(localId);
   };
 
+  const flushStreamBatch = () => {
+    streamBatchFrameRef.current = 0;
+    const batch = streamBatchRef.current;
+    streamBatchRef.current = new Map();
+    if (batch.size === 0) return;
+    const modelId = selectedModelRef.current;
+    const modelName =
+      models.find((item) => item.id === modelId)?.name ||
+      (!modelId || modelId === "auto" ? "Auto" : modelId);
+    batch.forEach((updates, localId) => {
+      updateSessionMessages(localId, (current) => {
+        let next = current;
+        for (const update of updates) {
+          advanceSteerBoundary(localId, update);
+          next = applyAcpUpdate(next, update, { modelId, modelName });
+        }
+        return next;
+      });
+    });
+  };
+
+  const queueStreamUpdate = (localId: string, update: Record<string, unknown>) => {
+    const batch = streamBatchRef.current;
+    const updates = batch.get(localId);
+    if (updates) updates.push(update);
+    else batch.set(localId, [update]);
+    if (streamBatchFrameRef.current) return;
+    streamBatchFrameRef.current = requestAnimationFrame(flushStreamBatch);
+  };
+
   const handleHost = (msg: HostToExt) => {
     // 本地状态（含会话到 ACP 的绑定）还没读完：会话相关消息先攒着，hydration 后按序重放。
     if (!hydratedRef.current && SESSION_SCOPED_TYPES.has(msg.type)) {
@@ -1541,8 +1573,7 @@ export function App() {
         setContextUsage(usage);
         return;
       }
-      advanceSteerBoundary(localId, msg.update);
-      updateSessionMessages(localId, (current) => applyAcpUpdate(current, msg.update, { modelId, modelName }));
+      queueStreamUpdate(localId, msg.update);
       return;
     }
     if (msg.type === "turns.running") {
@@ -1588,6 +1619,11 @@ export function App() {
     if (msg.type === "turn.end") {
       const localId = localIdForAcp(msg.sessionId);
       if (!localId) return;
+      if (streamBatchFrameRef.current) {
+        cancelAnimationFrame(streamBatchFrameRef.current);
+        streamBatchFrameRef.current = 0;
+      }
+      if (streamBatchRef.current.size) flushStreamBatch();
       if (msg.interrupted) {
         // 被「立即发送」顶掉的那一轮：只结算它自己，不清 running、也不 flush 队列 ——
         // 新消息已经带着 interrupt 交给 Host，新一轮正在接上来。
