@@ -121,6 +121,9 @@ try {
   // 3. Queue state has to survive an extension reload; otherwise the restart would
   // silently drop the text the user just typed while the turn was still running.
   await panel.waitForTimeout(900);
+  const settings = await worker.evaluate(async () => (await chrome.storage.local.get('opensider/state'))['opensider/state']);
+  ok('webpage storage notifications contain settings, not transcripts', settings.sessions.length === 0 && !settings.queues);
+  ok('settings storage remains small', JSON.stringify(settings).length < 4096);
   await panel.reload();
   await composer.waitFor({ state: "visible", timeout: 30_000 });
   await queued.waitFor({ state: "visible", timeout: 20_000 });

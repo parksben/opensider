@@ -2,6 +2,12 @@
 
 > 产品名 OpenSider。Chromium 扩展通过 Native Messaging 托管 `agent acp`；页面感知用内容脚本 + 工作区文件，不使用 MCP，不运行常驻本地服务。Host 是一份预编译 Go 二进制（`cmd/opensider`：无参=Host，`install`，`uninstall`，`version`，`extension-dir`，`pick`）。对外名称、包名、Native Host、本机目录和 storage key 都用 `opensider` / `com.opensider.host` / `~/.opensider`。不迁旧目录 `~/.cursor-sidebar`。
 
+## 浏览器阻塞排查（2026-11-27）
+
+本机 Host 日志显示整份 UI 镜像达到约 65MB；网页划词工具条监听 `chrome.storage.onChanged`，导致全量聊天缓存写入也向网页派发大对象。运行中设置、产物与隐藏事件仍可触发整份写入，上一版仅合并 React 更新并未隔离此跨进程负载。
+
+完整热缓存迁到扩展源 IndexedDB；`opensider/state` 只保存小型设置以兼容 SW 与内容脚本消费者。读取优先 IndexedDB，缺失时迁移旧 Chrome storage 历史；只有完整缓存成功后才替换旧值，失败保持恢复路径。全文镜像继续交给 Host，重复 flush 按指纹跳过。流式边界副作用留在接收事件时执行，不放入 React updater；非流式事件与发送前结清增量，定时器提供后台帧暂停时的兜底。
+
 ## 总览
 
 ```

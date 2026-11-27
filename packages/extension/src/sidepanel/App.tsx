@@ -222,6 +222,7 @@ export function App() {
   const sessionsRef = useRef(sessions);
   const streamBatchRef = useRef(new Map<string, Record<string, unknown>[]>());
   const streamBatchFrameRef = useRef<number>(0);
+  const streamBatchTimerRef = useRef<number>(0);
   /** 卡片要跟着「该卡片所属的会话」走，发送/删除时按会话收掉（见 settleCardsForSession）。 */
   const takeoverRef = useRef(takeover);
   const formRequestRef = useRef(formRequest);
@@ -441,7 +442,7 @@ export function App() {
       runningIds: runningIdsRef.current,
     });
     if (ids.length === 0) return;
-    const savedAt = persistFlush.current();
+    const savedAt = persistFlush.current(true);
     if (!savedAt) return;
     const timer = window.setTimeout(() => {
       archiveStageRef.current = null;
@@ -975,7 +976,10 @@ export function App() {
   };
 
   const flushStreamBatch = () => {
+    cancelAnimationFrame(streamBatchFrameRef.current);
+    window.clearTimeout(streamBatchTimerRef.current);
     streamBatchFrameRef.current = 0;
+    streamBatchTimerRef.current = 0;
     const batch = streamBatchRef.current;
     streamBatchRef.current = new Map();
     if (batch.size === 0) return;
@@ -987,7 +991,6 @@ export function App() {
       updateSessionMessages(localId, (current) => {
         let next = current;
         for (const update of updates) {
-          advanceSteerBoundary(localId, update);
           next = applyAcpUpdate(next, update, { modelId, modelName });
         }
         return next;
@@ -1002,6 +1005,7 @@ export function App() {
     else batch.set(localId, [update]);
     if (streamBatchFrameRef.current) return;
     streamBatchFrameRef.current = requestAnimationFrame(flushStreamBatch);
+    streamBatchTimerRef.current = window.setTimeout(flushStreamBatch, 100);
   };
 
   const handleHost = (msg: HostToExt) => {
@@ -1010,6 +1014,7 @@ export function App() {
       if (deferredRef.current.length < MAX_DEFERRED_MESSAGES) deferredRef.current.push(msg);
       return;
     }
+    if (msg.type !== "update" && streamBatchRef.current.size) flushStreamBatch();
     if (msg.type === "peer.probed") {
       settlePeerProbe(msg.requestId, msg.installed);
       return;
@@ -1573,6 +1578,8 @@ export function App() {
         setContextUsage(usage);
         return;
       }
+      if (steerBoundaries.current.has(localId)) flushStreamBatch();
+      advanceSteerBoundary(localId, msg.update);
       queueStreamUpdate(localId, msg.update);
       return;
     }
@@ -1765,6 +1772,12 @@ export function App() {
   const handleHostRef = useRef(handleHost);
   handleHostRef.current = handleHost;
 
+  useEffect(() => () => {
+    cancelAnimationFrame(streamBatchFrameRef.current);
+    window.clearTimeout(streamBatchTimerRef.current);
+    window.clearTimeout(persistTimer.current);
+  }, []);
+
   useEffect(() => {
     void loadState().then((state) => {
       hydratedRef.current = true;
@@ -1815,7 +1828,7 @@ export function App() {
   /** 最近一次写出去的设置指纹：正文在流式、但设置变了时不跟着一起憋着。 */
   const persistSettingsDigest = useRef("");
   /** 立刻写一次（面板要关、切到后台时用），不走合并窗口、也不受「回合进行中」限制。 */
-  const persistFlush = useRef<() => string | undefined>(() => undefined);
+  const persistFlush = useRef<(force?: boolean) => string | undefined>(() => undefined);
   /** 面板最近一次写出去的 savedAt（ms；0 = 还没写过）——回灌镜像时用它判断新旧。 */
   const wroteAtRef = useRef(0);
   /** Host 镜像就绪后强制写一次：否则「镜像就绪」只改依赖、指纹没变，会跳过首次同步。 */
@@ -1861,9 +1874,12 @@ export function App() {
       ]),
     );
     const digest = JSON.stringify([settingsDigest, transcriptDigest]);
-    const write = () => {
+    const write = (force = false) => {
       window.clearTimeout(persistTimer.current);
       persistTimer.current = 0;
+      if (!force && digest === persistDigest.current) {
+        return hostMirrorReady ? new Date(wroteAtRef.current).toISOString() : undefined;
+      }
       const payload = toPersistedState({
         locale,
         theme,
@@ -1897,8 +1913,9 @@ export function App() {
     if (digest === persistDigest.current) return;
     // 一轮进行中：只有设置变了才写（见上面注释）；正文的变化等回合结束时再一次性写出。
     if (anyTurnRunning && settingsDigest === persistSettingsDigest.current) return;
-    persistTimer.current = window.setTimeout(write, PERSIST_DEBOUNCE_MS);
-    return () => window.clearTimeout(persistTimer.current);
+    if (!persistTimer.current) {
+      persistTimer.current = window.setTimeout(() => persistFlush.current(), PERSIST_DEBOUNCE_MS);
+    }
   }, [
     hydrated,
     hostMirrorReady,
@@ -1928,7 +1945,7 @@ export function App() {
     }
     if (!hydrated || mirrorSeeded.current) return;
     mirrorSeeded.current = true;
-    persistFlush.current();
+    persistFlush.current(true);
   }, [hostMirrorReady, hydrated]);
 
   useLayoutEffect(() => {
@@ -1987,7 +2004,10 @@ export function App() {
   // 面板要被收起来（切 tab、关侧栏、锁屏）：合并窗口里那一次可能还没到点，补写一次。
   // 少了它，关面板前 500ms 内的改动只活在内存里，下次打开会看见上一版内容。
   useEffect(() => {
-    const flush = () => persistFlush.current();
+    const flush = () => {
+      if (streamBatchRef.current.size) flushStreamBatch();
+      persistFlush.current();
+    };
     const onHidden = () => {
       if (document.visibilityState === "hidden") flush();
     };
@@ -2064,6 +2084,7 @@ export function App() {
     options: { steer?: boolean; interrupt?: boolean; immediate?: boolean; userIds?: string[] } = {},
   ) => {
     if (!localId) return;
+    if (streamBatchRef.current.size) flushStreamBatch();
     // Steering targets the running turn, so a permission/form card that turn is
     // waiting on must stay answerable; clearing it here would strand the Agent.
     if (!options.steer) settleCardsForSession(localId);

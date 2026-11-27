@@ -7,6 +7,8 @@ import { isBenignStreamCloseText, stripBenignStreamClose } from "./stream-close"
 import { stampToolParts } from "./tool-label";
 import { detectBrowserTheme, isThemePreference, readCachedTheme, type ThemePreference } from "./theme";
 
+import { readStateCache, writeStateCache } from "./state-cache";
+
 export const STATE_KEY = "opensider/state";
 
 export type StoredMessage = {
@@ -556,18 +558,36 @@ export function toPersistedState(state: {
 }
 
 export async function loadState(): Promise<LoadedState> {
+  try {
+    const cached = await readStateCache<PersistedState>();
+    if (cached) return fromPersisted(cached);
+  } catch (error) {
+    console.warn("opensider: state cache read failed", error);
+  }
   const raw = await chrome.storage.local.get(STATE_KEY);
-  return fromPersisted(raw[STATE_KEY] as PersistedState | undefined);
+  const legacy = raw[STATE_KEY] as PersistedState | undefined;
+  if (legacy?.sessions?.length) await saveState(legacy);
+  return fromPersisted(legacy);
 }
 
-export async function saveState(payload: PersistedState): Promise<void> {
-  try {
-    await chrome.storage.local.set({ [STATE_KEY]: payload });
-  } catch (error) {
-    // chrome.storage.local 只是热缓存：写失败（配额等）不能连 Host 镜像一起停掉——
-    // 权威副本在 ~/.opensider/ui-state.json，重装后还要靠它灌回。
-    console.warn("opensider: local state write failed", error);
-  }
+export function stateSettings(payload: PersistedState): PersistedState {
+  return { ...payload, sessions: [], queues: undefined };
+}
+
+let cacheWrites: Promise<void> = Promise.resolve();
+
+export function saveState(payload: PersistedState): Promise<void> {
+  const write = async () => {
+    try {
+      // Commit the full cache before replacing a legacy storage value with settings.
+      await writeStateCache(payload);
+      await chrome.storage.local.set({ [STATE_KEY]: stateSettings(payload) });
+    } catch (error) {
+      console.warn("opensider: local state write failed", error);
+    }
+  };
+  cacheWrites = cacheWrites.then(write, write);
+  return cacheWrites;
 }
 
 export function wrapAttachments(text: string, items: AttachmentItem[]): string {

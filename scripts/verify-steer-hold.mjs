@@ -209,7 +209,10 @@ try {
     (await panel.getByText("Steering").count()) === 0,
     `markers=${await panel.getByText("Steering").count()}`,
   );
-  for (let i = 0; i < 80 && !trace().includes("steer again and wait your turn"); i += 1) await sleep(250);
+  for (let i = 0; i < 80; i += 1) {
+    if (trace().split("\n").some((line) => line.includes('"event":"prompt"') && line.includes("steer with an attachment") && line.includes("steer again and wait your turn"))) break;
+    await sleep(250);
+  }
   const promptLines = trace()
     .split("\n")
     .filter((line) => line.includes("steer with an attachment") && line.includes("steer again and wait your turn"));
